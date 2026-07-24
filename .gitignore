@@ -1,0 +1,27 @@
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Java / Maven
+**/target/
+*.class
+
+# Node.js
+**/node_modules/
+**/dist/
+
+# Python
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local configuration and generated files
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
