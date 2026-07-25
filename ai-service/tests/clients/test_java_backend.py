@@ -186,12 +186,6 @@ def test_agent_execution_lifecycle_uses_internal_contracts() -> None:
             {
                 "status": "RUNNING",
                 "resultSummary": "正在保存用户确认的计划",
-                "errorMessage": None,
-                "modelName": None,
-                "promptTokens": None,
-                "completionTokens": None,
-                "latencyMs": None,
-                "estimatedCost": None,
             },
         ),
     ]

@@ -60,7 +60,7 @@ class JavaBackendClient:
         response = await self._request(
             "POST",
             "/internal/learning-plans",
-            json=request.model_dump(by_alias=True, mode="json"),
+            json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
         )
         return LearningPlan.model_validate(response.json())
 
@@ -73,7 +73,7 @@ class JavaBackendClient:
         response = await self._request(
             "POST",
             "/internal/agent-executions",
-            json=request.model_dump(by_alias=True, mode="json"),
+            json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
         )
         return AgentExecution.model_validate(response.json())
 
@@ -102,7 +102,7 @@ class JavaBackendClient:
         response = await self._request(
             "PATCH",
             f"/internal/agent-executions/{execution_id}",
-            json=request.model_dump(by_alias=True, mode="json"),
+            json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
         )
         return AgentExecution.model_validate(response.json())
 
@@ -115,7 +115,7 @@ class JavaBackendClient:
         response = await self._request(
             "POST",
             "/internal/confirmed-learning-plans",
-            json=request.model_dump(by_alias=True, mode="json"),
+            json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
         )
         return ConfirmedLearningPlan.model_validate(response.json())
 
