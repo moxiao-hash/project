@@ -2,8 +2,10 @@ package com.moxiao.studypilot.learning.domain;
 
 import java.time.LocalDate;
 import java.util.Objects;
+import java.util.UUID;
 
 public record LearningGoal(
+        UUID id,
         String title,
         LocalDate targetDate,
         int weeklyStudyHours,
@@ -14,10 +16,11 @@ public record LearningGoal(
     private static final int MAX_WEEKLY_STUDY_HOURS = 40;
 
     public LearningGoal(String title, LocalDate targetDate, int weeklyStudyHours) {
-        this(title, targetDate, weeklyStudyHours, LearningGoalStatus.DRAFT);
+        this(UUID.randomUUID(), title, targetDate, weeklyStudyHours, LearningGoalStatus.DRAFT);
     }
 
     public LearningGoal {
+        Objects.requireNonNull(id, "学习目标 ID 不能为空");
         title = validateTitle(title);
         validateTargetDate(targetDate);
         validateWeeklyStudyHours(weeklyStudyHours);
