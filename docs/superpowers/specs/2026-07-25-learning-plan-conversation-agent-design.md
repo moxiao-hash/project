@@ -4,7 +4,7 @@
 
 本迭代实现 StudyPilot 第一条可操作 Agent 闭环：用户围绕一个已有学习目标进行多轮
 对话，Agent 在上下文充分时生成结构化计划及任务草案，暂停等待人工确认，确认后通过
-Java 事务性接口一次性保存计划和任务。
+Java 事务性接口一次性创建已确认计划和正式任务。
 
 本迭代包含：
 
@@ -74,7 +74,7 @@ DeepSeek 返回 PlannerTurn 结构化结果
                  重新生成草案      确认执行记录
                                          │
                                          ▼
-                              Java 原子保存计划和任务
+                              Java 原子创建已确认计划和任务
                                          │
                                          ▼
                                更新执行记录为成功/失败
@@ -235,12 +235,12 @@ PlanTaskDraft
 若结构化输出或业务校验失败，只允许进行一次带校验错误摘要的自动修复调用；再次失败
 则返回 `FAILED`，防止无限循环和意外费用。
 
-## 7. Java 原子保存契约
+## 7. Java 原子确认契约
 
 新增：
 
 ```http
-POST /internal/learning-plan-drafts
+POST /internal/confirmed-learning-plans
 ```
 
 请求：
@@ -268,11 +268,15 @@ Java 在一个 `@Transactional` 用例中：
 1. 校验目标属于用户；
 2. 校验日期、任务数量和单项时长；
 3. 根据 `ownerId + idempotencyKey` 防止重复创建；
-4. 创建 DRAFT 计划；
-5. 创建所有任务；
-6. 返回计划与任务。
+4. 创建 DRAFT 计划并立即执行现有领域确认逻辑；
+5. 在计划状态为 `CONFIRMED` 后创建所有正式任务；
+6. 返回已确认计划与任务。
 
 任意步骤失败时整个事务回滚。
+
+Python 的 `DRAFT_READY` 是保存在 LangGraph 会话状态中的可修改预览，并未写入
+MySQL。独立确认接口就是用户对最终表单的明确确认，所以 Java 落库后的计划直接成为
+`CONFIRMED`，不再要求第二次确认。
 
 为持久化幂等键，新增 Flyway 迁移给 `learning_plans` 增加可空的
 `generation_idempotency_key VARCHAR(180)`，并建立
