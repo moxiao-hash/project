@@ -50,6 +50,7 @@ Content-Type: application/json
 %}
 
 ### 4. 第一轮：描述目标和基础
+# @timeout 5 m
 POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/messages
 X-Internal-Service-Token: {{internalToken}}
 Content-Type: application/json
@@ -59,6 +60,7 @@ Content-Type: application/json
 }
 
 ### 5. 第二轮：补充时间与计划偏好
+# @timeout 5 m
 POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/messages
 X-Internal-Service-Token: {{internalToken}}
 Content-Type: application/json
@@ -68,6 +70,7 @@ Content-Type: application/json
 }
 
 ### 6. 如仍为 COLLECTING，继续回答 Agent 的问题；如为 DRAFT_READY，可提出修改
+# @timeout 5 m
 POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/messages
 X-Internal-Service-Token: {{internalToken}}
 Content-Type: application/json
