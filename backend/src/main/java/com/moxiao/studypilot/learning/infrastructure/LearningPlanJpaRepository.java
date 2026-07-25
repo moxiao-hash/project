@@ -9,5 +9,10 @@ public interface LearningPlanJpaRepository extends JpaRepository<LearningPlanEnt
 
     Optional<LearningPlanEntity> findByIdAndOwnerId(String id, String ownerId);
 
+    Optional<LearningPlanEntity> findByOwnerIdAndGenerationIdempotencyKey(
+            String ownerId,
+            String generationIdempotencyKey
+    );
+
     List<LearningPlanEntity> findAllByOwnerIdOrderByCreatedAtDesc(String ownerId);
 }

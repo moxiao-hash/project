@@ -6,7 +6,6 @@ import com.moxiao.studypilot.learning.infrastructure.LearningPlanEntity;
 import com.moxiao.studypilot.learning.infrastructure.LearningPlanJpaRepository;
 import com.moxiao.studypilot.learning.infrastructure.LearningPlanVersionEntity;
 import com.moxiao.studypilot.learning.infrastructure.LearningPlanVersionJpaRepository;
-import com.moxiao.studypilot.learning.infrastructure.LearningPlanVersionEntity;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +33,23 @@ public class LearningPlanService {
 
     @Transactional
     public LearningPlanEntity create(String ownerId, CreateLearningPlanRequest request) {
+        return create(ownerId, request, null);
+    }
+
+    @Transactional
+    public LearningPlanEntity createGenerated(
+            String ownerId,
+            CreateLearningPlanRequest request,
+            String generationIdempotencyKey
+    ) {
+        return create(ownerId, request, generationIdempotencyKey);
+    }
+
+    private LearningPlanEntity create(
+            String ownerId,
+            CreateLearningPlanRequest request,
+            String generationIdempotencyKey
+    ) {
         if (!goalRepository.existsByIdAndOwnerId(request.goalId(), ownerId)) {
             throw new ResourceNotFoundException("学习目标不存在");
         }
@@ -45,6 +61,7 @@ public class LearningPlanService {
                 request.title().trim(),
                 request.startDate(),
                 request.endDate(),
+                generationIdempotencyKey,
                 now
         ));
         saveVersion(plan, "创建计划草案", now);

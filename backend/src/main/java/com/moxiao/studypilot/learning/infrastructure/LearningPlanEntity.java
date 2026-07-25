@@ -40,6 +40,9 @@ public class LearningPlanEntity {
     @Column(name = "entity_version", nullable = false)
     private int version;
 
+    @Column(name = "generation_idempotency_key", length = 180)
+    private String generationIdempotencyKey;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -58,6 +61,19 @@ public class LearningPlanEntity {
             LocalDate endDate,
             Instant now
     ) {
+        this(id, ownerId, goalId, title, startDate, endDate, null, now);
+    }
+
+    public LearningPlanEntity(
+            String id,
+            String ownerId,
+            String goalId,
+            String title,
+            LocalDate startDate,
+            LocalDate endDate,
+            String generationIdempotencyKey,
+            Instant now
+    ) {
         this.id = id;
         this.ownerId = ownerId;
         this.goalId = goalId;
@@ -66,6 +82,7 @@ public class LearningPlanEntity {
         this.endDate = endDate;
         this.status = LearningPlanStatus.DRAFT;
         this.version = 1;
+        this.generationIdempotencyKey = generationIdempotencyKey;
         this.createdAt = now;
         this.updatedAt = now;
     }
@@ -109,5 +126,9 @@ public class LearningPlanEntity {
 
     public int getVersion() {
         return version;
+    }
+
+    public String getGenerationIdempotencyKey() {
+        return generationIdempotencyKey;
     }
 }

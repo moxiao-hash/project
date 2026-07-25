@@ -1,5 +1,6 @@
 package com.moxiao.studypilot.learning.api;
 
+import com.moxiao.studypilot.learning.application.ConfirmedLearningPlanService;
 import com.moxiao.studypilot.learning.application.InternalLearningContextService;
 import com.moxiao.studypilot.learning.application.LearningPlanService;
 import jakarta.validation.Valid;
@@ -18,13 +19,16 @@ public class InternalLearningToolController {
 
     private final InternalLearningContextService contextService;
     private final LearningPlanService planService;
+    private final ConfirmedLearningPlanService confirmedPlanService;
 
     public InternalLearningToolController(
             InternalLearningContextService contextService,
-            LearningPlanService planService
+            LearningPlanService planService,
+            ConfirmedLearningPlanService confirmedPlanService
     ) {
         this.contextService = contextService;
         this.planService = planService;
+        this.confirmedPlanService = confirmedPlanService;
     }
 
     @GetMapping("/users/{ownerId}/learning-context")
@@ -40,5 +44,13 @@ public class InternalLearningToolController {
         return LearningPlanResponse.from(
                 planService.create(request.ownerId(), request.toPlanRequest())
         );
+    }
+
+    @PostMapping("/confirmed-learning-plans")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ConfirmedLearningPlanResponse createConfirmedPlan(
+            @Valid @RequestBody CreateConfirmedLearningPlanRequest request
+    ) {
+        return confirmedPlanService.create(request);
     }
 }

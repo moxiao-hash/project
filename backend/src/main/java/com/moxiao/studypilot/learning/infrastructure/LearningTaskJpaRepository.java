@@ -18,6 +18,8 @@ public interface LearningTaskJpaRepository extends JpaRepository<LearningTaskEnt
 
     List<LearningTaskEntity> findAllByOwnerIdOrderByScheduledDateAscCreatedAtAsc(String ownerId);
 
+    List<LearningTaskEntity> findAllByPlanIdOrderByScheduledDateAscCreatedAtAsc(String planId);
+
     long countByOwnerIdAndScheduledDate(String ownerId, LocalDate scheduledDate);
 
     long countByOwnerIdAndScheduledDateAndStatus(
