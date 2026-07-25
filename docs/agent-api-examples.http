@@ -1,0 +1,101 @@
+### StudyPilot 学习计划 Agent 本地闭环
+### 使用方式：先启动 Java 8080 和 Python 8000，再在 IDEA 中从上到下逐条运行。
+
+@javaHost = http://localhost:8080
+@aiHost = http://127.0.0.1:8000
+@internalToken = local-dev-internal-token
+
+### 1. 注册测试用户，并保存 Java Token 与用户 ID
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "agent-demo-{{$timestamp}}@example.com",
+  "password": "StudyPilot123!",
+  "displayName": "Agent 联调用户"
+}
+
+> {%
+  client.global.set("accessToken", response.body.accessToken);
+  client.global.set("ownerId", response.body.user.id);
+%}
+
+### 2. 创建学习目标，并保存目标 ID
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "在年底前掌握 Java 与 AI 智能应用开发",
+  "targetDate": "2026-12-31",
+  "weeklyStudyHours": 10
+}
+
+> {%
+  client.global.set("goalId", response.body.id);
+%}
+
+### 3. 创建 Python Agent 会话
+POST {{aiHost}}/internal/agent/conversations
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "goalId": "{{goalId}}"
+}
+
+> {%
+  client.global.set("conversationId", response.body.conversationId);
+%}
+
+### 4. 第一轮：描述目标和基础
+POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "我会 Java 基础语法，Spring Boot 刚起步，希望先做出能运行的项目闭环。"
+}
+
+### 5. 第二轮：补充时间与计划偏好
+POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "我每周能学习 10 小时，工作日每天 1 小时，周末可以多安排编程实践。"
+}
+
+### 6. 如仍为 COLLECTING，继续回答 Agent 的问题；如为 DRAFT_READY，可提出修改
+POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "请把手动编程任务比例逐步提高，单个任务尽量控制在 30 到 90 分钟。"
+}
+
+### 7. 不调用模型，读取当前会话快照
+GET {{aiHost}}/internal/agent/conversations/{{conversationId}}
+X-Internal-Service-Token: {{internalToken}}
+
+### 8. 仅当状态为 DRAFT_READY 时执行显式确认
+POST {{aiHost}}/internal/agent/conversations/{{conversationId}}/confirm
+X-Internal-Service-Token: {{internalToken}}
+
+### 9. 从 Java 查询最终计划
+GET {{javaHost}}/api/learning-plans
+Authorization: Bearer {{accessToken}}
+
+### 10. 从 Java 查询最终任务
+GET {{javaHost}}/api/learning-tasks
+Authorization: Bearer {{accessToken}}
+
+### 11. 查询 Agent 执行记录
+GET {{javaHost}}/api/agent-executions
+Authorization: Bearer {{accessToken}}
+
+### 12. 查询确认与状态变更审计
+GET {{javaHost}}/api/audit-logs
+Authorization: Bearer {{accessToken}}

@@ -34,11 +34,7 @@ def build_learning_plan_graph(
             "messages": [AIMessage(content=turn.reply)],
             "reply": turn.reply,
             "status": turn.status.value,
-            "draft": (
-                turn.draft.model_dump(mode="json")
-                if turn.draft is not None
-                else None
-            ),
+            "draft": (turn.draft.model_dump(mode="json") if turn.draft is not None else None),
             "error": None,
         }
 

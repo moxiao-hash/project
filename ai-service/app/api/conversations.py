@@ -29,6 +29,7 @@ router = APIRouter(
     dependencies=[Depends(require_internal_token)],
 )
 
+
 def get_conversation_service(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
@@ -79,9 +80,7 @@ async def create_conversation(
     body: CreateConversationRequest,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationSnapshot:
-    return await _translate_errors(
-        service.create_conversation(body.owner_id, body.goal_id)
-    )
+    return await _translate_errors(service.create_conversation(body.owner_id, body.goal_id))
 
 
 @router.post("/{conversation_id}/messages", response_model=ConversationSnapshot)
@@ -90,9 +89,7 @@ async def send_message(
     body: SendMessageRequest,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationSnapshot:
-    return await _translate_errors(
-        service.send_message(conversation_id, body.message)
-    )
+    return await _translate_errors(service.send_message(conversation_id, body.message))
 
 
 @router.get("/{conversation_id}", response_model=ConversationSnapshot)

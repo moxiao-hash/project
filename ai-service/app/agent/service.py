@@ -85,9 +85,7 @@ class ConversationService:
             raise InvalidConversationStateError("已完成的会话不能继续发送消息")
 
         if conversation.snapshot.status == ConversationStatus.DRAFT_READY:
-            graph_input: dict | Command = Command(
-                resume={"action": "revise", "feedback": message}
-            )
+            graph_input: dict | Command = Command(resume={"action": "revise", "feedback": message})
         elif conversation.started:
             graph_input = {"messages": [HumanMessage(content=message)]}
         else:

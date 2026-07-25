@@ -22,17 +22,36 @@
 
 1. 资料上传与异步处理状态。
 2. [x] FastAPI 服务骨架与内部认证。
-3. 云端模型 API / Ollama Provider 抽象。
+3. [x] DeepSeek 云端模型 API 与可替换 Planner 抽象。
 4. 资料检索、联网检索与来源展示。
 5. 流式 Agent 对话与简洁执行状态。
 
 ## 阶段 3：自适应学习 Agent
 
-1. Agent 生成计划草案，用户确认后写入。
+1. [x] Agent 多轮生成计划草案，用户确认后原子写入。
 2. 基于资料与知识点生成选择题。
 3. 记录作答和掌握度。
 4. 打卡触发与夜间兜底的计划调整。
 5. 授权策略、审计记录、计划版本和撤销。
+
+### 已完成的学习计划 Agent 闭环
+
+```text
+Java 学习目标与上下文
+        ↓
+Python LangGraph 多轮收集要求
+        ↓
+DeepSeek 输出 Pydantic 结构化草稿
+        ↓
+用户修改或显式确认
+        ↓
+Java 事务创建 CONFIRMED 计划与全部任务
+        ↓
+AgentExecution 状态与 AuditLog 可追踪
+```
+
+当前上下文保存在 Python 进程内，重启后失效；前端接入时以对话为主，在
+`DRAFT_READY` 阶段用表单展示和微调草稿。
 
 ## 阶段 4：工程化与发布
 

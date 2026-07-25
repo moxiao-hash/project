@@ -17,7 +17,7 @@ docs/        产品、架构、迭代与开发文档
 ## 当前技术基线
 
 - Java 17 + Spring Boot
-- Python + FastAPI（下一阶段设计）
+- Python 3.12 + FastAPI + LangGraph + DeepSeek API
 - Vue 3 + TypeScript + Vite（待初始化）
 - MySQL 8 + Flyway
 - Docker Compose
@@ -36,4 +36,6 @@ cd backend
 ./mvnw test
 ```
 
-完整容器启动方式见 [infra/README.md](infra/README.md)。下一步是基于已经稳定的 Java 业务契约设计 FastAPI Agent 服务。
+完整容器启动方式见 [infra/README.md](infra/README.md)。学习计划 Agent 的本地启动、
+测试和代码阅读顺序见 [AI 服务说明](ai-service/README.md)，IntelliJ 联调请求见
+[Agent API 示例](docs/agent-api-examples.http)。

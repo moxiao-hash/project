@@ -45,8 +45,7 @@ class PlanDraft(BaseModel):
         if self.end_date < self.start_date:
             raise ValueError("计划结束日期不能早于开始日期")
         if any(
-            task.scheduled_date < self.start_date
-            or task.scheduled_date > self.end_date
+            task.scheduled_date < self.start_date or task.scheduled_date > self.end_date
             for task in self.tasks
         ):
             raise ValueError("任务日期必须位于计划日期范围内")
