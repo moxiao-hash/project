@@ -1,0 +1,90 @@
+"""学习领域的 Java/Python 数据契约。
+
+Python 内部采用 ``snake_case``，Java JSON 采用 ``camelCase``。统一的基类负责
+转换，避免每次请求都手写字段名映射。
+"""
+
+from datetime import date, datetime
+
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
+
+
+class JavaContractModel(BaseModel):
+    """支持 Java camelCase JSON 的 Pydantic 基类。"""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class LearningGoal(JavaContractModel):
+    id: str
+    title: str
+    target_date: date
+    weekly_study_hours: int
+    status: str
+
+
+class LearningPlan(JavaContractModel):
+    id: str
+    goal_id: str
+    title: str
+    start_date: date
+    end_date: date
+    status: str
+    version: int
+
+
+class LearningTask(JavaContractModel):
+    id: str
+    plan_id: str
+    title: str
+    scheduled_date: date
+    estimated_minutes: int
+    status: str
+    version: int
+    completed_at: datetime | None = None
+
+
+class Material(JavaContractModel):
+    id: str
+    title: str
+    material_type: str
+    category: str
+    privacy_level: str
+    source_url: str | None = None
+    processing_status: str
+    summary: str | None = None
+    tags: list[str] = []
+    knowledge_points: list[str] = []
+    content_reference: str | None = None
+    failure_reason: str | None = None
+
+
+class Mastery(JavaContractModel):
+    knowledge_point: str
+    score: float
+    attempt_count: int
+
+
+class LearningContext(JavaContractModel):
+    """Agent 生成学习方案时所需的只读业务上下文。"""
+
+    goals: list[LearningGoal]
+    plans: list[LearningPlan]
+    tasks: list[LearningTask]
+    materials: list[Material]
+    mastery: list[Mastery]
+
+
+class CreatePlanDraftRequest(JavaContractModel):
+    """请求 Java 创建待用户确认的计划草案。"""
+
+    owner_id: str
+    goal_id: str
+    title: str
+    start_date: date
+    end_date: date
+
