@@ -48,4 +48,20 @@ public class LearningPlanVersionEntity {
         this.changeReason = changeReason;
         this.createdAt = createdAt;
     }
+
+    public int getVersion() {
+        return version;
+    }
+
+    public String getSnapshotJson() {
+        return snapshotJson;
+    }
+
+    public String getChangeReason() {
+        return changeReason;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
 }

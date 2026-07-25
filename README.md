@@ -2,7 +2,7 @@
 
 面向个人学习者的 AI 学习执行工作台。用户可以导入学习资料、通过对话建立学习计划、完成任务与测验；在授权边界内，Agent 会整理资料、生成练习并调整后续学习安排。
 
-当前处于项目初始化阶段。完整产品范围见 [产品需求说明](docs/studypilot-product-requirements.md)。
+Java 业务后端第一版已经成型。完整产品范围见 [产品需求说明](docs/studypilot-product-requirements.md)，后端实现和接口索引见 [后端开发说明](后端开发说明.md)。
 
 ## 仓库结构
 
@@ -17,9 +17,11 @@ docs/        产品、架构、迭代与开发文档
 ## 当前技术基线
 
 - Java 17 + Spring Boot
-- Python + FastAPI（待初始化）
+- Python + FastAPI（下一阶段设计）
 - Vue 3 + TypeScript + Vite（待初始化）
-- MySQL、向量检索、Redis、Docker Compose（按迭代引入）
+- MySQL 8 + Flyway
+- Docker Compose
+- 向量检索、Redis（进入 Python/异步阶段后按需引入）
 
 ## 开发原则
 
@@ -27,6 +29,11 @@ docs/        产品、架构、迭代与开发文档
 - 每个功能以一个小的垂直切片交付：先写失败测试，再实现，再本地验证。
 - 先完成可用 MVP，再引入 Redis、向量库、GUI 自动化等增强能力。
 
-## 下一步
+## 快速验证
 
-首个迭代将实现并验证一个最小的学习目标模块，作为后续计划、任务与 Agent 工具调用的业务地基。详见 [开发路线](docs/development-roadmap.md)。
+```bash
+cd backend
+./mvnw test
+```
+
+完整容器启动方式见 [infra/README.md](infra/README.md)。下一步是基于已经稳定的 Java 业务契约设计 FastAPI Agent 服务。

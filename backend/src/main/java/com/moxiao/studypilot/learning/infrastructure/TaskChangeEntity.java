@@ -11,6 +11,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "task_changes")
@@ -31,6 +32,12 @@ public class TaskChangeEntity {
     @Column(name = "to_status", nullable = false, length = 20)
     private LearningTaskStatus toStatus;
 
+    @Column(name = "from_scheduled_date", nullable = false)
+    private LocalDate fromScheduledDate;
+
+    @Column(name = "to_scheduled_date", nullable = false)
+    private LocalDate toScheduledDate;
+
     @Column(length = 255)
     private String reason;
 
@@ -44,12 +51,16 @@ public class TaskChangeEntity {
             String taskId,
             LearningTaskStatus fromStatus,
             LearningTaskStatus toStatus,
+            LocalDate fromScheduledDate,
+            LocalDate toScheduledDate,
             String reason,
             Instant createdAt
     ) {
         this.taskId = taskId;
         this.fromStatus = fromStatus;
         this.toStatus = toStatus;
+        this.fromScheduledDate = fromScheduledDate;
+        this.toScheduledDate = toScheduledDate;
         this.reason = reason;
         this.createdAt = createdAt;
     }
@@ -64,6 +75,14 @@ public class TaskChangeEntity {
 
     public String getReason() {
         return reason;
+    }
+
+    public LocalDate getFromScheduledDate() {
+        return fromScheduledDate;
+    }
+
+    public LocalDate getToScheduledDate() {
+        return toScheduledDate;
     }
 
     public Instant getCreatedAt() {

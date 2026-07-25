@@ -66,11 +66,18 @@ public class LearningTaskService {
     ) {
         LearningTaskEntity task = requireOwnedTask(ownerId, taskId);
         Instant now = Instant.now();
-        LearningTaskStatus previous = task.changeStatus(request.status(), now);
+        LocalDate previousDate = task.getScheduledDate();
+        LearningTaskStatus previous = task.changeStatus(
+                request.status(),
+                request.scheduledDate(),
+                now
+        );
         changeRepository.save(new TaskChangeEntity(
                 taskId,
                 previous,
                 request.status(),
+                previousDate,
+                task.getScheduledDate(),
                 request.reason(),
                 now
         ));

@@ -56,6 +56,12 @@ class LearningPlanWorkflowTest {
                 .andExpect(jsonPath("$.status").value("CONFIRMED"))
                 .andExpect(jsonPath("$.version").value(2));
 
+        mockMvc.perform(get("/api/learning-plans/{id}/versions", planId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].version").value(2))
+                .andExpect(jsonPath("$[1].version").value(1));
+
         MvcResult taskResult = mockMvc.perform(post("/api/learning-plans/{id}/tasks", planId)
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -93,6 +99,33 @@ class LearningPlanWorkflowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].fromStatus").value("TODO"))
                 .andExpect(jsonPath("$[0].toStatus").value("COMPLETED"));
+
+        MvcResult deferredTask = mockMvc.perform(post("/api/learning-plans/{id}/tasks", planId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "阅读 Spring Security 文档",
+                                  "scheduledDate": "%s",
+                                  "estimatedMinutes": 45
+                                }
+                                """.formatted(tomorrow)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        mockMvc.perform(patch("/api/learning-tasks/{id}/status", readId(deferredTask))
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": "DEFERRED",
+                                  "scheduledDate": "%s",
+                                  "reason": "今天时间不足"
+                                }
+                                """.formatted(tomorrow.plusDays(2))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DEFERRED"))
+                .andExpect(jsonPath("$.scheduledDate").value(tomorrow.plusDays(2).toString()));
     }
 
     @Test

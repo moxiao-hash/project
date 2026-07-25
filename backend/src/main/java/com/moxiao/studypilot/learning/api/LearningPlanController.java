@@ -62,4 +62,14 @@ public class LearningPlanController {
     ) {
         return LearningTaskResponse.from(taskService.create(user.id(), planId, request));
     }
+
+    @GetMapping("/{planId}/versions")
+    public List<LearningPlanVersionResponse> versions(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String planId
+    ) {
+        return planService.versions(user.id(), planId).stream()
+                .map(LearningPlanVersionResponse::from)
+                .toList();
+    }
 }

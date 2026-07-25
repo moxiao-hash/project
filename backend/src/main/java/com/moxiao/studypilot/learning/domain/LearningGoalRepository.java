@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.learning.domain;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface LearningGoalRepository {
 
@@ -11,4 +12,6 @@ public interface LearningGoalRepository {
     boolean existsByIdAndOwnerId(String id, String ownerId);
 
     long countByOwnerId(String ownerId);
+
+    Optional<LearningGoal> findByIdAndOwnerId(String id, String ownerId);
 }

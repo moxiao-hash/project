@@ -1,0 +1,37 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: studypilot
+      MYSQL_USER: studypilot
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-studypilot}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-studypilot-root}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - studypilot-mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  backend:
+    build:
+      context: ../backend
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/studypilot?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
+      DB_USERNAME: studypilot
+      DB_PASSWORD: ${MYSQL_PASSWORD:-studypilot}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-local-dev-internal-token}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  studypilot-mysql-data:

@@ -73,7 +73,17 @@ public class LearningTaskEntity {
         this.updatedAt = now;
     }
 
-    public LearningTaskStatus changeStatus(LearningTaskStatus newStatus, Instant now) {
+    public LearningTaskStatus changeStatus(
+            LearningTaskStatus newStatus,
+            LocalDate newScheduledDate,
+            Instant now
+    ) {
+        if (newStatus == LearningTaskStatus.DEFERRED) {
+            if (newScheduledDate == null || newScheduledDate.isBefore(LocalDate.now())) {
+                throw new IllegalArgumentException("延期任务必须提供今天之后的安排日期");
+            }
+            scheduledDate = newScheduledDate;
+        }
         LearningTaskStatus previous = status;
         status = newStatus;
         completedAt = newStatus == LearningTaskStatus.COMPLETED ? now : null;

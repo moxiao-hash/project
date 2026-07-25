@@ -14,6 +14,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -100,6 +101,40 @@ class LearningGoalControllerTest {
                         .header("Authorization", "Bearer " + otherUserToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void updatesOwnedLearningGoal() throws Exception {
+        String token = registerUser();
+        LocalDate originalDate = LocalDate.now().plusDays(20);
+        MvcResult created = mockMvc.perform(post("/api/learning-goals")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "原目标",
+                                  "targetDate": "%s",
+                                  "weeklyStudyHours": 8
+                                }
+                                """.formatted(originalDate)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String goalId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .get("id").asText();
+
+        mockMvc.perform(patch("/api/learning-goals/{id}", goalId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "更新后的目标",
+                                  "targetDate": "%s",
+                                  "weeklyStudyHours": 12
+                                }
+                                """.formatted(originalDate.plusDays(10))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("更新后的目标"))
+                .andExpect(jsonPath("$.weeklyStudyHours").value(12));
     }
 
     private String registerUser() throws Exception {

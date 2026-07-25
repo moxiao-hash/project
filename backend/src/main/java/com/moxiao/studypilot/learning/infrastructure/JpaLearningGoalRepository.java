@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Repository
 public class JpaLearningGoalRepository implements LearningGoalRepository {
@@ -48,6 +49,11 @@ public class JpaLearningGoalRepository implements LearningGoalRepository {
     @Override
     public long countByOwnerId(String ownerId) {
         return jpaRepository.countByOwnerId(ownerId);
+    }
+
+    @Override
+    public Optional<LearningGoal> findByIdAndOwnerId(String id, String ownerId) {
+        return jpaRepository.findByIdAndOwnerId(id, ownerId).map(this::toDomain);
     }
 
     private LearningGoal toDomain(LearningGoalEntity entity) {
