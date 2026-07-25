@@ -16,13 +16,19 @@ public record LearningGoal(
     private static final int MAX_WEEKLY_STUDY_HOURS = 40;
 
     public LearningGoal(String title, LocalDate targetDate, int weeklyStudyHours) {
-        this(UUID.randomUUID(), title, targetDate, weeklyStudyHours, LearningGoalStatus.DRAFT);
+        this(
+                UUID.randomUUID(),
+                title,
+                validateNewTargetDate(targetDate),
+                weeklyStudyHours,
+                LearningGoalStatus.DRAFT
+        );
     }
 
     public LearningGoal {
         Objects.requireNonNull(id, "学习目标 ID 不能为空");
         title = validateTitle(title);
-        validateTargetDate(targetDate);
+        Objects.requireNonNull(targetDate, "截止日期不能为空");
         validateWeeklyStudyHours(weeklyStudyHours);
         Objects.requireNonNull(status, "学习目标状态不能为空");
     }
@@ -37,10 +43,11 @@ public record LearningGoal(
         return title.trim();
     }
 
-    private static void validateTargetDate(LocalDate targetDate) {
+    private static LocalDate validateNewTargetDate(LocalDate targetDate) {
         if (targetDate == null || !targetDate.isAfter(LocalDate.now())) {
             throw new IllegalArgumentException("截止日期必须晚于今天");
         }
+        return targetDate;
     }
 
     private static void validateWeeklyStudyHours(int weeklyStudyHours) {
