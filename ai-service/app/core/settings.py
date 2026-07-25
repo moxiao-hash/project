@@ -41,4 +41,3 @@ def get_settings() -> Settings:
     """创建并缓存配置，避免每个 HTTP 请求都重新读取 ``.env``。"""
 
     return Settings()
-

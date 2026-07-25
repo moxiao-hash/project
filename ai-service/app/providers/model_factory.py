@@ -22,9 +22,7 @@ def create_chat_model(settings: Settings) -> ChatOpenAI:
 
     api_key = settings.deepseek_api_key.get_secret_value()
     if not api_key:
-        raise ModelConfigurationError(
-            "尚未配置 DEEPSEEK_API_KEY，无法创建 DeepSeek 模型客户端"
-        )
+        raise ModelConfigurationError("尚未配置 DEEPSEEK_API_KEY，无法创建 DeepSeek 模型客户端")
 
     return ChatOpenAI(
         api_key=api_key,
@@ -32,4 +30,3 @@ def create_chat_model(settings: Settings) -> ChatOpenAI:
         model=settings.model_name,
         temperature=0,
     )
-

@@ -9,8 +9,8 @@ from app.core.settings import Settings, get_settings
 
 
 def require_internal_token(
+    settings: Annotated[Settings, Depends(get_settings)],
     x_internal_service_token: Annotated[str | None, Header()] = None,
-    settings: Settings = Depends(get_settings),
 ) -> None:
     """校验 Java 与 Python 共享的内部服务令牌。
 
@@ -26,4 +26,3 @@ def require_internal_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="内部服务令牌无效",
         )
-

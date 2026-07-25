@@ -56,4 +56,3 @@ def test_model_status_never_exposes_api_key() -> None:
         "configured": True,
     }
     assert "secret-key" not in response.text
-

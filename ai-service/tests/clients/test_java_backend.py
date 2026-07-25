@@ -95,4 +95,3 @@ def test_non_success_response_becomes_domain_error() -> None:
 
     with pytest.raises(JavaBackendError, match="503"):
         asyncio.run(call_client())
-

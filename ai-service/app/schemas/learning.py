@@ -87,4 +87,3 @@ class CreatePlanDraftRequest(JavaContractModel):
     title: str
     start_date: date
     end_date: date
-

@@ -26,4 +26,3 @@ def test_rejects_missing_deepseek_api_key() -> None:
 
     with pytest.raises(ModelConfigurationError, match="DEEPSEEK_API_KEY"):
         create_chat_model(settings)
-

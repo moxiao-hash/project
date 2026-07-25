@@ -34,4 +34,3 @@ async def model_status(
         model=settings.model_name,
         configured=settings.model_is_configured,
     )
-

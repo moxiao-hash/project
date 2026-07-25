@@ -80,4 +80,3 @@ class JavaBackendClient:
             ) from exc
         except httpx.RequestError as exc:
             raise JavaBackendError(f"无法连接 Java 后端: {path}") from exc
-
