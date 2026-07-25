@@ -5,8 +5,9 @@ Python 内部采用 ``snake_case``，Java JSON 采用 ``camelCase``。统一的�
 """
 
 from datetime import date, datetime
+from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
 
@@ -37,15 +38,35 @@ class LearningPlan(JavaContractModel):
     version: int
 
 
+class LearningTaskStatus(StrEnum):
+    """Java 学习任务状态的 Python 类型化表示。"""
+
+    TODO = "TODO"
+    COMPLETED = "COMPLETED"
+    SKIPPED = "SKIPPED"
+    DEFERRED = "DEFERRED"
+
+
 class LearningTask(JavaContractModel):
     id: str
     plan_id: str
     title: str
     scheduled_date: date
     estimated_minutes: int
-    status: str
+    status: LearningTaskStatus
     version: int
     completed_at: datetime | None = None
+
+
+class ChangeLearningTaskStatusRequest(JavaContractModel):
+    """Python 调用 Java 幂等任务状态工具时发送的请求。"""
+
+    owner_id: str = Field(min_length=1)
+    idempotency_key: str = Field(min_length=1, max_length=180)
+    expected_version: int = Field(ge=1)
+    status: LearningTaskStatus
+    scheduled_date: date | None = None
+    reason: str | None = Field(default=None, max_length=255)
 
 
 class Material(JavaContractModel):

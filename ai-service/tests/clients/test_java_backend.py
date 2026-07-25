@@ -4,7 +4,7 @@ from datetime import date
 
 import httpx
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.settings import Settings
@@ -47,6 +47,205 @@ def test_get_learning_context_uses_internal_contract() -> None:
 
     assert context.goals == []
     assert context.materials == []
+
+
+def test_get_learning_tasks_uses_date_and_internal_contract() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/internal/users/user-123/learning-tasks"
+        assert request.url.params["date"] == "2026-07-26"
+        assert request.headers["X-Internal-Service-Token"] == "shared-internal-token"
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "id": "task-1",
+                    "planId": "plan-789",
+                    "title": "学习 Spring MVC",
+                    "scheduledDate": "2026-07-26",
+                    "estimatedMinutes": 60,
+                    "status": "TODO",
+                    "version": 1,
+                    "completedAt": None,
+                }
+            ],
+        )
+
+    async def call_client():
+        client = JavaBackendClient(
+            build_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        return await client.get_learning_tasks(
+            "user-123",
+            target_date=date(2026, 7, 26),
+        )
+
+    tasks = asyncio.run(call_client())
+
+    assert tasks[0].id == "task-1"
+    assert tasks[0].scheduled_date == date(2026, 7, 26)
+    assert tasks[0].status == "TODO"
+
+
+def test_change_learning_task_status_sends_camel_case_idempotent_request() -> None:
+    from app.schemas.learning import (
+        ChangeLearningTaskStatusRequest,
+        LearningTaskStatus,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PATCH"
+        assert request.url.path == "/internal/learning-tasks/task-1/status"
+        assert request.headers["X-Internal-Service-Token"] == "shared-internal-token"
+        assert json.loads(request.content) == {
+            "ownerId": "user-123",
+            "idempotencyKey": "conversation-1:task-1:complete",
+            "expectedVersion": 1,
+            "status": "COMPLETED",
+            "reason": "用户明确确认完成",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": "task-1",
+                "planId": "plan-789",
+                "title": "学习 Spring MVC",
+                "scheduledDate": "2026-07-26",
+                "estimatedMinutes": 60,
+                "status": "COMPLETED",
+                "version": 2,
+                "completedAt": "2026-07-26T10:00:00Z",
+            },
+        )
+
+    async def call_client():
+        client = JavaBackendClient(
+            build_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        return await client.change_learning_task_status(
+            "task-1",
+            ChangeLearningTaskStatusRequest(
+                owner_id="user-123",
+                idempotency_key="conversation-1:task-1:complete",
+                expected_version=1,
+                status=LearningTaskStatus.COMPLETED,
+                reason="用户明确确认完成",
+            ),
+        )
+
+    task = asyncio.run(call_client())
+
+    assert task.status == LearningTaskStatus.COMPLETED
+    assert task.version == 2
+    assert task.completed_at is not None
+
+
+def test_change_learning_task_status_serializes_deferred_date() -> None:
+    from app.schemas.learning import (
+        ChangeLearningTaskStatusRequest,
+        LearningTaskStatus,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        assert body["status"] == "DEFERRED"
+        assert body["scheduledDate"] == "2026-07-28"
+        assert body["reason"] == "当天时间不足"
+        return httpx.Response(
+            200,
+            json={
+                "id": "task-1",
+                "planId": "plan-789",
+                "title": "学习 Spring MVC",
+                "scheduledDate": "2026-07-28",
+                "estimatedMinutes": 60,
+                "status": "DEFERRED",
+                "version": 2,
+                "completedAt": None,
+            },
+        )
+
+    async def call_client():
+        client = JavaBackendClient(
+            build_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        return await client.change_learning_task_status(
+            "task-1",
+            ChangeLearningTaskStatusRequest(
+                owner_id="user-123",
+                idempotency_key="conversation-1:task-1:defer",
+                expected_version=1,
+                status=LearningTaskStatus.DEFERRED,
+                scheduled_date=date(2026, 7, 28),
+                reason="当天时间不足",
+            ),
+        )
+
+    task = asyncio.run(call_client())
+
+    assert task.status == LearningTaskStatus.DEFERRED
+    assert task.scheduled_date == date(2026, 7, 28)
+
+
+def test_change_task_status_request_rejects_non_positive_version() -> None:
+    from app.schemas.learning import (
+        ChangeLearningTaskStatusRequest,
+        LearningTaskStatus,
+    )
+
+    with pytest.raises(ValidationError):
+        ChangeLearningTaskStatusRequest(
+            owner_id="user-123",
+            idempotency_key="conversation-1:task-1:complete",
+            expected_version=0,
+            status=LearningTaskStatus.COMPLETED,
+        )
+
+
+def test_change_task_status_request_rejects_empty_idempotency_key() -> None:
+    from app.schemas.learning import (
+        ChangeLearningTaskStatusRequest,
+        LearningTaskStatus,
+    )
+
+    with pytest.raises(ValidationError):
+        ChangeLearningTaskStatusRequest(
+            owner_id="user-123",
+            idempotency_key="",
+            expected_version=1,
+            status=LearningTaskStatus.COMPLETED,
+        )
+
+
+@pytest.mark.parametrize(
+    ("owner_id", "idempotency_key", "reason"),
+    [
+        ("", "valid-key", None),
+        ("user-123", "x" * 181, None),
+        ("user-123", "valid-key", "x" * 256),
+    ],
+)
+def test_change_task_status_request_enforces_java_text_limits(
+    owner_id: str,
+    idempotency_key: str,
+    reason: str | None,
+) -> None:
+    from app.schemas.learning import (
+        ChangeLearningTaskStatusRequest,
+        LearningTaskStatus,
+    )
+
+    with pytest.raises(ValidationError):
+        ChangeLearningTaskStatusRequest(
+            owner_id=owner_id,
+            idempotency_key=idempotency_key,
+            expected_version=1,
+            status=LearningTaskStatus.COMPLETED,
+            reason=reason,
+        )
 
 
 def test_create_plan_draft_sends_camel_case_json() -> None:
@@ -103,6 +302,51 @@ def test_non_success_response_becomes_domain_error() -> None:
 
     with pytest.raises(JavaBackendError, match="503"):
         asyncio.run(call_client())
+
+
+def test_java_backend_error_preserves_conflict_status_and_detail() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            409,
+            json={"detail": "任务版本已变化，请刷新任务后重新确认操作"},
+        )
+    )
+
+    async def call_client() -> None:
+        client = JavaBackendClient(build_settings(), transport=transport)
+        await client.get_learning_tasks(
+            "user-123",
+            target_date=date(2026, 7, 26),
+        )
+
+    with pytest.raises(JavaBackendError) as captured:
+        asyncio.run(call_client())
+
+    assert captured.value.status_code == 409
+    assert captured.value.detail == "任务版本已变化，请刷新任务后重新确认操作"
+    assert captured.value.path == "/internal/users/user-123/learning-tasks"
+
+
+def test_java_backend_connection_error_has_no_http_status() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    async def call_client() -> None:
+        client = JavaBackendClient(
+            build_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        await client.get_learning_tasks(
+            "user-123",
+            target_date=date(2026, 7, 26),
+        )
+
+    with pytest.raises(JavaBackendError) as captured:
+        asyncio.run(call_client())
+
+    assert captured.value.status_code is None
+    assert captured.value.detail is None
+    assert captured.value.path == "/internal/users/user-123/learning-tasks"
 
 
 def test_agent_execution_lifecycle_uses_internal_contracts() -> None:

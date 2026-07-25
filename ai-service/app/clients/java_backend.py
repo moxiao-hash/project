@@ -1,8 +1,10 @@
 """对 Spring Boot 内部工具 API 的类型化客户端。"""
 
+from datetime import date
 from typing import Any
 
 import httpx
+from pydantic import TypeAdapter
 
 from app.core.settings import Settings
 from app.schemas.agent import (
@@ -11,16 +13,35 @@ from app.schemas.agent import (
     UpdateAgentExecutionRequest,
 )
 from app.schemas.learning import (
+    ChangeLearningTaskStatusRequest,
     ConfirmedLearningPlan,
     CreateConfirmedLearningPlanRequest,
     CreatePlanDraftRequest,
     LearningContext,
     LearningPlan,
+    LearningTask,
 )
 
 
 class JavaBackendError(RuntimeError):
-    """Java 后端不可达或拒绝了内部工具请求。"""
+    """Java 后端不可达或拒绝了内部工具请求。
+
+    status_code 为 ``None`` 表示请求没有收到 HTTP 响应；有状态码时，编排层可以
+    区分参数错误、资源不存在、版本冲突和服务端异常。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        path: str,
+        status_code: int | None = None,
+        detail: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.path = path
+        self.status_code = status_code
+        self.detail = detail
 
 
 class JavaBackendClient:
@@ -51,6 +72,21 @@ class JavaBackendClient:
         )
         return LearningContext.model_validate(response.json())
 
+    async def get_learning_tasks(
+        self,
+        owner_id: str,
+        *,
+        target_date: date,
+    ) -> list[LearningTask]:
+        """读取某个用户在指定日期的任务，供 Agent 进行确定性匹配。"""
+
+        response = await self._request(
+            "GET",
+            f"/internal/users/{owner_id}/learning-tasks",
+            params={"date": target_date.isoformat()},
+        )
+        return TypeAdapter(list[LearningTask]).validate_python(response.json())
+
     async def create_plan_draft(
         self,
         request: CreatePlanDraftRequest,
@@ -63,6 +99,20 @@ class JavaBackendClient:
             json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
         )
         return LearningPlan.model_validate(response.json())
+
+    async def change_learning_task_status(
+        self,
+        task_id: str,
+        request: ChangeLearningTaskStatusRequest,
+    ) -> LearningTask:
+        """调用 Java 幂等状态工具；幂等键由上层 Agent 编排提供。"""
+
+        response = await self._request(
+            "PATCH",
+            f"/internal/learning-tasks/{task_id}/status",
+            json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
+        )
+        return LearningTask.model_validate(response.json())
 
     async def create_agent_execution(
         self,
@@ -137,8 +187,21 @@ class JavaBackendClient:
                 response.raise_for_status()
                 return response
         except httpx.HTTPStatusError as exc:
+            detail: str | None = None
+            try:
+                payload = exc.response.json()
+                if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
+                    detail = payload["detail"]
+            except ValueError:
+                detail = exc.response.text.strip() or None
             raise JavaBackendError(
-                f"Java 内部接口返回 HTTP {exc.response.status_code}: {path}"
+                f"Java 内部接口返回 HTTP {exc.response.status_code}: {path}",
+                path=path,
+                status_code=exc.response.status_code,
+                detail=detail,
             ) from exc
         except httpx.RequestError as exc:
-            raise JavaBackendError(f"无法连接 Java 后端: {path}") from exc
+            raise JavaBackendError(
+                f"无法连接 Java 后端: {path}",
+                path=path,
+            ) from exc
