@@ -112,6 +112,40 @@ class AgentGovernanceWorkflowTest {
                 .andExpect(jsonPath("$.status").value("PENDING"));
     }
 
+    @Test
+    void internalAgentCanRecordAnExplicitPlanGenerationConfirmation() throws Exception {
+        Registration registration = registerUser();
+
+        MvcResult result = createExecution("""
+                {
+                  "ownerId": "%s",
+                  "idempotencyKey": "plan-generation-confirm-%d",
+                  "executionType": "PLAN_GENERATION",
+                  "triggerType": "USER_REQUEST",
+                  "riskLevel": "HIGH",
+                  "requiredScope": "PLAN_GENERATION",
+                  "summary": "生成学习计划并等待用户确认"
+                }
+                """.formatted(registration.userId(), System.nanoTime()));
+        String executionId = readId(result);
+
+        mockMvc.perform(post("/internal/agent-executions/{id}/confirm", executionId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s"
+                                }
+                                """.formatted(registration.userId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        mockMvc.perform(get("/api/audit-logs")
+                        .header("Authorization", "Bearer " + registration.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value("EXECUTION_CONFIRMED"));
+    }
+
     private MvcResult createExecution(String body) throws Exception {
         return mockMvc.perform(post("/internal/agent-executions")
                         .header("X-Internal-Service-Token", "test-internal-token")

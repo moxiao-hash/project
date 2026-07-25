@@ -29,6 +29,20 @@ public class InternalAgentExecutionController {
         return AgentExecutionResponse.from(service.createExecution(request));
     }
 
+    /**
+     * 记录用户已经在 AI 对话中明确确认了本次高风险操作。
+     *
+     * <p>这个接口只允许携带内部服务令牌的 Python 服务调用；真正的状态转换仍由
+     * Java 领域服务完成，因此网页确认与 AI 对话确认共用同一套审计逻辑。</p>
+     */
+    @PostMapping("/{executionId}/confirm")
+    public AgentExecutionResponse confirm(
+            @PathVariable String executionId,
+            @Valid @RequestBody ConfirmAgentExecutionRequest request
+    ) {
+        return AgentExecutionResponse.from(service.confirm(request.ownerId(), executionId));
+    }
+
     @PatchMapping("/{executionId}")
     public AgentExecutionResponse update(
             @PathVariable String executionId,
