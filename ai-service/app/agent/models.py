@@ -8,7 +8,8 @@ from datetime import date
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 
 class ConversationStatus(StrEnum):
@@ -80,6 +81,8 @@ class PlannerTurn(BaseModel):
 class ConversationSnapshot(BaseModel):
     """HTTP 层可安全返回的会话快照，不暴露模型内部推理内容。"""
 
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
     conversation_id: str
     owner_id: str
     goal_id: str
@@ -88,3 +91,14 @@ class ConversationSnapshot(BaseModel):
     draft: PlanDraft | None = None
     saved_plan_id: str | None = None
     error: str | None = None
+
+
+class CreateConversationRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    owner_id: str = Field(min_length=1)
+    goal_id: str = Field(min_length=1)
+
+
+class SendMessageRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=10_000)

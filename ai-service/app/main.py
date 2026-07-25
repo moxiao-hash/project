@@ -6,6 +6,7 @@
 
 from fastapi import FastAPI
 
+from app.api.conversations import router as conversations_router
 from app.api.model_status import router as model_status_router
 
 app = FastAPI(
@@ -13,6 +14,7 @@ app = FastAPI(
     version="0.1.0",
 )
 app.include_router(model_status_router)
+app.include_router(conversations_router)
 
 
 @app.get("/health")
