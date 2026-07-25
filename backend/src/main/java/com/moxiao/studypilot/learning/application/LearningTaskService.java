@@ -2,6 +2,7 @@ package com.moxiao.studypilot.learning.application;
 
 import com.moxiao.studypilot.learning.api.ChangeTaskStatusRequest;
 import com.moxiao.studypilot.learning.api.CreateLearningTaskRequest;
+import com.moxiao.studypilot.learning.api.InternalChangeTaskStatusRequest;
 import com.moxiao.studypilot.learning.domain.LearningPlanStatus;
 import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import com.moxiao.studypilot.learning.infrastructure.LearningPlanEntity;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -65,6 +67,47 @@ public class LearningTaskService {
             ChangeTaskStatusRequest request
     ) {
         LearningTaskEntity task = requireOwnedTask(ownerId, taskId);
+        return applyStatusChange(task, request, null);
+    }
+
+    /**
+     * 执行来自 Agent 的幂等任务状态操作。
+     *
+     * <p>先校验任务归属，再查找幂等记录。重复的同一请求直接返回当前任务，不再次
+     * 增加版本和历史；相同幂等键若对应不同动作则视为冲突。</p>
+     */
+    @Transactional
+    public LearningTaskEntity changeStatusIdempotently(
+            String taskId,
+            InternalChangeTaskStatusRequest request
+    ) {
+        LearningTaskEntity task = requireOwnedTask(request.ownerId(), taskId);
+        TaskChangeEntity existing = changeRepository
+                .findByOperationIdempotencyKey(request.idempotencyKey())
+                .orElse(null);
+        if (existing != null) {
+            if (!sameOperation(existing, taskId, request)) {
+                throw new ConflictException("幂等键已被其他任务操作使用");
+            }
+            return task;
+        }
+        if (task.getVersion() != request.expectedVersion()) {
+            throw new ConflictException(
+                    "任务版本已变化，请刷新任务后重新确认操作"
+            );
+        }
+        return applyStatusChange(
+                task,
+                request.toStatusRequest(),
+                request.idempotencyKey()
+        );
+    }
+
+    private LearningTaskEntity applyStatusChange(
+            LearningTaskEntity task,
+            ChangeTaskStatusRequest request,
+            String operationIdempotencyKey
+    ) {
         Instant now = Instant.now();
         LocalDate previousDate = task.getScheduledDate();
         LearningTaskStatus previous = task.changeStatus(
@@ -73,15 +116,32 @@ public class LearningTaskService {
                 now
         );
         changeRepository.save(new TaskChangeEntity(
-                taskId,
+                task.getId(),
                 previous,
                 request.status(),
                 previousDate,
                 task.getScheduledDate(),
                 request.reason(),
+                operationIdempotencyKey,
                 now
         ));
         return task;
+    }
+
+    private boolean sameOperation(
+            TaskChangeEntity existing,
+            String taskId,
+            InternalChangeTaskStatusRequest request
+    ) {
+        boolean sameTargetDate = request.status() != LearningTaskStatus.DEFERRED
+                || Objects.equals(
+                existing.getToScheduledDate(),
+                request.scheduledDate()
+        );
+        return existing.getTaskId().equals(taskId)
+                && existing.getToStatus() == request.status()
+                && sameTargetDate
+                && Objects.equals(existing.getReason(), request.reason());
     }
 
     @Transactional(readOnly = true)

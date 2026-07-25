@@ -79,7 +79,7 @@ public class LearningTaskEntity {
             Instant now
     ) {
         if (newStatus == LearningTaskStatus.DEFERRED) {
-            if (newScheduledDate == null || newScheduledDate.isBefore(LocalDate.now())) {
+            if (newScheduledDate == null || !newScheduledDate.isAfter(LocalDate.now())) {
                 throw new IllegalArgumentException("延期任务必须提供今天之后的安排日期");
             }
             scheduledDate = newScheduledDate;

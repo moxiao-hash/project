@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -60,6 +61,22 @@ public class InternalLearningToolController {
         return taskService.list(ownerId, date).stream()
                 .map(LearningTaskResponse::from)
                 .toList();
+    }
+
+    /**
+     * 执行经过 Agent 编排层确认的任务状态操作。
+     *
+     * <p>ownerId、expectedVersion 和 idempotencyKey 都由应用服务校验，内部令牌
+     * 只能证明调用方是 Python 服务，不能代替业务层的数据归属与并发检查。</p>
+     */
+    @PatchMapping("/learning-tasks/{taskId}/status")
+    public LearningTaskResponse changeTaskStatus(
+            @PathVariable String taskId,
+            @Valid @RequestBody InternalChangeTaskStatusRequest request
+    ) {
+        return LearningTaskResponse.from(
+                taskService.changeStatusIdempotently(taskId, request)
+        );
     }
 
     @PostMapping("/learning-plans")
