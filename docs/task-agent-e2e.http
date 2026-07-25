@@ -1,0 +1,172 @@
+### StudyPilot 4.6：任务操作 Agent 真实端到端联调
+### 前置条件：
+### 1. MySQL 已启动，Spring Boot 运行于 8080。
+### 2. FastAPI 运行于 8000，且已配置 DeepSeek Key。
+### 3. 从上到下逐条执行；本文件不会修改原有 agent-api-examples.http。
+
+@javaHost = http://localhost:8080
+@aiHost = http://127.0.0.1:8000
+@internalToken = local-dev-internal-token
+@targetDate = 2026-07-26
+
+### 1. 注册独立联调用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "task-agent-{{$timestamp}}@example.com",
+  "password": "StudyPilot123!",
+  "displayName": "任务 Agent 联调用户"
+}
+
+> {%
+  client.test("注册成功", function () {
+    client.assert(response.status === 201, "注册接口应返回 201");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+  client.global.set("ownerId", response.body.user.id);
+%}
+
+### 2. 创建学习目标
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "验证任务 Agent 执行闭环",
+  "targetDate": "2026-12-31",
+  "weeklyStudyHours": 10
+}
+
+> {%
+  client.global.set("goalId", response.body.id);
+%}
+
+### 3. 通过内部契约创建一条当天任务
+POST {{javaHost}}/internal/confirmed-learning-plans
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "goalId": "{{goalId}}",
+  "idempotencyKey": "task-agent-e2e-plan-{{$timestamp}}",
+  "title": "4.6 真实联调计划",
+  "startDate": "{{targetDate}}",
+  "endDate": "{{targetDate}}",
+  "tasks": [
+    {
+      "title": "完成 4.6 真实联调任务",
+      "scheduledDate": "{{targetDate}}",
+      "estimatedMinutes": 30
+    }
+  ]
+}
+
+> {%
+  client.global.set("taskId", response.body.tasks[0].id);
+  client.global.set("initialTaskVersion", response.body.tasks[0].version);
+%}
+
+### 4. 创建任务操作会话
+POST {{aiHost}}/internal/agent/task-conversations
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "targetDate": "{{targetDate}}"
+}
+
+> {%
+  client.test("会话初始状态正确", function () {
+    client.assert(response.body.status === "COLLECTING", "初始状态应为 COLLECTING");
+  });
+  client.global.set("taskConversationId", response.body.conversationId);
+%}
+
+### 5. 自然语言选择完成任务；此时只允许生成预览
+# @timeout 5 m
+POST {{aiHost}}/internal/agent/task-conversations/{{taskConversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "我已经完成“完成 4.6 真实联调任务”，请帮我标记完成。"
+}
+
+> {%
+  client.test("只生成待确认预览", function () {
+    client.assert(response.status === 200, "预览请求应成功");
+    client.assert(response.body.status === "PREVIEW_READY", "状态应为 PREVIEW_READY");
+    client.assert(response.body.actionDraft.taskId === client.global.get("taskId"),
+      "草稿必须指向 Java 返回的真实任务");
+    client.assert(response.body.actionDraft.expectedVersion ===
+      Number(client.global.get("initialTaskVersion")), "草稿必须携带当前版本");
+  });
+  client.global.set("executionId", response.body.executionId);
+%}
+
+### 6. 确认前查询 Java：任务仍应为 TODO、version 仍应为 1
+GET {{javaHost}}/api/learning-tasks
+Authorization: Bearer {{accessToken}}
+
+### 7. 只有专用 confirm 接口能触发真实写操作
+POST {{aiHost}}/internal/agent/task-conversations/{{taskConversationId}}/confirm
+X-Internal-Service-Token: {{internalToken}}
+
+> {%
+  client.test("确认后完成任务", function () {
+    client.assert(response.status === 200, "确认接口应成功");
+    client.assert(response.body.status === "COMPLETED", "会话应进入 COMPLETED");
+    client.assert(response.body.updatedTask.id === client.global.get("taskId"),
+      "返回的任务 ID 应一致");
+    client.assert(response.body.updatedTask.status === "COMPLETED",
+      "任务状态应为 COMPLETED");
+    client.assert(response.body.updatedTask.version === 2, "任务版本应增加为 2");
+    client.assert(response.body.updatedTask.completedAt !== null, "应记录完成时间");
+  });
+%}
+
+### 8. 查询最终任务
+GET {{javaHost}}/api/learning-tasks
+Authorization: Bearer {{accessToken}}
+
+### 9. 查询任务变更历史：目标任务只能有一条记录
+GET {{javaHost}}/api/learning-tasks/{{taskId}}/history
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("任务变更历史只写入一次", function () {
+    client.assert(response.body.length === 1, "task_changes 应只有一条");
+  });
+%}
+
+### 10. 查询治理执行记录：executionId 对应状态应为 SUCCEEDED
+GET {{javaHost}}/api/agent-executions
+Authorization: Bearer {{accessToken}}
+
+### 11. 查询审计日志：应包含创建、确认和执行状态更新
+GET {{javaHost}}/api/audit-logs
+Authorization: Bearer {{accessToken}}
+
+### 12. 重复确认：应原样返回，不再次写任务
+POST {{aiHost}}/internal/agent/task-conversations/{{taskConversationId}}/confirm
+X-Internal-Service-Token: {{internalToken}}
+
+> {%
+  client.test("重复确认保持幂等", function () {
+    client.assert(response.body.status === "COMPLETED", "仍应返回 COMPLETED");
+    client.assert(response.body.updatedTask.version === 2, "版本不得再次增加");
+  });
+%}
+
+### 13. 重复确认后再次检查历史：仍然只有一条
+GET {{javaHost}}/api/learning-tasks/{{taskId}}/history
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("重复确认没有新增历史", function () {
+    client.assert(response.body.length === 1, "历史数量必须保持为 1");
+  });
+%}

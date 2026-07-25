@@ -23,16 +23,27 @@ MySQL、pytest、JUnit
 - [x] 409 版本冲突写入 FAILED 并可通过 GET 查询。
 - [x] FastAPI 暴露创建、消息、查询和确认四个内部接口。
 - [x] Java 34 个测试、Python 73 个测试和 Ruff 全部通过。
-- [ ] 提交并推送 `feat: execute confirmed task actions`。
+- [x] 提交并推送 `feat: execute confirmed task actions`（`4726994`）。
 
 ## 4.6 端到端打卡联调
 
-- [ ] 增加独立 `docs/task-agent-e2e.http`，不修改用户已有 HTTP 文件。
-- [ ] 增加跨层自动化闭环测试和任务执行客户端契约测试。
-- [ ] 启动 Spring Boot local Profile，确认 MySQL/Flyway/健康检查正常。
-- [ ] 使用真实 DeepSeek 完成任务查询、识别、预览和确认。
-- [ ] 查询 Java 任务、任务历史、AgentExecution 和审计日志。
-- [ ] 重复确认，验证版本和历史记录不再增加。
-- [ ] 记录真实联调结果、运行命令和内存会话限制。
-- [ ] 运行 Java/Python 最终全量验证。
-- [ ] 提交并推送 `test: complete task agent end-to-end workflow`。
+- [x] 增加独立 `docs/task-agent-e2e.http`，不修改用户已有 HTTP 文件。
+- [x] 增加跨层自动化闭环测试和任务执行客户端契约测试。
+- [x] 启动 Spring Boot local Profile，确认 MySQL/Flyway/健康检查正常。
+- [x] 使用真实 DeepSeek 完成任务查询、识别、预览和确认。
+- [x] 查询 Java 任务、任务历史、AgentExecution 和审计日志。
+- [x] 重复确认，验证版本和历史记录不再增加。
+- [x] 记录真实联调结果、运行命令和内存会话限制。
+- [x] 运行 Java/Python 最终全量验证：Java 34、Python 74、Ruff 全部通过。
+- [x] 提交并推送 `test: complete task agent end-to-end workflow`。
+
+真实联调记录（2026-07-26）：
+
+- MySQL schema V11，无需迁移；Spring Boot local Profile 正常启动。
+- DeepSeek 返回的任务操作经过确定性校验后进入 `PREVIEW_READY`。
+- 确认前任务为 `TODO/version 1`；确认后为 `COMPLETED/version 2` 且存在完成时间。
+- `task_changes` 数量为 1，AgentExecution 为 `SUCCEEDED`。
+- 审计动作包含创建、确认和执行状态更新；重复确认后版本和历史数量保持不变。
+- Java 启动时需要与 FastAPI 一样加载 `INTERNAL_SERVICE_TOKEN`，否则内部接口返回
+  401。
+- 会话仍由内存 Checkpointer 保存，服务重启会丢失。
