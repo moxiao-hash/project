@@ -87,3 +87,28 @@ class CreatePlanDraftRequest(JavaContractModel):
     title: str
     start_date: date
     end_date: date
+
+
+class CreateConfirmedTaskRequest(JavaContractModel):
+    """确认计划时一并写入的任务。"""
+
+    title: str
+    scheduled_date: date
+    estimated_minutes: int
+
+
+class CreateConfirmedLearningPlanRequest(JavaContractModel):
+    """原子创建已确认计划及任务的 Java 内部契约。"""
+
+    owner_id: str
+    goal_id: str
+    idempotency_key: str
+    title: str
+    start_date: date
+    end_date: date
+    tasks: list[CreateConfirmedTaskRequest]
+
+
+class ConfirmedLearningPlan(JavaContractModel):
+    plan: LearningPlan
+    tasks: list[LearningTask]

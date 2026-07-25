@@ -5,7 +5,14 @@ from typing import Any
 import httpx
 
 from app.core.settings import Settings
+from app.schemas.agent import (
+    AgentExecution,
+    CreateAgentExecutionRequest,
+    UpdateAgentExecutionRequest,
+)
 from app.schemas.learning import (
+    ConfirmedLearningPlan,
+    CreateConfirmedLearningPlanRequest,
     CreatePlanDraftRequest,
     LearningContext,
     LearningPlan,
@@ -56,6 +63,61 @@ class JavaBackendClient:
             json=request.model_dump(by_alias=True, mode="json"),
         )
         return LearningPlan.model_validate(response.json())
+
+    async def create_agent_execution(
+        self,
+        request: CreateAgentExecutionRequest,
+    ) -> AgentExecution:
+        """在真正执行高风险操作前，先创建可审计的执行记录。"""
+
+        response = await self._request(
+            "POST",
+            "/internal/agent-executions",
+            json=request.model_dump(by_alias=True, mode="json"),
+        )
+        return AgentExecution.model_validate(response.json())
+
+    async def confirm_agent_execution(
+        self,
+        execution_id: str,
+        *,
+        owner_id: str,
+    ) -> AgentExecution:
+        """把对话中的显式确认同步到 Java 治理状态机。"""
+
+        response = await self._request(
+            "POST",
+            f"/internal/agent-executions/{execution_id}/confirm",
+            json={"ownerId": owner_id},
+        )
+        return AgentExecution.model_validate(response.json())
+
+    async def update_agent_execution(
+        self,
+        execution_id: str,
+        request: UpdateAgentExecutionRequest,
+    ) -> AgentExecution:
+        """更新执行结果、失败原因和模型调用指标。"""
+
+        response = await self._request(
+            "PATCH",
+            f"/internal/agent-executions/{execution_id}",
+            json=request.model_dump(by_alias=True, mode="json"),
+        )
+        return AgentExecution.model_validate(response.json())
+
+    async def create_confirmed_learning_plan(
+        self,
+        request: CreateConfirmedLearningPlanRequest,
+    ) -> ConfirmedLearningPlan:
+        """原子保存用户确认后的计划与任务，避免只写入一半。"""
+
+        response = await self._request(
+            "POST",
+            "/internal/confirmed-learning-plans",
+            json=request.model_dump(by_alias=True, mode="json"),
+        )
+        return ConfirmedLearningPlan.model_validate(response.json())
 
     async def _request(
         self,
