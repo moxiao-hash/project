@@ -75,4 +75,10 @@ def test_deepseek_planner_builds_grounded_prompt_and_returns_structured_turn() -
     assert "不得声称已经读取资料正文" in prompt
     assert "COLLECTING" in prompt
     assert "DRAFT_READY" in prompt
+    # DeepSeek 的 json_mode 只保证 JSON 合法，不会自动看到 Pydantic schema。
+    # 提示词必须包含两种状态的完整字段示例，否则模型可能返回无法校验的字段结构。
+    assert '"status": "COLLECTING"' in prompt
+    assert '"draft": null' in prompt
+    assert '"scheduled_date": "2026-07-27"' in prompt
+    assert '"estimated_minutes": 60' in prompt
     assert len(state["messages"]) == 3
