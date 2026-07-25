@@ -40,6 +40,16 @@ public class JpaLearningGoalRepository implements LearningGoalRepository {
                 .toList();
     }
 
+    @Override
+    public boolean existsByIdAndOwnerId(String id, String ownerId) {
+        return jpaRepository.existsByIdAndOwnerId(id, ownerId);
+    }
+
+    @Override
+    public long countByOwnerId(String ownerId) {
+        return jpaRepository.countByOwnerId(ownerId);
+    }
+
     private LearningGoal toDomain(LearningGoalEntity entity) {
         return new LearningGoal(
                 UUID.fromString(entity.getId()),

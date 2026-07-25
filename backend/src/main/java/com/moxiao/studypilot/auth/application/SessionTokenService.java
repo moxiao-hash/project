@@ -39,6 +39,10 @@ public class SessionTokenService {
         return new IssuedToken(rawToken, expiresAt);
     }
 
+    public void revoke(String rawToken) {
+        sessionRepository.deleteById(hash(rawToken));
+    }
+
     public static String hash(String rawToken) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")

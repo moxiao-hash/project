@@ -57,6 +57,11 @@ public class AuthenticationService {
         return issueResponse(user);
     }
 
+    @Transactional
+    public void logout(String rawToken) {
+        sessionTokenService.revoke(rawToken);
+    }
+
     private AuthResponse issueResponse(UserAccountEntity user) {
         SessionTokenService.IssuedToken token = sessionTokenService.issue(user.getId());
         return new AuthResponse(

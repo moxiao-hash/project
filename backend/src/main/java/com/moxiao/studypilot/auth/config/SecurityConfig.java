@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.auth.config;
 
 import com.moxiao.studypilot.auth.security.BearerTokenAuthenticationFilter;
+import com.moxiao.studypilot.auth.security.InternalServiceTokenFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -17,7 +18,8 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
-            BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter
+            BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter,
+            InternalServiceTokenFilter internalServiceTokenFilter
     ) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
@@ -30,12 +32,17 @@ public class SecurityConfig {
                         )
                 )
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
+                        .requestMatchers("/internal/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(
-                        bearerTokenAuthenticationFilter,
+                        internalServiceTokenFilter,
                         UsernamePasswordAuthenticationFilter.class
+                )
+                .addFilterAfter(
+                        bearerTokenAuthenticationFilter,
+                        InternalServiceTokenFilter.class
                 )
                 .build();
     }

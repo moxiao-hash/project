@@ -1,0 +1,72 @@
+package com.moxiao.studypilot.learning.infrastructure;
+
+import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+import java.time.Instant;
+
+@Entity
+@Table(name = "task_changes")
+public class TaskChangeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(name = "task_id", nullable = false)
+    private String taskId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "from_status", nullable = false, length = 20)
+    private LearningTaskStatus fromStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "to_status", nullable = false, length = 20)
+    private LearningTaskStatus toStatus;
+
+    @Column(length = 255)
+    private String reason;
+
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
+    protected TaskChangeEntity() {
+    }
+
+    public TaskChangeEntity(
+            String taskId,
+            LearningTaskStatus fromStatus,
+            LearningTaskStatus toStatus,
+            String reason,
+            Instant createdAt
+    ) {
+        this.taskId = taskId;
+        this.fromStatus = fromStatus;
+        this.toStatus = toStatus;
+        this.reason = reason;
+        this.createdAt = createdAt;
+    }
+
+    public LearningTaskStatus getFromStatus() {
+        return fromStatus;
+    }
+
+    public LearningTaskStatus getToStatus() {
+        return toStatus;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+}
