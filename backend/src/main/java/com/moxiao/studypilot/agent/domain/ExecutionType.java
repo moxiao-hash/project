@@ -5,5 +5,6 @@ public enum ExecutionType {
     QUIZ_GENERATION,
     PLAN_GENERATION,
     PLAN_ADJUSTMENT,
+    TASK_STATUS_CHANGE,
     WEB_SEARCH
 }

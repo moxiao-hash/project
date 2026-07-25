@@ -28,6 +28,18 @@ class CreateAgentExecutionRequest(JavaContractModel):
     required_scope: Literal["PLAN_GENERATION"] = "PLAN_GENERATION"
 
 
+class CreateTaskAgentExecutionRequest(JavaContractModel):
+    """登记一次必须由用户逐次确认的任务状态修改。"""
+
+    owner_id: str
+    idempotency_key: str
+    summary: str
+    execution_type: Literal["TASK_STATUS_CHANGE"] = "TASK_STATUS_CHANGE"
+    trigger_type: Literal["USER_REQUEST"] = "USER_REQUEST"
+    risk_level: Literal["HIGH"] = "HIGH"
+    required_scope: Literal["TASK_MANAGEMENT"] = "TASK_MANAGEMENT"
+
+
 class AgentExecution(JavaContractModel):
     id: str
     idempotency_key: str

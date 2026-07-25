@@ -146,6 +146,56 @@ class AgentGovernanceWorkflowTest {
                 .andExpect(jsonPath("$[0].action").value("EXECUTION_CONFIRMED"));
     }
 
+    @Test
+    void taskStatusChangeAlwaysWaitsForExplicitConfirmationAndIsAudited() throws Exception {
+        Registration registration = registerUser();
+
+        MvcResult result = createExecution("""
+                {
+                  "ownerId": "%s",
+                  "idempotencyKey": "task-action-%d",
+                  "executionType": "TASK_STATUS_CHANGE",
+                  "triggerType": "USER_REQUEST",
+                  "riskLevel": "HIGH",
+                  "requiredScope": "TASK_MANAGEMENT",
+                  "summary": "修改学习任务状态并等待用户确认"
+                }
+                """.formatted(registration.userId(), System.nanoTime()));
+        String executionId = readId(result);
+
+        mockMvc.perform(post("/internal/agent-executions/{id}/confirm", executionId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s"
+                                }
+                                """.formatted(registration.userId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.executionType").value("TASK_STATUS_CHANGE"))
+                .andExpect(jsonPath("$.requiredScope").value("TASK_MANAGEMENT"));
+
+        mockMvc.perform(patch("/internal/agent-executions/{id}", executionId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": "SUCCEEDED",
+                                  "resultSummary": "任务状态已修改"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+
+        mockMvc.perform(get("/api/audit-logs")
+                        .header("Authorization", "Bearer " + registration.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].action").value("EXECUTION_STATUS_CHANGED"))
+                .andExpect(jsonPath("$[1].action").value("EXECUTION_CONFIRMED"))
+                .andExpect(jsonPath("$[2].action").value("EXECUTION_CREATED"));
+    }
+
     private MvcResult createExecution(String body) throws Exception {
         return mockMvc.perform(post("/internal/agent-executions")
                         .header("X-Internal-Service-Token", "test-internal-token")

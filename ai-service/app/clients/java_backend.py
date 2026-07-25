@@ -10,6 +10,7 @@ from app.core.settings import Settings
 from app.schemas.agent import (
     AgentExecution,
     CreateAgentExecutionRequest,
+    CreateTaskAgentExecutionRequest,
     UpdateAgentExecutionRequest,
 )
 from app.schemas.learning import (
@@ -116,7 +117,7 @@ class JavaBackendClient:
 
     async def create_agent_execution(
         self,
-        request: CreateAgentExecutionRequest,
+        request: CreateAgentExecutionRequest | CreateTaskAgentExecutionRequest,
     ) -> AgentExecution:
         """在真正执行高风险操作前，先创建可审计的执行记录。"""
 

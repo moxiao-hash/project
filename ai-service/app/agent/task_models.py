@@ -10,7 +10,7 @@ from typing import Self
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.schemas.learning import LearningTaskStatus
+from app.schemas.learning import JavaContractModel, LearningTaskStatus
 
 
 class TaskIntent(StrEnum):
@@ -43,7 +43,7 @@ class TaskRecognitionOutput(BaseModel):
     reply: str = Field(min_length=1, max_length=1000)
 
 
-class TaskCandidate(BaseModel):
+class TaskCandidate(JavaContractModel):
     """可以安全展示给用户的真实 Java 任务快照。"""
 
     id: str
@@ -52,7 +52,7 @@ class TaskCandidate(BaseModel):
     version: int = Field(ge=1)
 
 
-class TaskActionDraft(BaseModel):
+class TaskActionDraft(JavaContractModel):
     """等待 4.5 用户确认的任务操作草稿。"""
 
     target_status: LearningTaskStatus
