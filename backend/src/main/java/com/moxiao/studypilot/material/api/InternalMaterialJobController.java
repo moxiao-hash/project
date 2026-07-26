@@ -38,4 +38,12 @@ public class InternalMaterialJobController {
     ) {
         return service.fail(jobId, request.workerId(), request.error());
     }
+
+    @PostMapping("/{jobId}/complete")
+    public MaterialJobResponse complete(
+            @PathVariable String jobId,
+            @Valid @RequestBody CompleteMaterialJobRequest request
+    ) {
+        return service.complete(jobId, request);
+    }
 }

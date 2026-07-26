@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     java_backend_base_url: str = "http://localhost:8080"
     internal_service_token: SecretStr = SecretStr("")
     nightly_adjustment_interval_minutes: int = 15
+    material_processing_interval_seconds: int = 10
+    material_worker_id: str = "studypilot-ai-local"
 
     @property
     def model_is_configured(self) -> bool:

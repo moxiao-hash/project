@@ -7,6 +7,7 @@ import httpx
 from pydantic import TypeAdapter
 
 from app.core.settings import Settings
+from app.material.processing import ProcessingJob
 from app.schemas.agent import (
     AgentExecution,
     CreateAgentExecutionRequest,
@@ -279,6 +280,59 @@ class JavaBackendClient:
         )
         return TypeAdapter(list[NightlyAdjustmentCandidate]).validate_python(
             response.json()
+        )
+
+    async def claim_material_job(
+        self,
+        worker_id: str,
+        lease_seconds: int,
+    ) -> ProcessingJob | None:
+        try:
+            response = await self._request(
+                "POST",
+                "/internal/material-processing-jobs/claim",
+                json={"workerId": worker_id, "leaseSeconds": lease_seconds},
+            )
+        except JavaBackendError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        body = response.json()
+        return ProcessingJob(
+            job_id=body["jobId"],
+            material_id=body["materialId"],
+            owner_id=body["ownerId"],
+            title=body["title"],
+            material_type=body["materialType"],
+            category=body["category"],
+            privacy_level=body["privacyLevel"],
+            source_url=body.get("sourceUrl"),
+        )
+
+    async def download_material_content(self, material_id: str) -> bytes:
+        response = await self._request(
+            "GET",
+            f"/internal/materials/{material_id}/content",
+        )
+        return response.content
+
+    async def complete_material_job(self, job_id: str, payload: dict) -> None:
+        await self._request(
+            "POST",
+            f"/internal/material-processing-jobs/{job_id}/complete",
+            json=payload,
+        )
+
+    async def fail_material_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        error: str,
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/material-processing-jobs/{job_id}/fail",
+            json={"workerId": worker_id, "error": error},
         )
 
     async def _request(

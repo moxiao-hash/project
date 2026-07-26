@@ -1,6 +1,9 @@
 package com.moxiao.studypilot.material.application;
 
 import com.moxiao.studypilot.material.api.MaterialJobResponse;
+import com.moxiao.studypilot.material.api.CompleteMaterialJobRequest;
+import com.moxiao.studypilot.material.infrastructure.MaterialChunkEntity;
+import com.moxiao.studypilot.material.infrastructure.MaterialChunkJpaRepository;
 import com.moxiao.studypilot.material.infrastructure.MaterialEntity;
 import com.moxiao.studypilot.material.infrastructure.MaterialJpaRepository;
 import com.moxiao.studypilot.material.infrastructure.MaterialProcessingJobEntity;
@@ -17,13 +20,16 @@ public class MaterialJobService {
 
     private final MaterialProcessingJobJpaRepository jobRepository;
     private final MaterialJpaRepository materialRepository;
+    private final MaterialChunkJpaRepository chunkRepository;
 
     public MaterialJobService(
             MaterialProcessingJobJpaRepository jobRepository,
-            MaterialJpaRepository materialRepository
+            MaterialJpaRepository materialRepository,
+            MaterialChunkJpaRepository chunkRepository
     ) {
         this.jobRepository = jobRepository;
         this.materialRepository = materialRepository;
+        this.chunkRepository = chunkRepository;
     }
 
     @Transactional
@@ -61,6 +67,37 @@ public class MaterialJobService {
         if (job.getAttemptCount() >= 3) {
             material.markFailed(error, now);
         }
+        return MaterialJobResponse.from(job, material);
+    }
+
+    @Transactional
+    public MaterialJobResponse complete(
+            String jobId,
+            CompleteMaterialJobRequest request
+    ) {
+        Instant now = Instant.now();
+        MaterialProcessingJobEntity job = job(jobId);
+        job.complete(request.workerId(), now);
+        MaterialEntity material = material(job.getMaterialId());
+
+        chunkRepository.deleteAllByMaterialId(material.getId());
+        chunkRepository.saveAll(request.chunks().stream()
+                .map(chunk -> new MaterialChunkEntity(
+                        java.util.UUID.randomUUID().toString(),
+                        material.getId(),
+                        chunk.position(),
+                        chunk.text(),
+                        chunk.locator()
+                ))
+                .toList());
+        material.completeProcessing(
+                request.summary(),
+                request.tags(),
+                request.knowledgePoints(),
+                request.warnings(),
+                request.contentReference(),
+                now
+        );
         return MaterialJobResponse.from(job, material);
     }
 

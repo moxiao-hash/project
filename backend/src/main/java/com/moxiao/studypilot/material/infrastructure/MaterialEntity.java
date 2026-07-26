@@ -88,6 +88,15 @@ public class MaterialEntity {
     @Column(name = "knowledge_point", nullable = false, length = 180)
     private List<String> knowledgePoints = new ArrayList<>();
 
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "material_processing_warnings",
+            joinColumns = @JoinColumn(name = "material_id")
+    )
+    @OrderColumn(name = "position")
+    @Column(name = "warning", nullable = false, length = 500)
+    private List<String> processingWarnings = new ArrayList<>();
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -163,6 +172,24 @@ public class MaterialEntity {
         this.updatedAt = now;
     }
 
+    public void completeProcessing(
+            String summary,
+            List<String> tags,
+            List<String> knowledgePoints,
+            List<String> warnings,
+            String contentReference,
+            Instant now
+    ) {
+        processingStatus = MaterialProcessingStatus.READY;
+        this.summary = summary;
+        this.tags = new ArrayList<>(tags);
+        this.knowledgePoints = new ArrayList<>(knowledgePoints);
+        processingWarnings = new ArrayList<>(warnings);
+        this.contentReference = contentReference;
+        failureReason = null;
+        updatedAt = now;
+    }
+
     public String getId() {
         return id;
     }
@@ -229,5 +256,9 @@ public class MaterialEntity {
 
     public List<String> getKnowledgePoints() {
         return List.copyOf(knowledgePoints);
+    }
+
+    public List<String> getProcessingWarnings() {
+        return List.copyOf(processingWarnings);
     }
 }

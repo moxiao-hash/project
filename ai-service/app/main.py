@@ -18,7 +18,9 @@ from app.api.plan_adjustments import router as plan_adjustments_router
 from app.api.task_conversations import router as task_conversations_router
 from app.clients.java_backend import JavaBackendClient
 from app.core.settings import get_settings
-from app.providers.model_factory import ModelConfigurationError
+from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
+from app.material.processing import MaterialProcessingService
+from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
 
 logger = logging.getLogger(__name__)
@@ -38,6 +40,24 @@ async def run_nightly_adjustment_job() -> None:
         logger.exception("夜间计划调整任务执行失败")
 
 
+async def run_material_processing_job() -> None:
+    """领取至多一个持久化资料任务，避免一次轮询长时间占用事件循环。"""
+
+    settings = get_settings()
+    try:
+        cloud_analyzer = DeepSeekMaterialAnalyzer(create_chat_model(settings))
+        service = MaterialProcessingService(
+            JavaBackendClient(settings),
+            MaterialAnalyzer(cloud_analyzer),
+            worker_id=settings.material_worker_id,
+        )
+        await service.process_once()
+    except ModelConfigurationError:
+        logger.warning("未配置模型，暂不处理普通资料")
+    except Exception:
+        logger.exception("资料处理任务执行失败")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
@@ -47,6 +67,15 @@ async def lifespan(_: FastAPI):
         "interval",
         minutes=settings.nightly_adjustment_interval_minutes,
         id="nightly-plan-adjustments",
+        coalesce=True,
+        max_instances=1,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_material_processing_job,
+        "interval",
+        seconds=settings.material_processing_interval_seconds,
+        id="material-processing",
         coalesce=True,
         max_instances=1,
         replace_existing=True,

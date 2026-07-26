@@ -77,6 +77,15 @@ public class MaterialProcessingJobEntity {
         updatedAt = now;
     }
 
+    public void complete(String workerId, Instant now) {
+        requireLeaseOwner(workerId);
+        status = MaterialJobStatus.COMPLETED;
+        this.workerId = null;
+        leaseExpiresAt = null;
+        lastError = null;
+        updatedAt = now;
+    }
+
     private void requireLeaseOwner(String workerId) {
         if (status != MaterialJobStatus.LEASED || !workerId.equals(this.workerId)) {
             throw new IllegalArgumentException("处理任务租约不属于当前 Worker");

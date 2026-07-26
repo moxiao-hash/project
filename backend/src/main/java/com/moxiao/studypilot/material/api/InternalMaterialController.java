@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
 
 @RestController
 @RequestMapping("/internal/materials")
@@ -38,5 +39,12 @@ public class InternalMaterialController {
                         mediaType == null ? "application/octet-stream" : mediaType
                 )
                 .body(service.loadContent(materialId));
+    }
+
+    @GetMapping("/{materialId}/chunks")
+    public List<MaterialChunkResponse> chunks(@PathVariable String materialId) {
+        return service.chunks(materialId).stream()
+                .map(MaterialChunkResponse::from)
+                .toList();
     }
 }

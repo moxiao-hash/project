@@ -22,6 +22,7 @@ public record MaterialResponse(
         String summary,
         List<String> tags,
         List<String> knowledgePoints,
+        List<String> processingWarnings,
         String contentReference,
         String failureReason
 ) {
@@ -40,6 +41,7 @@ public record MaterialResponse(
                 entity.getSummary(),
                 entity.getTags(),
                 entity.getKnowledgePoints(),
+                entity.getProcessingWarnings(),
                 entity.getContentReference(),
                 entity.getFailureReason()
         );

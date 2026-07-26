@@ -8,6 +8,8 @@ import com.moxiao.studypilot.material.domain.MaterialCategory;
 import com.moxiao.studypilot.material.domain.MaterialType;
 import com.moxiao.studypilot.material.infrastructure.MaterialEntity;
 import com.moxiao.studypilot.material.infrastructure.MaterialJpaRepository;
+import com.moxiao.studypilot.material.infrastructure.MaterialChunkEntity;
+import com.moxiao.studypilot.material.infrastructure.MaterialChunkJpaRepository;
 import com.moxiao.studypilot.material.infrastructure.MaterialProcessingJobEntity;
 import com.moxiao.studypilot.material.infrastructure.MaterialProcessingJobJpaRepository;
 import com.moxiao.studypilot.material.infrastructure.LocalMaterialStorage;
@@ -35,15 +37,18 @@ public class MaterialService {
     private final MaterialJpaRepository repository;
     private final MaterialProcessingJobJpaRepository jobRepository;
     private final LocalMaterialStorage storage;
+    private final MaterialChunkJpaRepository chunkRepository;
 
     public MaterialService(
             MaterialJpaRepository repository,
             MaterialProcessingJobJpaRepository jobRepository,
-            LocalMaterialStorage storage
+            LocalMaterialStorage storage,
+            MaterialChunkJpaRepository chunkRepository
     ) {
         this.repository = repository;
         this.jobRepository = jobRepository;
         this.storage = storage;
+        this.chunkRepository = chunkRepository;
     }
 
     @Transactional
@@ -173,6 +178,12 @@ public class MaterialService {
             throw new IllegalArgumentException("网页资料需要由处理器安全抓取");
         }
         return storage.load(material.getStorageKey());
+    }
+
+    @Transactional(readOnly = true)
+    public List<MaterialChunkEntity> chunks(String materialId) {
+        getInternal(materialId);
+        return chunkRepository.findAllByMaterialIdOrderByPosition(materialId);
     }
 
     @Transactional
