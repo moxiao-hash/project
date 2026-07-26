@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     nightly_adjustment_interval_minutes: int = 15
     material_processing_interval_seconds: int = 10
     material_worker_id: str = "studypilot-ai-local"
+    qdrant_path: str = "./data/qdrant"
 
     @property
     def model_is_configured(self) -> bool:

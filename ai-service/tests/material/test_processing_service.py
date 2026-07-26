@@ -39,10 +39,24 @@ class StubAnalyzer:
         )
 
 
+class RecordingIndex:
+    def __init__(self) -> None:
+        self.material_id: str | None = None
+
+    def upsert(self, material, chunks) -> None:
+        self.material_id = material.material_id
+
+
 @pytest.mark.anyio
 async def test_claims_parses_and_completes_one_material_job() -> None:
     backend = FakeBackend()
-    service = MaterialProcessingService(backend, StubAnalyzer(), worker_id="worker-test")
+    index = RecordingIndex()
+    service = MaterialProcessingService(
+        backend,
+        StubAnalyzer(),
+        worker_id="worker-test",
+        index=index,
+    )
 
     processed = await service.process_once()
 
@@ -52,6 +66,8 @@ async def test_claims_parses_and_completes_one_material_job() -> None:
     assert backend.completed["workerId"] == "worker-test"
     assert backend.completed["summary"] == "依赖注入摘要"
     assert backend.completed["chunks"][0]["locator"] == "正文 / chunk 1"
+    assert backend.completed["contentReference"] == "qdrant://material-1"
+    assert index.material_id == "material-1"
 
 
 @pytest.mark.anyio

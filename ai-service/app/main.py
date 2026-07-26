@@ -21,9 +21,11 @@ from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
 from app.material.processing import MaterialProcessingService
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
+from app.retrieval.hybrid_index import QdrantHybridIndex
 from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
 
 logger = logging.getLogger(__name__)
+_material_processing_service: MaterialProcessingService | None = None
 
 
 async def run_nightly_adjustment_job() -> None:
@@ -44,14 +46,17 @@ async def run_material_processing_job() -> None:
     """领取至多一个持久化资料任务，避免一次轮询长时间占用事件循环。"""
 
     settings = get_settings()
+    global _material_processing_service
     try:
-        cloud_analyzer = DeepSeekMaterialAnalyzer(create_chat_model(settings))
-        service = MaterialProcessingService(
-            JavaBackendClient(settings),
-            MaterialAnalyzer(cloud_analyzer),
-            worker_id=settings.material_worker_id,
-        )
-        await service.process_once()
+        if _material_processing_service is None:
+            cloud_analyzer = DeepSeekMaterialAnalyzer(create_chat_model(settings))
+            _material_processing_service = MaterialProcessingService(
+                JavaBackendClient(settings),
+                MaterialAnalyzer(cloud_analyzer),
+                worker_id=settings.material_worker_id,
+                index=QdrantHybridIndex.persistent(settings.qdrant_path),
+            )
+        await _material_processing_service.process_once()
     except ModelConfigurationError:
         logger.warning("未配置模型，暂不处理普通资料")
     except Exception:
