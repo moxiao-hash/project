@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from app.agent.grounding import PlanGroundingService
 from app.agent.models import (
     ConversationSnapshot,
     CreateConversationRequest,
@@ -22,6 +23,10 @@ from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
+from app.retrieval.async_retriever import AsyncHybridRetriever
+from app.retrieval.factory import get_hybrid_index
+from app.search.service import WebSearchService
+from app.search.tavily import TavilySearchClient
 
 router = APIRouter(
     prefix="/internal/agent/conversations",
@@ -49,6 +54,16 @@ def get_conversation_service(
     service = ConversationService(
         DeepSeekPlanner(model),
         JavaBackendClient(settings),
+        PlanGroundingService(
+            AsyncHybridRetriever(get_hybrid_index(settings.qdrant_path)),
+            WebSearchService(
+                TavilySearchClient(
+                    settings.tavily_api_key,
+                    base_url=settings.tavily_base_url,
+                ),
+                JavaBackendClient(settings),
+            ),
+        ),
     )
     request.app.state.conversation_service = service
     return service

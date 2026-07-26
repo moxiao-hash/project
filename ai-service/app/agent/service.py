@@ -9,6 +9,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 
 from app.agent.graph import build_learning_plan_graph
+from app.agent.grounding import PlanGrounding, PlanGroundingService
 from app.agent.models import ConversationSnapshot, ConversationStatus, PlanDraft
 from app.agent.planner import PlanTurnGenerator
 from app.clients.java_backend import JavaBackendClient
@@ -46,9 +47,11 @@ class ConversationService:
         self,
         planner: PlanTurnGenerator,
         java_backend: JavaBackendClient,
+        grounding: PlanGroundingService | None = None,
     ) -> None:
         self._java_backend = java_backend
         self._graph = build_learning_plan_graph(planner, java_backend)
+        self._grounding = grounding
         self._conversations: dict[str, _Conversation] = {}
 
     async def create_conversation(
@@ -84,10 +87,25 @@ class ConversationService:
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             raise InvalidConversationStateError("已完成的会话不能继续发送消息")
 
+        grounding = await self._retrieve_grounding(conversation, message)
+        grounding_update = {
+            "knowledge_context": grounding.context,
+            "citations": [
+                citation.model_dump(by_alias=True, mode="json")
+                for citation in grounding.citations
+            ],
+            "warnings": grounding.warnings,
+        }
         if conversation.snapshot.status == ConversationStatus.DRAFT_READY:
-            graph_input: dict | Command = Command(resume={"action": "revise", "feedback": message})
+            graph_input: dict | Command = Command(
+                resume={"action": "revise", "feedback": message},
+                update=grounding_update,
+            )
         elif conversation.started:
-            graph_input = {"messages": [HumanMessage(content=message)]}
+            graph_input = {
+                "messages": [HumanMessage(content=message)],
+                **grounding_update,
+            }
         else:
             graph_input = {
                 "conversation_id": conversation_id,
@@ -96,6 +114,7 @@ class ConversationService:
                 "messages": [HumanMessage(content=message)],
                 "learning_context": conversation.context.model_dump(mode="json"),
                 "status": ConversationStatus.COLLECTING.value,
+                **grounding_update,
             }
 
         result = await self._invoke(conversation_id, conversation, graph_input)
@@ -149,7 +168,24 @@ class ConversationService:
             draft=PlanDraft.model_validate(draft_data) if draft_data else None,
             saved_plan_id=values.get("saved_plan_id"),
             error=values.get("error"),
+            citations=values.get("citations", previous.citations),
+            warnings=values.get("warnings", previous.warnings),
         )
+
+    async def _retrieve_grounding(
+        self,
+        conversation: _Conversation,
+        message: str,
+    ) -> PlanGrounding:
+        if self._grounding is None:
+            return PlanGrounding()
+        goal = next(
+            goal
+            for goal in conversation.context.goals
+            if goal.id == conversation.snapshot.goal_id
+        )
+        query = f"{goal.title}\n{message}"
+        return await self._grounding.retrieve(conversation.snapshot.owner_id, query)
 
     def _require(self, conversation_id: str) -> _Conversation:
         try:

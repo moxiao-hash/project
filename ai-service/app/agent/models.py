@@ -11,6 +11,8 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from app.knowledge.models import KnowledgeCitation
+
 
 class ConversationStatus(StrEnum):
     """一次学习计划对话在 Python 编排层的生命周期。"""
@@ -90,6 +92,8 @@ class ConversationSnapshot(BaseModel):
     draft: PlanDraft | None = None
     saved_plan_id: str | None = None
     error: str | None = None
+    citations: list[KnowledgeCitation] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class CreateConversationRequest(BaseModel):

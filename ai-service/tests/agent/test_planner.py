@@ -58,6 +58,21 @@ def test_deepseek_planner_builds_grounded_prompt_and_returns_structured_turn() -
             "mastery": [],
         },
         "goal_id": "goal-1",
+        "knowledge_context": [
+            {
+                "source_type": "MATERIAL",
+                "category": "SYLLABUS",
+                "title": "Java 课程大纲",
+                "locator": "第 1 章",
+                "text": "必须先完成 Java 基础，再进入 Spring Boot。",
+            },
+            {
+                "source_type": "WEB",
+                "title": "Spring Boot 官方文档",
+                "url": "https://spring.io/projects/spring-boot",
+                "text": "当前版本至少需要 Java 17。",
+            },
+        ],
     }
 
     turn = asyncio.run(planner.generate(state))
@@ -73,6 +88,10 @@ def test_deepseek_planner_builds_grounded_prompt_and_returns_structured_turn() -
     assert "Spring Boot 入门" in prompt
     assert "Java 笔记" in prompt
     assert "不得声称已经读取资料正文" in prompt
+    assert "用户当前约束 > SYLLABUS" in prompt
+    assert "必须先完成 Java 基础" in prompt
+    assert "当前版本至少需要 Java 17" in prompt
+    assert "来源冲突" in prompt
     assert "COLLECTING" in prompt
     assert "DRAFT_READY" in prompt
     # DeepSeek 的 json_mode 只保证 JSON 合法，不会自动看到 Pydantic schema。

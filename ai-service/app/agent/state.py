@@ -12,6 +12,9 @@ class ConversationState(TypedDict, total=False):
     goal_id: str
     messages: Annotated[list[AnyMessage], add_messages]
     learning_context: dict[str, Any]
+    knowledge_context: list[dict[str, Any]]
+    citations: list[dict[str, Any]]
+    warnings: list[str]
     status: str
     reply: str
     draft: dict[str, Any] | None

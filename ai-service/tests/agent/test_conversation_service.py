@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.agent.grounding import PlanGrounding
 from app.agent.models import (
     ConversationStatus,
     PlanDraft,
@@ -12,6 +13,7 @@ from app.agent.models import (
     PlanTaskDraft,
 )
 from app.agent.service import ConversationService, GoalNotFoundError
+from app.knowledge.models import KnowledgeCitation
 from app.schemas.learning import (
     LearningContext,
     LearningGoal,
@@ -167,3 +169,51 @@ def test_draft_can_be_revised_and_only_explicit_confirmation_persists_it() -> No
         "RUNNING",
         "SUCCEEDED",
     ]
+
+
+def test_plan_conversation_retrieves_grounding_on_every_user_turn() -> None:
+    planner = FakePlanner([collecting("还需要时间约束"), ready(60)])
+    java = FakeJavaBackend()
+
+    class FakeGroundingProvider:
+        def __init__(self) -> None:
+            self.queries = []
+
+        async def retrieve(self, owner_id: str, query: str) -> PlanGrounding:
+            self.queries.append((owner_id, query))
+            return PlanGrounding(
+                context=[
+                    {
+                        "source_type": "MATERIAL",
+                        "category": "SYLLABUS",
+                        "title": "课程大纲",
+                        "locator": "第 1 章",
+                        "text": "先 Java 基础，后 Spring Boot",
+                    }
+                ],
+                citations=[
+                    KnowledgeCitation(
+                        source_type="MATERIAL",
+                        material_id="material-1",
+                        title="课程大纲",
+                        locator="第 1 章",
+                        snippet="先 Java 基础，后 Spring Boot",
+                    )
+                ],
+            )
+
+    grounding = FakeGroundingProvider()
+    service = ConversationService(planner, java, grounding)
+
+    async def run_flow():
+        conversation = await service.create_conversation("user-1", "goal-1")
+        first = await service.send_message(conversation.conversation_id, "请按课程路线规划")
+        second = await service.send_message(conversation.conversation_id, "每天 60 分钟")
+        return first, second
+
+    first, second = asyncio.run(run_flow())
+
+    assert len(grounding.queries) == 2
+    assert "年底掌握 Java 智能应用开发" in grounding.queries[0][1]
+    assert first.citations[0].title == "课程大纲"
+    assert second.citations[0].locator == "第 1 章"

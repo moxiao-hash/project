@@ -1,0 +1,239 @@
+### StudyPilot 阶段 6：资料 RAG 与联网搜索端到端联调
+### 前置条件：
+### 1. MySQL、Spring Boot(:8080) 和 FastAPI(:8000) 已启动。
+### 2. 两端 INTERNAL_SERVICE_TOKEN 相同，DeepSeek 已配置。
+### 3. 若要验证真实联网与网页入库，ai-service/.env 还需配置 TAVILY_API_KEY。
+### 4. FastEmbed 首次建立索引会下载约 220 MB 模型，请为首次解析预留时间。
+### 5. DOCX/PDF 请求中的绝对路径请替换为你电脑上的真实测试文件。
+
+@javaHost = http://localhost:8080
+@aiHost = http://127.0.0.1:8000
+@internalToken = local-dev-internal-token
+
+### 1. 注册独立联调用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "material-rag-{{$timestamp}}@example.com",
+  "password": "StudyPilot123!",
+  "displayName": "资料 RAG 联调用户"
+}
+
+> {%
+  client.test("注册成功", function () {
+    client.assert(response.status === 201, "注册接口应返回 201");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+  client.global.set("ownerId", response.body.user.id);
+%}
+
+### 2. 导入学习大纲（可直接执行，用于验证优先级）
+POST {{javaHost}}/api/materials/text
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Java + AI 课程大纲",
+  "content": "第一章 Java 基础与面向对象。第二章 Spring Boot REST API。第三章 FastAPI 与 Java 通信。第四章 RAG 检索增强生成。学习顺序必须依次进行。",
+  "category": "SYLLABUS",
+  "privacyLevel": "NORMAL"
+}
+
+> {%
+  client.test("大纲已进入异步队列", function () {
+    client.assert(response.status === 201, "导入接口应返回 201");
+    client.assert(response.body.processingStatus === "PENDING", "初始状态应为 PENDING");
+  });
+  client.global.set("syllabusMaterialId", response.body.id);
+%}
+
+### 3A. 上传 DOCX（将路径替换为真实文件后执行）
+POST {{javaHost}}/api/materials/files
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=StudyPilotBoundary
+
+--StudyPilotBoundary
+Content-Disposition: form-data; name="title"
+
+Spring Boot DOCX 笔记
+--StudyPilotBoundary
+Content-Disposition: form-data; name="category"
+
+LEARNING_MATERIAL
+--StudyPilotBoundary
+Content-Disposition: form-data; name="privacyLevel"
+
+NORMAL
+--StudyPilotBoundary
+Content-Disposition: form-data; name="file"; filename="spring-notes.docx"
+Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document
+
+< /请替换为真实绝对路径/spring-notes.docx
+--StudyPilotBoundary--
+
+### 3B. 上传可提取文本的 PDF（扫描 PDF 会明确返回“需要 OCR”）
+POST {{javaHost}}/api/materials/files
+Authorization: Bearer {{accessToken}}
+Content-Type: multipart/form-data; boundary=StudyPilotBoundary
+
+--StudyPilotBoundary
+Content-Disposition: form-data; name="title"
+
+Java PDF 讲义
+--StudyPilotBoundary
+Content-Disposition: form-data; name="category"
+
+LEARNING_MATERIAL
+--StudyPilotBoundary
+Content-Disposition: form-data; name="privacyLevel"
+
+NORMAL
+--StudyPilotBoundary
+Content-Disposition: form-data; name="file"; filename="java-guide.pdf"
+Content-Type: application/pdf
+
+< /请替换为真实绝对路径/java-guide.pdf
+--StudyPilotBoundary--
+
+### 4. 轮询大纲；等待 Python 领取、解析、分段、Embedding 后变为 READY
+GET {{javaHost}}/api/materials/{{syllabusMaterialId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("资料解析完成", function () {
+    client.assert(response.body.processingStatus === "READY",
+      "若仍为 PROCESSING/PENDING，请等待数秒后重试");
+  });
+%}
+
+### 5. 创建知识会话
+POST {{aiHost}}/internal/knowledge/conversations
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "mode": "AUTO"
+}
+
+> {%
+  client.global.set("knowledgeConversationId", response.body.conversationId);
+%}
+
+### 6. 根据本地大纲问答，应返回 MATERIAL 引用
+# @timeout 2 m
+POST {{aiHost}}/internal/knowledge/conversations/{{knowledgeConversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "按照我的课程大纲，Java + AI 应该按什么顺序学习？",
+  "webSearch": "DISABLED"
+}
+
+> {%
+  client.test("本地问答有可追溯引用", function () {
+    client.assert(response.body.citations.some(item => item.sourceType === "MATERIAL"),
+      "应至少返回一条 MATERIAL 引用");
+  });
+%}
+
+### 7. 连续追问；同一会话会携带可见历史并重新检索
+# @timeout 2 m
+POST {{aiHost}}/internal/knowledge/conversations/{{knowledgeConversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "其中第二步我具体需要掌握什么？",
+  "webSearch": "DISABLED"
+}
+
+### 8. 时效问题触发 Tavily；未配置 Key 时 warnings 必须明确说明降级
+# @timeout 2 m
+POST {{aiHost}}/internal/knowledge/conversations/{{knowledgeConversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "Spring Boot 当前官方版本推荐使用哪个 Java 版本？",
+  "webSearch": "AUTO"
+}
+
+> {%
+  client.test("联网结果真实或明确降级", function () {
+    const hasWeb = response.body.citations.some(item => item.sourceType === "WEB");
+    client.assert(hasWeb || response.body.warnings.length > 0,
+      "无 WEB 引用时必须返回降级警告");
+  });
+  const web = response.body.citations.find(item => item.sourceType === "WEB");
+  if (web) {
+    client.global.set("webResultId", web.resultId);
+  }
+%}
+
+### 9. 用户确认后才把搜索结果导入资料库（第 8 步有 WEB 引用时执行）
+POST {{javaHost}}/api/web-search-results/{{webResultId}}/import
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "category": "REFERENCE",
+  "privacyLevel": "NORMAL"
+}
+
+> {%
+  client.global.set("webMaterialId", response.body.id);
+%}
+
+### 10. 创建学习目标，准备验证计划增强
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "年底完成 Java + AI 智能学习助手",
+  "targetDate": "2026-12-31",
+  "weeklyStudyHours": 10
+}
+
+> {%
+  client.global.set("goalId", response.body.id);
+%}
+
+### 11. 创建计划会话
+POST {{aiHost}}/internal/agent/conversations
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "goalId": "{{goalId}}"
+}
+
+> {%
+  client.global.set("planConversationId", response.body.conversationId);
+%}
+
+### 12. 请求生成计划；响应 citations 应包含课程大纲
+# @timeout 2 m
+POST {{aiHost}}/internal/agent/conversations/{{planConversationId}}/messages
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "message": "从 2026-07-27 开始安排一周，每天 60 分钟，周末各 150 分钟。严格按照我的课程大纲顺序，先完成 Java 基础。"
+}
+
+> {%
+  client.test("计划使用了检索来源", function () {
+    client.assert(response.body.citations.some(item =>
+      item.sourceType === "MATERIAL" && item.title.includes("课程大纲")),
+      "计划草稿应返回大纲引用");
+  });
+%}
+
+### 13. 查询所有资料，核对 READY/FAILED 状态和解析摘要
+GET {{javaHost}}/api/materials
+Authorization: Bearer {{accessToken}}

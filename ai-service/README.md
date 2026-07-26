@@ -13,10 +13,14 @@ FastAPI AI 服务负责模型调用、Agent 工作流和检索编排。用户、
 - 使用 LangGraph 保存同一 `conversationId` 的多轮上下文。
 - 使用 Pydantic 约束模型输出，生成可编辑的学习计划与任务草稿。
 - 在用户显式确认前暂停工作流；确认后由 Java 原子保存计划和任务并记录审计。
+- 异步解析 TXT、Markdown、DOCX、可复制文本的 PDF 和安全公网网页。
+- 使用 FastEmbed 与本地 Qdrant 完成 dense + BM25 + RRF 混合检索。
+- 使用 Tavily 搜索时效资料，返回可追溯来源；搜索结果需确认后才进入资料库。
+- 提供多轮知识问答，并用大纲、资料和网页证据增强学习计划。
+- `SENSITIVE`、`LOCAL_ONLY` 正文不会发送给 DeepSeek 或 Tavily。
 - 自动化测试不会调用付费模型 API。
 
-当前只处理文本。普通 TXT、Markdown、网页正文、可复制文字的 PDF 和 Word 会在后续
-资料解析迭代接入；扫描 PDF、图片理解和 OCR 暂不实现。
+当前只处理文本；扫描 PDF、图片理解和 OCR 暂不实现。
 
 ## 1. 准备 Python
 
@@ -57,6 +61,8 @@ DEEPSEEK_API_KEY=填写你自己的Key
 
 JAVA_BACKEND_BASE_URL=http://localhost:8080
 INTERNAL_SERVICE_TOKEN=local-dev-internal-token
+TAVILY_API_KEY=填写你自己的Key
+QDRANT_PATH=./data/qdrant
 ```
 
 Java 启动时的 `INTERNAL_SERVICE_TOKEN` 必须与 Python 相同。`.env` 已被根目录
@@ -114,7 +120,25 @@ POST /internal/agent/conversations/{conversationId}/confirm
 当前使用 `InMemorySaver` 保存上下文，因此 Python 进程重启后会话失效。这是第一版
 有意保留的限制；后续可以换成数据库 Checkpointer，而不改变会话 API。
 
-## 5. 测试与代码检查
+## 5. 资料处理与知识问答
+
+Java 把导入资料写入本地存储和 MySQL 任务表；FastAPI 默认每 10 秒领取一个任务，
+完成解析、分段、摘要和本地向量化。首次运行 FastEmbed 会下载约 220 MB 模型。
+本地 Qdrant 采用单进程共享客户端，数据目录不会提交 Git。
+
+知识会话 API：
+
+```text
+POST /internal/knowledge/conversations
+POST /internal/knowledge/conversations/{conversationId}/messages
+GET  /internal/knowledge/conversations/{conversationId}
+```
+
+`webSearch` 可取 `AUTO`、`ENABLED`、`DISABLED`。Tavily Key 缺失或调用失败时接口
+不会伪造联网结果，而是在 `warnings` 中说明降级。完整联调顺序见
+[`../docs/material-rag-e2e.http`](../docs/material-rag-e2e.http)。
+
+## 6. 测试与代码检查
 
 ```bash
 .venv/bin/python -m ruff format --check app tests
@@ -137,3 +161,7 @@ POST /internal/agent/conversations/{conversationId}/confirm
 8. `app/agent/service.py`：会话 ID、上下文隔离和并发控制。
 9. `app/api/conversations.py`：HTTP 接口和异常映射。
 10. `app/clients/java_backend.py`：Python 如何通过受控接口操作 Java 业务能力。
+11. `app/material/`：各格式解析、分段、隐私路由与任务处理。
+12. `app/retrieval/`：FastEmbed、Qdrant、owner 过滤和 RRF 混合检索。
+13. `app/search/`：Tavily、来源持久化和安全网页抓取。
+14. `app/knowledge/`：多轮问答、联网策略、引用与隐私降级。
