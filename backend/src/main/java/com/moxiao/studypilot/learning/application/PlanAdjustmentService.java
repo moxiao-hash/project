@@ -8,8 +8,10 @@ import com.moxiao.studypilot.agent.domain.ExecutionType;
 import com.moxiao.studypilot.agent.domain.RiskLevel;
 import com.moxiao.studypilot.agent.infrastructure.AgentExecutionEntity;
 import com.moxiao.studypilot.agent.infrastructure.AgentExecutionJpaRepository;
+import com.moxiao.studypilot.auth.infrastructure.UserAccountJpaRepository;
 import com.moxiao.studypilot.learning.api.CreatePlanAdjustmentRequest;
 import com.moxiao.studypilot.learning.api.ExecutePlanAdjustmentRequest;
+import com.moxiao.studypilot.learning.api.NightlyAdjustmentCandidateResponse;
 import com.moxiao.studypilot.learning.domain.AdjustmentOperationType;
 import com.moxiao.studypilot.learning.domain.LearningGoal;
 import com.moxiao.studypilot.learning.domain.LearningPlanStatus;
@@ -29,12 +31,15 @@ import com.moxiao.studypilot.notification.application.NotificationService;
 import com.moxiao.studypilot.notification.domain.NotificationType;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
+import com.moxiao.studypilot.user.infrastructure.UserSettingsJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.DateTimeException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -54,6 +59,8 @@ public class PlanAdjustmentService {
     private final AgentExecutionJpaRepository executionRepository;
     private final AgentGovernanceService governanceService;
     private final NotificationService notificationService;
+    private final UserAccountJpaRepository userRepository;
+    private final UserSettingsJpaRepository settingsRepository;
     private final ObjectMapper objectMapper;
 
     public PlanAdjustmentService(
@@ -65,6 +72,8 @@ public class PlanAdjustmentService {
             AgentExecutionJpaRepository executionRepository,
             AgentGovernanceService governanceService,
             NotificationService notificationService,
+            UserAccountJpaRepository userRepository,
+            UserSettingsJpaRepository settingsRepository,
             ObjectMapper objectMapper
     ) {
         this.adjustmentRepository = adjustmentRepository;
@@ -75,6 +84,8 @@ public class PlanAdjustmentService {
         this.executionRepository = executionRepository;
         this.governanceService = governanceService;
         this.notificationService = notificationService;
+        this.userRepository = userRepository;
+        this.settingsRepository = settingsRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -125,6 +136,44 @@ public class PlanAdjustmentService {
     public PlanAdjustmentEntity get(String adjustmentId) {
         return adjustmentRepository.findById(adjustmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("计划调整不存在"));
+    }
+
+    @Transactional(readOnly = true)
+    public List<NightlyAdjustmentCandidateResponse> nightlyCandidates(Instant at) {
+        return userRepository.findAll().stream()
+                .filter(user -> planRepository
+                        .findAllByOwnerIdOrderByCreatedAtDesc(user.getId())
+                        .stream()
+                        .anyMatch(plan -> plan.getStatus() == LearningPlanStatus.CONFIRMED))
+                .map(user -> {
+                    ZoneId zone = resolveTimeZone(user.getId());
+                    LocalDate analysisDate = at.atZone(zone).toLocalDate().minusDays(1);
+                    return new NightlyAdjustmentCandidateResponse(
+                            user.getId(),
+                            analysisDate
+                    );
+                })
+                .filter(candidate -> adjustmentRepository
+                        .findByOwnerIdAndIdempotencyKey(
+                                candidate.ownerId(),
+                                "plan-adjustment:nightly:"
+                                        + candidate.ownerId()
+                                        + ":"
+                                        + candidate.analysisDate()
+                        )
+                        .isEmpty())
+                .toList();
+    }
+
+    private ZoneId resolveTimeZone(String ownerId) {
+        String configured = settingsRepository.findById(ownerId)
+                .map(settings -> settings.getTimeZone())
+                .orElse("Asia/Shanghai");
+        try {
+            return ZoneId.of(configured);
+        } catch (DateTimeException ignored) {
+            return ZoneId.of("Asia/Shanghai");
+        }
     }
 
     /**

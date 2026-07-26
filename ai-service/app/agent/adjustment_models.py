@@ -4,7 +4,8 @@ from datetime import date
 from enum import StrEnum
 from typing import Self
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic.alias_generators import to_camel
 
 
 class AdjustmentOperationType(StrEnum):
@@ -15,6 +16,8 @@ class AdjustmentOperationType(StrEnum):
 
 class AdjustmentOperation(BaseModel):
     """模型允许提出的最小任务修改操作。"""
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     type: AdjustmentOperationType
     task_id: str = Field(min_length=1)

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     java_backend_base_url: str = "http://localhost:8080"
     internal_service_token: SecretStr = SecretStr("")
+    nightly_adjustment_interval_minutes: int = 15
 
     @property
     def model_is_configured(self) -> bool:

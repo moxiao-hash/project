@@ -10,6 +10,8 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
+from app.agent.adjustment_models import AdjustmentOperation
+
 
 class JavaContractModel(BaseModel):
     """支持 Java camelCase JSON 的 Pydantic 基类。"""
@@ -157,3 +159,55 @@ class CreateConfirmedLearningPlanRequest(JavaContractModel):
 class ConfirmedLearningPlan(JavaContractModel):
     plan: LearningPlan
     tasks: list[LearningTask]
+
+
+class PlanAdjustmentStatus(StrEnum):
+    ANALYZING = "ANALYZING"
+    NO_CHANGE = "NO_CHANGE"
+    DRAFT_READY = "DRAFT_READY"
+    EXECUTING = "EXECUTING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class CreatePlanAdjustmentRequest(JavaContractModel):
+    owner_id: str
+    plan_id: str
+    idempotency_key: str = Field(max_length=180)
+    analysis_date: date
+    trigger_type: str
+    signals: list[AdaptationSignalType]
+    summary: str = Field(max_length=500)
+    execution_id: str | None = None
+    operations: list[AdjustmentOperation]
+
+
+class ExecutePlanAdjustmentRequest(JavaContractModel):
+    owner_id: str
+    execution_id: str
+    expected_plan_version: int = Field(ge=1)
+
+
+class PlanAdjustment(JavaContractModel):
+    id: str
+    owner_id: str
+    plan_id: str
+    idempotency_key: str
+    analysis_date: date
+    trigger_type: str
+    signals: list[AdaptationSignalType]
+    summary: str
+    operations: list[AdjustmentOperation]
+    risk_level: str
+    status: PlanAdjustmentStatus
+    execution_id: str | None = None
+    before_plan_version: int
+    after_plan_version: int | None = None
+    error: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class NightlyAdjustmentCandidate(JavaContractModel):
+    owner_id: str
+    analysis_date: date

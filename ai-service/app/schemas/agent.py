@@ -40,6 +40,21 @@ class CreateTaskAgentExecutionRequest(JavaContractModel):
     required_scope: Literal["TASK_MANAGEMENT"] = "TASK_MANAGEMENT"
 
 
+class CreatePlanAdjustmentAgentExecutionRequest(JavaContractModel):
+    """登记一次计划调整，并让 Java 根据风险和长期授权决定初始状态。"""
+
+    owner_id: str
+    idempotency_key: str
+    summary: str
+    execution_type: Literal["PLAN_ADJUSTMENT"] = "PLAN_ADJUSTMENT"
+    trigger_type: Literal["USER_REQUEST", "NIGHTLY_CHECK"]
+    risk_level: Literal["LOW", "HIGH"]
+    required_scope: Literal[
+        "SMALL_PLAN_ADJUSTMENT",
+        "LARGE_PLAN_ADJUSTMENT",
+    ]
+
+
 class AgentExecution(JavaContractModel):
     id: str
     idempotency_key: str

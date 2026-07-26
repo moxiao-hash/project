@@ -206,7 +206,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 - Test: `ai-service/tests/api/test_plan_adjustments.py`
 - Test: `ai-service/tests/scheduler/test_nightly_adjustments.py`
 
-- [ ] **Step 1: 写失败 API 和调度测试**
+- [x] **Step 1: 写失败 API 和调度测试**
 
   ```text
   POST /internal/agent/plan-adjustments/analyze
@@ -216,19 +216,19 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 
   验证无信号不调用模型、授权小调整自动执行、大调整只返回草稿、午夜遗漏可补跑。
 
-- [ ] **Step 2: 验证路由 404、调度模块缺失**
+- [x] **Step 2: 验证路由 404、调度模块缺失**
 
-- [ ] **Step 3: 实现结构化 DeepSeek 建议和服务编排**
+- [x] **Step 3: 实现结构化 DeepSeek 建议和服务编排**
 
   模型只读取 Java context；输出经 Python 校验后先持久化，再根据 AgentExecution
   初始状态决定自动执行或等待确认。
 
-- [ ] **Step 4: 使用 APScheduler 每 15 分钟查询待补跑用户**
+- [x] **Step 4: 使用 APScheduler 每 15 分钟查询待补跑用户**
 
   用户本地日期跨日后分析前一天；夜间幂等键：
   `plan-adjustment:nightly:{ownerId}:{analysisDate}`。
 
-- [ ] **Step 5: 全量验证并提交**
+- [x] **Step 5: 全量验证并提交**
 
   ```bash
   git commit -m "feat: schedule adaptive plan analysis"

@@ -10,6 +10,7 @@ from app.core.settings import Settings
 from app.schemas.agent import (
     AgentExecution,
     CreateAgentExecutionRequest,
+    CreatePlanAdjustmentAgentExecutionRequest,
     CreateTaskAgentExecutionRequest,
     UpdateAgentExecutionRequest,
 )
@@ -18,10 +19,14 @@ from app.schemas.learning import (
     ChangeLearningTaskStatusRequest,
     ConfirmedLearningPlan,
     CreateConfirmedLearningPlanRequest,
+    CreatePlanAdjustmentRequest,
     CreatePlanDraftRequest,
+    ExecutePlanAdjustmentRequest,
     LearningContext,
     LearningPlan,
     LearningTask,
+    NightlyAdjustmentCandidate,
+    PlanAdjustment,
 )
 
 
@@ -137,7 +142,11 @@ class JavaBackendClient:
 
     async def create_agent_execution(
         self,
-        request: CreateAgentExecutionRequest | CreateTaskAgentExecutionRequest,
+        request: (
+            CreateAgentExecutionRequest
+            | CreateTaskAgentExecutionRequest
+            | CreatePlanAdjustmentAgentExecutionRequest
+        ),
     ) -> AgentExecution:
         """在真正执行高风险操作前，先创建可审计的执行记录。"""
 
@@ -189,6 +198,68 @@ class JavaBackendClient:
             json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
         )
         return ConfirmedLearningPlan.model_validate(response.json())
+
+    async def create_plan_adjustment(
+        self,
+        request: CreatePlanAdjustmentRequest,
+    ) -> PlanAdjustment:
+        response = await self._request(
+            "POST",
+            "/internal/plan-adjustments",
+            json=request.model_dump(by_alias=True, mode="json", exclude_none=True),
+        )
+        return PlanAdjustment.model_validate(response.json())
+
+    async def get_plan_adjustment(self, adjustment_id: str) -> PlanAdjustment:
+        response = await self._request(
+            "GET",
+            f"/internal/plan-adjustments/{adjustment_id}",
+        )
+        return PlanAdjustment.model_validate(response.json())
+
+    async def execute_plan_adjustment(
+        self,
+        adjustment_id: str,
+        request: ExecutePlanAdjustmentRequest,
+    ) -> PlanAdjustment:
+        response = await self._request(
+            "POST",
+            f"/internal/plan-adjustments/{adjustment_id}/execute",
+            json=request.model_dump(by_alias=True, mode="json"),
+        )
+        return PlanAdjustment.model_validate(response.json())
+
+    async def create_notification(
+        self,
+        owner_id: str,
+        notification_type: str,
+        title: str,
+        content: str,
+    ) -> None:
+        await self._request(
+            "POST",
+            "/internal/notifications",
+            json={
+                "ownerId": owner_id,
+                "type": notification_type,
+                "title": title,
+                "content": content,
+            },
+        )
+
+    async def get_nightly_adjustment_candidates(
+        self,
+        *,
+        at: Any,
+    ) -> list[NightlyAdjustmentCandidate]:
+        response = await self._request(
+            "GET",
+            "/internal/plan-adjustments/nightly-candidates",
+            params={"at": at.isoformat()},
+        )
+        return TypeAdapter(list[NightlyAdjustmentCandidate]).validate_python(
+            response.json()
+        )
 
     async def _request(
         self,

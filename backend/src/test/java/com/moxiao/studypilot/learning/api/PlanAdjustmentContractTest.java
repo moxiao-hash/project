@@ -12,6 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 import java.time.Instant;
+import java.time.ZoneId;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -184,6 +185,50 @@ class PlanAdjustmentContractTest {
                         .header("Authorization", "Bearer " + setup.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].type").value("AGENT_FAILED"));
+    }
+
+    @Test
+    void nightlyCandidatesAreReturnedUntilDateIsPersisted() throws Exception {
+        Setup setup = createPlan();
+        Instant at = Instant.parse("2026-07-27T00:17:00Z");
+        LocalDate analysisDate = at.atZone(ZoneId.of("Asia/Shanghai"))
+                .toLocalDate()
+                .minusDays(1);
+
+        mockMvc.perform(get("/internal/plan-adjustments/nightly-candidates")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .param("at", at.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.ownerId == '%s')].analysisDate"
+                        .formatted(setup.ownerId()))
+                        .value(analysisDate.toString()));
+
+        createAdjustment("""
+                {
+                  "ownerId": "%s",
+                  "planId": "%s",
+                  "idempotencyKey": "plan-adjustment:nightly:%s:%s",
+                  "analysisDate": "%s",
+                  "triggerType": "NIGHTLY_CHECK",
+                  "signals": [],
+                  "summary": "已完成夜间偏差分析",
+                  "operations": []
+                }
+                """.formatted(
+                setup.ownerId(),
+                setup.planId(),
+                setup.ownerId(),
+                analysisDate,
+                analysisDate
+        )).andExpect(status().isCreated());
+
+        mockMvc.perform(get("/internal/plan-adjustments/nightly-candidates")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .param("at", at.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.ownerId == '%s')]"
+                        .formatted(setup.ownerId()))
+                        .isEmpty());
     }
 
     private org.springframework.test.web.servlet.ResultActions createAdjustment(
