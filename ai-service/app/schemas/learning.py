@@ -56,6 +56,7 @@ class LearningTask(JavaContractModel):
     status: LearningTaskStatus
     version: int
     completed_at: datetime | None = None
+    actual_minutes: int | None = Field(default=None, ge=1, le=720)
 
 
 class ChangeLearningTaskStatusRequest(JavaContractModel):
@@ -67,6 +68,7 @@ class ChangeLearningTaskStatusRequest(JavaContractModel):
     status: LearningTaskStatus
     scheduled_date: date | None = None
     reason: str | None = Field(default=None, max_length=255)
+    actual_minutes: int | None = Field(default=None, ge=1, le=720)
 
 
 class Material(JavaContractModel):

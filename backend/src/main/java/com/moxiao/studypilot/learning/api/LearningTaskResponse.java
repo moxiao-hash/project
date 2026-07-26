@@ -14,7 +14,8 @@ public record LearningTaskResponse(
         int estimatedMinutes,
         LearningTaskStatus status,
         int version,
-        Instant completedAt
+        Instant completedAt,
+        Integer actualMinutes
 ) {
     public static LearningTaskResponse from(LearningTaskEntity entity) {
         return new LearningTaskResponse(
@@ -25,7 +26,8 @@ public record LearningTaskResponse(
                 entity.getEstimatedMinutes(),
                 entity.getStatus(),
                 entity.getVersion(),
-                entity.getCompletedAt()
+                entity.getCompletedAt(),
+                entity.getActualMinutes()
         );
     }
 }

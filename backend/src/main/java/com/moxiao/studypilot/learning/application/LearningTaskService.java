@@ -113,6 +113,7 @@ public class LearningTaskService {
         LearningTaskStatus previous = task.changeStatus(
                 request.status(),
                 request.scheduledDate(),
+                request.actualMinutes(),
                 now
         );
         changeRepository.save(new TaskChangeEntity(
@@ -123,6 +124,7 @@ public class LearningTaskService {
                 task.getScheduledDate(),
                 request.reason(),
                 operationIdempotencyKey,
+                request.actualMinutes(),
                 now
         ));
         return task;
@@ -141,7 +143,8 @@ public class LearningTaskService {
         return existing.getTaskId().equals(taskId)
                 && existing.getToStatus() == request.status()
                 && sameTargetDate
-                && Objects.equals(existing.getReason(), request.reason());
+                && Objects.equals(existing.getReason(), request.reason())
+                && Objects.equals(existing.getActualMinutes(), request.actualMinutes());
     }
 
     @Transactional(readOnly = true)

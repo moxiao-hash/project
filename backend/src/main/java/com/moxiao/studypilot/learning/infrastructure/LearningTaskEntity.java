@@ -43,6 +43,9 @@ public class LearningTaskEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    @Column(name = "actual_minutes")
+    private Integer actualMinutes;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -76,6 +79,7 @@ public class LearningTaskEntity {
     public LearningTaskStatus changeStatus(
             LearningTaskStatus newStatus,
             LocalDate newScheduledDate,
+            Integer newActualMinutes,
             Instant now
     ) {
         if (newStatus == LearningTaskStatus.DEFERRED) {
@@ -87,6 +91,7 @@ public class LearningTaskEntity {
         LearningTaskStatus previous = status;
         status = newStatus;
         completedAt = newStatus == LearningTaskStatus.COMPLETED ? now : null;
+        actualMinutes = newStatus == LearningTaskStatus.COMPLETED ? newActualMinutes : null;
         version++;
         updatedAt = now;
         return previous;
@@ -122,5 +127,9 @@ public class LearningTaskEntity {
 
     public Instant getCompletedAt() {
         return completedAt;
+    }
+
+    public Integer getActualMinutes() {
+        return actualMinutes;
     }
 }

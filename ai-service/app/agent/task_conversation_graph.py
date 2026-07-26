@@ -142,6 +142,7 @@ def build_task_conversation_graph(
                     status=draft.target_status,
                     scheduled_date=draft.deferred_to,
                     reason=draft.reason,
+                    actual_minutes=draft.actual_minutes,
                 ),
             )
             await java_backend.update_agent_execution(

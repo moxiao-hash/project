@@ -40,6 +40,7 @@ class TaskRecognitionOutput(BaseModel):
     candidate_task_ids: list[str] = Field(default_factory=list, max_length=20)
     reason: str | None = Field(default=None, max_length=255)
     deferred_to: date | None = None
+    actual_minutes: int | None = Field(default=None, ge=1, le=720)
     reply: str = Field(min_length=1, max_length=1000)
 
 
@@ -61,6 +62,7 @@ class TaskActionDraft(JavaContractModel):
     expected_version: int = Field(ge=1)
     reason: str | None = Field(default=None, max_length=255)
     deferred_to: date | None = None
+    actual_minutes: int | None = Field(default=None, ge=1, le=720)
 
 
 class TaskRecognitionResult(BaseModel):

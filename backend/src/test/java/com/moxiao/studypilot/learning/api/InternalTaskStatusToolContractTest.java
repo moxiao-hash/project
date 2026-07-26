@@ -74,6 +74,49 @@ class InternalTaskStatusToolContractTest {
     }
 
     @Test
+    void completedTaskCanRecordActualMinutesInTaskAndHistory() throws Exception {
+        Registration owner = registerUser("actual-minutes-owner");
+        String taskId = createConfirmedTask(owner, "记录实际学习时长");
+        String request = """
+                {
+                  "ownerId": "%s",
+                  "idempotencyKey": "task-action:actual-minutes:%d",
+                  "expectedVersion": 1,
+                  "status": "COMPLETED",
+                  "actualMinutes": 80,
+                  "reason": "用户完成任务并记录耗时"
+                }
+                """.formatted(owner.userId(), System.nanoTime());
+
+        changeTaskStatus(taskId, request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.actualMinutes").value(80));
+
+        mockMvc.perform(get("/api/learning-tasks/{taskId}/history", taskId)
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].actualMinutes").value(80));
+    }
+
+    @Test
+    void actualMinutesAreRejectedForNonCompletedTask() throws Exception {
+        Registration owner = registerUser("invalid-actual-minutes-owner");
+        String taskId = createConfirmedTask(owner, "非法实际时长");
+
+        changeTaskStatus(taskId, """
+                {
+                  "ownerId": "%s",
+                  "idempotencyKey": "task-action:invalid-actual:%d",
+                  "expectedVersion": 1,
+                  "status": "SKIPPED",
+                  "actualMinutes": 20,
+                  "reason": "今天无法完成"
+                }
+                """.formatted(owner.userId(), System.nanoTime()))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void agentTaskChangeRejectsStaleVersionAndWrongOwner() throws Exception {
         Registration owner = registerUser("version-owner");
         Registration other = registerUser("other");

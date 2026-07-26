@@ -44,6 +44,9 @@ public class TaskChangeEntity {
     @Column(name = "operation_idempotency_key", length = 180)
     private String operationIdempotencyKey;
 
+    @Column(name = "actual_minutes")
+    private Integer actualMinutes;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -67,6 +70,7 @@ public class TaskChangeEntity {
                 toScheduledDate,
                 reason,
                 null,
+                null,
                 createdAt
         );
     }
@@ -79,6 +83,7 @@ public class TaskChangeEntity {
             LocalDate toScheduledDate,
             String reason,
             String operationIdempotencyKey,
+            Integer actualMinutes,
             Instant createdAt
     ) {
         this.taskId = taskId;
@@ -88,6 +93,7 @@ public class TaskChangeEntity {
         this.toScheduledDate = toScheduledDate;
         this.reason = reason;
         this.operationIdempotencyKey = operationIdempotencyKey;
+        this.actualMinutes = actualMinutes;
         this.createdAt = createdAt;
     }
 
@@ -109,6 +115,10 @@ public class TaskChangeEntity {
 
     public String getOperationIdempotencyKey() {
         return operationIdempotencyKey;
+    }
+
+    public Integer getActualMinutes() {
+        return actualMinutes;
     }
 
     public LocalDate getFromScheduledDate() {

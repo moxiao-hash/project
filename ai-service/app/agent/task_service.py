@@ -137,6 +137,11 @@ class TaskRecognitionService:
                 if output.intent == TaskIntent.DEFER_TASK
                 else None
             ),
+            actual_minutes=(
+                output.actual_minutes
+                if output.intent == TaskIntent.COMPLETE_TASK
+                else None
+            ),
         )
         return TaskRecognitionResult(
             status=TaskRecognitionStatus.PREVIEW_READY,

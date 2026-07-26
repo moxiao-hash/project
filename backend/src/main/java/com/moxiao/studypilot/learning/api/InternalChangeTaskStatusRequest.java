@@ -2,6 +2,7 @@ package com.moxiao.studypilot.learning.api;
 
 import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -20,7 +21,8 @@ public record InternalChangeTaskStatusRequest(
         @Min(1) int expectedVersion,
         @NotNull LearningTaskStatus status,
         LocalDate scheduledDate,
-        @Size(max = 255) String reason
+        @Size(max = 255) String reason,
+        @Min(1) @Max(720) Integer actualMinutes
     ) {
 
     public InternalChangeTaskStatusRequest {
@@ -42,9 +44,12 @@ public record InternalChangeTaskStatusRequest(
                 && (reason == null || reason.isBlank())) {
             throw new IllegalArgumentException("跳过或延期任务必须说明原因");
         }
+        if (actualMinutes != null && status != LearningTaskStatus.COMPLETED) {
+            throw new IllegalArgumentException("只有完成任务时可以记录实际学习时长");
+        }
     }
 
     public ChangeTaskStatusRequest toStatusRequest() {
-        return new ChangeTaskStatusRequest(status, scheduledDate, reason);
+        return new ChangeTaskStatusRequest(status, scheduledDate, reason, actualMinutes);
     }
 }

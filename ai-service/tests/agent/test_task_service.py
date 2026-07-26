@@ -56,12 +56,14 @@ def output(
     *,
     reason: str | None = None,
     deferred_to: date | None = None,
+    actual_minutes: int | None = None,
 ) -> TaskRecognitionOutput:
     return TaskRecognitionOutput(
         intent=intent,
         candidate_task_ids=candidate_ids or [],
         reason=reason,
         deferred_to=deferred_to,
+        actual_minutes=actual_minutes,
         reply="模型识别结果。",
     )
 
@@ -134,6 +136,23 @@ def test_task_service_builds_read_only_preview_for_one_completed_candidate() -> 
     assert result.action_draft.expected_version == 3
     assert result.action_draft.target_status == LearningTaskStatus.COMPLETED
     assert java_backend.calls == [("user-123", date(2026, 7, 26))]
+
+
+def test_task_service_preserves_actual_minutes_in_completion_preview() -> None:
+    result = recognize(
+        FakeJavaBackend([task("task-1", "完成 Spring MVC 接口")]),
+        FakeRecognizer(
+            output(
+                TaskIntent.COMPLETE_TASK,
+                ["task-1"],
+                actual_minutes=80,
+            )
+        ),
+        "Spring MVC 接口完成了，用了 80 分钟",
+    )
+
+    assert result.action_draft is not None
+    assert result.action_draft.actual_minutes == 80
 
 
 def test_task_service_builds_skip_preview_with_reason() -> None:

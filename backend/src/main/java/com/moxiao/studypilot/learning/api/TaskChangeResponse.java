@@ -12,6 +12,7 @@ public record TaskChangeResponse(
         LocalDate fromScheduledDate,
         LocalDate toScheduledDate,
         String reason,
+        Integer actualMinutes,
         Instant createdAt
 ) {
     public static TaskChangeResponse from(TaskChangeEntity entity) {
@@ -21,6 +22,7 @@ public record TaskChangeResponse(
                 entity.getFromScheduledDate(),
                 entity.getToScheduledDate(),
                 entity.getReason(),
+                entity.getActualMinutes(),
                 entity.getCreatedAt()
         );
     }
