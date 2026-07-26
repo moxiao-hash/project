@@ -122,7 +122,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 - Test: `backend/src/test/java/com/moxiao/studypilot/learning/api/PlanAdjustmentContractTest.java`
 - Test: `ai-service/tests/agent/test_adjustment_models.py`
 
-- [ ] **Step 1: 写失败模型与持久化测试**
+- [x] **Step 1: 写失败模型与持久化测试**
 
   ```json
   {
@@ -137,18 +137,18 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
   }
   ```
 
-- [ ] **Step 2: 验证缺少模型和接口导致测试失败**
+- [x] **Step 2: 验证缺少模型和接口导致测试失败**
 
-- [ ] **Step 3: 增加 `plan_adjustments` 表**
+- [x] **Step 3: 增加 `plan_adjustments` 表**
 
   保存 `idempotency_key`、owner/plan、analysisDate、triggerType、signals/draft JSON、
   riskLevel、status、executionId、before/afterVersion、error 和时间戳；幂等键唯一。
 
-- [ ] **Step 4: 实现 Python 强类型操作和确定性校验**
+- [x] **Step 4: 实现 Python 强类型操作和确定性校验**
 
   小调整最多 3 个任务、最多 1 次拆分、不越过计划结束日期；否则升级为大调整。
 
-- [ ] **Step 5: 全量验证并提交**
+- [x] **Step 5: 全量验证并提交**
 
   ```bash
   git commit -m "feat: persist adaptive plan drafts"
