@@ -21,6 +21,7 @@ public record CreatePlanAdjustmentRequest(
         @NotNull TriggerType triggerType,
         @NotNull List<AdaptationSignalType> signals,
         @NotBlank @Size(max = 500) String summary,
+        String executionId,
         @NotNull @Size(max = 14) List<@Valid Operation> operations
 ) {
     public record Operation(

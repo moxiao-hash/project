@@ -39,4 +39,15 @@ public class InternalPlanAdjustmentController {
     public PlanAdjustmentResponse get(@PathVariable String adjustmentId) {
         return PlanAdjustmentResponse.from(service.get(adjustmentId), objectMapper);
     }
+
+    @PostMapping("/{adjustmentId}/execute")
+    public PlanAdjustmentResponse execute(
+            @PathVariable String adjustmentId,
+            @Valid @RequestBody ExecutePlanAdjustmentRequest request
+    ) {
+        return PlanAdjustmentResponse.from(
+                service.execute(adjustmentId, request),
+                objectMapper
+        );
+    }
 }

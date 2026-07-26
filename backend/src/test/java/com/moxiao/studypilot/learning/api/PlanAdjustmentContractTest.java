@@ -11,6 +11,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
+import java.time.Instant;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -101,6 +102,90 @@ class PlanAdjustmentContractTest {
                 .andExpect(jsonPath("$.status").value("NO_CHANGE"));
     }
 
+    @Test
+    void authorizedLowRiskAdjustmentExecutesAtomicallyAndIdempotently() throws Exception {
+        Setup setup = createPlan();
+        createSmallAdjustmentGrant(setup);
+        String executionId = createPendingExecution(setup, "authorized");
+        LocalDate newDate = LocalDate.now().plusDays(2);
+        String adjustmentId = createExecutableAdjustment(
+                setup,
+                executionId,
+                1,
+                newDate,
+                "authorized"
+        );
+
+        executeAdjustment(setup, adjustmentId, executionId)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.beforePlanVersion").value(2))
+                .andExpect(jsonPath("$.afterPlanVersion").value(3));
+
+        mockMvc.perform(get("/api/learning-tasks")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].scheduledDate").value(newDate.toString()))
+                .andExpect(jsonPath("$[0].version").value(2));
+
+        executeAdjustment(setup, adjustmentId, executionId)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.afterPlanVersion").value(3));
+
+        mockMvc.perform(get("/api/learning-plans/{planId}/versions", setup.planId())
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].version").value(3))
+                .andExpect(jsonPath("$[0].snapshotJson").value(
+                        org.hamcrest.Matchers.containsString(setup.taskId())
+                ));
+
+        mockMvc.perform(get("/api/notifications")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("PLAN_ADJUSTED"));
+
+        mockMvc.perform(get("/api/audit-logs")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].details").value(
+                        org.hamcrest.Matchers.hasItem("状态变更为 SUCCEEDED")
+                ));
+    }
+
+    @Test
+    void staleTaskVersionRejectsWholeAdjustmentAndMarksDraftFailed() throws Exception {
+        Setup setup = createPlan();
+        createSmallAdjustmentGrant(setup);
+        String executionId = createPendingExecution(setup, "stale");
+        String adjustmentId = createExecutableAdjustment(
+                setup,
+                executionId,
+                99,
+                LocalDate.now().plusDays(2),
+                "stale"
+        );
+
+        executeAdjustment(setup, adjustmentId, executionId)
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(get("/api/learning-tasks")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].scheduledDate").value(LocalDate.now().toString()))
+                .andExpect(jsonPath("$[0].version").value(1));
+
+        mockMvc.perform(get("/internal/plan-adjustments/{id}", adjustmentId)
+                        .header("X-Internal-Service-Token", "test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+
+        mockMvc.perform(get("/api/notifications")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].type").value("AGENT_FAILED"));
+    }
+
     private org.springframework.test.web.servlet.ResultActions createAdjustment(
             String body
     ) throws Exception {
@@ -108,6 +193,104 @@ class PlanAdjustmentContractTest {
                 .header("X-Internal-Service-Token", "test-internal-token")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body));
+    }
+
+    private void createSmallAdjustmentGrant(Setup setup) throws Exception {
+        mockMvc.perform(post("/api/agent-grants")
+                        .header("Authorization", "Bearer " + setup.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scopes": ["SMALL_PLAN_ADJUSTMENT"],
+                                  "expiresAt": "%s"
+                                }
+                                """.formatted(Instant.now().plusSeconds(3600))))
+                .andExpect(status().isCreated());
+    }
+
+    private String createPendingExecution(Setup setup, String label) throws Exception {
+        MvcResult result = mockMvc.perform(post("/internal/agent-executions")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s",
+                                  "idempotencyKey": "adjustment-execution-%s-%d",
+                                  "executionType": "PLAN_ADJUSTMENT",
+                                  "triggerType": "USER_REQUEST",
+                                  "riskLevel": "LOW",
+                                  "requiredScope": "SMALL_PLAN_ADJUSTMENT",
+                                  "summary": "执行小范围计划调整"
+                                }
+                                """.formatted(setup.ownerId(), label, System.nanoTime())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("id").asText();
+    }
+
+    private String createExecutableAdjustment(
+            Setup setup,
+            String executionId,
+            int taskVersion,
+            LocalDate newDate,
+            String label
+    ) throws Exception {
+        MvcResult result = createAdjustment("""
+                {
+                  "ownerId": "%s",
+                  "planId": "%s",
+                  "idempotencyKey": "plan-adjustment:execute:%s:%d",
+                  "analysisDate": "%s",
+                  "triggerType": "USER_REQUEST",
+                  "signals": ["OVERDUE_TASKS"],
+                  "summary": "顺延逾期任务",
+                  "executionId": "%s",
+                  "operations": [
+                    {
+                      "type": "RESCHEDULE_TASK",
+                      "taskId": "%s",
+                      "expectedVersion": %d,
+                      "scheduledDate": "%s"
+                    }
+                  ]
+                }
+                """.formatted(
+                setup.ownerId(),
+                setup.planId(),
+                label,
+                System.nanoTime(),
+                LocalDate.now(),
+                executionId,
+                setup.taskId(),
+                taskVersion,
+                newDate
+        ))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString())
+                .get("id").asText();
+    }
+
+    private org.springframework.test.web.servlet.ResultActions executeAdjustment(
+            Setup setup,
+            String adjustmentId,
+            String executionId
+    ) throws Exception {
+        return mockMvc.perform(post(
+                                "/internal/plan-adjustments/{id}/execute",
+                                adjustmentId
+                        )
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s",
+                                  "executionId": "%s",
+                                  "expectedPlanVersion": 2
+                                }
+                                """.formatted(setup.ownerId(), executionId)));
     }
 
     private Setup createPlan() throws Exception {
@@ -171,11 +354,12 @@ class PlanAdjustmentContractTest {
         JsonNode response = objectMapper.readTree(plan.getResponse().getContentAsString());
         return new Setup(
                 ownerId,
+                token,
                 response.get("plan").get("id").asText(),
                 response.get("tasks").get(0).get("id").asText()
         );
     }
 
-    private record Setup(String ownerId, String planId, String taskId) {
+    private record Setup(String ownerId, String token, String planId, String taskId) {
     }
 }

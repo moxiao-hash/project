@@ -81,6 +81,7 @@ public class PlanAdjustmentEntity {
         this.operationsJson = data.operationsJson();
         this.riskLevel = riskLevel;
         this.status = status;
+        this.executionId = data.executionId();
         this.beforePlanVersion = beforePlanVersion;
         this.createdAt = now;
         this.updatedAt = now;
@@ -106,6 +107,37 @@ public class PlanAdjustmentEntity {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
+    public void startExecution(Instant now) {
+        if (status != PlanAdjustmentStatus.DRAFT_READY) {
+            throw new IllegalStateException("只有待执行的调整草稿可以开始执行");
+        }
+        status = PlanAdjustmentStatus.EXECUTING;
+        updatedAt = now;
+    }
+
+    public void complete(
+            int completedPlanVersion,
+            String beforeSnapshotJson,
+            String afterSnapshotJson,
+            Instant now
+    ) {
+        if (status != PlanAdjustmentStatus.EXECUTING) {
+            throw new IllegalStateException("计划调整尚未开始执行");
+        }
+        status = PlanAdjustmentStatus.COMPLETED;
+        afterPlanVersion = completedPlanVersion;
+        this.beforeSnapshotJson = beforeSnapshotJson;
+        this.afterSnapshotJson = afterSnapshotJson;
+        errorMessage = null;
+        updatedAt = now;
+    }
+
+    public void fail(String message, Instant now) {
+        status = PlanAdjustmentStatus.FAILED;
+        errorMessage = message;
+        updatedAt = now;
+    }
+
     public record CreatePlanAdjustmentRequestData(
             String ownerId,
             String planId,
@@ -114,7 +146,8 @@ public class PlanAdjustmentEntity {
             TriggerType triggerType,
             String signalsJson,
             String summary,
-            String operationsJson
+            String operationsJson,
+            String executionId
     ) {
     }
 }

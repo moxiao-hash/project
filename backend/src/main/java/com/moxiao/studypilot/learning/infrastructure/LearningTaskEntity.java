@@ -97,12 +97,39 @@ public class LearningTaskEntity {
         return previous;
     }
 
+    public void reschedule(LocalDate newScheduledDate, Instant now) {
+        scheduledDate = newScheduledDate;
+        version++;
+        updatedAt = now;
+    }
+
+    public void updateEstimate(int newEstimatedMinutes, Instant now) {
+        estimatedMinutes = newEstimatedMinutes;
+        version++;
+        updatedAt = now;
+    }
+
+    public void replaceForSplit(
+            String newTitle,
+            int newEstimatedMinutes,
+            Instant now
+    ) {
+        title = newTitle;
+        estimatedMinutes = newEstimatedMinutes;
+        version++;
+        updatedAt = now;
+    }
+
     public String getId() {
         return id;
     }
 
     public String getPlanId() {
         return planId;
+    }
+
+    public String getOwnerId() {
+        return ownerId;
     }
 
     public String getTitle() {

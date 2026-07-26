@@ -163,7 +163,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 - Test: `backend/src/test/java/com/moxiao/studypilot/learning/api/PlanAdjustmentExecutionContractTest.java`
 - Test: `ai-service/tests/agent/test_adjustment_service.py`
 
-- [ ] **Step 1: 写失败测试覆盖原子执行和风险治理**
+- [x] **Step 1: 写失败测试覆盖原子执行和风险治理**
 
   ```text
   小调整 + 有效 SMALL_PLAN_ADJUSTMENT grant -> PENDING -> 自动执行
@@ -172,9 +172,9 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
   任一 expectedVersion 冲突 -> 409 且所有修改回滚
   ```
 
-- [ ] **Step 2: 验证测试按预期失败**
+- [x] **Step 2: 验证测试按预期失败**
 
-- [ ] **Step 3: 实现内部原子接口**
+- [x] **Step 3: 实现内部原子接口**
 
   ```text
   POST /internal/plan-adjustments
@@ -184,12 +184,12 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 
   支持重新安排、预计时长修改和拆分；一次调整只增加一次计划版本。
 
-- [ ] **Step 4: 保存完整任务快照、通知和审计**
+- [x] **Step 4: 保存完整任务快照、通知和审计**
 
   成功创建 `PLAN_ADJUSTED`；待处理创建 `PLAN_ADJUSTMENT_READY`；失败使用
   `AGENT_FAILED`。
 
-- [ ] **Step 5: 全量验证并提交**
+- [x] **Step 5: 全量验证并提交**
 
   ```bash
   git commit -m "feat: execute governed plan adjustments"

@@ -96,6 +96,20 @@ public class LearningPlanEntity {
         updatedAt = now;
     }
 
+    /**
+     * 一个调整草稿无论包含几个任务操作，计划本身只增加一个版本。
+     */
+    public void applyAdjustment(LocalDate adjustedEndDate, Instant now) {
+        if (status != LearningPlanStatus.CONFIRMED) {
+            throw new IllegalStateException("只有已确认计划可以调整");
+        }
+        if (adjustedEndDate != null && adjustedEndDate.isAfter(endDate)) {
+            endDate = adjustedEndDate;
+        }
+        version++;
+        updatedAt = now;
+    }
+
     public String getId() {
         return id;
     }
