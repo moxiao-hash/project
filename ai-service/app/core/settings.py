@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     material_processing_interval_seconds: int = 10
     material_worker_id: str = "studypilot-ai-local"
     qdrant_path: str = "./data/qdrant"
+    tavily_api_key: SecretStr = SecretStr("")
+    tavily_base_url: str = "https://api.tavily.com"
 
     @property
     def model_is_configured(self) -> bool:

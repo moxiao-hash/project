@@ -23,6 +23,7 @@ from app.material.processing import MaterialProcessingService
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.hybrid_index import QdrantHybridIndex
 from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
+from app.search.web_fetcher import SafeWebFetcher
 
 logger = logging.getLogger(__name__)
 _material_processing_service: MaterialProcessingService | None = None
@@ -55,6 +56,7 @@ async def run_material_processing_job() -> None:
                 MaterialAnalyzer(cloud_analyzer),
                 worker_id=settings.material_worker_id,
                 index=QdrantHybridIndex.persistent(settings.qdrant_path),
+                web_fetcher=SafeWebFetcher(),
             )
         await _material_processing_service.process_once()
     except ModelConfigurationError:

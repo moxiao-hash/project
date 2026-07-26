@@ -29,6 +29,7 @@ from app.schemas.learning import (
     NightlyAdjustmentCandidate,
     PlanAdjustment,
 )
+from app.search.models import WebSearchOutcome
 
 
 class JavaBackendError(RuntimeError):
@@ -333,6 +334,35 @@ class JavaBackendClient:
             "POST",
             f"/internal/material-processing-jobs/{job_id}/fail",
             json={"workerId": worker_id, "error": error},
+        )
+
+    async def record_web_search(
+        self,
+        owner_id: str,
+        outcome: WebSearchOutcome,
+    ) -> WebSearchOutcome:
+        response = await self._request(
+            "POST",
+            "/internal/web-searches",
+            json={
+                "ownerId": owner_id,
+                "query": outcome.query,
+                "providerRequestId": outcome.provider_request_id,
+                "results": [
+                    {
+                        "title": result.title,
+                        "url": result.url,
+                        "snippet": result.snippet,
+                        "score": result.score,
+                    }
+                    for result in outcome.results
+                ],
+            },
+        )
+        body = response.json()
+        return outcome.with_persisted_ids(
+            body["id"],
+            tuple(result["id"] for result in body["results"]),
         )
 
     async def _request(

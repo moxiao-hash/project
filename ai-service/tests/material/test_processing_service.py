@@ -86,3 +86,44 @@ async def test_reports_safe_failure_to_java() -> None:
     assert processed is True
     assert backend.completed is None
     assert backend.failed == "资料处理失败，请检查文件格式或稍后重试"
+
+
+@pytest.mark.anyio
+async def test_fetches_confirmed_web_material_with_safe_fetcher() -> None:
+    class WebBackend(FakeBackend):
+        async def claim_material_job(
+            self,
+            worker_id: str,
+            lease_seconds: int,
+        ) -> ProcessingJob:
+            return ProcessingJob(
+                job_id="web-job",
+                material_id="web-material",
+                owner_id="owner-1",
+                title="官方文档",
+                material_type="WEB_PAGE",
+                category="REFERENCE",
+                privacy_level="NORMAL",
+                source_url="https://example.com/docs",
+            )
+
+        async def download_material_content(self, material_id: str) -> bytes:
+            raise AssertionError("网页资料不应调用 Java 文件下载接口")
+
+    class Fetcher:
+        async def fetch(self, url: str) -> bytes:
+            assert url == "https://example.com/docs"
+            return "官方网页正文".encode()
+
+    backend = WebBackend()
+    service = MaterialProcessingService(
+        backend,
+        StubAnalyzer(),
+        worker_id="worker-test",
+        web_fetcher=Fetcher(),
+    )
+
+    await service.process_once()
+
+    assert backend.completed is not None
+    assert backend.completed["chunks"][0]["text"] == "官方网页正文"

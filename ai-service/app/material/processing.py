@@ -53,6 +53,10 @@ class MaterialIndex(Protocol):
     def upsert(self, material: IndexMaterial, chunks: list) -> None: ...
 
 
+class WebContentFetcher(Protocol):
+    async def fetch(self, url: str) -> bytes: ...
+
+
 class MaterialProcessingService:
     def __init__(
         self,
@@ -63,6 +67,7 @@ class MaterialProcessingService:
         parser: MaterialParser | None = None,
         chunker: MaterialChunker | None = None,
         index: MaterialIndex | None = None,
+        web_fetcher: WebContentFetcher | None = None,
     ) -> None:
         self._backend = backend
         self._analyzer = analyzer
@@ -70,14 +75,22 @@ class MaterialProcessingService:
         self._parser = parser or MaterialParser()
         self._chunker = chunker or MaterialChunker()
         self._index = index
+        self._web_fetcher = web_fetcher
 
     async def process_once(self) -> bool:
         job = await self._backend.claim_material_job(self._worker_id, 120)
         if job is None:
             return False
         try:
-            content = await self._backend.download_material_content(job.material_id)
-            document = self._parser.parse(job.material_type, content)
+            if job.material_type == "WEB_PAGE":
+                if self._web_fetcher is None or not job.source_url:
+                    raise ValueError("网页资料缺少安全抓取器或来源 URL")
+                content = await self._web_fetcher.fetch(job.source_url)
+                parse_type = "TEXT"
+            else:
+                content = await self._backend.download_material_content(job.material_id)
+                parse_type = job.material_type
+            document = self._parser.parse(parse_type, content)
             chunks = self._chunker.split(document)
             analysis = await self._analyzer.analyze(
                 job.privacy_level,
