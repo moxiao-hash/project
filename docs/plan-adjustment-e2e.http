@@ -1,0 +1,236 @@
+### StudyPilot 阶段 5：自适应计划调整真实端到端联调
+### 前置条件：
+### 1. MySQL 已启动，Spring Boot 运行于 8080。
+### 2. FastAPI 运行于 8000，且已配置 DeepSeek Key。
+### 3. 从上到下逐条执行；本文件不会修改已有 HTTP 示例。
+
+@javaHost = http://localhost:8080
+@aiHost = http://127.0.0.1:8000
+@internalToken = local-dev-internal-token
+@analysisDate = 2026-07-27
+
+### 1. 注册独立联调用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "plan-adjustment-{{$timestamp}}@example.com",
+  "password": "StudyPilot123!",
+  "displayName": "计划自适应联调用户"
+}
+
+> {%
+  client.test("注册成功", function () {
+    client.assert(response.status === 201, "注册接口应返回 201");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+  client.global.set("ownerId", response.body.user.id);
+%}
+
+### 2. 创建学习目标
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "验证阶段 5 自适应计划闭环",
+  "targetDate": "2026-12-31",
+  "weeklyStudyHours": 10
+}
+
+> {%
+  client.global.set("goalId", response.body.id);
+%}
+
+### 3. 创建包含历史任务和逾期任务的已确认计划
+POST {{javaHost}}/internal/confirmed-learning-plans
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "goalId": "{{goalId}}",
+  "idempotencyKey": "plan-adjustment-e2e-plan-{{$timestamp}}",
+  "title": "阶段 5 偏差联调计划",
+  "startDate": "2026-07-20",
+  "endDate": "2026-08-02",
+  "tasks": [
+    {
+      "title": "完成 Spring MVC 基础练习",
+      "scheduledDate": "2026-07-20",
+      "estimatedMinutes": 30
+    },
+    {
+      "title": "完成 JPA 基础练习",
+      "scheduledDate": "2026-07-21",
+      "estimatedMinutes": 30
+    },
+    {
+      "title": "完成 FastAPI 基础练习",
+      "scheduledDate": "2026-07-22",
+      "estimatedMinutes": 30
+    },
+    {
+      "title": "实现 Java 与 Python 联调",
+      "scheduledDate": "2026-07-23",
+      "estimatedMinutes": 60
+    }
+  ]
+}
+
+> {%
+  client.test("初始计划版本正确", function () {
+    client.assert(response.body.plan.version === 2, "确认后的计划版本应为 2");
+  });
+  client.global.set("planId", response.body.plan.id);
+  client.global.set("task1", response.body.tasks[0].id);
+  client.global.set("task2", response.body.tasks[1].id);
+  client.global.set("task3", response.body.tasks[2].id);
+  client.global.set("overdueTask", response.body.tasks[3].id);
+%}
+
+### 4. 记录第一次真实完成时长
+PATCH {{javaHost}}/internal/learning-tasks/{{task1}}/status
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "idempotencyKey": "plan-adjustment-e2e-complete-1-{{ownerId}}",
+  "expectedVersion": 1,
+  "status": "COMPLETED",
+  "actualMinutes": 60,
+  "reason": "真实学习用时高于预计"
+}
+
+### 5. 记录第二次真实完成时长
+PATCH {{javaHost}}/internal/learning-tasks/{{task2}}/status
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "idempotencyKey": "plan-adjustment-e2e-complete-2-{{ownerId}}",
+  "expectedVersion": 1,
+  "status": "COMPLETED",
+  "actualMinutes": 60,
+  "reason": "真实学习用时高于预计"
+}
+
+### 6. 记录第三次真实完成时长，形成超过 30% 的聚合偏差
+PATCH {{javaHost}}/internal/learning-tasks/{{task3}}/status
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "idempotencyKey": "plan-adjustment-e2e-complete-3-{{ownerId}}",
+  "expectedVersion": 1,
+  "status": "COMPLETED",
+  "actualMinutes": 60,
+  "reason": "真实学习用时高于预计"
+}
+
+### 7. 核验 Java 聚合出逾期和时长偏差信号
+GET {{javaHost}}/internal/users/{{ownerId}}/adaptation-context?analysisDate={{analysisDate}}&windowDays=14
+X-Internal-Service-Token: {{internalToken}}
+
+> {%
+  client.test("偏差信号正确", function () {
+    const types = response.body.signals.map(item => item.type);
+    client.assert(types.includes("OVERDUE_TASKS"), "应识别逾期任务");
+    client.assert(types.includes("TIME_ESTIMATE_BIAS"), "应识别实际时长偏差");
+  });
+%}
+
+### 8. 授权 Agent 自动执行小范围计划调整
+POST {{javaHost}}/api/agent-grants
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "scopes": ["SMALL_PLAN_ADJUSTMENT"],
+  "expiresAt": "2026-12-31T23:59:59Z"
+}
+
+### 9. 请求 DeepSeek 分析；若候选为 LOW，应自动原子执行
+# @timeout 5 m
+POST {{aiHost}}/internal/agent/plan-adjustments/analyze
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "analysisDate": "{{analysisDate}}"
+}
+
+> {%
+  client.test("小范围调整已自动完成", function () {
+    client.assert(response.status === 201, "分析接口应返回 201");
+    client.assert(response.body.riskLevel === "LOW", "本用例应生成 LOW 调整");
+    client.assert(response.body.status === "COMPLETED", "授权后应自动执行");
+    client.assert(response.body.beforePlanVersion === 2, "调整前版本应为 2");
+    client.assert(response.body.afterPlanVersion === 3, "调整后版本应为 3");
+  });
+  client.global.set("adjustmentId", response.body.id);
+%}
+
+### 10. 查询调整前后完整快照
+GET {{aiHost}}/internal/agent/plan-adjustments/{{adjustmentId}}
+X-Internal-Service-Token: {{internalToken}}
+
+### 11. 查询计划版本；最新版本应为 3
+GET {{javaHost}}/api/learning-plans/{{planId}}/versions
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("计划只增加一个版本", function () {
+    client.assert(response.body[0].version === 3, "最新计划版本应为 3");
+  });
+%}
+
+### 12. 查询调整后的全部任务
+GET {{javaHost}}/api/learning-tasks
+Authorization: Bearer {{accessToken}}
+
+### 13. 查询治理执行记录，应存在 SUCCEEDED
+GET {{javaHost}}/api/agent-executions
+Authorization: Bearer {{accessToken}}
+
+### 14. 查询通知，应存在 PLAN_ADJUSTED
+GET {{javaHost}}/api/notifications
+Authorization: Bearer {{accessToken}}
+
+### 15. 查询审计，应包含 RUNNING 和 SUCCEEDED 状态变化
+GET {{javaHost}}/api/audit-logs
+Authorization: Bearer {{accessToken}}
+
+### 16. 重复分析同一用户和日期，必须返回同一调整且不再次执行
+# @timeout 5 m
+POST {{aiHost}}/internal/agent/plan-adjustments/analyze
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "analysisDate": "{{analysisDate}}"
+}
+
+> {%
+  client.test("重复分析保持幂等", function () {
+    client.assert(response.body.id === client.global.get("adjustmentId"),
+      "应返回同一调整记录");
+    client.assert(response.body.status === "COMPLETED", "状态仍应为 COMPLETED");
+    client.assert(response.body.afterPlanVersion === 3, "版本不得再次增加");
+  });
+%}
+
+### 17. 再次查询版本，最新版本仍应为 3
+GET {{javaHost}}/api/learning-plans/{{planId}}/versions
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("重复分析没有增加计划版本", function () {
+    client.assert(response.body[0].version === 3, "最新版本必须保持为 3");
+  });
+%}

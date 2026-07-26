@@ -241,7 +241,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 - Modify: `项目开发步骤.md`
 - Modify: `docs/superpowers/plans/2026-07-26-adaptive-plan-adjustment.md`
 
-- [ ] **Step 1: 增加独立 IDEA HTTP Client 流程**
+- [x] **Step 1: 增加独立 IDEA HTTP Client 流程**
 
   ```text
   创建计划和多日任务
@@ -253,9 +253,9 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
   → 重复调用验证幂等
   ```
 
-- [ ] **Step 2: 使用本机 MySQL、Spring Boot、FastAPI 和 DeepSeek 真实联调**
+- [x] **Step 2: 使用本机 MySQL、Spring Boot、FastAPI 和 DeepSeek 真实联调**
 
-- [ ] **Step 3: 运行最终验证**
+- [x] **Step 3: 运行最终验证**
 
   ```bash
   cd backend && ./mvnw test
@@ -263,9 +263,9 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
   git diff --check
   ```
 
-- [ ] **Step 4: 更新阶段 5 进度、结果、已知限制**
+- [x] **Step 4: 更新阶段 5 进度、结果、已知限制**
 
-- [ ] **Step 5: 精确暂存并提交推送**
+- [x] **Step 5: 精确暂存并提交推送**
 
   ```bash
   git commit -m "test: complete adaptive plan workflow"

@@ -20,7 +20,7 @@ CREATE TABLE plan_adjustments (
     updated_at TIMESTAMP(6) NOT NULL,
     CONSTRAINT uk_plan_adjustments_idempotency UNIQUE (idempotency_key),
     CONSTRAINT fk_plan_adjustments_user
-        FOREIGN KEY (owner_id) REFERENCES user_accounts (id),
+        FOREIGN KEY (owner_id) REFERENCES app_users (id),
     CONSTRAINT fk_plan_adjustments_plan
         FOREIGN KEY (plan_id) REFERENCES learning_plans (id)
 );

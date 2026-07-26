@@ -1,5 +1,6 @@
 """自适应计划分析的模型边界、确定性校验和治理编排。"""
 
+import json
 from datetime import date
 from typing import Any, Literal, Protocol
 
@@ -42,6 +43,10 @@ class DeepSeekAdjustmentGenerator:
 
     async def generate(self, adaptation_context: AdaptationContext) -> PlanAdjustmentDraft:
         context_json = adaptation_context.model_dump_json(by_alias=True)
+        schema_json = json.dumps(
+            PlanAdjustmentDraft.model_json_schema(by_alias=True),
+            ensure_ascii=False,
+        )
         messages = [
             SystemMessage(
                 content=(
@@ -52,8 +57,10 @@ class DeepSeekAdjustmentGenerator:
             HumanMessage(
                 content=(
                     "根据以下执行偏差生成最小必要调整。优先在现有计划周期内重新安排、"
-                    "修正预计时长或拆分过大的 TODO 任务。严格返回约定 JSON。\n"
-                    f"{context_json}"
+                    "修正预计时长或拆分过大的 TODO 任务。只能引用 status=TODO 的任务。"
+                    "严格返回符合 JSON Schema 的 JSON，不要 Markdown。\n"
+                    f"JSON Schema:\n{schema_json}\n"
+                    f"真实上下文:\n{context_json}"
                 )
             ),
         ]
@@ -87,12 +94,15 @@ class PlanAdjustmentService:
         analysis_date: date,
         trigger_type: TriggerType,
     ) -> PlanAdjustment:
+        key = self._idempotency_key(owner_id, analysis_date, trigger_type)
+        existing = await self._java.find_plan_adjustment(owner_id, key)
+        if existing is not None:
+            return existing
         context = await self._java.get_adaptation_context(
             owner_id,
             analysis_date=analysis_date,
             window_days=14,
         )
-        key = self._idempotency_key(owner_id, analysis_date, trigger_type)
         if not context.signals:
             return await self._java.create_plan_adjustment(
                 CreatePlanAdjustmentRequest(
@@ -137,6 +147,8 @@ class PlanAdjustmentService:
                 operations=draft.operations,
             )
         )
+        if adjustment.status == "COMPLETED":
+            return adjustment
         if execution.status == "PENDING":
             return await self._java.execute_plan_adjustment(
                 adjustment.id,

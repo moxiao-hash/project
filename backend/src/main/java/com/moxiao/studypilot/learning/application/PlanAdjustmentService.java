@@ -139,6 +139,13 @@ public class PlanAdjustmentService {
     }
 
     @Transactional(readOnly = true)
+    public PlanAdjustmentEntity findByKey(String ownerId, String idempotencyKey) {
+        return adjustmentRepository
+                .findByOwnerIdAndIdempotencyKey(ownerId, idempotencyKey)
+                .orElseThrow(() -> new ResourceNotFoundException("计划调整不存在"));
+    }
+
+    @Transactional(readOnly = true)
     public List<NightlyAdjustmentCandidateResponse> nightlyCandidates(Instant at) {
         return userRepository.findAll().stream()
                 .filter(user -> planRepository
@@ -352,13 +359,6 @@ public class PlanAdjustmentService {
                 plan,
                 taskRepository.findAllByPlanIdOrderByScheduledDateAscCreatedAtAsc(plan.getId())
         );
-        versionRepository.save(new LearningPlanVersionEntity(
-                plan.getId(),
-                plan.getVersion(),
-                beforeSnapshot,
-                "Agent 调整前快照",
-                now
-        ));
         adjustment.startExecution(now);
         updateExecution(
                 execution.getId(),

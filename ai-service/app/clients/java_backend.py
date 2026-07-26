@@ -217,6 +217,26 @@ class JavaBackendClient:
         )
         return PlanAdjustment.model_validate(response.json())
 
+    async def find_plan_adjustment(
+        self,
+        owner_id: str,
+        idempotency_key: str,
+    ) -> PlanAdjustment | None:
+        try:
+            response = await self._request(
+                "GET",
+                "/internal/plan-adjustments/by-key",
+                params={
+                    "ownerId": owner_id,
+                    "idempotencyKey": idempotency_key,
+                },
+            )
+        except JavaBackendError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return PlanAdjustment.model_validate(response.json())
+
     async def execute_plan_adjustment(
         self,
         adjustment_id: str,

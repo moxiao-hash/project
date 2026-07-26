@@ -76,6 +76,13 @@ class PlanAdjustmentContractTest {
                         .header("X-Internal-Service-Token", "test-internal-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.idempotencyKey").value(key));
+
+        mockMvc.perform(get("/internal/plan-adjustments/by-key")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .param("ownerId", setup.ownerId())
+                        .param("idempotencyKey", key))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(adjustmentId));
     }
 
     @Test
@@ -136,6 +143,7 @@ class PlanAdjustmentContractTest {
         mockMvc.perform(get("/api/learning-plans/{planId}/versions", setup.planId())
                         .header("Authorization", "Bearer " + setup.token()))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(3))
                 .andExpect(jsonPath("$[0].version").value(3))
                 .andExpect(jsonPath("$[0].snapshotJson").value(
                         org.hamcrest.Matchers.containsString(setup.taskId())

@@ -51,6 +51,17 @@ public class InternalPlanAdjustmentController {
         return service.nightlyCandidates(at);
     }
 
+    @GetMapping("/by-key")
+    public PlanAdjustmentResponse findByKey(
+            @RequestParam String ownerId,
+            @RequestParam String idempotencyKey
+    ) {
+        return PlanAdjustmentResponse.from(
+                service.findByKey(ownerId, idempotencyKey),
+                objectMapper
+        );
+    }
+
     @PostMapping("/{adjustmentId}/execute")
     public PlanAdjustmentResponse execute(
             @PathVariable String adjustmentId,
