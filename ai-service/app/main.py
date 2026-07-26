@@ -12,6 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from app.api.conversations import router as conversations_router
+from app.api.knowledge_conversations import router as knowledge_conversations_router
 from app.api.model_status import router as model_status_router
 from app.api.plan_adjustments import build_plan_adjustment_service
 from app.api.plan_adjustments import router as plan_adjustments_router
@@ -21,7 +22,7 @@ from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
 from app.material.processing import MaterialProcessingService
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
-from app.retrieval.hybrid_index import QdrantHybridIndex
+from app.retrieval.factory import get_hybrid_index
 from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
 from app.search.web_fetcher import SafeWebFetcher
 
@@ -55,7 +56,7 @@ async def run_material_processing_job() -> None:
                 JavaBackendClient(settings),
                 MaterialAnalyzer(cloud_analyzer),
                 worker_id=settings.material_worker_id,
-                index=QdrantHybridIndex.persistent(settings.qdrant_path),
+                index=get_hybrid_index(settings.qdrant_path),
                 web_fetcher=SafeWebFetcher(),
             )
         await _material_processing_service.process_once()
@@ -102,6 +103,7 @@ app.include_router(model_status_router)
 app.include_router(conversations_router)
 app.include_router(task_conversations_router)
 app.include_router(plan_adjustments_router)
+app.include_router(knowledge_conversations_router)
 
 
 @app.get("/health")
