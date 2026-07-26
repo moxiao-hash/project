@@ -14,6 +14,7 @@ from app.schemas.agent import (
     UpdateAgentExecutionRequest,
 )
 from app.schemas.learning import (
+    AdaptationContext,
     ChangeLearningTaskStatusRequest,
     ConfirmedLearningPlan,
     CreateConfirmedLearningPlanRequest,
@@ -87,6 +88,25 @@ class JavaBackendClient:
             params={"date": target_date.isoformat()},
         )
         return TypeAdapter(list[LearningTask]).validate_python(response.json())
+
+    async def get_adaptation_context(
+        self,
+        owner_id: str,
+        *,
+        analysis_date: date,
+        window_days: int = 14,
+    ) -> AdaptationContext:
+        """读取 Java 根据真实学习记录计算的自适应上下文。"""
+
+        response = await self._request(
+            "GET",
+            f"/internal/users/{owner_id}/adaptation-context",
+            params={
+                "analysisDate": analysis_date.isoformat(),
+                "windowDays": window_days,
+            },
+        )
+        return AdaptationContext.model_validate(response.json())
 
     async def create_plan_draft(
         self,

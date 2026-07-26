@@ -71,7 +71,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
 - Create: `backend/src/test/java/com/moxiao/studypilot/learning/api/InternalAdaptationContextContractTest.java`
 - Modify: `ai-service/app/clients/java_backend.py`
 
-- [ ] **Step 1: 写失败测试定义接口**
+- [x] **Step 1: 写失败测试定义接口**
 
   ```text
   GET /internal/users/{ownerId}/adaptation-context
@@ -81,13 +81,13 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
   响应必须包含当前计划、用户每日上限、过去任务、未来任务及：
   `OVERDUE_TASKS`、`CONSECUTIVE_SKIPS`、`TIME_ESTIMATE_BIAS`。
 
-- [ ] **Step 2: 验证接口返回 404**
+- [x] **Step 2: 验证接口返回 404**
 
   ```bash
   cd backend && ./mvnw -Dtest=InternalAdaptationContextContractTest test
   ```
 
-- [ ] **Step 3: 实现确定性聚合**
+- [x] **Step 3: 实现确定性聚合**
 
   ```text
   OVERDUE_TASKS: TODO 且 scheduledDate < analysisDate
@@ -96,7 +96,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
                       sum(estimate) > 0.30
   ```
 
-- [ ] **Step 4: 为 Python 客户端补 camelCase 契约测试并实现调用**
+- [x] **Step 4: 为 Python 客户端补 camelCase 契约测试并实现调用**
 
   ```python
   await client.get_adaptation_context(
@@ -106,7 +106,7 @@ LangChain、APScheduler、DeepSeek、JUnit、pytest
   )
   ```
 
-- [ ] **Step 5: 全量验证并提交**
+- [x] **Step 5: 全量验证并提交**
 
   ```bash
   git commit -m "feat: aggregate learning execution deviations"

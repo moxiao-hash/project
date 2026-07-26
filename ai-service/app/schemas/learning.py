@@ -102,6 +102,28 @@ class LearningContext(JavaContractModel):
     mastery: list[Mastery]
 
 
+class AdaptationSignalType(StrEnum):
+    OVERDUE_TASKS = "OVERDUE_TASKS"
+    CONSECUTIVE_SKIPS = "CONSECUTIVE_SKIPS"
+    TIME_ESTIMATE_BIAS = "TIME_ESTIMATE_BIAS"
+
+
+class AdaptationSignal(JavaContractModel):
+    type: AdaptationSignalType
+    count: int = Field(ge=1)
+    deviation_ratio: float | None = Field(default=None, ge=0)
+
+
+class AdaptationContext(JavaContractModel):
+    owner_id: str
+    analysis_date: date
+    window_days: int = Field(ge=1, le=30)
+    daily_study_limit_minutes: int = Field(ge=1)
+    plan: LearningPlan
+    tasks: list[LearningTask]
+    signals: list[AdaptationSignal]
+
+
 class CreatePlanDraftRequest(JavaContractModel):
     """请求 Java 创建待用户确认的计划草案。"""
 

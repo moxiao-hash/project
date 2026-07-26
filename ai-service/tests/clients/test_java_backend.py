@@ -88,6 +88,59 @@ def test_get_learning_tasks_uses_date_and_internal_contract() -> None:
     assert tasks[0].status == "TODO"
 
 
+def test_get_adaptation_context_uses_balanced_window_contract() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url.path == "/internal/users/user-123/adaptation-context"
+        assert dict(request.url.params) == {
+            "analysisDate": "2026-07-27",
+            "windowDays": "14",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "ownerId": "user-123",
+                "analysisDate": "2026-07-27",
+                "windowDays": 14,
+                "dailyStudyLimitMinutes": 120,
+                "plan": {
+                    "id": "plan-1",
+                    "goalId": "goal-1",
+                    "title": "学习计划",
+                    "startDate": "2026-07-20",
+                    "endDate": "2026-08-20",
+                    "status": "CONFIRMED",
+                    "version": 2,
+                },
+                "tasks": [],
+                "signals": [
+                    {
+                        "type": "OVERDUE_TASKS",
+                        "count": 2,
+                        "deviationRatio": None,
+                    }
+                ],
+            },
+        )
+
+    async def call_client():
+        client = JavaBackendClient(
+            build_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        return await client.get_adaptation_context(
+            "user-123",
+            analysis_date=date(2026, 7, 27),
+            window_days=14,
+        )
+
+    context = asyncio.run(call_client())
+
+    assert context.plan.id == "plan-1"
+    assert context.signals[0].type == "OVERDUE_TASKS"
+    assert context.signals[0].count == 2
+
+
 def test_change_learning_task_status_sends_camel_case_idempotent_request() -> None:
     from app.schemas.learning import (
         ChangeLearningTaskStatusRequest,
