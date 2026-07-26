@@ -4,6 +4,7 @@ public enum MaterialType {
     MARKDOWN,
     TEXT,
     PDF,
+    WORD,
     WEB_PAGE,
     IMAGE,
     PASTED_ARTICLE

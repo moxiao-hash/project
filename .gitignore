@@ -19,6 +19,8 @@
 **/*.egg-info/
 .venv/
 venv/
+**/data/materials/
+**/data/qdrant/
 
 # Local configuration and generated files
 .env

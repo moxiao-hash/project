@@ -48,6 +48,18 @@ public class MaterialEntity {
     @Column(name = "source_url", length = 2048)
     private String sourceUrl;
 
+    @Column(name = "original_filename", length = 255)
+    private String originalFilename;
+
+    @Column(name = "storage_key", length = 500)
+    private String storageKey;
+
+    @Column(name = "media_type", length = 120)
+    private String mediaType;
+
+    @Column(name = "content_length")
+    private Long contentLength;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "processing_status", nullable = false, length = 20)
     private MaterialProcessingStatus processingStatus;
@@ -125,6 +137,32 @@ public class MaterialEntity {
         this.updatedAt = now;
     }
 
+    public void attachStoredContent(
+            String originalFilename,
+            String storageKey,
+            String mediaType,
+            long contentLength,
+            Instant now
+    ) {
+        this.originalFilename = originalFilename;
+        this.storageKey = storageKey;
+        this.mediaType = mediaType;
+        this.contentLength = contentLength;
+        this.updatedAt = now;
+    }
+
+    public void markProcessing(Instant now) {
+        this.processingStatus = MaterialProcessingStatus.PROCESSING;
+        this.failureReason = null;
+        this.updatedAt = now;
+    }
+
+    public void markFailed(String reason, Instant now) {
+        this.processingStatus = MaterialProcessingStatus.FAILED;
+        this.failureReason = reason;
+        this.updatedAt = now;
+    }
+
     public String getId() {
         return id;
     }
@@ -167,6 +205,22 @@ public class MaterialEntity {
 
     public String getFailureReason() {
         return failureReason;
+    }
+
+    public String getOriginalFilename() {
+        return originalFilename;
+    }
+
+    public String getStorageKey() {
+        return storageKey;
+    }
+
+    public String getMediaType() {
+        return mediaType;
+    }
+
+    public Long getContentLength() {
+        return contentLength;
     }
 
     public List<String> getTags() {
