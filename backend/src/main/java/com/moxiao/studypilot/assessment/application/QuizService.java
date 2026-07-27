@@ -3,7 +3,11 @@ package com.moxiao.studypilot.assessment.application;
 import com.moxiao.studypilot.assessment.api.CreateQuizRequest;
 import com.moxiao.studypilot.assessment.api.QuizAttemptResponse;
 import com.moxiao.studypilot.assessment.api.SubmitQuizAttemptRequest;
+import com.moxiao.studypilot.assessment.api.SelfAssessmentRequest;
+import com.moxiao.studypilot.assessment.domain.MasteryEvidenceType;
 import com.moxiao.studypilot.assessment.infrastructure.MasteryEntity;
+import com.moxiao.studypilot.assessment.infrastructure.MasteryEvidenceEntity;
+import com.moxiao.studypilot.assessment.infrastructure.MasteryEvidenceJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.MasteryJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuestionEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuestionJpaRepository;
@@ -19,6 +23,8 @@ import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.assessment.domain.QuestionType;
 import com.moxiao.studypilot.assessment.domain.QuizAttemptStatus;
+import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
+import com.moxiao.studypilot.learning.infrastructure.LearningTaskJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,8 +45,10 @@ public class QuizService {
     private final QuestionJpaRepository questionRepository;
     private final QuizAttemptJpaRepository attemptRepository;
     private final MasteryJpaRepository masteryRepository;
+    private final MasteryEvidenceJpaRepository masteryEvidenceRepository;
     private final ObjectMapper objectMapper;
     private final CodingEvaluationJobJpaRepository codingJobRepository;
+    private final LearningTaskJpaRepository learningTaskRepository;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -48,16 +56,20 @@ public class QuizService {
             QuestionJpaRepository questionRepository,
             QuizAttemptJpaRepository attemptRepository,
             MasteryJpaRepository masteryRepository,
+            MasteryEvidenceJpaRepository masteryEvidenceRepository,
             ObjectMapper objectMapper,
-            CodingEvaluationJobJpaRepository codingJobRepository
+            CodingEvaluationJobJpaRepository codingJobRepository,
+            LearningTaskJpaRepository learningTaskRepository
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
         this.questionRepository = questionRepository;
         this.attemptRepository = attemptRepository;
         this.masteryRepository = masteryRepository;
+        this.masteryEvidenceRepository = masteryEvidenceRepository;
         this.objectMapper = objectMapper;
         this.codingJobRepository = codingJobRepository;
+        this.learningTaskRepository = learningTaskRepository;
     }
 
     @Transactional
@@ -239,8 +251,11 @@ public class QuizService {
                             question.getKnowledgePoint(),
                             submitted.get(question.getId()).equals(question.getCorrectAnswers())
                                     ? 100.0 : 0.0,
+                            1.0,
+                            attemptId,
                             now
                     ));
+            recordAssociatedTaskMastery(bundle.quiz(), now);
         }
         return new QuizAttemptResponse(
                 attemptId, objectiveScore, attemptStatus.name(), null, results
@@ -310,6 +325,9 @@ public class QuizService {
         Instant now = Instant.now();
         attempt.complete(finalScore, objectMapper.writeValueAsString(evaluations), now);
         job.complete(now);
+        recordCompletedAttemptMastery(attempt, questions, evaluations, now);
+        QuizEntity quiz = quizRepository.findById(attempt.getQuizId()).orElseThrow();
+        recordAssociatedTaskMastery(quiz, now);
         return toAttemptResponse(attemptRepository.save(attempt), questions);
     }
 
@@ -392,14 +410,130 @@ public class QuizService {
         return masteryRepository.findAllByOwnerIdOrderByScoreAsc(ownerId);
     }
 
-    private void recordMastery(
+    @Transactional
+    public List<MasteryEntity> recordSelfAssessments(
+            String ownerId,
+            String attemptId,
+            SelfAssessmentRequest request
+    ) {
+        QuizAttemptEntity attempt = attemptRepository.findByIdAndOwnerId(attemptId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("测验作答不存在"));
+        Set<String> allowedPoints = questionRepository
+                .findAllByQuizIdOrderByPosition(attempt.getQuizId()).stream()
+                .map(QuestionEntity::getKnowledgePoint)
+                .collect(java.util.stream.Collectors.toSet());
+        Instant now = Instant.now();
+        List<MasteryEntity> updated = new ArrayList<>();
+        for (SelfAssessmentRequest.Rating rating : request.ratings()) {
+            if (!allowedPoints.contains(rating.knowledgePoint())) {
+                throw new IllegalArgumentException("只能评价本次测验包含的知识点");
+            }
+            MasteryEntity mastery = masteryRepository
+                    .findByOwnerIdAndKnowledgePoint(ownerId, rating.knowledgePoint())
+                    .orElseThrow(() -> new ResourceNotFoundException("知识点掌握度不存在"));
+            mastery.recordSelfAssessment(rating.score(), now);
+            masteryEvidenceRepository.save(new MasteryEvidenceEntity(
+                    UUID.randomUUID().toString(), ownerId, rating.knowledgePoint(),
+                    MasteryEvidenceType.SELF_ASSESSMENT, rating.score(), 1.0,
+                    attemptId, now
+            ));
+            updated.add(masteryRepository.save(mastery));
+        }
+        return updated;
+    }
+
+    private void recordCompletedAttemptMastery(
+            QuizAttemptEntity attempt,
+            List<QuestionEntity> questions,
+            List<Map<String, Object>> evaluations,
+            Instant now
+    ) {
+        SubmitQuizAttemptRequest submitted = objectMapper.readValue(
+                attempt.getAnswersJson(), SubmitQuizAttemptRequest.class
+        );
+        Map<String, SubmitQuizAttemptRequest.AnswerInput> answers = submitted.answers().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        SubmitQuizAttemptRequest.AnswerInput::questionId,
+                        answer -> answer
+                ));
+        Map<String, Double> codingScores = evaluations.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        item -> String.valueOf(item.get("questionId")),
+                        item -> ((Number) item.get("score")).doubleValue()
+                ));
+        for (QuestionEntity question : questions) {
+            double questionScore;
+            double weight;
+            if (question.getType() == QuestionType.CODING) {
+                questionScore = codingScores.get(question.getId());
+                weight = 0.3;
+            } else {
+                questionScore = question.getCorrectAnswers().equals(
+                        answers.get(question.getId()).selectedAnswers()
+                ) ? 100.0 : 0.0;
+                weight = 1.0;
+            }
+            recordMastery(
+                    attempt.getOwnerId(), question.getKnowledgePoint(), questionScore,
+                    weight, attempt.getId(), now
+            );
+        }
+    }
+
+    /**
+     * 任务信号只来自当前测验明确关联的任务，避免把无关任务完成情况混入知识点。
+     */
+    private void recordAssociatedTaskMastery(QuizEntity quiz, Instant now) {
+        if (quiz.getTaskId() == null) {
+            return;
+        }
+        learningTaskRepository.findByIdAndOwnerId(quiz.getTaskId(), quiz.getOwnerId())
+                .filter(task -> task.getStatus() == LearningTaskStatus.COMPLETED
+                        || task.getStatus() == LearningTaskStatus.SKIPPED)
+                .ifPresent(task -> {
+                    double taskScore = task.getStatus() == LearningTaskStatus.COMPLETED
+                            ? 100.0 : 0.0;
+                    questionRepository.findAllByQuizIdOrderByPosition(quiz.getId()).stream()
+                            .map(QuestionEntity::getKnowledgePoint)
+                            .distinct()
+                            .forEach(point -> recordTaskMastery(
+                                    quiz.getOwnerId(), point, taskScore, task.getId(), now
+                            ));
+                });
+    }
+
+    private void recordTaskMastery(
             String ownerId,
             String knowledgePoint,
             double score,
+            String taskId,
             Instant now
     ) {
         MasteryEntity mastery = masteryRepository
                 .findByOwnerIdAndKnowledgePoint(ownerId, knowledgePoint)
+                .orElseGet(() -> new MasteryEntity(
+                        UUID.randomUUID().toString(), ownerId, knowledgePoint, 0, now
+                ));
+        mastery.recordTask(score, now);
+        masteryRepository.save(mastery);
+        masteryEvidenceRepository.save(new MasteryEvidenceEntity(
+                UUID.randomUUID().toString(), ownerId, knowledgePoint,
+                MasteryEvidenceType.TASK, score, 1.0, taskId, now
+        ));
+    }
+
+    private void recordMastery(
+            String ownerId,
+            String knowledgePoint,
+            double score,
+            double evidenceWeight,
+            String sourceReference,
+            Instant now
+    ) {
+        var existing = masteryRepository.findByOwnerIdAndKnowledgePoint(
+                ownerId, knowledgePoint
+        );
+        MasteryEntity mastery = existing
                 .orElseGet(() -> new MasteryEntity(
                         UUID.randomUUID().toString(),
                         ownerId,
@@ -407,11 +541,14 @@ public class QuizService {
                         score,
                         now
                 ));
-        if (mastery.getAttemptCount() > 0
-                && masteryRepository.findByOwnerIdAndKnowledgePoint(ownerId, knowledgePoint).isPresent()) {
-            mastery.record(score, now);
+        if (existing.isPresent()) {
+            mastery.recordQuiz(score, evidenceWeight, now);
         }
         masteryRepository.save(mastery);
+        masteryEvidenceRepository.save(new MasteryEvidenceEntity(
+                UUID.randomUUID().toString(), ownerId, knowledgePoint,
+                MasteryEvidenceType.QUIZ, score, evidenceWeight, sourceReference, now
+        ));
     }
 
     public record QuizBundle(QuizEntity quiz, List<QuestionEntity> questions) {

@@ -23,6 +23,18 @@ public class MasteryEntity {
     @Column(nullable = false)
     private double score;
 
+    @Column(name = "quiz_score")
+    private Double quizScore;
+
+    @Column(name = "task_score")
+    private Double taskScore;
+
+    @Column(name = "self_assessment_score")
+    private Double selfAssessmentScore;
+
+    @Column(name = "evidence_count", nullable = false)
+    private int evidenceCount;
+
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
 
@@ -43,13 +55,37 @@ public class MasteryEntity {
         this.ownerId = ownerId;
         this.knowledgePoint = knowledgePoint;
         this.score = score;
+        this.quizScore = score;
         this.attemptCount = 1;
+        this.evidenceCount = 1;
         this.updatedAt = updatedAt;
     }
 
-    public void record(double latestScore, Instant now) {
-        score = ((score * attemptCount) + latestScore) / (attemptCount + 1);
+    public void recordQuiz(double latestScore, double evidenceWeight, Instant now) {
+        quizScore = com.moxiao.studypilot.assessment.application.MasteryCalculator
+                .updateComponent(quizScore, latestScore, evidenceWeight);
         attemptCount++;
+        evidenceCount++;
+        recalculate(now);
+    }
+
+    public void recordTask(double latestScore, Instant now) {
+        taskScore = com.moxiao.studypilot.assessment.application.MasteryCalculator
+                .updateComponent(taskScore, latestScore, 1.0);
+        evidenceCount++;
+        recalculate(now);
+    }
+
+    public void recordSelfAssessment(double latestScore, Instant now) {
+        selfAssessmentScore = com.moxiao.studypilot.assessment.application.MasteryCalculator
+                .updateComponent(selfAssessmentScore, latestScore, 1.0);
+        evidenceCount++;
+        recalculate(now);
+    }
+
+    private void recalculate(Instant now) {
+        score = com.moxiao.studypilot.assessment.application.MasteryCalculator
+                .combined(quizScore, taskScore, selfAssessmentScore);
         updatedAt = now;
     }
 
@@ -64,4 +100,10 @@ public class MasteryEntity {
     public int getAttemptCount() {
         return attemptCount;
     }
+
+    public Double getQuizScore() { return quizScore; }
+    public Double getTaskScore() { return taskScore; }
+    public Double getSelfAssessmentScore() { return selfAssessmentScore; }
+    public int getEvidenceCount() { return evidenceCount; }
+    public Instant getUpdatedAt() { return updatedAt; }
 }

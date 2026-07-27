@@ -60,7 +60,7 @@ class QuizWorkflowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.questions[0].correctAnswers").doesNotExist());
 
-        mockMvc.perform(post("/api/quizzes/{id}/attempts", quizId)
+        MvcResult attemptResult = mockMvc.perform(post("/api/quizzes/{id}/attempts", quizId)
                         .header("Authorization", "Bearer " + registration.token())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -76,13 +76,33 @@ class QuizWorkflowTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.score").value(100.0))
                 .andExpect(jsonPath("$.results[0].correct").value(true))
-                .andExpect(jsonPath("$.results[0].explanation").isNotEmpty());
+                .andExpect(jsonPath("$.results[0].explanation").isNotEmpty())
+                .andReturn();
+        String attemptId = readId(attemptResult);
+
+        mockMvc.perform(post("/api/quiz-attempts/{id}/self-assessments", attemptId)
+                        .header("Authorization", "Bearer " + registration.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ratings": [{
+                                    "knowledgePoint": "依赖注入",
+                                    "score": 65
+                                  }]
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].selfAssessmentScore").value(65.0));
 
         mockMvc.perform(get("/api/mastery")
                         .header("Authorization", "Bearer " + registration.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].knowledgePoint").value("依赖注入"))
-                .andExpect(jsonPath("$[0].score").value(100.0));
+                .andExpect(jsonPath("$[0].score").value(
+                        org.hamcrest.Matchers.closeTo(97.941176, 0.000001)))
+                .andExpect(jsonPath("$[0].quizScore").value(100.0))
+                .andExpect(jsonPath("$[0].selfAssessmentScore").value(65.0))
+                .andExpect(jsonPath("$[0].evidenceCount").value(2));
     }
 
     @Test
