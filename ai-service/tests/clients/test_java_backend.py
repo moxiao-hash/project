@@ -380,6 +380,31 @@ def test_java_backend_error_preserves_conflict_status_and_detail() -> None:
     assert captured.value.path == "/internal/users/user-123/learning-tasks"
 
 
+def test_java_backend_error_reads_spring_problem_message() -> None:
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            400,
+            json={
+                "message": "请求参数校验失败",
+                "fieldErrors": {
+                    "questions[0].options[0]": "size must be between 0 and 500"
+                },
+            },
+        )
+    )
+
+    async def call_client() -> None:
+        client = JavaBackendClient(build_settings(), transport=transport)
+        await client.create_quiz({"ownerId": "user-123"})
+
+    with pytest.raises(JavaBackendError) as captured:
+        asyncio.run(call_client())
+
+    assert captured.value.detail == (
+        "请求参数校验失败（questions[0].options[0]: size must be between 0 and 500）"
+    )
+
+
 def test_java_backend_connection_error_has_no_http_status() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("connection refused", request=request)

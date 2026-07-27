@@ -49,6 +49,7 @@ public class QuizService {
     private final ObjectMapper objectMapper;
     private final CodingEvaluationJobJpaRepository codingJobRepository;
     private final LearningTaskJpaRepository learningTaskRepository;
+    private final ReviewTaskCandidateService reviewTaskCandidateService;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -59,7 +60,8 @@ public class QuizService {
             MasteryEvidenceJpaRepository masteryEvidenceRepository,
             ObjectMapper objectMapper,
             CodingEvaluationJobJpaRepository codingJobRepository,
-            LearningTaskJpaRepository learningTaskRepository
+            LearningTaskJpaRepository learningTaskRepository,
+            ReviewTaskCandidateService reviewTaskCandidateService
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -70,6 +72,7 @@ public class QuizService {
         this.objectMapper = objectMapper;
         this.codingJobRepository = codingJobRepository;
         this.learningTaskRepository = learningTaskRepository;
+        this.reviewTaskCandidateService = reviewTaskCandidateService;
     }
 
     @Transactional
@@ -135,8 +138,10 @@ public class QuizService {
             if (total != 100) {
                 throw new IllegalArgumentException("编程题 Rubric 权重之和必须为 100");
             }
-        } else if (input.options() == null || input.options().size() < 2) {
-            throw new IllegalArgumentException("选择题至少需要两个选项");
+        } else if (input.options() == null || input.options().size() < 2
+                || input.correctAnswers().isEmpty()
+                || !input.options().containsAll(input.correctAnswers())) {
+            throw new IllegalArgumentException("选择题必须提供选项内的正确答案");
         }
     }
 
@@ -256,6 +261,9 @@ public class QuizService {
                             now
                     ));
             recordAssociatedTaskMastery(bundle.quiz(), now);
+            reviewTaskCandidateService.createCandidates(
+                    bundle.quiz(), attemptId, Set.of()
+            );
         }
         return new QuizAttemptResponse(
                 attemptId, objectiveScore, attemptStatus.name(), null, results
@@ -328,6 +336,14 @@ public class QuizService {
         recordCompletedAttemptMastery(attempt, questions, evaluations, now);
         QuizEntity quiz = quizRepository.findById(attempt.getQuizId()).orElseThrow();
         recordAssociatedTaskMastery(quiz, now);
+        Set<String> weakCodingPoints = evaluations.stream()
+                .filter(item -> ((Number) item.get("score")).doubleValue() < 70)
+                .map(item -> String.valueOf(item.get("questionId")))
+                .map(questionId -> questions.stream()
+                        .filter(question -> question.getId().equals(questionId))
+                        .findFirst().orElseThrow().getKnowledgePoint())
+                .collect(java.util.stream.Collectors.toSet());
+        reviewTaskCandidateService.createCandidates(quiz, attempt.getId(), weakCodingPoints);
         return toAttemptResponse(attemptRepository.save(attempt), questions);
     }
 

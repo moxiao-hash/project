@@ -1,0 +1,163 @@
+### StudyPilot 阶段 7：自适应测验与掌握度闭环
+### 前置：MySQL、Spring Boot(8080)、FastAPI(8000) 已启动，DeepSeek 已配置。
+
+@javaHost = http://localhost:8080
+@aiHost = http://127.0.0.1:8000
+@internalToken = local-dev-internal-token
+
+### 1. 注册联调用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "quiz-e2e-{{$timestamp}}@example.com",
+  "password": "StudyPilot123!",
+  "displayName": "测验闭环联调用户"
+}
+
+> {%
+  client.global.set("accessToken", response.body.accessToken);
+  client.global.set("ownerId", response.body.user.id);
+%}
+
+### 2. 创建目标
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "掌握 Java Spring Boot 与 FastAPI AI 应用开发",
+  "targetDate": "2026-12-31",
+  "weeklyStudyHours": 10
+}
+
+> {% client.global.set("goalId", response.body.id); %}
+
+### 3. 创建已确认计划与来源任务
+POST {{javaHost}}/internal/confirmed-learning-plans
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "goalId": "{{goalId}}",
+  "idempotencyKey": "quiz-e2e-plan-{{$timestamp}}",
+  "title": "阶段 7 联调计划",
+  "startDate": "2026-07-27",
+  "endDate": "2026-08-10",
+  "tasks": [{
+    "title": "Spring Boot 依赖注入基础",
+    "scheduledDate": "2026-07-27",
+    "estimatedMinutes": 60
+  }]
+}
+
+> {%
+  client.global.set("planId", response.body.plan.id);
+  client.global.set("taskId", response.body.tasks[0].id);
+%}
+
+### 4. 用户点击生成五题（首次应为 3 单选+1 多选+1 编程，EASY）
+# @timeout 5 m
+POST {{aiHost}}/internal/assessment/quizzes/generate
+X-Internal-Service-Token: {{internalToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "{{ownerId}}",
+  "taskId": "{{taskId}}",
+  "webSearch": "DISABLED"
+}
+
+> {%
+  client.test("固定生成五题且每题有来源", function () {
+    client.assert(response.status === 201, "生成接口应返回 201");
+    client.assert(response.body.questions.length === 5, "题目数必须为 5");
+    response.body.questions.forEach(q =>
+      client.assert(q.sources.length > 0, "每道题至少有一个来源"));
+  });
+  client.global.set("quizId", response.body.id);
+  const singles = response.body.questions.filter(q => q.type === "SINGLE_CHOICE");
+  const multiple = response.body.questions.find(q => q.type === "MULTIPLE_CHOICE");
+  const coding = response.body.questions.find(q => q.type === "CODING");
+  client.global.set("single1", singles[0].id);
+  client.global.set("single2", singles[1].id);
+  client.global.set("single3", singles[2].id);
+  client.global.set("singleAnswer1", singles[0].options[0]);
+  client.global.set("singleAnswer2", singles[1].options[0]);
+  client.global.set("singleAnswer3", singles[2].options[0]);
+  client.global.set("multipleId", multiple.id);
+  client.global.set("multipleAnswer", multiple.options[0]);
+  client.global.set("codingId", coding.id);
+%}
+
+### 5. 公共读取不得泄露正确答案和参考实现
+GET {{javaHost}}/api/quizzes/{{quizId}}
+Authorization: Bearer {{accessToken}}
+
+### 6. 提交答案；代码只作为文本评估
+POST {{javaHost}}/api/quizzes/{{quizId}}/attempts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "idempotencyKey": "quiz-attempt-e2e-{{$timestamp}}",
+  "answers": [
+    {"questionId": "{{single1}}", "selectedAnswers": ["{{singleAnswer1}}"]},
+    {"questionId": "{{single2}}", "selectedAnswers": ["{{singleAnswer2}}"]},
+    {"questionId": "{{single3}}", "selectedAnswers": ["{{singleAnswer3}}"]},
+    {"questionId": "{{multipleId}}", "selectedAnswers": ["{{multipleAnswer}}"]},
+    {
+      "questionId": "{{codingId}}",
+      "codeAnswer": "public int add(int a, int b) { return a + b; }"
+    }
+  ]
+}
+
+> {%
+  client.test("含编程题时异步评估", function () {
+    client.assert(response.body.status === "EVALUATING", "应进入 EVALUATING");
+  });
+  client.global.set("attemptId", response.body.id);
+%}
+
+### 7. 等待约 5 秒后重复执行，直到 GRADED
+GET {{javaHost}}/api/quiz-attempts/{{attemptId}}
+Authorization: Bearer {{accessToken}}
+
+### 8. 查看三信号掌握度
+GET {{javaHost}}/api/mastery
+Authorization: Bearer {{accessToken}}
+
+### 9. 自评；knowledgePoint 应替换成第 8 步返回的真实值
+POST {{javaHost}}/api/quiz-attempts/{{attemptId}}/self-assessments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "ratings": [{"knowledgePoint": "依赖注入", "score": 65}]
+}
+
+### 10. 查询薄弱点治理候选、审计和通知
+GET {{javaHost}}/api/agent-executions
+Authorization: Bearer {{accessToken}}
+
+###
+GET {{javaHost}}/api/audit-logs
+Authorization: Bearer {{accessToken}}
+
+###
+GET {{javaHost}}/api/notifications
+Authorization: Bearer {{accessToken}}
+
+### 11. 给未来 LOW 候选授权；HIGH 候选仍必须逐次确认
+POST {{javaHost}}/api/agent-grants
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "scopes": ["SMALL_PLAN_ADJUSTMENT"],
+  "expiresAt": "2026-12-31T23:59:59Z"
+}
+
+### 12. 用新 idempotencyKey 重复第 6 步可修改代码并保留独立 attempt 历史。

@@ -61,12 +61,49 @@ class GeneratedQuestion(BaseModel):
     knowledge_point: str = Field(min_length=1, max_length=180)
     question_text: str = Field(min_length=1)
     options: list[str] = Field(default_factory=list)
-    correct_answers: set[str] = Field(min_length=1)
+    correct_answers: set[str] = Field(default_factory=set)
     explanation: str = Field(min_length=1)
     starter_code: str | None = None
     rubric: CodingRubric | None = None
     reference_answer: str | None = None
     source_indexes: list[int] = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_choice_labels(cls, data):
+        """把模型常见的 ``A`` 答案映射回 ``A. 完整选项``。
+
+        只接受唯一前缀匹配；无法确定的答案保持原样，随后由严格校验拒绝。
+        """
+
+        if not isinstance(data, dict):
+            return data
+        options = data.get("options")
+        answer_key = (
+            "correctAnswers" if "correctAnswers" in data else "correct_answers"
+        )
+        answers = data.get(answer_key)
+        if not isinstance(options, list) or not isinstance(answers, (list, set)):
+            return data
+        normalized = []
+        for answer in answers:
+            if answer in options:
+                normalized.append(answer)
+                continue
+            matches = [
+                option
+                for option in options
+                if isinstance(answer, str)
+                and isinstance(option, str)
+                and (
+                    option.startswith(answer + ".")
+                    or option.startswith(answer + "、")
+                    or option.startswith(answer + " ")
+                )
+            ]
+            normalized.append(matches[0] if len(matches) == 1 else answer)
+        data[answer_key] = normalized
+        return data
 
     @model_validator(mode="after")
     def validate_type_fields(self):
@@ -83,6 +120,12 @@ class GeneratedQuestion(BaseModel):
             raise ValueError("编程题缺少代码类型、语言、Rubric 或参考答案")
         if self.type != QuestionType.CODING and len(self.options) < 2:
             raise ValueError("选择题至少需要两个选项")
+        if self.type != QuestionType.CODING and not self.correct_answers:
+            raise ValueError("选择题必须提供至少一个正确答案")
+        if self.type != QuestionType.CODING and not self.correct_answers.issubset(
+            set(self.options)
+        ):
+            raise ValueError("选择题正确答案必须来自 options")
         return self
 
 

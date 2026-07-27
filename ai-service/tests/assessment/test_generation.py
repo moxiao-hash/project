@@ -1,5 +1,6 @@
 import pytest
 
+from app.assessment.generator import DeepSeekQuizGenerator
 from app.assessment.models import (
     CodingKind,
     CodingRubric,
@@ -7,6 +8,7 @@ from app.assessment.models import (
     GeneratedQuestion,
     GeneratedQuiz,
     QuestionType,
+    QuizSource,
     WebSearchPolicy,
 )
 from app.assessment.service import (
@@ -172,3 +174,84 @@ async def test_private_hit_refuses_generation_before_model_or_web() -> None:
 
     with pytest.raises(PrivateAssessmentSourceError):
         await service.generate("user-1", "task-1", WebSearchPolicy.ENABLED)
+
+
+@pytest.mark.anyio
+async def test_deepseek_generator_repairs_one_invalid_structured_response() -> None:
+    task = (await FakeContext().get_learning_context("user-1")).tasks[0]
+    mix = QuizGenerationPolicy.for_mastery(None)
+    source = [
+        {
+            "sourceType": "MODEL_KNOWLEDGE",
+            "title": "Java 基础",
+            "locator": "模型常识",
+            "snippet": "Java 方法基础",
+        }
+    ]
+    valid = await FakeGenerator().generate(
+        task=task,
+        mix=mix,
+        sources=[],
+    )
+
+    class Structured:
+        def __init__(self):
+            self.responses = [{}, valid.model_dump(by_alias=True, mode="json")]
+            self.calls = []
+
+        async def ainvoke(self, messages):
+            self.calls.append(messages)
+            return self.responses.pop(0)
+
+    class Chat:
+        def __init__(self):
+            self.structured = Structured()
+
+        def with_structured_output(self, schema, *, method):
+            return self.structured
+
+    chat = Chat()
+    result = await DeepSeekQuizGenerator(chat).generate(
+        task=task,
+        mix=mix,
+        sources=[QuizSource(**source[0])],
+    )
+
+    assert len(result.questions) == 5
+    assert len(chat.structured.calls) == 2
+    repair_prompt = str(chat.structured.calls[1][-1].content)
+    assert "未通过结构校验" in repair_prompt
+
+
+def test_coding_question_uses_reference_answer_not_choice_answer_set() -> None:
+    question = GeneratedQuestion(
+        type=QuestionType.CODING,
+        difficulty=Difficulty.EASY,
+        codingKind=CodingKind.CODE_COMPLETION,
+        language="JAVA",
+        knowledgePoint="Java 方法",
+        questionText="补全方法",
+        correctAnswers=set(),
+        explanation="参考实现用于文本评估",
+        starterCode="int add(int a,int b){}",
+        rubric=CodingRubric(),
+        referenceAnswer="return a + b;",
+        sourceIndexes=[0],
+    )
+
+    assert question.correct_answers == set()
+
+
+def test_choice_answer_labels_are_normalized_to_full_options() -> None:
+    question = GeneratedQuestion(
+        type=QuestionType.SINGLE_CHOICE,
+        difficulty=Difficulty.EASY,
+        knowledgePoint="依赖注入",
+        questionText="IoC 是什么？",
+        options=["A. 控制反转", "B. 垃圾回收"],
+        correctAnswers={"A"},
+        explanation="IoC 即控制反转",
+        sourceIndexes=[0],
+    )
+
+    assert question.correct_answers == {"A. 控制反转"}

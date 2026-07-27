@@ -6,6 +6,7 @@ import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 public interface LearningTaskJpaRepository extends JpaRepository<LearningTaskEntity, String> {
 
@@ -26,5 +27,11 @@ public interface LearningTaskJpaRepository extends JpaRepository<LearningTaskEnt
             String ownerId,
             LocalDate scheduledDate,
             LearningTaskStatus status
+    );
+
+    boolean existsByOwnerIdAndKnowledgePointAndStatusIn(
+            String ownerId,
+            String knowledgePoint,
+            Collection<LearningTaskStatus> statuses
     );
 }

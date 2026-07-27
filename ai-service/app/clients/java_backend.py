@@ -116,6 +116,17 @@ class JavaBackendClient:
             json=payload,
         )
 
+    async def heartbeat_coding_evaluation_job(
+        self,
+        job_id: str,
+        worker_id: str,
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/coding-evaluation-jobs/{job_id}/heartbeat",
+            json={"workerId": worker_id, "leaseSeconds": 120},
+        )
+
     async def fail_coding_evaluation_job(
         self,
         job_id: str,
@@ -432,8 +443,14 @@ class JavaBackendClient:
             detail: str | None = None
             try:
                 payload = exc.response.json()
-                if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
-                    detail = payload["detail"]
+                if isinstance(payload, dict):
+                    candidate = payload.get("detail") or payload.get("message")
+                    if isinstance(candidate, str):
+                        detail = candidate
+                    field_errors = payload.get("fieldErrors")
+                    if isinstance(field_errors, dict) and field_errors:
+                        field, error = next(iter(field_errors.items()))
+                        detail = f"{detail or '字段校验失败'}（{field}: {error}）"
             except ValueError:
                 detail = exc.response.text.strip() or None
             raise JavaBackendError(

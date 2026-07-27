@@ -18,6 +18,8 @@ FastAPI AI 服务负责模型调用、Agent 工作流和检索编排。用户、
 - 使用 Tavily 搜索时效资料，返回可追溯来源；搜索结果需确认后才进入资料库。
 - 提供多轮知识问答，并用大纲、资料和网页证据增强学习计划。
 - `SENSITIVE`、`LOCAL_ONLY` 正文不会发送给 DeepSeek 或 Tavily。
+- 从真实学习任务生成固定五题的自适应测验，并保存逐题来源。
+- 异步租约 Worker 只评估代码文本，绝不编译或运行用户代码。
 - 自动化测试不会调用付费模型 API。
 
 当前只处理文本；扫描 PDF、图片理解和 OCR 暂不实现。
@@ -138,7 +140,17 @@ GET  /internal/knowledge/conversations/{conversationId}
 不会伪造联网结果，而是在 `warnings` 中说明降级。完整联调顺序见
 [`../docs/material-rag-e2e.http`](../docs/material-rag-e2e.http)。
 
-## 6. 测试与代码检查
+## 6. 自适应测验与代码文本评估
+
+测验通过 `POST /internal/assessment/quizzes/generate` 由用户主动触发。题型比例由最低
+相关掌握度确定。编程题提交后，Java 返回 `EVALUATING`，FastAPI 定时领取持久化
+任务，并按 40/25/20/15 固定 Rubric 写回结果。
+
+代码评分标记为 `AI_EVALUATED`，始终附带“未执行代码”的警告；它是学习反馈，不
+等同于编译器、测试沙箱或人工代码审查。完整联调顺序见
+[`../docs/quiz-mastery-e2e.http`](../docs/quiz-mastery-e2e.http)。
+
+## 7. 测试与代码检查
 
 ```bash
 .venv/bin/python -m ruff format --check app tests

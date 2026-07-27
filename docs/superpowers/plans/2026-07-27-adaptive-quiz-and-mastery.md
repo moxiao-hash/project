@@ -13,6 +13,10 @@ and leases coding-evaluation jobs. Review tasks reuse plan-adjustment governance
 **Tech Stack:** Java 26, Spring Boot, JPA, Flyway, MySQL, Python 3.12, FastAPI,
 Pydantic, DeepSeek, FastEmbed/Qdrant, Tavily, pytest, JUnit.
 
+**Implementation status (2026-07-27):** Tasks 1–4 implemented. The unchecked
+items below are the original TDD execution checklist retained as planning history;
+fresh verification results are recorded in `项目开发步骤.md`.
+
 ---
 
 ## Task 1: Grounded adaptive quiz generation

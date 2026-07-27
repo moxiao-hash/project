@@ -3,6 +3,7 @@ package com.moxiao.studypilot.learning.api;
 import com.moxiao.studypilot.agent.domain.TriggerType;
 import com.moxiao.studypilot.learning.domain.AdaptationSignalType;
 import com.moxiao.studypilot.learning.domain.AdjustmentOperationType;
+import com.moxiao.studypilot.learning.domain.LearningTaskKind;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -26,15 +27,19 @@ public record CreatePlanAdjustmentRequest(
 ) {
     public record Operation(
             @NotNull AdjustmentOperationType type,
-            @NotBlank String taskId,
-            @Min(1) int expectedVersion,
+            String taskId,
+            @Min(1) Integer expectedVersion,
             LocalDate scheduledDate,
             @Min(5) @Max(720) Integer estimatedMinutes,
             @Size(max = 160) String firstTitle,
             @Min(5) @Max(720) Integer firstEstimatedMinutes,
             @Size(max = 160) String secondTitle,
             LocalDate secondScheduledDate,
-            @Min(5) @Max(720) Integer secondEstimatedMinutes
+            @Min(5) @Max(720) Integer secondEstimatedMinutes,
+            @Size(max = 160) String title,
+            LearningTaskKind taskKind,
+            @Size(max = 180) String knowledgePoint,
+            @Size(max = 36) String sourceAttemptId
     ) {
     }
 }

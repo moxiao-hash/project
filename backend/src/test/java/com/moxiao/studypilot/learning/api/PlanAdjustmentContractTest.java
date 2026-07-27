@@ -163,6 +163,91 @@ class PlanAdjustmentContractTest {
     }
 
     @Test
+    void insertsGovernedReviewTaskWithProvenance() throws Exception {
+        Setup setup = createPlan();
+        createSmallAdjustmentGrant(setup);
+        String executionId = createPendingExecution(setup, "review");
+        MvcResult created = createAdjustment("""
+                {
+                  "ownerId": "%s",
+                  "planId": "%s",
+                  "idempotencyKey": "review:attempt-1:依赖注入",
+                  "analysisDate": "%s",
+                  "triggerType": "USER_REQUEST",
+                  "signals": [],
+                  "summary": "插入薄弱知识点复习任务",
+                  "executionId": "%s",
+                  "operations": [{
+                    "type": "INSERT_REVIEW_TASK",
+                    "scheduledDate": "%s",
+                    "estimatedMinutes": 30,
+                    "title": "复习：依赖注入",
+                    "taskKind": "REVIEW",
+                    "knowledgePoint": "依赖注入",
+                    "sourceAttemptId": "attempt-1"
+                  }]
+                }
+                """.formatted(
+                setup.ownerId(), setup.planId(), LocalDate.now(), executionId,
+                LocalDate.now().plusDays(1)
+        ))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.riskLevel").value("LOW"))
+                .andReturn();
+        String adjustmentId = objectMapper.readTree(
+                created.getResponse().getContentAsString()
+        ).get("id").asText();
+
+        executeAdjustment(setup, adjustmentId, executionId)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+
+        mockMvc.perform(get("/api/learning-tasks")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.knowledgePoint == '依赖注入')].taskKind")
+                        .value("REVIEW"))
+                .andExpect(jsonPath("$[?(@.knowledgePoint == '依赖注入')].sourceAttemptId")
+                        .value("attempt-1"));
+    }
+
+    @Test
+    void reviewTaskBeyondDailyCapacityRequiresPerActionConfirmation() throws Exception {
+        Setup setup = createPlan();
+
+        createAdjustment("""
+                {
+                  "ownerId": "%s",
+                  "planId": "%s",
+                  "idempotencyKey": "review:capacity:%d",
+                  "analysisDate": "%s",
+                  "triggerType": "USER_REQUEST",
+                  "signals": [],
+                  "summary": "超出每日容量的练习",
+                  "operations": [{
+                    "type": "INSERT_REVIEW_TASK",
+                    "scheduledDate": "%s",
+                    "estimatedMinutes": 100,
+                    "title": "编程练习：依赖注入",
+                    "taskKind": "CODING_PRACTICE",
+                    "knowledgePoint": "依赖注入",
+                    "sourceAttemptId": "attempt-capacity"
+                  }]
+                }
+                """.formatted(
+                setup.ownerId(), setup.planId(), System.nanoTime(),
+                LocalDate.now(), LocalDate.now()
+        ))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.riskLevel").value("HIGH"));
+
+        mockMvc.perform(get("/api/agent-executions")
+                        .header("Authorization", "Bearer " + setup.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("WAITING_CONFIRMATION"));
+    }
+
+    @Test
     void staleTaskVersionRejectsWholeAdjustmentAndMarksDraftFailed() throws Exception {
         Setup setup = createPlan();
         createSmallAdjustmentGrant(setup);

@@ -6,6 +6,7 @@ import pytest
 from pydantic import SecretStr
 
 from app.api.quiz_generation import get_quiz_generation_service
+from app.clients.java_backend import JavaBackendError
 from app.core.settings import Settings, get_settings
 from app.main import app
 
@@ -52,3 +53,23 @@ def test_generation_returns_persisted_quiz() -> None:
 
     assert response.status_code == 201
     assert response.json()["id"] == "quiz-1"
+
+
+def test_generation_reports_safe_java_contract_rejection() -> None:
+    class RejectingService:
+        async def generate(self, owner_id, task_id, web_search):
+            raise JavaBackendError(
+                "rejected",
+                path="/internal/quizzes",
+                status_code=400,
+                detail="选择题必须提供选项内的正确答案",
+            )
+
+    app.dependency_overrides[get_quiz_generation_service] = lambda: RejectingService()
+
+    response = send()
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == (
+        "Java 拒绝保存测验：选择题必须提供选项内的正确答案"
+    )

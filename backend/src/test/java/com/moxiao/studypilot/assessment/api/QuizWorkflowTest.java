@@ -9,6 +9,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import java.time.LocalDate;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -126,8 +127,9 @@ class QuizWorkflowTest {
                                       "language": "JAVA",
                                       "knowledgePoint": "Java 方法",
                                       "questionText": "补全 add 方法",
+                                      "options": [],
                                       "starterCode": "int add(int a, int b) { }",
-                                      "correctAnswers": ["return a + b;"],
+                                      "correctAnswers": [],
                                       "explanation": "返回两个参数的和。",
                                       "rubric": {
                                         "correctness": 40,
@@ -147,10 +149,9 @@ class QuizWorkflowTest {
                                     }
                                   ]
                                 }
-                                """.formatted(registration.userId())))
+                """.formatted(registration.userId())))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.questions[0].correctAnswers[0]")
-                        .value("return a + b;"))
+                .andExpect(jsonPath("$.questions[0].correctAnswers").isEmpty())
                 .andReturn();
 
         String quizId = readId(result);
@@ -166,6 +167,103 @@ class QuizWorkflowTest {
                         .value("MODEL_KNOWLEDGE"))
                 .andExpect(jsonPath("$.questions[0].referenceAnswer").doesNotExist())
                 .andExpect(jsonPath("$.questions[0].correctAnswers").doesNotExist());
+    }
+
+    @Test
+    void weakPointCreatesAtMostOneGovernedReviewCandidate() throws Exception {
+        Registration registration = registerUser();
+        MvcResult goal = mockMvc.perform(post("/api/learning-goals")
+                        .header("Authorization", "Bearer " + registration.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "title": "掌握 Spring",
+                                  "targetDate": "%s",
+                                  "weeklyStudyHours": 10
+                                }
+                                """.formatted(LocalDate.now().plusMonths(2))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String goalId = readId(goal);
+        MvcResult plan = mockMvc.perform(post("/internal/confirmed-learning-plans")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s",
+                                  "goalId": "%s",
+                                  "idempotencyKey": "review-plan-%d",
+                                  "title": "Spring 计划",
+                                  "startDate": "%s",
+                                  "endDate": "%s",
+                                  "tasks": [{
+                                    "title": "学习依赖注入",
+                                    "scheduledDate": "%s",
+                                    "estimatedMinutes": 60
+                                  }]
+                                }
+                                """.formatted(
+                                registration.userId(), goalId, System.nanoTime(),
+                                LocalDate.now(), LocalDate.now().plusDays(7), LocalDate.now()
+                        )))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode planJson = objectMapper.readTree(plan.getResponse().getContentAsString());
+        String taskId = planJson.get("tasks").get(0).get("id").asText();
+
+        MvcResult quiz = mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s",
+                                  "taskId": "%s",
+                                  "title": "依赖注入检查",
+                                  "modelName": "test-model",
+                                  "questions": [{
+                                    "type": "SINGLE_CHOICE",
+                                    "knowledgePoint": "依赖注入",
+                                    "questionText": "正确答案？",
+                                    "options": ["IoC", "GC"],
+                                    "correctAnswers": ["IoC"],
+                                    "explanation": "IoC"
+                                  }]
+                                }
+                                """.formatted(registration.userId(), taskId)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode quizJson = objectMapper.readTree(quiz.getResponse().getContentAsString());
+        String quizId = quizJson.get("id").asText();
+        String questionId = quizJson.get("questions").get(0).get("id").asText();
+        MvcResult attempt = mockMvc.perform(post("/api/quizzes/{id}/attempts", quizId)
+                        .header("Authorization", "Bearer " + registration.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "idempotencyKey": "weak-attempt",
+                                  "answers": [{
+                                    "questionId": "%s",
+                                    "selectedAnswers": ["GC"]
+                                  }]
+                                }
+                                """.formatted(questionId)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String attemptId = readId(attempt);
+
+        mockMvc.perform(get("/internal/plan-adjustments/by-key")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .param("ownerId", registration.userId())
+                        .param("idempotencyKey", "review:" + attemptId + ":依赖注入"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.riskLevel").value("LOW"))
+                .andExpect(jsonPath("$.operations.length()").value(1))
+                .andExpect(jsonPath("$.operations[0].taskKind").value("REVIEW"));
+
+        mockMvc.perform(get("/api/agent-executions")
+                        .header("Authorization", "Bearer " + registration.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("WAITING_AUTHORIZATION"));
     }
 
     @Test

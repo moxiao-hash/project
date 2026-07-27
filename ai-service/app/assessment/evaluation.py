@@ -3,6 +3,7 @@
 本模块不会编译或运行用户代码。代码始终被当作不可信文本交给模型分析。
 """
 
+import asyncio
 import json
 from typing import Any
 
@@ -33,14 +34,32 @@ class DeepSeekCodingEvaluator:
             ),
             HumanMessage(
                 content=json.dumps(
-                    {"untrustedAnswers": answers},
+                    {
+                        "untrustedAnswers": answers,
+                        "outputSchema": CodingEvaluationBatch.model_json_schema(),
+                    },
                     ensure_ascii=False,
                     default=str,
                 )
             ),
         ]
-        result = await self._model.ainvoke(messages)
-        return CodingEvaluationBatch.model_validate(result)
+        for attempt in range(2):
+            try:
+                result = await self._model.ainvoke(messages)
+                return CodingEvaluationBatch.model_validate(result)
+            except Exception:
+                if attempt == 1:
+                    raise
+                messages.append(
+                    HumanMessage(
+                        content=(
+                            "上一次输出未通过结构校验。请严格按 outputSchema 修复，"
+                            "每个 questionId 必须与输入一致，score 必须等于四个"
+                            "Rubric 分项之和，只返回JSON。"
+                        )
+                    )
+                )
+        raise AssertionError("unreachable")
 
 
 class CodingEvaluationWorker:
@@ -55,6 +74,14 @@ class CodingEvaluationWorker:
         job = await self._java.claim_coding_evaluation_job(self._worker_id)
         if job is None:
             return False
+        await self._java.heartbeat_coding_evaluation_job(
+            job["jobId"],
+            self._worker_id,
+        )
+        stop_heartbeat = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            self._maintain_lease(job["jobId"], stop_heartbeat)
+        )
         try:
             result = await self._evaluator.evaluate(job["answers"])
             await self._java.complete_coding_evaluation_job(
@@ -76,4 +103,23 @@ class CodingEvaluationWorker:
                     "error": f"代码文本评估失败: {type(exc).__name__}",
                 },
             )
+        finally:
+            stop_heartbeat.set()
+            await heartbeat_task
         return True
+
+    async def _maintain_lease(
+        self,
+        job_id: str,
+        stop: asyncio.Event,
+    ) -> None:
+        """模型调用期间每 30 秒续租；第一次在评估前立即执行。"""
+
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=30)
+            except TimeoutError:
+                await self._java.heartbeat_coding_evaluation_job(
+                    job_id,
+                    self._worker_id,
+                )

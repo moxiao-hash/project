@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.learning.api;
 
 import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
+import com.moxiao.studypilot.learning.domain.LearningTaskKind;
 import com.moxiao.studypilot.learning.infrastructure.LearningTaskEntity;
 
 import java.time.Instant;
@@ -15,7 +16,10 @@ public record LearningTaskResponse(
         LearningTaskStatus status,
         int version,
         Instant completedAt,
-        Integer actualMinutes
+        Integer actualMinutes,
+        LearningTaskKind taskKind,
+        String knowledgePoint,
+        String sourceAttemptId
 ) {
     public static LearningTaskResponse from(LearningTaskEntity entity) {
         return new LearningTaskResponse(
@@ -27,7 +31,10 @@ public record LearningTaskResponse(
                 entity.getStatus(),
                 entity.getVersion(),
                 entity.getCompletedAt(),
-                entity.getActualMinutes()
+                entity.getActualMinutes(),
+                entity.getTaskKind(),
+                entity.getKnowledgePoint(),
+                entity.getSourceAttemptId()
         );
     }
 }

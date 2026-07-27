@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.learning.application;
 
 import com.moxiao.studypilot.agent.api.UpdateAgentExecutionRequest;
+import com.moxiao.studypilot.agent.api.CreateAgentExecutionRequest;
 import com.moxiao.studypilot.agent.application.AgentGovernanceService;
 import com.moxiao.studypilot.agent.domain.AgentScope;
 import com.moxiao.studypilot.agent.domain.ExecutionStatus;
@@ -105,7 +106,24 @@ public class PlanAdjustmentService {
                 .filter(candidate -> candidate.getStatus() == LearningPlanStatus.CONFIRMED)
                 .orElseThrow(() -> new ResourceNotFoundException("没有可调整的已确认计划"));
         validateOperations(request.operations());
-        RiskLevel riskLevel = classifyRisk(request.operations(), plan.getEndDate());
+        RiskLevel riskLevel = classifyRisk(request.operations(), plan, request.ownerId());
+        String executionId = request.executionId();
+        if (executionId == null && !request.operations().isEmpty()) {
+            AgentExecutionEntity execution = governanceService.createExecution(
+                    new CreateAgentExecutionRequest(
+                            request.ownerId(),
+                            "execution:" + request.idempotencyKey(),
+                            ExecutionType.PLAN_ADJUSTMENT,
+                            request.triggerType(),
+                            riskLevel,
+                            riskLevel == RiskLevel.LOW
+                                    ? AgentScope.SMALL_PLAN_ADJUSTMENT
+                                    : AgentScope.LARGE_PLAN_ADJUSTMENT,
+                            request.summary()
+                    )
+            );
+            executionId = execution.getId();
+        }
         PlanAdjustmentStatus status = request.operations().isEmpty()
                 ? PlanAdjustmentStatus.NO_CHANGE
                 : PlanAdjustmentStatus.DRAFT_READY;
@@ -120,7 +138,7 @@ public class PlanAdjustmentService {
                         objectMapper.writeValueAsString(request.signals()),
                         request.summary().trim(),
                         objectMapper.writeValueAsString(request.operations()),
-                        request.executionId()
+                        executionId
                 );
         return adjustmentRepository.save(new PlanAdjustmentEntity(
                 UUID.randomUUID().toString(),
@@ -292,6 +310,9 @@ public class PlanAdjustmentService {
     ) {
         Map<String, LearningTaskEntity> tasks = new LinkedHashMap<>();
         for (CreatePlanAdjustmentRequest.Operation operation : operations) {
+            if (operation.type() == AdjustmentOperationType.INSERT_REVIEW_TASK) {
+                continue;
+            }
             if (tasks.containsKey(operation.taskId())) {
                 throw new ConflictException("同一调整不能重复修改同一个任务");
             }
@@ -368,13 +389,15 @@ public class PlanAdjustmentService {
         );
 
         for (CreatePlanAdjustmentRequest.Operation operation : operations) {
-            LearningTaskEntity task = tasks.get(operation.taskId());
             switch (operation.type()) {
                 case RESCHEDULE_TASK ->
-                        task.reschedule(operation.scheduledDate(), now);
+                        tasks.get(operation.taskId()).reschedule(operation.scheduledDate(), now);
                 case UPDATE_ESTIMATE ->
-                        task.updateEstimate(operation.estimatedMinutes(), now);
+                        tasks.get(operation.taskId()).updateEstimate(
+                                operation.estimatedMinutes(), now
+                        );
                 case SPLIT_TASK -> {
+                    LearningTaskEntity task = tasks.get(operation.taskId());
                     task.replaceForSplit(
                             operation.firstTitle().trim(),
                             operation.firstEstimatedMinutes(),
@@ -390,6 +413,18 @@ public class PlanAdjustmentService {
                             now
                     ));
                 }
+                case INSERT_REVIEW_TASK -> taskRepository.save(new LearningTaskEntity(
+                        UUID.randomUUID().toString(),
+                        adjustment.getOwnerId(),
+                        plan.getId(),
+                        operation.title().trim(),
+                        operation.scheduledDate(),
+                        operation.estimatedMinutes(),
+                        operation.taskKind(),
+                        operation.knowledgePoint().trim(),
+                        operation.sourceAttemptId(),
+                        now
+                ));
             }
         }
         plan.applyAdjustment(adjustedEndDate, now);
@@ -468,7 +503,8 @@ public class PlanAdjustmentService {
 
     private RiskLevel classifyRisk(
             List<CreatePlanAdjustmentRequest.Operation> operations,
-            LocalDate planEndDate
+            LearningPlanEntity plan,
+            String ownerId
     ) {
         long splitCount = operations.stream()
                 .filter(operation -> operation.type() == AdjustmentOperationType.SPLIT_TASK)
@@ -479,8 +515,29 @@ public class PlanAdjustmentService {
                         operation.secondScheduledDate()
                 ))
                 .filter(java.util.Objects::nonNull)
-                .anyMatch(date -> date.isAfter(planEndDate));
-        return operations.size() > 3 || splitCount > 1 || outsidePlan
+                .anyMatch(date -> date.isAfter(plan.getEndDate()));
+        long insertCount = operations.stream()
+                .filter(operation ->
+                        operation.type() == AdjustmentOperationType.INSERT_REVIEW_TASK)
+                .count();
+        int dailyLimit = settingsRepository.findById(ownerId)
+                .map(settings -> settings.getDailyStudyLimitMinutes())
+                .orElse(120);
+        Map<LocalDate, Integer> scheduledMinutes = new java.util.HashMap<>();
+        taskRepository.findAllByPlanIdOrderByScheduledDateAscCreatedAtAsc(plan.getId())
+                .forEach(task -> scheduledMinutes.merge(
+                        task.getScheduledDate(), task.getEstimatedMinutes(), Integer::sum
+                ));
+        operations.stream()
+                .filter(operation ->
+                        operation.type() == AdjustmentOperationType.INSERT_REVIEW_TASK)
+                .forEach(operation -> scheduledMinutes.merge(
+                        operation.scheduledDate(), operation.estimatedMinutes(), Integer::sum
+                ));
+        boolean exceedsDailyCapacity = scheduledMinutes.values().stream()
+                .anyMatch(minutes -> minutes > dailyLimit);
+        return operations.size() > 3 || splitCount > 1 || insertCount > 2
+                || outsidePlan || exceedsDailyCapacity
                 ? RiskLevel.HIGH
                 : RiskLevel.LOW;
     }
@@ -489,6 +546,11 @@ public class PlanAdjustmentService {
             List<CreatePlanAdjustmentRequest.Operation> operations
     ) {
         for (CreatePlanAdjustmentRequest.Operation operation : operations) {
+            if (operation.type() != AdjustmentOperationType.INSERT_REVIEW_TASK
+                    && (operation.taskId() == null || operation.taskId().isBlank()
+                    || operation.expectedVersion() == null)) {
+                throw new IllegalArgumentException("修改现有任务必须提供 taskId 和版本");
+            }
             if (operation.type() == AdjustmentOperationType.RESCHEDULE_TASK
                     && operation.scheduledDate() == null) {
                 throw new IllegalArgumentException("重新安排任务必须提供日期");
@@ -504,6 +566,16 @@ public class PlanAdjustmentService {
                     || operation.secondScheduledDate() == null
                     || operation.secondEstimatedMinutes() == null)) {
                 throw new IllegalArgumentException("拆分任务必须完整提供两个部分");
+            }
+            if (operation.type() == AdjustmentOperationType.INSERT_REVIEW_TASK
+                    && (operation.title() == null
+                    || operation.scheduledDate() == null
+                    || operation.estimatedMinutes() == null
+                    || operation.taskKind() == null
+                    || operation.knowledgePoint() == null
+                    || operation.knowledgePoint().isBlank()
+                    || operation.sourceAttemptId() == null)) {
+                throw new IllegalArgumentException("插入薄弱点任务必须提供完整来源和安排");
             }
         }
     }

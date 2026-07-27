@@ -70,4 +70,10 @@ async def generate_quiz(
     except InvalidGeneratedQuizError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except JavaBackendError as exc:
+        if exc.status_code is not None and 400 <= exc.status_code < 500:
+            detail = exc.detail or f"HTTP {exc.status_code}"
+            raise HTTPException(
+                status_code=502,
+                detail=f"Java 拒绝保存测验：{detail}",
+            ) from exc
         raise HTTPException(status_code=503, detail="Java 后端暂时不可用") from exc
