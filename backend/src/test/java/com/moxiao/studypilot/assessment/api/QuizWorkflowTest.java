@@ -85,6 +85,69 @@ class QuizWorkflowTest {
                 .andExpect(jsonPath("$[0].score").value(100.0));
     }
 
+    @Test
+    void codingQuizPersistsDifficultyTaskAndTraceableSources() throws Exception {
+        Registration registration = registerUser();
+
+        MvcResult result = mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s",
+                                  "taskId": "task-source-1",
+                                  "title": "Java 方法练习",
+                                  "modelName": "deepseek-v4-pro",
+                                  "questions": [
+                                    {
+                                      "type": "CODING",
+                                      "difficulty": "EASY",
+                                      "codingKind": "CODE_COMPLETION",
+                                      "language": "JAVA",
+                                      "knowledgePoint": "Java 方法",
+                                      "questionText": "补全 add 方法",
+                                      "starterCode": "int add(int a, int b) { }",
+                                      "correctAnswers": ["return a + b;"],
+                                      "explanation": "返回两个参数的和。",
+                                      "rubric": {
+                                        "correctness": 40,
+                                        "completeness": 25,
+                                        "edgeCases": 20,
+                                        "clarityEfficiency": 15
+                                      },
+                                      "referenceAnswer": "int add(int a, int b) { return a + b; }",
+                                      "sources": [
+                                        {
+                                          "sourceType": "MODEL_KNOWLEDGE",
+                                          "title": "Java 稳定基础知识",
+                                          "locator": "模型常识",
+                                          "snippet": "Java 方法可以返回计算结果。"
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                                """.formatted(registration.userId())))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.questions[0].correctAnswers[0]")
+                        .value("return a + b;"))
+                .andReturn();
+
+        String quizId = readId(result);
+        mockMvc.perform(get("/api/quizzes/{id}", quizId)
+                        .header("Authorization", "Bearer " + registration.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value("task-source-1"))
+                .andExpect(jsonPath("$.questions[0].type").value("CODING"))
+                .andExpect(jsonPath("$.questions[0].difficulty").value("EASY"))
+                .andExpect(jsonPath("$.questions[0].codingKind").value("CODE_COMPLETION"))
+                .andExpect(jsonPath("$.questions[0].starterCode").isNotEmpty())
+                .andExpect(jsonPath("$.questions[0].sources[0].sourceType")
+                        .value("MODEL_KNOWLEDGE"))
+                .andExpect(jsonPath("$.questions[0].referenceAnswer").doesNotExist())
+                .andExpect(jsonPath("$.questions[0].correctAnswers").doesNotExist());
+    }
+
     private Registration registerUser() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

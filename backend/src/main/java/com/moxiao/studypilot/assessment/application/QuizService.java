@@ -11,6 +11,7 @@ import com.moxiao.studypilot.assessment.infrastructure.QuizAttemptEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizAttemptJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizJpaRepository;
+import com.moxiao.studypilot.assessment.infrastructure.QuestionSourceEmbeddable;
 import com.moxiao.studypilot.auth.infrastructure.UserAccountJpaRepository;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class QuizService {
@@ -32,19 +34,22 @@ public class QuizService {
     private final QuestionJpaRepository questionRepository;
     private final QuizAttemptJpaRepository attemptRepository;
     private final MasteryJpaRepository masteryRepository;
+    private final ObjectMapper objectMapper;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
             QuizJpaRepository quizRepository,
             QuestionJpaRepository questionRepository,
             QuizAttemptJpaRepository attemptRepository,
-            MasteryJpaRepository masteryRepository
+            MasteryJpaRepository masteryRepository,
+            ObjectMapper objectMapper
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
         this.questionRepository = questionRepository;
         this.attemptRepository = attemptRepository;
         this.masteryRepository = masteryRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -57,6 +62,7 @@ public class QuizService {
                 quizId,
                 request.ownerId(),
                 request.materialId(),
+                request.taskId(),
                 request.title().trim(),
                 request.modelName(),
                 Instant.now()
@@ -64,19 +70,54 @@ public class QuizService {
         List<QuestionEntity> questions = new ArrayList<>();
         for (int index = 0; index < request.questions().size(); index++) {
             CreateQuizRequest.QuestionInput input = request.questions().get(index);
+            validateQuestion(input);
             questions.add(new QuestionEntity(
                     UUID.randomUUID().toString(),
                     quizId,
                     index,
                     input.type(),
+                    input.difficulty(),
+                    input.codingKind(),
+                    input.language(),
                     input.knowledgePoint(),
                     input.questionText(),
                     input.options(),
                     input.correctAnswers(),
-                    input.explanation()
+                    input.explanation(),
+                    input.starterCode(),
+                    input.rubric() == null ? null : objectMapper.writeValueAsString(input.rubric()),
+                    input.referenceAnswer(),
+                    (input.sources() == null ? List.<CreateQuizRequest.SourceInput>of()
+                            : input.sources()).stream()
+                            .map(source -> new QuestionSourceEmbeddable(
+                                    source.sourceType(),
+                                    source.materialId(),
+                                    source.webResultId(),
+                                    source.title(),
+                                    source.locator(),
+                                    source.snippet()
+                            ))
+                            .toList()
             ));
         }
         return new QuizBundle(quiz, questionRepository.saveAll(questions));
+    }
+
+    private void validateQuestion(CreateQuizRequest.QuestionInput input) {
+        if (input.type() == com.moxiao.studypilot.assessment.domain.QuestionType.CODING) {
+            if (input.codingKind() == null || input.language() == null
+                    || input.starterCode() == null || input.rubric() == null
+                    || input.referenceAnswer() == null) {
+                throw new IllegalArgumentException("编程题必须提供类型、语言、代码、Rubric 和参考答案");
+            }
+            int total = input.rubric().correctness() + input.rubric().completeness()
+                    + input.rubric().edgeCases() + input.rubric().clarityEfficiency();
+            if (total != 100) {
+                throw new IllegalArgumentException("编程题 Rubric 权重之和必须为 100");
+            }
+        } else if (input.options() == null || input.options().size() < 2) {
+            throw new IllegalArgumentException("选择题至少需要两个选项");
+        }
     }
 
     @Transactional(readOnly = true)

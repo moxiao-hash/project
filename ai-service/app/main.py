@@ -16,6 +16,7 @@ from app.api.knowledge_conversations import router as knowledge_conversations_ro
 from app.api.model_status import router as model_status_router
 from app.api.plan_adjustments import build_plan_adjustment_service
 from app.api.plan_adjustments import router as plan_adjustments_router
+from app.api.quiz_generation import router as quiz_generation_router
 from app.api.task_conversations import router as task_conversations_router
 from app.clients.java_backend import JavaBackendClient
 from app.core.settings import get_settings
@@ -104,6 +105,7 @@ app.include_router(conversations_router)
 app.include_router(task_conversations_router)
 app.include_router(plan_adjustments_router)
 app.include_router(knowledge_conversations_router)
+app.include_router(quiz_generation_router)
 
 
 @app.get("/health")

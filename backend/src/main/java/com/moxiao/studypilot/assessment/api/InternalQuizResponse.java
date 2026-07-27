@@ -21,12 +21,17 @@ public record InternalQuizResponse(
                 questions.stream()
                         .map(question -> new InternalQuestionResponse(
                                 question.getId(),
-                                question.getCorrectAnswers()
+                                question.getCorrectAnswers(),
+                                question.getReferenceAnswer()
                         ))
                         .toList()
         );
     }
 
-    public record InternalQuestionResponse(String id, Set<String> correctAnswers) {
+    public record InternalQuestionResponse(
+            String id,
+            Set<String> correctAnswers,
+            String referenceAnswer
+    ) {
     }
 }

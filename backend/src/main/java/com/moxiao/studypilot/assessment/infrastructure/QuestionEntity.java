@@ -1,6 +1,9 @@
 package com.moxiao.studypilot.assessment.infrastructure;
 
 import com.moxiao.studypilot.assessment.domain.QuestionType;
+import com.moxiao.studypilot.assessment.domain.CodingKind;
+import com.moxiao.studypilot.assessment.domain.Difficulty;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -35,6 +38,17 @@ public class QuestionEntity {
     @Column(nullable = false, length = 30)
     private QuestionType type;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private Difficulty difficulty = Difficulty.EASY;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "coding_kind", length = 30)
+    private CodingKind codingKind;
+
+    @Column(length = 30)
+    private String language;
+
     @Column(name = "knowledge_point", nullable = false, length = 180)
     private String knowledgePoint;
 
@@ -58,6 +72,20 @@ public class QuestionEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String explanation;
 
+    @Column(name = "starter_code", columnDefinition = "TEXT")
+    private String starterCode;
+
+    @Column(name = "rubric_json", columnDefinition = "TEXT")
+    private String rubricJson;
+
+    @Column(name = "reference_answer", columnDefinition = "TEXT")
+    private String referenceAnswer;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "quiz_question_sources",
+            joinColumns = @JoinColumn(name = "question_id"))
+    private List<QuestionSourceEmbeddable> sources = new ArrayList<>();
+
     protected QuestionEntity() {
     }
 
@@ -72,15 +100,47 @@ public class QuestionEntity {
             Set<String> correctAnswers,
             String explanation
     ) {
+        this(
+                id, quizId, position, type, Difficulty.EASY, null, null,
+                knowledgePoint, questionText, options, correctAnswers, explanation,
+                null, null, null, List.of()
+        );
+    }
+
+    public QuestionEntity(
+            String id,
+            String quizId,
+            int position,
+            QuestionType type,
+            Difficulty difficulty,
+            CodingKind codingKind,
+            String language,
+            String knowledgePoint,
+            String questionText,
+            List<String> options,
+            Set<String> correctAnswers,
+            String explanation,
+            String starterCode,
+            String rubricJson,
+            String referenceAnswer,
+            List<QuestionSourceEmbeddable> sources
+    ) {
         this.id = id;
         this.quizId = quizId;
         this.position = position;
         this.type = type;
+        this.difficulty = difficulty == null ? Difficulty.EASY : difficulty;
+        this.codingKind = codingKind;
+        this.language = language;
         this.knowledgePoint = knowledgePoint;
         this.questionText = questionText;
-        this.options = new ArrayList<>(options);
+        this.options = options == null ? new ArrayList<>() : new ArrayList<>(options);
         this.correctAnswers = new LinkedHashSet<>(correctAnswers);
         this.explanation = explanation;
+        this.starterCode = starterCode;
+        this.rubricJson = rubricJson;
+        this.referenceAnswer = referenceAnswer;
+        this.sources = new ArrayList<>(sources);
     }
 
     public String getId() {
@@ -110,4 +170,12 @@ public class QuestionEntity {
     public String getExplanation() {
         return explanation;
     }
+
+    public Difficulty getDifficulty() { return difficulty; }
+    public CodingKind getCodingKind() { return codingKind; }
+    public String getLanguage() { return language; }
+    public String getStarterCode() { return starterCode; }
+    public String getRubricJson() { return rubricJson; }
+    public String getReferenceAnswer() { return referenceAnswer; }
+    public List<QuestionSourceEmbeddable> getSources() { return List.copyOf(sources); }
 }

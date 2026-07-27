@@ -81,6 +81,12 @@ class JavaBackendClient:
         )
         return LearningContext.model_validate(response.json())
 
+    async def create_quiz(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """保存 Python 已完成结构校验的测验；Java 仍会执行领域校验。"""
+
+        response = await self._request("POST", "/internal/quizzes", json=payload)
+        return response.json()
+
     async def get_learning_tasks(
         self,
         owner_id: str,
