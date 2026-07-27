@@ -87,6 +87,46 @@ class JavaBackendClient:
         response = await self._request("POST", "/internal/quizzes", json=payload)
         return response.json()
 
+    async def claim_coding_evaluation_job(
+        self,
+        worker_id: str,
+    ) -> dict[str, Any] | None:
+        """领取一个代码文本评估任务；404 表示当前队列为空。"""
+
+        try:
+            response = await self._request(
+                "POST",
+                "/internal/coding-evaluation-jobs/claim",
+                json={"workerId": worker_id, "leaseSeconds": 120},
+            )
+        except JavaBackendError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return response.json()
+
+    async def complete_coding_evaluation_job(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/coding-evaluation-jobs/{job_id}/complete",
+            json=payload,
+        )
+
+    async def fail_coding_evaluation_job(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/coding-evaluation-jobs/{job_id}/fail",
+            json=payload,
+        )
+
     async def get_learning_tasks(
         self,
         owner_id: str,

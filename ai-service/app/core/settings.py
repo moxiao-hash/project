@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     nightly_adjustment_interval_minutes: int = 15
     material_processing_interval_seconds: int = 10
     material_worker_id: str = "studypilot-ai-local"
+    coding_evaluation_interval_seconds: int = 5
+    coding_evaluation_worker_id: str = "studypilot-ai-coding-local"
     qdrant_path: str = "./data/qdrant"
     tavily_api_key: SecretStr = SecretStr("")
     tavily_base_url: str = "https://api.tavily.com"

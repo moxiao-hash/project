@@ -148,6 +148,127 @@ class QuizWorkflowTest {
                 .andExpect(jsonPath("$.questions[0].correctAnswers").doesNotExist());
     }
 
+    @Test
+    void codingAnswerIsLeasedEvaluatedAndIdempotentlyReturned() throws Exception {
+        Registration registration = registerUser();
+        MvcResult quiz = mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "ownerId": "%s",
+                                  "title": "代码评估",
+                                  "modelName": "test-model",
+                                  "questions": [{
+                                    "type": "CODING",
+                                    "difficulty": "EASY",
+                                    "codingKind": "CODE_COMPLETION",
+                                    "language": "JAVA",
+                                    "knowledgePoint": "Java 方法",
+                                    "questionText": "实现 add",
+                                    "starterCode": "int add(int a,int b){}",
+                                    "correctAnswers": ["return a+b;"],
+                                    "explanation": "返回两数之和",
+                                    "rubric": {
+                                      "correctness": 40,
+                                      "completeness": 25,
+                                      "edgeCases": 20,
+                                      "clarityEfficiency": 15
+                                    },
+                                    "referenceAnswer": "int add(int a,int b){return a+b;}",
+                                    "sources": [{
+                                      "sourceType": "MODEL_KNOWLEDGE",
+                                      "title": "Java基础",
+                                      "locator": "模型常识",
+                                      "snippet": "方法返回计算结果"
+                                    }]
+                                  }]
+                                }
+                                """.formatted(registration.userId())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode quizJson = objectMapper.readTree(quiz.getResponse().getContentAsString());
+        String quizId = quizJson.get("id").asText();
+        String questionId = quizJson.get("questions").get(0).get("id").asText();
+
+        String submission = """
+                {
+                  "idempotencyKey": "coding-attempt-1",
+                  "answers": [{
+                    "questionId": "%s",
+                    "codeAnswer": "int add(int a,int b){return a+b;}"
+                  }]
+                }
+                """.formatted(questionId);
+        MvcResult attempt = mockMvc.perform(post("/api/quizzes/{id}/attempts", quizId)
+                        .header("Authorization", "Bearer " + registration.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submission))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("EVALUATING"))
+                .andReturn();
+        String attemptId = readId(attempt);
+
+        mockMvc.perform(post("/api/quizzes/{id}/attempts", quizId)
+                        .header("Authorization", "Bearer " + registration.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(submission))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(attemptId));
+
+        MvcResult claimed = mockMvc.perform(post("/internal/coding-evaluation-jobs/claim")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workerId":"coding-worker","leaseSeconds":60}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.attemptId").value(attemptId))
+                .andExpect(jsonPath("$.answers[0].codeAnswer").isNotEmpty())
+                .andReturn();
+        String jobId = objectMapper.readTree(claimed.getResponse().getContentAsString())
+                .get("jobId").asText();
+
+        mockMvc.perform(post("/internal/coding-evaluation-jobs/{id}/heartbeat", jobId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workerId":"coding-worker","leaseSeconds":60}
+                                """))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/internal/coding-evaluation-jobs/{id}/complete", jobId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workerId": "coding-worker",
+                                  "evaluations": [{
+                                    "questionId": "%s",
+                                    "score": 90,
+                                    "correctness": 38,
+                                    "completeness": 23,
+                                    "edgeCases": 15,
+                                    "clarityEfficiency": 14,
+                                    "issues": [],
+                                    "feedback": "逻辑正确。",
+                                    "suggestedCode": "int add(int a,int b){return a+b;}"
+                                  }]
+                                }
+                                """.formatted(questionId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("GRADED"));
+
+        mockMvc.perform(get("/api/quiz-attempts/{id}", attemptId)
+                        .header("Authorization", "Bearer " + registration.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("GRADED"))
+                .andExpect(jsonPath("$.results[0].evaluationMethod").value("AI_EVALUATED"))
+                .andExpect(jsonPath("$.warning").value(
+                        "未执行代码，不保证代码可以编译或运行"
+                ));
+    }
+
     private Registration registerUser() throws Exception {
         MvcResult result = mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

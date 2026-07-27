@@ -9,11 +9,16 @@ import com.moxiao.studypilot.assessment.infrastructure.QuestionEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuestionJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuizAttemptEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizAttemptJpaRepository;
+import com.moxiao.studypilot.assessment.infrastructure.CodingEvaluationJobEntity;
+import com.moxiao.studypilot.assessment.infrastructure.CodingEvaluationJobJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuestionSourceEmbeddable;
 import com.moxiao.studypilot.auth.infrastructure.UserAccountJpaRepository;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
+import com.moxiao.studypilot.shared.error.ConflictException;
+import com.moxiao.studypilot.assessment.domain.QuestionType;
+import com.moxiao.studypilot.assessment.domain.QuizAttemptStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +40,7 @@ public class QuizService {
     private final QuizAttemptJpaRepository attemptRepository;
     private final MasteryJpaRepository masteryRepository;
     private final ObjectMapper objectMapper;
+    private final CodingEvaluationJobJpaRepository codingJobRepository;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -42,7 +48,8 @@ public class QuizService {
             QuestionJpaRepository questionRepository,
             QuizAttemptJpaRepository attemptRepository,
             MasteryJpaRepository masteryRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            CodingEvaluationJobJpaRepository codingJobRepository
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -50,6 +57,7 @@ public class QuizService {
         this.attemptRepository = attemptRepository;
         this.masteryRepository = masteryRepository;
         this.objectMapper = objectMapper;
+        this.codingJobRepository = codingJobRepository;
     }
 
     @Transactional
@@ -137,11 +145,31 @@ public class QuizService {
             SubmitQuizAttemptRequest request
     ) {
         QuizBundle bundle = get(ownerId, quizId);
-        Map<String, Set<String>> submitted = new HashMap<>();
-        request.answers().forEach(answer ->
-                submitted.put(answer.questionId(), answer.selectedAnswers())
+        String idempotencyKey = request.idempotencyKey() == null
+                ? UUID.randomUUID().toString()
+                : request.idempotencyKey();
+        var existing = attemptRepository.findByOwnerIdAndQuizIdAndIdempotencyKey(
+                ownerId, quizId, idempotencyKey
         );
-        if (submitted.size() != bundle.questions().size()) {
+        if (existing.isPresent()) {
+            return toAttemptResponse(existing.get(), bundle.questions());
+        }
+        if (attemptRepository.existsByOwnerIdAndQuizIdAndStatus(
+                ownerId, quizId, QuizAttemptStatus.EVALUATING
+        )) {
+            throw new ConflictException("该测验已有代码作答正在评估");
+        }
+        Map<String, Set<String>> submitted = new HashMap<>();
+        Map<String, String> submittedCode = new HashMap<>();
+        request.answers().forEach(answer -> {
+            if (answer.selectedAnswers() != null) {
+                submitted.put(answer.questionId(), answer.selectedAnswers());
+            }
+            if (answer.codeAnswer() != null && !answer.codeAnswer().isBlank()) {
+                submittedCode.put(answer.questionId(), answer.codeAnswer());
+            }
+        });
+        if (submitted.size() + submittedCode.size() != bundle.questions().size()) {
             throw new IllegalArgumentException("必须回答测验中的全部题目");
         }
 
@@ -149,6 +177,16 @@ public class QuizService {
         int correctCount = 0;
         List<QuizAttemptResponse.QuestionResult> results = new ArrayList<>();
         for (QuestionEntity question : bundle.questions()) {
+            if (question.getType() == QuestionType.CODING) {
+                if (!submittedCode.containsKey(question.getId())) {
+                    throw new IllegalArgumentException("提交的编程题与测验不匹配");
+                }
+                results.add(new QuizAttemptResponse.QuestionResult(
+                        question.getId(), false, question.getKnowledgePoint(),
+                        question.getExplanation(), "PENDING_AI_EVALUATION", null, null
+                ));
+                continue;
+            }
             Set<String> selected = submitted.get(question.getId());
             if (selected == null) {
                 throw new IllegalArgumentException("提交的题目与测验不匹配");
@@ -157,30 +195,196 @@ public class QuizService {
             if (correct) {
                 correctCount++;
             }
-            recordMastery(
-                    ownerId,
-                    question.getKnowledgePoint(),
-                    correct ? 100.0 : 0.0,
-                    now
-            );
             results.add(new QuizAttemptResponse.QuestionResult(
                     question.getId(),
                     correct,
                     question.getKnowledgePoint(),
-                    question.getExplanation()
+                    question.getExplanation(),
+                    "DETERMINISTIC",
+                    correct ? 100.0 : 0.0,
+                    null
             ));
         }
-        double score = correctCount * 100.0 / bundle.questions().size();
+        long choiceCount = bundle.questions().stream()
+                .filter(question -> question.getType() != QuestionType.CODING)
+                .count();
+        double objectiveScore = choiceCount == 0 ? 0
+                : correctCount * 100.0 / choiceCount;
         String attemptId = UUID.randomUUID().toString();
-        attemptRepository.save(new QuizAttemptEntity(
+        QuizAttemptStatus attemptStatus = submittedCode.isEmpty()
+                ? QuizAttemptStatus.GRADED
+                : QuizAttemptStatus.EVALUATING;
+        QuizAttemptEntity attempt = attemptRepository.save(new QuizAttemptEntity(
                 attemptId,
                 quizId,
                 ownerId,
-                score,
-                "{\"answeredQuestionCount\":" + submitted.size() + "}",
+                objectiveScore,
+                attemptStatus,
+                idempotencyKey,
+                objectiveScore,
+                objectMapper.writeValueAsString(request),
+                null,
+                null,
                 now
         ));
-        return new QuizAttemptResponse(attemptId, score, results);
+        if (!submittedCode.isEmpty()) {
+            codingJobRepository.save(new CodingEvaluationJobEntity(
+                    UUID.randomUUID().toString(), attemptId, now
+            ));
+        } else {
+            bundle.questions().stream()
+                    .filter(question -> question.getType() != QuestionType.CODING)
+                    .forEach(question -> recordMastery(
+                            ownerId,
+                            question.getKnowledgePoint(),
+                            submitted.get(question.getId()).equals(question.getCorrectAnswers())
+                                    ? 100.0 : 0.0,
+                            now
+                    ));
+        }
+        return new QuizAttemptResponse(
+                attemptId, objectiveScore, attemptStatus.name(), null, results
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public QuizAttemptResponse getAttempt(String ownerId, String attemptId) {
+        QuizAttemptEntity attempt = attemptRepository.findByIdAndOwnerId(attemptId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("测验作答不存在"));
+        return toAttemptResponse(
+                attempt,
+                questionRepository.findAllByQuizIdOrderByPosition(attempt.getQuizId())
+        );
+    }
+
+    @Transactional
+    public CodingJobPayload claimCodingJob(String workerId, int leaseSeconds) {
+        Instant now = Instant.now();
+        CodingEvaluationJobEntity job = codingJobRepository.findAll().stream()
+                .filter(item -> item.claimable(now))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("暂无代码评估任务"));
+        job.claim(workerId, leaseSeconds, now);
+        codingJobRepository.save(job);
+        QuizAttemptEntity attempt = attemptRepository.findById(job.getAttemptId())
+                .orElseThrow(() -> new ResourceNotFoundException("测验作答不存在"));
+        SubmitQuizAttemptRequest submitted = objectMapper.readValue(
+                attempt.getAnswersJson(), SubmitQuizAttemptRequest.class
+        );
+        List<QuestionEntity> questions =
+                questionRepository.findAllByQuizIdOrderByPosition(attempt.getQuizId());
+        List<CodingAnswerPayload> answers = submitted.answers().stream()
+                .filter(answer -> answer.codeAnswer() != null)
+                .map(answer -> {
+                    QuestionEntity question = questions.stream()
+                            .filter(item -> item.getId().equals(answer.questionId()))
+                            .findFirst()
+                            .orElseThrow();
+                    return new CodingAnswerPayload(
+                            question.getId(), question.getQuestionText(), answer.codeAnswer(),
+                            objectMapper.readValue(question.getRubricJson(), Map.class)
+                    );
+                })
+                .toList();
+        return new CodingJobPayload(job.getId(), attempt.getId(), answers);
+    }
+
+    @Transactional
+    public QuizAttemptResponse completeCodingJob(
+            String jobId,
+            String workerId,
+            List<Map<String, Object>> evaluations
+    ) {
+        CodingEvaluationJobEntity job = requireOwnedJob(jobId, workerId);
+        QuizAttemptEntity attempt = attemptRepository.findById(job.getAttemptId())
+                .orElseThrow(() -> new ResourceNotFoundException("测验作答不存在"));
+        List<QuestionEntity> questions =
+                questionRepository.findAllByQuizIdOrderByPosition(attempt.getQuizId());
+        long choiceCount = questions.stream()
+                .filter(question -> question.getType() != QuestionType.CODING).count();
+        double codingTotal = evaluations.stream()
+                .mapToDouble(item -> ((Number) item.get("score")).doubleValue()).sum();
+        double finalScore = (
+                attempt.getObjectiveScore() * choiceCount + codingTotal * 0.3
+        ) / (choiceCount + evaluations.size() * 0.3);
+        Instant now = Instant.now();
+        attempt.complete(finalScore, objectMapper.writeValueAsString(evaluations), now);
+        job.complete(now);
+        return toAttemptResponse(attemptRepository.save(attempt), questions);
+    }
+
+    @Transactional
+    public void heartbeatCodingJob(String jobId, String workerId, int leaseSeconds) {
+        CodingEvaluationJobEntity job = requireOwnedJob(jobId, workerId);
+        job.heartbeat(leaseSeconds, Instant.now());
+        codingJobRepository.save(job);
+    }
+
+    @Transactional
+    public void failCodingJob(String jobId, String workerId, String error) {
+        CodingEvaluationJobEntity job = requireOwnedJob(jobId, workerId);
+        job.fail(error, Instant.now());
+        codingJobRepository.save(job);
+        if (job.getStatus().equals("FAILED")) {
+            QuizAttemptEntity attempt = attemptRepository.findById(job.getAttemptId())
+                    .orElseThrow();
+            attempt.partiallyGrade("代码评估失败，已仅保留客观题成绩", Instant.now());
+            attemptRepository.save(attempt);
+        }
+    }
+
+    private CodingEvaluationJobEntity requireOwnedJob(String jobId, String workerId) {
+        CodingEvaluationJobEntity job = codingJobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("代码评估任务不存在"));
+        if (!workerId.equals(job.getWorkerId()) || !job.getStatus().equals("PROCESSING")) {
+            throw new ConflictException("代码评估任务租约无效");
+        }
+        return job;
+    }
+
+    private QuizAttemptResponse toAttemptResponse(
+            QuizAttemptEntity attempt,
+            List<QuestionEntity> questions
+    ) {
+        List<QuizAttemptResponse.QuestionResult> results = new ArrayList<>();
+        if (attempt.getEvaluationJson() != null) {
+            List<Map<String, Object>> evaluations = objectMapper.readValue(
+                    attempt.getEvaluationJson(), List.class
+            );
+            for (Map<String, Object> evaluation : evaluations) {
+                String questionId = String.valueOf(evaluation.get("questionId"));
+                QuestionEntity question = questions.stream()
+                        .filter(item -> item.getId().equals(questionId)).findFirst().orElseThrow();
+                results.add(new QuizAttemptResponse.QuestionResult(
+                        questionId,
+                        ((Number) evaluation.get("score")).doubleValue() >= 70,
+                        question.getKnowledgePoint(),
+                        question.getExplanation(),
+                        "AI_EVALUATED",
+                        ((Number) evaluation.get("score")).doubleValue(),
+                        evaluation
+                ));
+            }
+        }
+        return new QuizAttemptResponse(
+                attempt.getId(), attempt.getScore(), attempt.getStatus().name(),
+                attempt.getWarning(), results
+        );
+    }
+
+    public record CodingJobPayload(
+            String jobId,
+            String attemptId,
+            List<CodingAnswerPayload> answers
+    ) {
+    }
+
+    public record CodingAnswerPayload(
+            String questionId,
+            String questionText,
+            String codeAnswer,
+            Object rubric
+    ) {
     }
 
     @Transactional(readOnly = true)

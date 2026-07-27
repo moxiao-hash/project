@@ -18,6 +18,7 @@ from app.api.plan_adjustments import build_plan_adjustment_service
 from app.api.plan_adjustments import router as plan_adjustments_router
 from app.api.quiz_generation import router as quiz_generation_router
 from app.api.task_conversations import router as task_conversations_router
+from app.assessment.evaluation import CodingEvaluationWorker, DeepSeekCodingEvaluator
 from app.clients.java_backend import JavaBackendClient
 from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
@@ -29,6 +30,7 @@ from app.search.web_fetcher import SafeWebFetcher
 
 logger = logging.getLogger(__name__)
 _material_processing_service: MaterialProcessingService | None = None
+_coding_evaluation_worker: CodingEvaluationWorker | None = None
 
 
 async def run_nightly_adjustment_job() -> None:
@@ -67,6 +69,25 @@ async def run_material_processing_job() -> None:
         logger.exception("资料处理任务执行失败")
 
 
+async def run_coding_evaluation_job() -> None:
+    """异步评估一批代码文本；用户代码不会在本服务中执行。"""
+
+    settings = get_settings()
+    global _coding_evaluation_worker
+    try:
+        if _coding_evaluation_worker is None:
+            _coding_evaluation_worker = CodingEvaluationWorker(
+                JavaBackendClient(settings),
+                DeepSeekCodingEvaluator(create_chat_model(settings)),
+                worker_id=settings.coding_evaluation_worker_id,
+            )
+        await _coding_evaluation_worker.process_once()
+    except ModelConfigurationError:
+        logger.warning("未配置模型，暂不评估代码文本")
+    except Exception:
+        logger.exception("代码文本评估任务执行失败")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings = get_settings()
@@ -85,6 +106,15 @@ async def lifespan(_: FastAPI):
         "interval",
         seconds=settings.material_processing_interval_seconds,
         id="material-processing",
+        coalesce=True,
+        max_instances=1,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_coding_evaluation_job,
+        "interval",
+        seconds=settings.coding_evaluation_interval_seconds,
+        id="coding-evaluation",
         coalesce=True,
         max_instances=1,
         replace_existing=True,
