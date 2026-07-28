@@ -52,7 +52,13 @@ def get_knowledge_conversation_service(
             ),
             JavaBackendClient(settings),
         ),
-        DeepSeekKnowledgeAnswerer(model),
+        DeepSeekKnowledgeAnswerer(
+            model,
+            model_provider=settings.model_provider,
+            model_name=settings.model_name,
+        ),
+        model_provider=settings.model_provider,
+        model_name=settings.model_name,
     )
     request.app.state.knowledge_conversation_service = service
     return service

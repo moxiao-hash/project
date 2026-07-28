@@ -145,7 +145,16 @@
             表单修改会先转换成明确的修订消息，由 AI 返回新的完整草案；不会直接写入计划。
           </p>
         </template>
-        <button class="btn btn-primary" style="width: 100%" :disabled="confirming" @click="confirmDialog = true">
+        <div v-if="revisionMessage" class="alert alert-warning" style="margin-bottom: 8px">
+          请先提交表单修改，让 AI 重新生成完整草案后再保存。
+        </div>
+        <button
+          data-test="confirm-plan"
+          class="btn btn-primary"
+          style="width: 100%"
+          :disabled="confirming || Boolean(revisionMessage)"
+          @click="openConfirmDialog"
+        >
           保存计划
         </button>
       </div>
@@ -316,6 +325,14 @@ async function submitDraftRevision() {
   await sendMessage(revisionMessage.value)
 }
 
+function openConfirmDialog() {
+  if (revisionMessage.value) {
+    toast.warning('请先提交表单修改，让 AI 重新生成完整草案')
+    return
+  }
+  confirmDialog.value = true
+}
+
 async function sendMessage(text: string) {
   if (!conversation.value) return
   messages.value.push({ role: 'user', text })
@@ -348,6 +365,11 @@ function cancelWaiting() {
 
 async function onConfirmPlan() {
   if (!conversation.value || confirming.value) return
+  if (revisionMessage.value) {
+    confirmDialog.value = false
+    toast.warning('请先提交表单修改，让 AI 重新生成完整草案')
+    return
+  }
   confirming.value = true
   try {
     conversation.value = await agentGateway.confirmPlan(conversation.value.conversationId)

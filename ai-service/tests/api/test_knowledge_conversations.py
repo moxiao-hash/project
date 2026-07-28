@@ -44,6 +44,8 @@ def snapshot(*, answer: str = "") -> KnowledgeConversationSnapshot:
         mode=KnowledgeMode.AUTO,
         answer=answer,
         retrieval_mode="NONE",
+        model_provider="deepseek",
+        model_name="deepseek-v4-pro",
     )
 
 
@@ -103,6 +105,8 @@ def test_knowledge_conversation_http_workflow() -> None:
     assert created.json()["conversationId"] == "knowledge-1"
     assert answered.status_code == 200
     assert answered.json()["answer"] == "这是有来源的回答。"
+    assert answered.json()["modelProvider"] == "deepseek"
+    assert answered.json()["modelName"] == "deepseek-v4-pro"
     assert fetched.status_code == 200
 
 

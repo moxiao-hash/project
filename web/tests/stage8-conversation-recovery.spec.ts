@@ -82,6 +82,8 @@ const knowledge: KnowledgeConversation = {
   retrievalMode: 'NONE',
   citations: [],
   warnings: [],
+  modelProvider: 'deepseek',
+  modelName: 'deepseek-v4-pro',
 }
 
 async function mountAt(component: object, url: string) {
@@ -136,6 +138,7 @@ describe('Agent 会话 URL 恢复', () => {
 
     expect(planned.getKnowledgeConversation).toHaveBeenCalledWith('knowledge-conversation')
     expect(wrapper.text()).toContain('此前回答')
+    expect(wrapper.text()).toContain('deepseek / deepseek-v4-pro')
     expect(wrapper.text()).toContain('模型常识（无检索证据）')
     expect(wrapper.text()).toContain('未检索到可验证来源')
     expect(wrapper.text()).not.toContain('Spring Boot')
@@ -173,5 +176,42 @@ describe('Agent 会话 URL 恢复', () => {
       '2. 将第 1 个任务“学习依赖注入”的预计时长从 60 分钟改为 90 分钟。',
     )
     expect(planned.confirmPlan).not.toHaveBeenCalled()
+  })
+
+  it('草稿存在未提交修改时禁止确认保存', async () => {
+    planned.createPlanConversation.mockResolvedValue(draftPlan)
+    const { wrapper } = await mountAt(PlanChatView, '/agent')
+
+    await wrapper.get('button.btn-primary').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="draft-title"]').setValue('尚未提交的新标题')
+
+    const save = wrapper.get('[data-test="confirm-plan"]')
+    expect(save.attributes('disabled')).toBeDefined()
+    await save.trigger('click')
+
+    expect(planned.confirmPlan).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('请先提交表单修改')
+  })
+
+  it('草稿未修改时仍可通过专用确认接口保存', async () => {
+    planned.createPlanConversation.mockResolvedValue(draftPlan)
+    planned.confirmPlan.mockResolvedValue({
+      ...draftPlan,
+      status: 'COMPLETED',
+      reply: '计划已保存',
+      savedPlanId: 'plan-1',
+    })
+    const { wrapper } = await mountAt(PlanChatView, '/agent')
+
+    await wrapper.get('button.btn-primary').trigger('click')
+    await flushPromises()
+    const save = wrapper.get('[data-test="confirm-plan"]')
+    expect(save.attributes('disabled')).toBeUndefined()
+    await save.trigger('click')
+    await wrapper.get('.dialog-actions .btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(planned.confirmPlan).toHaveBeenCalledWith('plan-conversation')
   })
 })

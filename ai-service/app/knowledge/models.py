@@ -40,6 +40,8 @@ class KnowledgeConversationSnapshot(BaseModel):
     retrieval_mode: str
     citations: list[KnowledgeCitation] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    model_provider: str
+    model_name: str
 
 
 class CreateKnowledgeConversationRequest(BaseModel):

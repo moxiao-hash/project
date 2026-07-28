@@ -162,3 +162,36 @@ async def test_each_turn_retrieves_again_and_passes_visible_history() -> None:
         ("ASSISTANT", "基于资料与官网，当前建议至少使用 Java 17。"),
     ]
     assert web.calls == []
+
+
+async def test_model_identity_is_deterministic_and_does_not_call_retrieval_or_model() -> None:
+    retriever = FakeRetriever([])
+    web = FakeWebSearcher()
+    answerer = FakeAnswerer()
+    service = KnowledgeConversationService(
+        retriever,
+        web,
+        answerer,
+        model_provider="deepseek",
+        model_name="deepseek-v4-pro",
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+
+    snapshot = await service.send_message(
+        created.conversation_id,
+        "你背后是什么模型？",
+        WebSearchPolicy.AUTO,
+        "user-1",
+    )
+
+    assert snapshot.answer == (
+        "我是 StudyPilot 的知识助手，当前由 deepseek 提供的 "
+        "deepseek-v4-pro 模型驱动。"
+    )
+    assert snapshot.model_provider == "deepseek"
+    assert snapshot.model_name == "deepseek-v4-pro"
+    assert snapshot.retrieval_mode == "NONE"
+    assert snapshot.citations == []
+    assert retriever.queries == []
+    assert web.calls == []
+    assert answerer.calls == []

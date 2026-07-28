@@ -57,10 +57,15 @@ class KnowledgeConversationService:
         retriever: KnowledgeRetriever,
         web_searcher: KnowledgeWebSearcher,
         answerer: KnowledgeAnswerer,
+        *,
+        model_provider: str = "deepseek",
+        model_name: str = "unknown",
     ) -> None:
         self._retriever = retriever
         self._web_searcher = web_searcher
         self._answerer = answerer
+        self._model_provider = model_provider
+        self._model_name = model_name
         self._conversations: dict[str, _Conversation] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
@@ -75,6 +80,8 @@ class KnowledgeConversationService:
             owner_id=owner_id,
             mode=mode,
             retrieval_mode="NONE",
+            model_provider=self._model_provider,
+            model_name=self._model_name,
         )
         self._conversations[conversation_id] = _Conversation(
             conversation_id=conversation_id,
@@ -106,6 +113,13 @@ class KnowledgeConversationService:
         if lock.locked():
             raise KnowledgeConversationBusyError("知识会话正在处理另一条消息")
         async with lock:
+            if self._is_model_identity_question(message):
+                snapshot = self._identity_snapshot(conversation)
+                conversation.history.extend(
+                    [("USER", message), ("ASSISTANT", snapshot.answer)]
+                )
+                conversation.snapshot = snapshot
+                return snapshot
             materials = await self._retriever.search(conversation.owner_id, message)
             private = [
                 item
@@ -142,6 +156,38 @@ class KnowledgeConversationService:
         if conversation.owner_id != owner_id:
             raise KnowledgeConversationNotFoundError("知识会话不存在")
         return conversation
+
+    @staticmethod
+    def _is_model_identity_question(question: str) -> bool:
+        normalized = "".join(question.lower().split())
+        identity_markers = (
+            "你背后是什么模型",
+            "你是什么模型",
+            "你用的是什么模型",
+            "底层是什么模型",
+            "whatmodelareyou",
+            "whichmodelareyou",
+        )
+        return any(marker in normalized for marker in identity_markers)
+
+    def _identity_snapshot(
+        self,
+        conversation: _Conversation,
+    ) -> KnowledgeConversationSnapshot:
+        return KnowledgeConversationSnapshot(
+            conversation_id=conversation.conversation_id,
+            owner_id=conversation.owner_id,
+            mode=conversation.mode,
+            answer=(
+                "我是 StudyPilot 的知识助手，当前由 "
+                f"{self._model_provider} 提供的 {self._model_name} 模型驱动。"
+            ),
+            retrieval_mode="NONE",
+            citations=[],
+            warnings=["模型身份来自 StudyPilot 服务端配置，不属于检索来源"],
+            model_provider=self._model_provider,
+            model_name=self._model_name,
+        )
 
     @staticmethod
     def _should_search_web(
@@ -200,6 +246,8 @@ class KnowledgeConversationService:
             retrieval_mode="LOCAL_ONLY",
             citations=self._material_citations(materials),
             warnings=["隐私资料正文和本轮问题未发送给 DeepSeek 或 Tavily"],
+            model_provider=self._model_provider,
+            model_name=self._model_name,
         )
 
     def _grounded_snapshot(
@@ -236,4 +284,6 @@ class KnowledgeConversationService:
             retrieval_mode=retrieval_mode,
             citations=citations,
             warnings=list(outcome.warnings),
+            model_provider=self._model_provider,
+            model_name=self._model_name,
         )
