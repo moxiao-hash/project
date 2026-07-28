@@ -70,7 +70,7 @@ public class AgentGatewayService {
         return exchange(baseRequest(scopedPath).GET().build());
     }
 
-    private HttpRequest.Builder baseRequest(String path) {
+    HttpRequest.Builder baseRequest(String path) {
         return HttpRequest.newBuilder(baseUri.resolve(path))
                 .timeout(REQUEST_TIMEOUT)
                 .header("Accept", "application/json")
