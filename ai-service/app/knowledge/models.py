@@ -52,5 +52,6 @@ class CreateKnowledgeConversationRequest(BaseModel):
 class SendKnowledgeMessageRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
+    owner_id: str = Field(min_length=1)
     message: str = Field(min_length=1, max_length=10_000)
     web_search: WebSearchPolicy = WebSearchPolicy.AUTO

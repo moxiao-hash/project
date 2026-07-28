@@ -21,15 +21,17 @@ class FakeKnowledgeService:
         assert (owner_id, mode) == ("user-1", KnowledgeMode.AUTO)
         return snapshot()
 
-    async def send_message(self, conversation_id, message, web_search):
-        assert (conversation_id, message, web_search) == (
+    async def send_message(self, conversation_id, message, web_search, owner_id):
+        assert (conversation_id, message, web_search, owner_id) == (
             "knowledge-1",
             "继续讲解",
             WebSearchPolicy.AUTO,
+            "user-1",
         )
         return snapshot(answer="这是有来源的回答。")
 
-    async def get_conversation(self, conversation_id):
+    async def get_conversation(self, conversation_id, owner_id):
+        assert owner_id == "user-1"
         if conversation_id == "missing":
             raise KnowledgeConversationNotFoundError("知识会话不存在")
         return snapshot()
@@ -91,9 +93,11 @@ def test_knowledge_conversation_http_workflow() -> None:
     answered = request(
         "POST",
         "/internal/knowledge/conversations/knowledge-1/messages",
-        json={"message": "继续讲解", "webSearch": "AUTO"},
+        json={"ownerId": "user-1", "message": "继续讲解", "webSearch": "AUTO"},
     )
-    fetched = request("GET", "/internal/knowledge/conversations/knowledge-1")
+    fetched = request(
+        "GET", "/internal/knowledge/conversations/knowledge-1?ownerId=user-1"
+    )
 
     assert created.status_code == 201
     assert created.json()["conversationId"] == "knowledge-1"
@@ -103,7 +107,9 @@ def test_knowledge_conversation_http_workflow() -> None:
 
 
 def test_missing_conversation_is_not_found() -> None:
-    response = request("GET", "/internal/knowledge/conversations/missing")
+    response = request(
+        "GET", "/internal/knowledge/conversations/missing?ownerId=user-1"
+    )
 
     assert response.status_code == 404
     assert response.json() == {"detail": "知识会话不存在"}

@@ -84,8 +84,9 @@ class TaskConversationService:
         self,
         conversation_id: str,
         message: str,
+        owner_id: str,
     ) -> TaskConversationSnapshot:
-        conversation = self._require(conversation_id)
+        conversation = self._require(conversation_id, owner_id)
         if conversation.snapshot.status in {
             TaskConversationStatus.COMPLETED,
             TaskConversationStatus.FAILED,
@@ -114,11 +115,16 @@ class TaskConversationService:
     async def get_conversation(
         self,
         conversation_id: str,
+        owner_id: str,
     ) -> TaskConversationSnapshot:
-        return self._require(conversation_id).snapshot
+        return self._require(conversation_id, owner_id).snapshot
 
-    async def confirm(self, conversation_id: str) -> TaskConversationSnapshot:
-        conversation = self._require(conversation_id)
+    async def confirm(
+        self,
+        conversation_id: str,
+        owner_id: str,
+    ) -> TaskConversationSnapshot:
+        conversation = self._require(conversation_id, owner_id)
         if conversation.snapshot.status == TaskConversationStatus.COMPLETED:
             return conversation.snapshot
         if conversation.snapshot.status != TaskConversationStatus.PREVIEW_READY:
@@ -183,8 +189,11 @@ class TaskConversationService:
             error=values.get("error"),
         )
 
-    def _require(self, conversation_id: str) -> _TaskConversation:
+    def _require(self, conversation_id: str, owner_id: str) -> _TaskConversation:
         try:
-            return self._conversations[conversation_id]
+            conversation = self._conversations[conversation_id]
         except KeyError as exc:
             raise TaskConversationNotFoundError("任务会话不存在") from exc
+        if conversation.snapshot.owner_id != owner_id:
+            raise TaskConversationNotFoundError("任务会话不存在")
+        return conversation

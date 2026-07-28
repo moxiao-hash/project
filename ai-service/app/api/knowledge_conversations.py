@@ -3,7 +3,7 @@
 from collections.abc import Awaitable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
@@ -94,16 +94,22 @@ async def send_message(
     ],
 ) -> KnowledgeConversationSnapshot:
     return await _translate_errors(
-        service.send_message(conversation_id, body.message, body.web_search)
+        service.send_message(
+            conversation_id,
+            body.message,
+            body.web_search,
+            body.owner_id,
+        )
     )
 
 
 @router.get("/{conversation_id}", response_model=KnowledgeConversationSnapshot)
 async def get_conversation(
     conversation_id: str,
+    owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
     service: Annotated[
         KnowledgeConversationService,
         Depends(get_knowledge_conversation_service),
     ],
 ) -> KnowledgeConversationSnapshot:
-    return await _translate_errors(service.get_conversation(conversation_id))
+    return await _translate_errors(service.get_conversation(conversation_id, owner_id))

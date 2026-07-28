@@ -1,7 +1,10 @@
 import pytest
 
 from app.knowledge.models import KnowledgeMode, WebSearchPolicy
-from app.knowledge.service import KnowledgeConversationService
+from app.knowledge.service import (
+    KnowledgeConversationNotFoundError,
+    KnowledgeConversationService,
+)
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchOutcome, WebSearchResult
 
@@ -78,6 +81,7 @@ async def test_private_material_never_calls_web_or_cloud_model() -> None:
         created.conversation_id,
         "根据我的私人笔记，我应该先学什么？",
         WebSearchPolicy.ENABLED,
+        "user-1",
     )
 
     assert web.calls == []
@@ -86,6 +90,25 @@ async def test_private_material_never_calls_web_or_cloud_model() -> None:
     assert snapshot.retrieval_mode == "LOCAL_ONLY"
     assert snapshot.citations[0].source_type == "MATERIAL"
     assert "未发送给 DeepSeek 或 Tavily" in snapshot.warnings[0]
+
+
+async def test_knowledge_conversation_operations_reject_a_different_owner() -> None:
+    service = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        FakeAnswerer(),
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+
+    with pytest.raises(KnowledgeConversationNotFoundError):
+        await service.get_conversation(created.conversation_id, "user-2")
+    with pytest.raises(KnowledgeConversationNotFoundError):
+        await service.send_message(
+            created.conversation_id,
+            "越权消息",
+            WebSearchPolicy.DISABLED,
+            "user-2",
+        )
 
 
 async def test_current_version_question_combines_material_and_web_citations() -> None:
@@ -99,6 +122,7 @@ async def test_current_version_question_combines_material_and_web_citations() ->
         created.conversation_id,
         "Spring Boot 当前推荐使用哪个 Java 版本？",
         WebSearchPolicy.AUTO,
+        "user-1",
     )
 
     assert web.calls == [
@@ -123,11 +147,13 @@ async def test_each_turn_retrieves_again_and_passes_visible_history() -> None:
         created.conversation_id,
         "我的路线从哪里开始？",
         WebSearchPolicy.DISABLED,
+        "user-1",
     )
     await service.send_message(
         created.conversation_id,
         "那第二步呢？",
         WebSearchPolicy.DISABLED,
+        "user-1",
     )
 
     assert len(retriever.queries) == 2

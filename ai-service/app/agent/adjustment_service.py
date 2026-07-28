@@ -166,8 +166,11 @@ class PlanAdjustmentService:
         )
         return adjustment
 
-    async def get(self, adjustment_id: str) -> PlanAdjustment:
-        return await self._java.get_plan_adjustment(adjustment_id)
+    async def get(self, adjustment_id: str, owner_id: str) -> PlanAdjustment:
+        adjustment = await self._java.get_plan_adjustment(adjustment_id)
+        if adjustment.owner_id != owner_id:
+            raise AdjustmentOutputError("计划调整不存在")
+        return adjustment
 
     async def confirm(
         self,

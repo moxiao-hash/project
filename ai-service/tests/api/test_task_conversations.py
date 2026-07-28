@@ -38,10 +38,11 @@ class FakeTaskConversationService:
         assert (owner_id, target_date) == ("user-1", date(2026, 7, 26))
         return self.snapshot
 
-    async def send_message(self, conversation_id: str, message: str):
-        assert (conversation_id, message) == (
+    async def send_message(self, conversation_id: str, message: str, owner_id: str):
+        assert (conversation_id, message, owner_id) == (
             "conversation-1",
             "Spring MVC 接口完成了",
+            "user-1",
         )
         if self.error is not None:
             raise self.error
@@ -59,12 +60,12 @@ class FakeTaskConversationService:
             }
         )
 
-    async def get_conversation(self, conversation_id: str):
-        assert conversation_id == "conversation-1"
+    async def get_conversation(self, conversation_id: str, owner_id: str):
+        assert (conversation_id, owner_id) == ("conversation-1", "user-1")
         return self.snapshot
 
-    async def confirm(self, conversation_id: str):
-        assert conversation_id == "conversation-1"
+    async def confirm(self, conversation_id: str, owner_id: str):
+        assert (conversation_id, owner_id) == ("conversation-1", "user-1")
         if self.error is not None:
             raise self.error
         return self.snapshot.model_copy(
@@ -148,17 +149,18 @@ def test_task_conversation_http_workflow() -> None:
     preview = request(
         "POST",
         "/internal/agent/task-conversations/conversation-1/messages",
-        json={"message": "Spring MVC 接口完成了"},
+        json={"ownerId": "user-1", "message": "Spring MVC 接口完成了"},
         token="test-internal-token",
     )
     fetched = request(
         "GET",
-        "/internal/agent/task-conversations/conversation-1",
+        "/internal/agent/task-conversations/conversation-1?ownerId=user-1",
         token="test-internal-token",
     )
     confirmed = request(
         "POST",
         "/internal/agent/task-conversations/conversation-1/confirm",
+        json={"ownerId": "user-1"},
         token="test-internal-token",
     )
 
@@ -193,6 +195,7 @@ def test_task_conversation_errors_have_stable_http_status(
     response = request(
         "POST",
         "/internal/agent/task-conversations/conversation-1/confirm",
+        json={"ownerId": "user-1"},
         token="test-internal-token",
     )
 

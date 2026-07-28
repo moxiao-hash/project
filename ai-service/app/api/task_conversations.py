@@ -3,9 +3,9 @@
 from collections.abc import Awaitable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from app.agent.models import SendMessageRequest
+from app.agent.models import OwnerConversationRequest, SendMessageRequest
 from app.agent.task_conversation_models import (
     CreateTaskConversationRequest,
     TaskConversationSnapshot,
@@ -117,27 +117,29 @@ async def send_task_message(
     ],
 ) -> TaskConversationSnapshot:
     return await _translate_errors(
-        service.send_message(conversation_id, body.message)
+        service.send_message(conversation_id, body.message, body.owner_id)
     )
 
 
 @router.get("/{conversation_id}", response_model=TaskConversationSnapshot)
 async def get_task_conversation(
     conversation_id: str,
+    owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
     service: Annotated[
         TaskConversationService,
         Depends(get_task_conversation_service),
     ],
 ) -> TaskConversationSnapshot:
-    return await _translate_errors(service.get_conversation(conversation_id))
+    return await _translate_errors(service.get_conversation(conversation_id, owner_id))
 
 
 @router.post("/{conversation_id}/confirm", response_model=TaskConversationSnapshot)
 async def confirm_task_conversation(
     conversation_id: str,
+    body: OwnerConversationRequest,
     service: Annotated[
         TaskConversationService,
         Depends(get_task_conversation_service),
     ],
 ) -> TaskConversationSnapshot:
-    return await _translate_errors(service.confirm(conversation_id))
+    return await _translate_errors(service.confirm(conversation_id, body.owner_id))

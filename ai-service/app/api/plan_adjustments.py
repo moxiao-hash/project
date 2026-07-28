@@ -3,7 +3,7 @@
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.agent.adjustment_service import (
     AdjustmentOutputError,
@@ -99,10 +99,11 @@ async def analyze_plan_adjustment(
 @router.get("/{adjustment_id}", response_model=PlanAdjustment)
 async def get_plan_adjustment(
     adjustment_id: str,
+    owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
     service: Annotated[PlanAdjustmentService, Depends(get_plan_adjustment_service)],
 ) -> PlanAdjustment:
     try:
-        return await service.get(adjustment_id)
+        return await service.get(adjustment_id, owner_id)
     except Exception as exc:
         raise translate_error(exc) from exc
 

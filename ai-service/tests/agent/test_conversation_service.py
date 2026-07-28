@@ -12,7 +12,11 @@ from app.agent.models import (
     PlannerTurn,
     PlanTaskDraft,
 )
-from app.agent.service import ConversationService, GoalNotFoundError
+from app.agent.service import (
+    ConversationNotFoundError,
+    ConversationService,
+    GoalNotFoundError,
+)
 from app.knowledge.models import KnowledgeCitation
 from app.schemas.learning import (
     LearningContext,
@@ -104,6 +108,21 @@ def test_conversation_rejects_a_goal_not_owned_by_user() -> None:
         asyncio.run(service.create_conversation("user-1", "missing-goal"))
 
 
+def test_conversation_operations_reject_a_different_owner() -> None:
+    service = ConversationService(FakePlanner([collecting("继续")]), FakeJavaBackend())
+
+    async def run_flow() -> None:
+        conversation = await service.create_conversation("user-1", "goal-1")
+        with pytest.raises(ConversationNotFoundError):
+            await service.get_conversation(conversation.conversation_id, "user-2")
+        with pytest.raises(ConversationNotFoundError):
+            await service.send_message(conversation.conversation_id, "越权消息", "user-2")
+        with pytest.raises(ConversationNotFoundError):
+            await service.confirm(conversation.conversation_id, "user-2")
+
+    asyncio.run(run_flow())
+
+
 def test_same_conversation_keeps_context_and_conversations_are_isolated() -> None:
     planner = FakePlanner(
         [
@@ -118,9 +137,9 @@ def test_same_conversation_keeps_context_and_conversations_are_isolated() -> Non
     async def run_flow() -> None:
         first = await service.create_conversation("user-1", "goal-1")
         second = await service.create_conversation("user-1", "goal-1")
-        await service.send_message(first.conversation_id, "我想学习 Java")
-        await service.send_message(first.conversation_id, "每天两小时")
-        await service.send_message(second.conversation_id, "只讨论 Python")
+        await service.send_message(first.conversation_id, "我想学习 Java", "user-1")
+        await service.send_message(first.conversation_id, "每天两小时", "user-1")
+        await service.send_message(second.conversation_id, "只讨论 Python", "user-1")
 
     asyncio.run(run_flow())
 
@@ -140,7 +159,9 @@ def test_draft_can_be_revised_and_only_explicit_confirmation_persists_it() -> No
     async def run_flow() -> None:
         conversation = await service.create_conversation("user-1", "goal-1")
 
-        draft = await service.send_message(conversation.conversation_id, "请生成计划")
+        draft = await service.send_message(
+            conversation.conversation_id, "请生成计划", "user-1"
+        )
         assert draft.status == ConversationStatus.DRAFT_READY
         assert draft.draft.tasks[0].estimated_minutes == 30
         assert java.created_plans == []
@@ -148,13 +169,14 @@ def test_draft_can_be_revised_and_only_explicit_confirmation_persists_it() -> No
         revised = await service.send_message(
             conversation.conversation_id,
             "每天改成 60 分钟",
+            "user-1",
         )
         assert revised.status == ConversationStatus.DRAFT_READY
         assert revised.draft.tasks[0].estimated_minutes == 60
         assert java.created_plans == []
 
-        completed = await service.confirm(conversation.conversation_id)
-        repeated = await service.confirm(conversation.conversation_id)
+        completed = await service.confirm(conversation.conversation_id, "user-1")
+        repeated = await service.confirm(conversation.conversation_id, "user-1")
         assert completed.status == ConversationStatus.COMPLETED
         assert completed.saved_plan_id == "plan-1"
         assert repeated.saved_plan_id == completed.saved_plan_id
@@ -207,8 +229,12 @@ def test_plan_conversation_retrieves_grounding_on_every_user_turn() -> None:
 
     async def run_flow():
         conversation = await service.create_conversation("user-1", "goal-1")
-        first = await service.send_message(conversation.conversation_id, "请按课程路线规划")
-        second = await service.send_message(conversation.conversation_id, "每天 60 分钟")
+        first = await service.send_message(
+            conversation.conversation_id, "请按课程路线规划", "user-1"
+        )
+        second = await service.send_message(
+            conversation.conversation_id, "每天 60 分钟", "user-1"
+        )
         return first, second
 
     first, second = asyncio.run(run_flow())

@@ -88,8 +88,9 @@ class KnowledgeConversationService:
     async def get_conversation(
         self,
         conversation_id: str,
+        owner_id: str,
     ) -> KnowledgeConversationSnapshot:
-        conversation = self._find(conversation_id)
+        conversation = self._find(conversation_id, owner_id)
         assert conversation.snapshot is not None
         return conversation.snapshot
 
@@ -98,8 +99,9 @@ class KnowledgeConversationService:
         conversation_id: str,
         message: str,
         web_search: WebSearchPolicy,
+        owner_id: str,
     ) -> KnowledgeConversationSnapshot:
-        conversation = self._find(conversation_id)
+        conversation = self._find(conversation_id, owner_id)
         lock = self._locks[conversation_id]
         if lock.locked():
             raise KnowledgeConversationBusyError("知识会话正在处理另一条消息")
@@ -132,11 +134,14 @@ class KnowledgeConversationService:
             conversation.snapshot = snapshot
             return snapshot
 
-    def _find(self, conversation_id: str) -> _Conversation:
+    def _find(self, conversation_id: str, owner_id: str) -> _Conversation:
         try:
-            return self._conversations[conversation_id]
+            conversation = self._conversations[conversation_id]
         except KeyError as exc:
             raise KnowledgeConversationNotFoundError("知识会话不存在") from exc
+        if conversation.owner_id != owner_id:
+            raise KnowledgeConversationNotFoundError("知识会话不存在")
+        return conversation
 
     @staticmethod
     def _should_search_web(

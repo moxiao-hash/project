@@ -106,17 +106,23 @@ def test_task_agent_full_http_workflow_executes_only_after_confirm() -> None:
                 conversation_id = created.json()["conversationId"]
                 preview = await client.post(
                     f"/internal/agent/task-conversations/{conversation_id}/messages",
-                    json={"message": "我已经完成 Spring MVC 接口任务"},
+                    json={
+                        "ownerId": "user-e2e",
+                        "message": "我已经完成 Spring MVC 接口任务",
+                    },
                 )
                 assert java.task_changes == []
                 fetched = await client.get(
-                    f"/internal/agent/task-conversations/{conversation_id}"
+                    f"/internal/agent/task-conversations/{conversation_id}",
+                    params={"ownerId": "user-e2e"},
                 )
                 confirmed = await client.post(
-                    f"/internal/agent/task-conversations/{conversation_id}/confirm"
+                    f"/internal/agent/task-conversations/{conversation_id}/confirm",
+                    json={"ownerId": "user-e2e"},
                 )
                 repeated = await client.post(
-                    f"/internal/agent/task-conversations/{conversation_id}/confirm"
+                    f"/internal/agent/task-conversations/{conversation_id}/confirm",
+                    json={"ownerId": "user-e2e"},
                 )
                 return [created, preview, fetched, confirmed, repeated], java
         finally:

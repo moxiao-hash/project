@@ -27,16 +27,20 @@ class FakeConversationService:
         assert (owner_id, goal_id) == ("user-1", "goal-1")
         return self.snapshot
 
-    async def send_message(self, conversation_id: str, message: str):
-        assert (conversation_id, message) == ("conversation-1", "每天两小时")
+    async def send_message(self, conversation_id: str, message: str, owner_id: str):
+        assert (conversation_id, message, owner_id) == (
+            "conversation-1",
+            "每天两小时",
+            "user-1",
+        )
         return self.snapshot.model_copy(update={"reply": "还需要确认休息日。"})
 
-    async def get_conversation(self, conversation_id: str):
-        assert conversation_id == "conversation-1"
+    async def get_conversation(self, conversation_id: str, owner_id: str):
+        assert (conversation_id, owner_id) == ("conversation-1", "user-1")
         return self.snapshot
 
-    async def confirm(self, conversation_id: str):
-        assert conversation_id == "conversation-1"
+    async def confirm(self, conversation_id: str, owner_id: str):
+        assert (conversation_id, owner_id) == ("conversation-1", "user-1")
         if self.confirm_error:
             raise InvalidConversationStateError("只有草稿就绪的会话可以确认")
         return self.snapshot.model_copy(update={"status": ConversationStatus.COMPLETED})
@@ -99,12 +103,15 @@ def test_conversation_http_workflow() -> None:
     messaged = request(
         "POST",
         "/internal/agent/conversations/conversation-1/messages",
-        json={"message": "每天两小时"},
+        json={"ownerId": "user-1", "message": "每天两小时"},
     )
-    fetched = request("GET", "/internal/agent/conversations/conversation-1")
+    fetched = request(
+        "GET", "/internal/agent/conversations/conversation-1?ownerId=user-1"
+    )
     confirmed = request(
         "POST",
         "/internal/agent/conversations/conversation-1/confirm",
+        json={"ownerId": "user-1"},
     )
 
     assert created.status_code == 201
@@ -122,6 +129,7 @@ def test_invalid_confirmation_becomes_conflict(
     response = request(
         "POST",
         "/internal/agent/conversations/conversation-1/confirm",
+        json={"ownerId": "user-1"},
     )
 
     assert response.status_code == 409

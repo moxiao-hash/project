@@ -121,7 +121,9 @@ def test_read_only_task_result_does_not_register_or_execute_write() -> None:
             "user-1",
             date(2026, 7, 26),
         )
-        return await service.send_message(conversation.conversation_id, "今天有什么任务？")
+        return await service.send_message(
+            conversation.conversation_id, "今天有什么任务？", "user-1"
+        )
 
     result = asyncio.run(run_flow())
 
@@ -129,6 +131,26 @@ def test_read_only_task_result_does_not_register_or_execute_write() -> None:
     assert result.candidate_tasks[0].id == "task-1"
     assert java.created_executions == []
     assert java.task_changes == []
+
+
+def test_task_conversation_operations_reject_a_different_owner() -> None:
+    from app.agent.task_conversation_service import (
+        TaskConversationNotFoundError,
+        TaskConversationService,
+    )
+
+    service = TaskConversationService(FakeRecognitionService([]), FakeJavaBackend())
+
+    async def run_flow() -> None:
+        conversation = await service.create_conversation("user-1", date(2026, 7, 26))
+        with pytest.raises(TaskConversationNotFoundError):
+            await service.get_conversation(conversation.conversation_id, "user-2")
+        with pytest.raises(TaskConversationNotFoundError):
+            await service.send_message(conversation.conversation_id, "越权消息", "user-2")
+        with pytest.raises(TaskConversationNotFoundError):
+            await service.confirm(conversation.conversation_id, "user-2")
+
+    asyncio.run(run_flow())
 
 
 def test_task_preview_waits_for_confirm_then_executes_exactly_once() -> None:
@@ -147,10 +169,11 @@ def test_task_preview_waits_for_confirm_then_executes_exactly_once() -> None:
         pending = await service.send_message(
             conversation.conversation_id,
             "Spring MVC 接口写完了",
+            "user-1",
         )
         assert java.task_changes == []
-        completed = await service.confirm(conversation.conversation_id)
-        repeated = await service.confirm(conversation.conversation_id)
+        completed = await service.confirm(conversation.conversation_id, "user-1")
+        repeated = await service.confirm(conversation.conversation_id, "user-1")
         return pending, completed, repeated
 
     pending, completed, repeated = asyncio.run(run_flow())
@@ -197,13 +220,16 @@ def test_message_during_preview_replaces_draft_without_writing() -> None:
             "user-1",
             date(2026, 7, 26),
         )
-        await service.send_message(conversation.conversation_id, "这个任务完成了")
+        await service.send_message(
+            conversation.conversation_id, "这个任务完成了", "user-1"
+        )
         revised = await service.send_message(
             conversation.conversation_id,
             "改成延期到 7 月 28 日，原因是今天时间不足",
+            "user-1",
         )
         assert java.task_changes == []
-        completed = await service.confirm(conversation.conversation_id)
+        completed = await service.confirm(conversation.conversation_id, "user-1")
         return revised, completed
 
     revised, completed = asyncio.run(run_flow())
@@ -239,10 +265,12 @@ def test_version_conflict_marks_execution_failed_and_remains_queryable() -> None
             "user-1",
             date(2026, 7, 26),
         )
-        await service.send_message(conversation.conversation_id, "任务完成了")
+        await service.send_message(
+            conversation.conversation_id, "任务完成了", "user-1"
+        )
         with pytest.raises(TaskVersionConflictError):
-            await service.confirm(conversation.conversation_id)
-        return await service.get_conversation(conversation.conversation_id)
+            await service.confirm(conversation.conversation_id, "user-1")
+        return await service.get_conversation(conversation.conversation_id, "user-1")
 
     failed = asyncio.run(run_flow())
 

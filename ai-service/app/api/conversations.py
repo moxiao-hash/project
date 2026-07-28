@@ -3,12 +3,13 @@
 from collections.abc import Awaitable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.agent.grounding import PlanGroundingService
 from app.agent.models import (
     ConversationSnapshot,
     CreateConversationRequest,
+    OwnerConversationRequest,
     SendMessageRequest,
 )
 from app.agent.planner import DeepSeekPlanner, PlannerOutputError
@@ -104,20 +105,24 @@ async def send_message(
     body: SendMessageRequest,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationSnapshot:
-    return await _translate_errors(service.send_message(conversation_id, body.message))
+    return await _translate_errors(
+        service.send_message(conversation_id, body.message, body.owner_id)
+    )
 
 
 @router.get("/{conversation_id}", response_model=ConversationSnapshot)
 async def get_conversation(
     conversation_id: str,
+    owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationSnapshot:
-    return await _translate_errors(service.get_conversation(conversation_id))
+    return await _translate_errors(service.get_conversation(conversation_id, owner_id))
 
 
 @router.post("/{conversation_id}/confirm", response_model=ConversationSnapshot)
 async def confirm_conversation(
     conversation_id: str,
+    body: OwnerConversationRequest,
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> ConversationSnapshot:
-    return await _translate_errors(service.confirm(conversation_id))
+    return await _translate_errors(service.confirm(conversation_id, body.owner_id))

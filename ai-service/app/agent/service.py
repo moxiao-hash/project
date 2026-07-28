@@ -82,8 +82,9 @@ class ConversationService:
         self,
         conversation_id: str,
         message: str,
+        owner_id: str,
     ) -> ConversationSnapshot:
-        conversation = self._require(conversation_id)
+        conversation = self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             raise InvalidConversationStateError("已完成的会话不能继续发送消息")
 
@@ -121,11 +122,19 @@ class ConversationService:
         conversation.started = True
         return result
 
-    async def get_conversation(self, conversation_id: str) -> ConversationSnapshot:
-        return self._require(conversation_id).snapshot
+    async def get_conversation(
+        self,
+        conversation_id: str,
+        owner_id: str,
+    ) -> ConversationSnapshot:
+        return self._require(conversation_id, owner_id).snapshot
 
-    async def confirm(self, conversation_id: str) -> ConversationSnapshot:
-        conversation = self._require(conversation_id)
+    async def confirm(
+        self,
+        conversation_id: str,
+        owner_id: str,
+    ) -> ConversationSnapshot:
+        conversation = self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             return conversation.snapshot
         if conversation.snapshot.status != ConversationStatus.DRAFT_READY:
@@ -187,8 +196,12 @@ class ConversationService:
         query = f"{goal.title}\n{message}"
         return await self._grounding.retrieve(conversation.snapshot.owner_id, query)
 
-    def _require(self, conversation_id: str) -> _Conversation:
+    def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
         try:
-            return self._conversations[conversation_id]
+            conversation = self._conversations[conversation_id]
         except KeyError as exc:
             raise ConversationNotFoundError("会话不存在") from exc
+        if conversation.snapshot.owner_id != owner_id:
+            # 对越权访问也返回不存在，避免通过 ID 探测其他用户的会话。
+            raise ConversationNotFoundError("会话不存在")
+        return conversation

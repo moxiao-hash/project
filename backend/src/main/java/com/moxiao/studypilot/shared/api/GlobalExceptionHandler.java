@@ -1,5 +1,6 @@
 package com.moxiao.studypilot.shared.api;
 
+import com.moxiao.studypilot.agent.application.AgentGatewayException;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.InvalidCredentialsException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
@@ -61,8 +62,27 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
     }
 
+    @ExceptionHandler(AgentGatewayException.class)
+    public ResponseEntity<ApiError> handleAgentGateway(
+            AgentGatewayException exception,
+            HttpServletRequest request
+    ) {
+        ResponseEntity<ApiError> response = build(
+                exception.status(),
+                exception.getMessage(),
+                request,
+                null
+        );
+        if (exception.retryAfter() == null) {
+            return response;
+        }
+        return ResponseEntity.status(exception.status())
+                .header("Retry-After", exception.retryAfter())
+                .body(response.getBody());
+    }
+
     private ResponseEntity<ApiError> build(
-            HttpStatus status,
+            org.springframework.http.HttpStatusCode status,
             String message,
             HttpServletRequest request,
             Map<String, String> fieldErrors
@@ -70,7 +90,7 @@ public class GlobalExceptionHandler {
         ApiError error = new ApiError(
                 Instant.now(),
                 status.value(),
-                status.getReasonPhrase(),
+                HttpStatus.valueOf(status.value()).getReasonPhrase(),
                 message,
                 request.getRequestURI(),
                 fieldErrors

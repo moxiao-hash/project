@@ -12,7 +12,8 @@ class FakeService:
     async def analyze(self, **kwargs):
         return adjustment("DRAFT_READY")
 
-    async def get(self, adjustment_id):
+    async def get(self, adjustment_id, owner_id):
+        assert owner_id == "user-1"
         return adjustment("DRAFT_READY")
 
     async def confirm(self, adjustment_id, owner_id):

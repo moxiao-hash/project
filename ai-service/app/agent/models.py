@@ -104,4 +104,13 @@ class CreateConversationRequest(BaseModel):
 
 
 class SendMessageRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    owner_id: str = Field(min_length=1)
     message: str = Field(min_length=1, max_length=10_000)
+
+
+class OwnerConversationRequest(BaseModel):
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+
+    owner_id: str = Field(min_length=1)
