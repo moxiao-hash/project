@@ -1,6 +1,7 @@
 """资料与联网融合的内部知识会话 API。"""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
+from time import monotonic
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -40,9 +41,22 @@ router = APIRouter(
 
 
 class OwnerScopedKnowledgeServices:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        max_runtime_entries: int = 100,
+        runtime_idle_ttl_seconds: float = 900,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
         self._settings = settings
-        self._services = OwnerRuntimeCache[tuple[str, KnowledgeConversationService]]()
+        self._services: dict[str, KnowledgeConversationService] = {}
+        self._runtime_fingerprints = OwnerRuntimeCache[str](
+            max_entries=max_runtime_entries,
+            idle_ttl_seconds=runtime_idle_ttl_seconds,
+            clock=clock,
+            on_evict=self._clear_runtime,
+        )
 
     async def for_owner(self, owner_id: str) -> KnowledgeConversationService:
         java = JavaBackendClient(self._settings)
@@ -50,6 +64,11 @@ class OwnerScopedKnowledgeServices:
         deepseek_key = await resolver.resolve(owner_id, CredentialProvider.DEEPSEEK)
         tavily_key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
         fingerprint = credential_fingerprint(deepseek_key, tavily_key)
+        service = self._services.get(owner_id)
+        cached_fingerprint = self._runtime_fingerprints.get(owner_id)
+        if service is not None and cached_fingerprint == fingerprint:
+            return service
+
         web = WebSearchService(
             TavilySearchClient(
                 tavily_key,
@@ -62,22 +81,24 @@ class OwnerScopedKnowledgeServices:
             model_provider=self._settings.model_provider,
             model_name=self._settings.model_name,
         )
-        existing = self._services.get(owner_id)
-        if existing is not None:
-            old_fingerprint, service = existing
-            if old_fingerprint != fingerprint:
-                service.replace_runtime(web, answerer)
-                self._services.put(owner_id, (fingerprint, service))
-            return service
-        service = KnowledgeConversationService(
-            AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
-            web,
-            answerer,
-            model_provider=self._settings.model_provider,
-            model_name=self._settings.model_name,
-        )
-        self._services.put(owner_id, (fingerprint, service))
+        if service is None:
+            service = KnowledgeConversationService(
+                AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
+                web,
+                answerer,
+                model_provider=self._settings.model_provider,
+                model_name=self._settings.model_name,
+            )
+            self._services[owner_id] = service
+        else:
+            service.replace_runtime(web, answerer)
+        self._runtime_fingerprints.put(owner_id, fingerprint)
         return service
+
+    def _clear_runtime(self, owner_id: str, _fingerprint: str) -> None:
+        service = self._services.get(owner_id)
+        if service is not None:
+            service.clear_runtime()
 
 
 def get_knowledge_conversation_service(

@@ -58,7 +58,7 @@ class TaskConversationService:
     ) -> None:
         self._java_backend = java_backend
         self._checkpointer = InMemorySaver()
-        self._graph = build_task_conversation_graph(
+        self._graph: Any | None = build_task_conversation_graph(
             recognition_service,
             java_backend,
             self._checkpointer,
@@ -71,6 +71,11 @@ class TaskConversationService:
             self._java_backend,
             self._checkpointer,
         )
+
+    def clear_runtime(self) -> None:
+        """释放含用户密钥的识别器，同时保留会话、锁和图检查点。"""
+
+        self._graph = None
 
     async def create_conversation(
         self,
@@ -161,6 +166,8 @@ class TaskConversationService:
         if conversation.lock.locked():
             raise TaskConversationBusyError("该任务会话正在处理另一条请求")
         async with conversation.lock:
+            if self._graph is None:
+                raise RuntimeError("任务识别模型运行时尚未注入")
             values = await self._graph.ainvoke(
                 graph_input,
                 config={"configurable": {"thread_id": conversation_id}},

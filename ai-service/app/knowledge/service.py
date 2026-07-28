@@ -63,8 +63,8 @@ class KnowledgeConversationService:
         model_name: str = "unknown",
     ) -> None:
         self._retriever = retriever
-        self._web_searcher = web_searcher
-        self._answerer = answerer
+        self._web_searcher: KnowledgeWebSearcher | None = web_searcher
+        self._answerer: KnowledgeAnswerer | None = answerer
         self._model_provider = model_provider
         self._model_name = model_name
         self._conversations: dict[str, _Conversation] = {}
@@ -79,6 +79,12 @@ class KnowledgeConversationService:
 
         self._web_searcher = web_searcher
         self._answerer = answerer
+
+    def clear_runtime(self) -> None:
+        """释放外部模型/搜索客户端，同时保留历史、快照和并发锁。"""
+
+        self._web_searcher = None
+        self._answerer = None
 
     async def create_conversation(
         self,
@@ -140,6 +146,8 @@ class KnowledgeConversationService:
             if private:
                 snapshot = self._private_snapshot(conversation, private)
             else:
+                if self._web_searcher is None or self._answerer is None:
+                    raise RuntimeError("知识问答模型运行时尚未注入")
                 outcome = WebSearchOutcome(query=message)
                 if self._should_search_web(conversation.mode, web_search, message):
                     outcome = await self._web_searcher.search(conversation.owner_id, message)

@@ -1,6 +1,7 @@
 """学习计划 Agent 的内部会话 API。"""
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
+from time import monotonic
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -46,9 +47,22 @@ router = APIRouter(
 class OwnerScopedConversationServices:
     """按 owner 构造服务，防止把某用户的模型客户端复用于另一用户。"""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        max_runtime_entries: int = 100,
+        runtime_idle_ttl_seconds: float = 900,
+        clock: Callable[[], float] = monotonic,
+    ) -> None:
         self._settings = settings
-        self._services = OwnerRuntimeCache[tuple[str, ConversationService]]()
+        self._services: dict[str, ConversationService] = {}
+        self._runtime_fingerprints = OwnerRuntimeCache[str](
+            max_entries=max_runtime_entries,
+            idle_ttl_seconds=runtime_idle_ttl_seconds,
+            clock=clock,
+            on_evict=self._clear_runtime,
+        )
 
     async def for_owner(self, owner_id: str) -> ConversationService:
         java = JavaBackendClient(self._settings)
@@ -56,6 +70,11 @@ class OwnerScopedConversationServices:
         deepseek_key = await resolver.resolve(owner_id, CredentialProvider.DEEPSEEK)
         tavily_key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
         fingerprint = credential_fingerprint(deepseek_key, tavily_key)
+        service = self._services.get(owner_id)
+        cached_fingerprint = self._runtime_fingerprints.get(owner_id)
+        if service is not None and cached_fingerprint == fingerprint:
+            return service
+
         model = create_chat_model(self._settings, deepseek_key)
         grounding = PlanGroundingService(
             AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
@@ -67,20 +86,18 @@ class OwnerScopedConversationServices:
                 java,
             ),
         )
-        existing = self._services.get(owner_id)
-        if existing is not None:
-            old_fingerprint, service = existing
-            if old_fingerprint != fingerprint:
-                service.replace_runtime(DeepSeekPlanner(model), grounding)
-                self._services.put(owner_id, (fingerprint, service))
-            return service
-        service = ConversationService(
-            DeepSeekPlanner(model),
-            java,
-            grounding,
-        )
-        self._services.put(owner_id, (fingerprint, service))
+        if service is None:
+            service = ConversationService(DeepSeekPlanner(model), java, grounding)
+            self._services[owner_id] = service
+        else:
+            service.replace_runtime(DeepSeekPlanner(model), grounding)
+        self._runtime_fingerprints.put(owner_id, fingerprint)
         return service
+
+    def _clear_runtime(self, owner_id: str, _fingerprint: str) -> None:
+        service = self._services.get(owner_id)
+        if service is not None:
+            service.clear_runtime()
 
 
 def get_conversation_service(

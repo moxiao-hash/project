@@ -1,4 +1,6 @@
 import asyncio
+import gc
+import weakref
 from collections import deque
 from datetime import date
 from types import SimpleNamespace
@@ -277,3 +279,24 @@ def test_version_conflict_marks_execution_failed_and_remains_queryable() -> None
     assert failed.status == TaskConversationStatus.FAILED
     assert failed.error == "任务版本已变化"
     assert java.execution_updates[-1][1].status == "FAILED"
+
+
+def test_clearing_task_runtime_releases_recognizer_but_keeps_conversation() -> None:
+    from app.agent.task_conversation_service import TaskConversationService
+
+    recognition = FakeRecognitionService([])
+    recognition_ref = weakref.ref(recognition)
+    service = TaskConversationService(recognition, FakeJavaBackend())
+
+    async def create() -> str:
+        snapshot = await service.create_conversation("user-1", date(2026, 7, 26))
+        return snapshot.conversation_id
+
+    conversation_id = asyncio.run(create())
+    service.clear_runtime()
+    del recognition
+    gc.collect()
+
+    assert recognition_ref() is None
+    snapshot = asyncio.run(service.get_conversation(conversation_id, "user-1"))
+    assert snapshot.conversation_id == conversation_id

@@ -1,4 +1,6 @@
 import asyncio
+import gc
+import weakref
 from collections import deque
 from datetime import date
 from types import SimpleNamespace
@@ -171,6 +173,25 @@ def test_runtime_rotation_keeps_graph_history_and_uses_new_planner() -> None:
         assert "问题一" in second.seen_messages[0]
 
     asyncio.run(run_flow())
+
+
+def test_clearing_runtime_releases_planner_but_keeps_conversation_state() -> None:
+    planner = FakePlanner([collecting("不会被调用")])
+    planner_ref = weakref.ref(planner)
+    service = ConversationService(planner, FakeJavaBackend())
+
+    async def create() -> str:
+        snapshot = await service.create_conversation("user-1", "goal-1")
+        return snapshot.conversation_id
+
+    conversation_id = asyncio.run(create())
+    service.clear_runtime()
+    del planner
+    gc.collect()
+
+    assert planner_ref() is None
+    snapshot = asyncio.run(service.get_conversation(conversation_id, "user-1"))
+    assert snapshot.conversation_id == conversation_id
 
 
 def test_draft_can_be_revised_and_only_explicit_confirmation_persists_it() -> None:

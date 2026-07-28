@@ -1,3 +1,6 @@
+import gc
+import weakref
+
 import pytest
 
 from app.knowledge.models import KnowledgeMode, WebSearchPolicy
@@ -194,6 +197,25 @@ async def test_runtime_rotation_keeps_conversation_and_uses_new_clients() -> Non
     assert len(first_answerer.calls) == 1
     assert len(second_answerer.calls) == 1
     assert second_answerer.calls[0]["history"][0][1] == "先解释依赖注入"
+
+
+async def test_clearing_runtime_releases_clients_but_keeps_conversation() -> None:
+    web = FakeWebSearcher()
+    answerer = FakeAnswerer()
+    web_ref = weakref.ref(web)
+    answerer_ref = weakref.ref(answerer)
+    service = KnowledgeConversationService(FakeRetriever([]), web, answerer)
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+
+    service.clear_runtime()
+    del web
+    del answerer
+    gc.collect()
+
+    assert web_ref() is None
+    assert answerer_ref() is None
+    snapshot = await service.get_conversation(created.conversation_id, "user-1")
+    assert snapshot.conversation_id == created.conversation_id
 
 
 async def test_model_identity_is_deterministic_and_does_not_call_retrieval_or_model() -> None:

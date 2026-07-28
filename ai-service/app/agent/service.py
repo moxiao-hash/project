@@ -52,7 +52,7 @@ class ConversationService:
     ) -> None:
         self._java_backend = java_backend
         self._checkpointer = InMemorySaver()
-        self._graph = build_learning_plan_graph(
+        self._graph: Any | None = build_learning_plan_graph(
             planner,
             java_backend,
             self._checkpointer,
@@ -74,6 +74,12 @@ class ConversationService:
         )
         if grounding is not None:
             self._grounding = grounding
+
+    def clear_runtime(self) -> None:
+        """释放含用户密钥的模型/搜索客户端，但保留会话与图检查点。"""
+
+        self._graph = None
+        self._grounding = None
 
     async def create_conversation(
         self,
@@ -175,6 +181,8 @@ class ConversationService:
         if conversation.lock.locked():
             raise ConversationBusyError("该会话正在处理另一条请求")
         async with conversation.lock:
+            if self._graph is None:
+                raise RuntimeError("学习计划模型运行时尚未注入")
             values = await self._graph.ainvoke(
                 graph_input,
                 config={"configurable": {"thread_id": conversation_id}},

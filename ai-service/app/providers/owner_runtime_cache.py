@@ -19,10 +19,12 @@ class OwnerRuntimeCache[T]:
         max_entries: int = 100,
         idle_ttl_seconds: float = 900,
         clock: Callable[[], float] = monotonic,
+        on_evict: Callable[[str, T], None] | None = None,
     ) -> None:
         self._max_entries = max_entries
         self._idle_ttl = idle_ttl_seconds
         self._clock = clock
+        self._on_evict = on_evict
         self._entries: OrderedDict[str, _Entry[T]] = OrderedDict()
 
     def get(self, owner_id: str) -> T | None:
@@ -41,7 +43,8 @@ class OwnerRuntimeCache[T]:
         self._entries[owner_id] = _Entry(value=value, last_access=now)
         self._entries.move_to_end(owner_id)
         while len(self._entries) > self._max_entries:
-            self._entries.popitem(last=False)
+            evicted_owner, entry = self._entries.popitem(last=False)
+            self._notify(evicted_owner, entry.value)
 
     def _evict_expired(self, now: float) -> None:
         expired = [
@@ -50,4 +53,9 @@ class OwnerRuntimeCache[T]:
             if now - entry.last_access > self._idle_ttl
         ]
         for owner_id in expired:
-            del self._entries[owner_id]
+            entry = self._entries.pop(owner_id)
+            self._notify(owner_id, entry.value)
+
+    def _notify(self, owner_id: str, value: T) -> None:
+        if self._on_evict is not None:
+            self._on_evict(owner_id, value)
