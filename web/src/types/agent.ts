@@ -130,7 +130,7 @@ export interface PlanAdjustment {
 }
 
 export interface AiSettings {
-  modelProvider: 'deepseek'
+  modelProvider: string
   modelName: string
   deepseek?: AiProviderStatus
   tavily?: AiProviderStatus

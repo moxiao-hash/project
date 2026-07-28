@@ -53,6 +53,8 @@ public class DefaultCredentialStatusClient {
             }
             JsonNode root = objectMapper.readTree(response.body());
             return new DefaultStatuses(
+                    root.path("provider").asText("unknown"),
+                    root.path("model").asText("unknown"),
                     safe(root.path("deepseek")),
                     safe(root.path("tavily")),
                     true
@@ -76,13 +78,15 @@ public class DefaultCredentialStatusClient {
     public record SafeStatus(boolean configured, String maskedSuffix) {}
 
     public record DefaultStatuses(
+            String provider,
+            String model,
             SafeStatus deepseek,
             SafeStatus tavily,
             boolean available
     ) {
         static DefaultStatuses unavailable() {
             SafeStatus empty = new SafeStatus(false, null);
-            return new DefaultStatuses(empty, empty, false);
+            return new DefaultStatuses("unknown", "unknown", empty, empty, false);
         }
     }
 }

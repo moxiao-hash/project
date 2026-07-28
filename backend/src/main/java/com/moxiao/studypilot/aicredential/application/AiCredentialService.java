@@ -8,7 +8,9 @@ import com.moxiao.studypilot.aicredential.domain.AiProvider;
 import com.moxiao.studypilot.aicredential.infrastructure.AiCredentialEntity;
 import com.moxiao.studypilot.aicredential.infrastructure.AiCredentialJpaRepository;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
-import org.springframework.beans.factory.annotation.Value;
+import com.moxiao.studypilot.shared.error.ConflictException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,20 +24,17 @@ public class AiCredentialService {
     private final AuditLogJpaRepository auditRepository;
     private final AiCredentialCipher cipher;
     private final DefaultCredentialStatusClient defaultStatusClient;
-    private final String modelName;
 
     public AiCredentialService(
             AiCredentialJpaRepository repository,
             AuditLogJpaRepository auditRepository,
             AiCredentialCipher cipher,
-            DefaultCredentialStatusClient defaultStatusClient,
-            @Value("${MODEL_NAME:deepseek-v4-pro}") String modelName
+            DefaultCredentialStatusClient defaultStatusClient
     ) {
         this.repository = repository;
         this.auditRepository = auditRepository;
         this.cipher = cipher;
         this.defaultStatusClient = defaultStatusClient;
-        this.modelName = modelName;
     }
 
     @Transactional(readOnly = true)
@@ -47,8 +46,8 @@ public class AiCredentialService {
         AiProviderStatusResponse tavily =
                 status(ownerId, AiProvider.TAVILY, defaults.tavily(), defaults.available());
         return new AiSettingsResponse(
-                "deepseek",
-                modelName,
+                defaults.provider(),
+                defaults.model(),
                 deepseek,
                 tavily,
                 deepseek.configured(),
@@ -68,18 +67,24 @@ public class AiCredentialService {
         AiCredentialCipher.EncryptedValue encrypted =
                 cipher.encrypt(ownerId, provider, apiKey);
         Instant now = Instant.now();
-        repository.findByOwnerIdAndProvider(ownerId, provider)
-                .ifPresentOrElse(
-                        entity -> entity.replace(encrypted.ciphertext(), encrypted.iv(), now),
-                        () -> repository.save(new AiCredentialEntity(
-                                UUID.randomUUID().toString(),
-                                ownerId,
-                                provider,
-                                encrypted.ciphertext(),
-                                encrypted.iv(),
-                                now
-                        ))
-                );
+        try {
+            var existing = repository.findByOwnerIdAndProvider(ownerId, provider);
+            AiCredentialEntity entity = existing.orElseGet(() -> new AiCredentialEntity(
+                            UUID.randomUUID().toString(),
+                            ownerId,
+                            provider,
+                            encrypted.ciphertext(),
+                            encrypted.iv(),
+                            now
+                    ));
+            if (existing.isPresent()) {
+                entity.replace(encrypted.ciphertext(), encrypted.iv(), now);
+            }
+            repository.saveAndFlush(entity);
+        } catch (DataIntegrityViolationException
+                 | ObjectOptimisticLockingFailureException exception) {
+            throw new ConflictException("AI 凭据已被其他请求更新，请刷新后重试");
+        }
         audit(ownerId, "AI_CREDENTIAL_UPDATED", provider);
         return settings(ownerId);
     }

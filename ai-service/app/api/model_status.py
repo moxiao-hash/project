@@ -29,6 +29,8 @@ class SafeCredentialStatus(BaseModel):
 
 
 class DefaultCredentialsResponse(BaseModel):
+    provider: str
+    model: str
     deepseek: SafeCredentialStatus
     tavily: SafeCredentialStatus
 
@@ -53,6 +55,8 @@ async def default_credentials(
     """只公开环境默认凭据是否存在和尾号，绝不返回明文。"""
 
     return DefaultCredentialsResponse(
+        provider=settings.model_provider,
+        model=settings.model_name,
         deepseek=_safe_status(settings.deepseek_api_key.get_secret_value()),
         tavily=_safe_status(settings.tavily_api_key.get_secret_value()),
     )

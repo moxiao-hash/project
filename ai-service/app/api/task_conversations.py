@@ -33,6 +33,7 @@ from app.providers.credentials import (
     credential_fingerprint,
 )
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
+from app.providers.owner_runtime_cache import OwnerRuntimeCache
 
 router = APIRouter(
     prefix="/internal/agent/task-conversations",
@@ -44,7 +45,7 @@ router = APIRouter(
 class OwnerScopedTaskConversationServices:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._services: dict[str, tuple[str, TaskConversationService]] = {}
+        self._services = OwnerRuntimeCache[tuple[str, TaskConversationService]]()
 
     async def for_owner(self, owner_id: str) -> TaskConversationService:
         java = JavaBackendClient(self._settings)
@@ -61,10 +62,10 @@ class OwnerScopedTaskConversationServices:
             old_fingerprint, service = existing
             if old_fingerprint != fingerprint:
                 service.replace_runtime(recognition_service)
-                self._services[owner_id] = (fingerprint, service)
+                self._services.put(owner_id, (fingerprint, service))
             return service
         service = TaskConversationService(recognition_service, java)
-        self._services[owner_id] = (fingerprint, service)
+        self._services.put(owner_id, (fingerprint, service))
         return service
 
 

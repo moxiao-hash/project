@@ -25,7 +25,8 @@ class DefaultCredentialStatusClientTest {
                     exchange.getRequestHeaders().getFirst("X-Internal-Service-Token")
             );
             byte[] response = """
-                    {"deepseek":{"configured":true,"maskedSuffix":"-key"},
+                    {"provider":"actual-provider","model":"actual-model",
+                     "deepseek":{"configured":true,"maskedSuffix":"-key"},
                      "tavily":{"configured":false,"maskedSuffix":null}}
                     """.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, response.length);
@@ -51,6 +52,8 @@ class DefaultCredentialStatusClientTest {
         DefaultCredentialStatusClient.DefaultStatuses statuses = client.fetch();
 
         assertTrue(statuses.available());
+        assertEquals("actual-provider", statuses.provider());
+        assertEquals("actual-model", statuses.model());
         assertTrue(statuses.deepseek().configured());
         assertEquals("-key", statuses.deepseek().maskedSuffix());
         assertFalse(statuses.tavily().configured());

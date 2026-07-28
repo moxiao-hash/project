@@ -26,6 +26,7 @@ from app.providers.credentials import (
     credential_fingerprint,
 )
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
+from app.providers.owner_runtime_cache import OwnerRuntimeCache
 from app.retrieval.async_retriever import AsyncHybridRetriever
 from app.retrieval.factory import get_hybrid_index
 from app.search.service import WebSearchService
@@ -41,7 +42,7 @@ router = APIRouter(
 class OwnerScopedKnowledgeServices:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._services: dict[str, tuple[str, KnowledgeConversationService]] = {}
+        self._services = OwnerRuntimeCache[tuple[str, KnowledgeConversationService]]()
 
     async def for_owner(self, owner_id: str) -> KnowledgeConversationService:
         java = JavaBackendClient(self._settings)
@@ -66,7 +67,7 @@ class OwnerScopedKnowledgeServices:
             old_fingerprint, service = existing
             if old_fingerprint != fingerprint:
                 service.replace_runtime(web, answerer)
-                self._services[owner_id] = (fingerprint, service)
+                self._services.put(owner_id, (fingerprint, service))
             return service
         service = KnowledgeConversationService(
             AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
@@ -75,7 +76,7 @@ class OwnerScopedKnowledgeServices:
             model_provider=self._settings.model_provider,
             model_name=self._settings.model_name,
         )
-        self._services[owner_id] = (fingerprint, service)
+        self._services.put(owner_id, (fingerprint, service))
         return service
 
 

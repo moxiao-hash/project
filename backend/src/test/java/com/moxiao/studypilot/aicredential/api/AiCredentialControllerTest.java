@@ -54,6 +54,8 @@ class AiCredentialControllerTest {
         mockMvc.perform(get("/api/ai-settings")
                         .header("Authorization", bearer(second)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.modelProvider").value("unknown"))
+                .andExpect(jsonPath("$.modelName").value("unknown"))
                 .andExpect(jsonPath("$.deepseek.source").value("NONE"))
                 .andExpect(result ->
                         assertThat(result.getResponse().getContentAsString()).doesNotContain(secret));
