@@ -41,7 +41,7 @@ interface MockAdjustmentState extends PlanAdjustment {
 }
 
 /**
- * 阶段 8 Agent 门面的 Mock 实现。
+ * Agent 门面的离线 Mock 实现，仅在显式配置时使用。
  * 严格遵守说明书状态机：草稿必须先 DRAFT_READY / PREVIEW_READY，
  * 只有专用 confirm 方法能推进到保存/执行；自然语言消息永远不会触发写操作。
  */
@@ -104,6 +104,10 @@ export class MockAgentGateway implements AgentGateway {
       state.warnings = []
     }
     return { ...state }
+  }
+
+  async getPlanConversation(id: string): Promise<PlanConversation> {
+    return { ...this.require(this.planConversations, id, '计划对话不存在') }
   }
 
   async confirmPlan(id: string): Promise<PlanConversation> {
@@ -186,6 +190,10 @@ export class MockAgentGateway implements AgentGateway {
       '我理解了你的意图，操作预览如下。请核对任务、动作和影响；' +
       '只有点击下方「确认执行」按钮才会真正修改任务。'
     return { ...state }
+  }
+
+  async getTaskConversation(id: string): Promise<TaskConversation> {
+    return { ...this.require(this.taskConversations, id, '任务对话不存在') }
   }
 
   async confirmTaskAction(id: string): Promise<TaskConversation> {
@@ -279,6 +287,10 @@ export class MockAgentGateway implements AgentGateway {
       `关于「${message.slice(0, 40)}」：根据检索到的来源，Spring Boot 3.x 推荐使用 ` +
       'Java 17 或更高版本。请注意这是 Mock 回答，联调后将由 RAG 管线基于你的真实资料生成。'
     return { ...conv }
+  }
+
+  async getKnowledgeConversation(id: string): Promise<KnowledgeConversation> {
+    return { ...this.require(this.knowledgeConversations, id, '知识会话不存在') }
   }
 
   async importWebResult(

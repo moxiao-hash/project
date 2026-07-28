@@ -72,7 +72,7 @@
         </template>
       </div>
 
-      <!-- 自适应调整（Mock 门面） -->
+      <!-- 自适应调整 -->
       <div v-if="adjustmentOpen" class="card">
         <MockBanner />
         <PlanAdjustmentPanel :plan-id="plan.id" @applied="load" />

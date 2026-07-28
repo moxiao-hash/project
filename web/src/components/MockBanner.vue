@@ -2,8 +2,8 @@
   <div v-if="gatewayMode === 'mock'" class="mock-banner">
     <span class="mock-badge">Mock</span>
     <span>
-      该能力由阶段 8 Java Agent 门面提供，当前为本地 Mock 演示，数据不会写入服务器。
-      切换 <code>VITE_AGENT_GATEWAY=http</code> 即可联调真实接口。
+      当前显式启用了本地 Mock 演示，数据不会写入服务器。
+      移除配置或设置 <code>VITE_AGENT_GATEWAY=http</code> 即可使用真实接口。
     </span>
   </div>
 </template>

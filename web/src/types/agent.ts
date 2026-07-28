@@ -1,8 +1,4 @@
-/**
- * 阶段 8 规划中的 Java Agent 门面契约（🟨 尚未实现）。
- * 页面只通过 services/planned 的 AgentGateway 访问这些能力，
- * 当前默认由 MockAgentGateway 提供，禁止向真实地址发请求。
- */
+/** Java Agent 公共门面契约。浏览器只能通过这些 /api/** 能力访问 Agent。 */
 import type { LearningTask, RiskLevel, TaskKind, TaskStatus } from './api'
 
 export type PlanConversationStatus =
@@ -84,6 +80,9 @@ export interface KnowledgeConversation {
   retrievalMode: string
   citations: Citation[]
   warnings: string[]
+  /** 后端提供时展示；缺失时前端不得猜测具体模型。 */
+  modelProvider?: string | null
+  modelName?: string | null
 }
 
 export type AdjustmentOperationType =
@@ -140,19 +139,22 @@ export interface AiSettings {
 }
 
 /**
- * 阶段 8 Java 门面统一接口。页面不得绕过该接口访问 Agent 能力。
- * Mock 与未来的 Http 实现可互换，切换不影响页面。
+ * Java 门面统一接口。页面不得绕过该接口访问 Agent 能力。
+ * Http 是默认运行实现，Mock 仅供显式离线演示或测试。
  */
 export interface AgentGateway {
   createPlanConversation(goalId: string): Promise<PlanConversation>
+  getPlanConversation(id: string): Promise<PlanConversation>
   sendPlanMessage(id: string, message: string): Promise<PlanConversation>
   confirmPlan(id: string): Promise<PlanConversation>
 
   createTaskConversation(targetDate: string): Promise<TaskConversation>
+  getTaskConversation(id: string): Promise<TaskConversation>
   sendTaskMessage(id: string, message: string): Promise<TaskConversation>
   confirmTaskAction(id: string): Promise<TaskConversation>
 
   createKnowledgeConversation(mode: KnowledgeMode): Promise<KnowledgeConversation>
+  getKnowledgeConversation(id: string): Promise<KnowledgeConversation>
   sendKnowledgeMessage(
     id: string,
     message: string,

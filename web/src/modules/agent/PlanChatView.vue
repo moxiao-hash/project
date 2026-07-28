@@ -93,24 +93,58 @@
       <!-- 草稿区 -->
       <div v-if="conversation.status === 'DRAFT_READY' && conversation.draft" class="card draft-card">
         <h2 class="section-title">计划草案</h2>
-        <div class="draft-meta">
-          <div><strong>{{ conversation.draft.title }}</strong></div>
-          <div class="muted" style="font-size: 13px">
-            {{ conversation.draft.startDate }} ～ {{ conversation.draft.endDate }} ·
-            {{ conversation.draft.tasks.length }} 个任务
+        <template v-if="editableDraft">
+          <div class="form-field">
+            <label class="form-label">标题</label>
+            <input
+              v-model.trim="editableDraft.title"
+              data-test="draft-title"
+              class="input"
+              maxlength="160"
+            />
           </div>
-        </div>
-        <div class="draft-tasks">
-          <div v-for="(task, i) in conversation.draft.tasks" :key="i" class="draft-task">
-            <div class="draft-task-title">{{ task.title }}</div>
-            <div class="muted" style="font-size: 12px">
-              {{ task.scheduledDate }} · {{ task.estimatedMinutes }} 分钟
+          <div class="draft-dates">
+            <div class="form-field">
+              <label class="form-label">开始日期</label>
+              <input v-model="editableDraft.startDate" class="input" type="date" />
+            </div>
+            <div class="form-field">
+              <label class="form-label">结束日期</label>
+              <input v-model="editableDraft.endDate" class="input" type="date" />
             </div>
           </div>
-        </div>
-        <p class="muted" style="font-size: 12px">
-          需要修改？在左侧对话中描述调整（例如「把第二个任务改到周五」），AI 会返回新的完整草案。
-        </p>
+          <div class="draft-tasks">
+            <div v-for="(task, i) in editableDraft.tasks" :key="i" class="draft-task">
+              <div class="form-field">
+                <label class="form-label">任务 {{ i + 1 }}</label>
+                <input v-model.trim="task.title" class="input" maxlength="160" />
+              </div>
+              <div class="draft-task-fields">
+                <input v-model="task.scheduledDate" class="input" type="date" />
+                <input
+                  v-model.number="task.estimatedMinutes"
+                  :data-test="`draft-task-minutes-${i}`"
+                  class="input"
+                  type="number"
+                  min="1"
+                  max="720"
+                />
+              </div>
+            </div>
+          </div>
+          <button
+            data-test="submit-draft-revision"
+            class="btn btn-secondary"
+            style="width: 100%; margin-bottom: 8px"
+            :disabled="sending || !revisionMessage"
+            @click="submitDraftRevision"
+          >
+            让 AI 按表单修改重新生成
+          </button>
+          <p class="muted" style="font-size: 12px">
+            表单修改会先转换成明确的修订消息，由 AI 返回新的完整草案；不会直接写入计划。
+          </p>
+        </template>
         <button class="btn btn-primary" style="width: 100%" :disabled="confirming" @click="confirmDialog = true">
           保存计划
         </button>
@@ -143,14 +177,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { learningApi } from '@/services/current/learning'
 import { agentGateway, gatewayMode } from '@/services/planned'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
 import type { LearningGoal } from '@/types/api'
-import type { PlanConversation } from '@/types/agent'
+import type { PlanConversation, PlanDraft } from '@/types/agent'
+import { buildPlanRevisionMessage } from '@/services/planned/planRevision'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -164,6 +199,7 @@ interface ChatMessage {
 }
 
 const route = useRoute()
+const router = useRouter()
 const toast = useToastStore()
 
 const goals = ref<LearningGoal[]>([])
@@ -173,6 +209,8 @@ const selectedGoalId = ref('')
 const creating = ref(false)
 
 const conversation = ref<PlanConversation | null>(null)
+const originalDraft = ref<PlanDraft | null>(null)
+const editableDraft = ref<PlanDraft | null>(null)
 const messages = ref<ChatMessage[]>([])
 const draft = ref('')
 const sending = ref(false)
@@ -194,6 +232,26 @@ const inputPlaceholder = computed(() => {
       return '输入消息…'
   }
 })
+
+const revisionMessage = computed(() => {
+  if (!originalDraft.value || !editableDraft.value) return null
+  return buildPlanRevisionMessage(originalDraft.value, editableDraft.value)
+})
+
+function cloneDraft(value: PlanDraft): PlanDraft {
+  return {
+    ...value,
+    tasks: value.tasks.map((task) => ({ ...task })),
+  }
+}
+
+watch(
+  () => conversation.value?.draft,
+  (value) => {
+    originalDraft.value = value ? cloneDraft(value) : null
+    editableDraft.value = value ? cloneDraft(value) : null
+  },
+)
 
 async function loadGoals() {
   goalsLoading.value = true
@@ -218,9 +276,29 @@ async function startConversation() {
   try {
     conversation.value = await agentGateway.createPlanConversation(selectedGoalId.value)
     messages.value = [{ role: 'assistant', text: conversation.value.reply }]
+    await saveConversationToUrl(conversation.value.conversationId)
     await scrollToBottom()
   } catch (e) {
     toast.error(describeError(e))
+  } finally {
+    creating.value = false
+  }
+}
+
+async function saveConversationToUrl(id: string) {
+  await router.replace({ query: { ...route.query, conversationId: id } })
+}
+
+async function restoreConversation() {
+  const id = route.query.conversationId
+  if (typeof id !== 'string' || !id) return
+  creating.value = true
+  try {
+    conversation.value = await agentGateway.getPlanConversation(id)
+    messages.value = [{ role: 'assistant', text: conversation.value.reply }]
+  } catch (e) {
+    toast.error(`无法恢复计划会话：${describeError(e)}`)
+    await router.replace({ query: { ...route.query, conversationId: undefined } })
   } finally {
     creating.value = false
   }
@@ -230,6 +308,16 @@ async function onSend() {
   if (!conversation.value || !draft.value || sending.value) return
   const text = draft.value
   draft.value = ''
+  await sendMessage(text)
+}
+
+async function submitDraftRevision() {
+  if (!revisionMessage.value || sending.value) return
+  await sendMessage(revisionMessage.value)
+}
+
+async function sendMessage(text: string) {
+  if (!conversation.value) return
   messages.value.push({ role: 'user', text })
   sending.value = true
   waitingInBackground.value = false
@@ -279,7 +367,9 @@ async function scrollToBottom() {
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
 }
 
-onMounted(loadGoals)
+onMounted(async () => {
+  await Promise.all([loadGoals(), restoreConversation()])
+})
 </script>
 
 <style scoped>
@@ -351,6 +441,13 @@ onMounted(loadGoals)
 
 .draft-meta {
   margin: 10px 0;
+}
+
+.draft-dates,
+.draft-task-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
 }
 
 .draft-tasks {

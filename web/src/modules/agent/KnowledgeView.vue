@@ -36,7 +36,7 @@
       <div class="card chat-card">
         <div ref="messagesEl" class="messages">
           <template v-for="(round, i) in rounds" :key="i">
-            <div class="message user">
+            <div v-if="round.question" class="message user">
               <div class="message-bubble">{{ round.question }}</div>
             </div>
             <div class="message assistant">
@@ -44,6 +44,13 @@
                 <p class="answer-text">{{ round.answer }}</p>
                 <div class="muted" style="font-size: 12px; margin-bottom: 8px">
                   检索模式：{{ retrievalModeLabel(round.retrievalMode) }}
+                </div>
+                <div
+                  v-if="round.modelProvider || round.modelName"
+                  class="muted"
+                  style="font-size: 12px; margin-bottom: 8px"
+                >
+                  模型：{{ [round.modelProvider, round.modelName].filter(Boolean).join(' / ') }}
                 </div>
 
                 <div v-for="(w, wi) in round.warnings" :key="wi" class="alert alert-warning">
@@ -122,7 +129,8 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, reactive, ref } from 'vue'
+import { nextTick, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { agentGateway } from '@/services/planned'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
@@ -144,9 +152,13 @@ interface QaRound {
   retrievalMode: string
   citations: Citation[]
   warnings: string[]
+  modelProvider?: string | null
+  modelName?: string | null
 }
 
 const toast = useToastStore()
+const route = useRoute()
+const router = useRouter()
 const mode = ref<KnowledgeMode>('AUTO')
 const creating = ref(false)
 const conversation = ref<KnowledgeConversation | null>(null)
@@ -166,8 +178,11 @@ const importPrivacy = ref<PrivacyLevel>('NORMAL')
 function retrievalModeLabel(modeValue: string): string {
   const map: Record<string, string> = {
     LOCAL: '仅本地资料',
+    MATERIAL: '仅本地资料',
+    LOCAL_ONLY: '仅本地隐私资料',
     WEB: '联网搜索',
     HYBRID: '本地 + 联网',
+    NONE: '模型常识（无检索证据）',
   }
   return map[modeValue] ?? modeValue
 }
@@ -177,11 +192,47 @@ async function startConversation() {
   creating.value = true
   try {
     conversation.value = await agentGateway.createKnowledgeConversation(mode.value)
+    await router.replace({
+      query: { ...route.query, conversationId: conversation.value.conversationId },
+    })
     if (conversation.value.warnings.length > 0) {
       conversation.value.warnings.forEach((w) => toast.warning(w))
     }
   } catch (e) {
     toast.error(describeError(e))
+  } finally {
+    creating.value = false
+  }
+}
+
+function snapshotRound(
+  snapshot: KnowledgeConversation,
+  originalQuestion = '',
+): QaRound | null {
+  if (!snapshot.answer) return null
+  return {
+    question: originalQuestion,
+    answer: snapshot.answer,
+    retrievalMode: snapshot.retrievalMode,
+    citations: snapshot.citations,
+    warnings: snapshot.warnings,
+    modelProvider: snapshot.modelProvider,
+    modelName: snapshot.modelName,
+  }
+}
+
+async function restoreConversation() {
+  const id = route.query.conversationId
+  if (typeof id !== 'string' || !id) return
+  creating.value = true
+  try {
+    conversation.value = await agentGateway.getKnowledgeConversation(id)
+    mode.value = conversation.value.mode
+    const restored = snapshotRound(conversation.value)
+    if (restored) rounds.value = [restored]
+  } catch (e) {
+    toast.error(`无法恢复知识会话：${describeError(e)}`)
+    await router.replace({ query: { ...route.query, conversationId: undefined } })
   } finally {
     creating.value = false
   }
@@ -200,13 +251,8 @@ async function onSend() {
       conversation.value.mode === 'LOCAL_ONLY' ? 'DISABLED' : webSearch.value,
     )
     conversation.value = updated
-    rounds.value.push({
-      question: q,
-      answer: updated.answer,
-      retrievalMode: updated.retrievalMode,
-      citations: updated.citations,
-      warnings: updated.warnings,
-    })
+    const round = snapshotRound(updated, q)
+    if (round) rounds.value.push(round)
     await scrollToBottom()
   } catch (e) {
     toast.error(describeError(e))
@@ -243,6 +289,8 @@ async function scrollToBottom() {
   await nextTick()
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
 }
+
+onMounted(restoreConversation)
 </script>
 
 <style scoped>

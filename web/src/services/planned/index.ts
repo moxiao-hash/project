@@ -4,12 +4,12 @@ import { HttpAgentGateway } from './httpGateway'
 
 /**
  * Agent 门面选择器。
- * - mock（默认）：阶段 8 Java 门面就绪前使用，页面完整可用但数据不落库。
- * - http：门面就绪后切换，调用真实 /api/agent/**。
+ * - http（默认）：调用已完成的 Java /api/agent/** 门面。
+ * - mock：只供显式离线演示或测试注入，数据不落库。
  * 页面只依赖 AgentGateway 接口，不感知具体实现。
  */
 export const gatewayMode: 'mock' | 'http' =
-  import.meta.env.VITE_AGENT_GATEWAY === 'http' ? 'http' : 'mock'
+  import.meta.env.VITE_AGENT_GATEWAY === 'mock' ? 'mock' : 'http'
 
 export const agentGateway: AgentGateway =
   gatewayMode === 'http' ? new HttpAgentGateway() : new MockAgentGateway()

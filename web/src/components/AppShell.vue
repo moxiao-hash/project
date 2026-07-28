@@ -17,7 +17,7 @@
           >
             <span class="nav-icon">{{ item.icon }}</span>
             <span>{{ item.label }}</span>
-            <span v-if="item.mock" class="nav-mock">Mock</span>
+            <span v-if="item.mock && gatewayMode === 'mock'" class="nav-mock">Mock</span>
           </RouterLink>
         </template>
       </nav>
@@ -51,6 +51,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { gatewayMode } from '@/services/planned'
 
 const route = useRoute()
 const router = useRouter()

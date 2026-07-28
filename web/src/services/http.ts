@@ -54,7 +54,21 @@ export function describeError(error: unknown): string {
       if (apiError.fieldErrors && Object.keys(apiError.fieldErrors).length > 0) {
         return Object.values(apiError.fieldErrors).join('；')
       }
+      if (status === 429) {
+        const retryAfter = error.response?.headers?.['retry-after']
+        return retryAfter
+          ? `${apiError.message}（请在 ${retryAfter} 秒后重试）`
+          : apiError.message
+      }
       return apiError.message
+    }
+    const detail = (error.response?.data as { detail?: unknown } | undefined)?.detail
+    if (typeof detail === 'string' && detail.trim()) {
+      if (status === 429) {
+        const retryAfter = error.response?.headers?.['retry-after']
+        return retryAfter ? `${detail}（请在 ${retryAfter} 秒后重试）` : detail
+      }
+      return detail
     }
     if (status === 401) return '登录已过期，请重新登录'
     if (status === 404) return '资源不存在或不属于当前账号'
@@ -62,6 +76,7 @@ export function describeError(error: unknown): string {
     if (status === 422) return '输入内容暂无法由 AI 处理，请调整后重试'
     if (status === 502) return 'AI 输出异常，请稍后重试'
     if (status === 503) return '服务暂不可用，请稍后重试'
+    if (status === 504) return 'AI 服务响应超时，请稍后重试'
     if (error.code === 'ECONNABORTED') return '请求超时，请检查网络后重试'
     return '网络异常，请稍后重试'
   }

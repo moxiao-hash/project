@@ -19,7 +19,7 @@ npm run dev                        # http://localhost:5173
 其它命令：
 
 ```bash
-npm run test        # vitest 单元测试（18 个用例）
+npm run test        # vitest 单元测试
 npm run typecheck   # vue-tsc 类型检查
 npm run build       # 类型检查 + 生产构建
 ```
@@ -31,10 +31,10 @@ npm run build       # 类型检查 + 生产构建
 | 变量 | 取值 | 说明 |
 |---|---|---|
 | `VITE_API_BASE_URL` | `http://localhost:8080` | Java 公共 API 地址，浏览器仅访问其 `/api/**` |
-| `VITE_AGENT_GATEWAY` | `mock`（默认）/ `http` | 阶段 8 Agent 门面实现切换 |
+| `VITE_AGENT_GATEWAY` | `http`（默认）/ `mock` | 真实 Agent 门面；Mock 仅供离线演示 |
 
-启动顺序：MySQL → Java（8080）→ Python（8000，可选）→ Vue（5173）。
-只开发 CRUD 页面时无需启动 Python。
+启动顺序：MySQL → Java（8080）→ Python（8000）→ Vue（5173）。
+只开发非 AI 的 CRUD 页面时可以不启动 Python。
 
 ## 目录结构
 
@@ -45,11 +45,11 @@ src/
 ├── services/
 │   ├── http.ts     Axios 实例：Bearer 注入、401 统一清理、错误文案
 │   ├── current/    ✅ 已公开的 Java /api/** 封装（页面只调用这里）
-│   └── planned/    🟨 阶段 8 Agent 门面：AgentGateway 接口 + Mock/Http 双实现
+│   └── planned/    AgentGateway 接口 + 默认 Http/可选 Mock 实现
 ├── stores/         auth（sessionStorage 会话）、toast
 ├── components/     AppShell、ConfirmDialog、CitationCard、TaskList、EmptyState 等
 ├── composables/    usePolling（退避、后台降频、卸载清理）
-├── types/          api.ts（当前契约）、agent.ts（阶段 8 契约）
+├── types/          api.ts（业务契约）、agent.ts（Agent 门面契约）
 └── utils/          枚举→中文映射、日期格式化
 ```
 
@@ -60,7 +60,7 @@ src/
 | `/login`、`/register` | 登录 / 注册 | ✅ 真实联调 |
 | `/` | 工作台 | ✅ |
 | `/goals` | 学习目标（增/列表/编辑） | ✅ |
-| `/plans`、`/plans/:id` | 计划列表、确认、详情（任务、版本历史、自适应调整） | ✅（调整为 Mock） |
+| `/plans`、`/plans/:id` | 计划列表、确认、详情（任务、版本历史、自适应调整） | ✅ |
 | `/today` | 今日任务打卡（完成/跳过/延期/历史） | ✅ |
 | `/materials`、`/materials/:id` | 资料导入（文本/网页/文件）、解析状态轮询 | ✅ |
 | `/quizzes/:id` | 测验作答（幂等提交） | ✅（需已知测验 ID） |
@@ -69,21 +69,21 @@ src/
 | `/notifications` | 通知与已读 | ✅ |
 | `/activity` | 执行记录（确认）、授权、审计 | ✅ |
 | `/settings` | 学习设置 | ✅ |
-| `/knowledge` | RAG 知识问答（引用、导入网页） | 🟨 Mock |
-| `/agent/plan` | 对话生成计划（DRAFT_READY 草案 + 专用保存按钮） | 🟨 Mock |
-| `/agent/tasks` | 对话式任务操作（PREVIEW_READY 预览 + 确认） | 🟨 Mock |
-| `/settings/ai` | DeepSeek / Tavily Key 管理 | 🟨 Mock |
-| 从任务生成测验 | 任务行「🧪 生成测验」按钮 | 🟨 Mock |
+| `/knowledge` | RAG 知识问答（引用、导入网页） | ✅ 真实 Agent |
+| `/agent/plan` | 对话生成计划（可编辑草案 + 专用保存按钮） | ✅ 真实 Agent |
+| `/agent/tasks` | 对话式任务操作（PREVIEW_READY 预览 + 确认） | ✅ 真实 Agent |
+| `/settings/ai` | DeepSeek / Tavily Key 管理 | 🟨 等待阶段 8.3 |
+| 从任务生成测验 | 任务行「🧪 生成测验」按钮 | ✅ 真实 Agent |
 
 ## Mock / HTTP Gateway 切换
 
 页面只依赖 `types/agent.ts` 的 `AgentGateway` 接口，不感知实现：
 
-- `VITE_AGENT_GATEWAY=mock`（默认）：`MockAgentGateway`，内存状态机，
+- `VITE_AGENT_GATEWAY=http`（默认）：`HttpAgentGateway`，只调用 Java
+  `/api/agent/**`，模型类请求单独使用 120 秒超时。
+- `VITE_AGENT_GATEWAY=mock`：`MockAgentGateway`，内存状态机，
   严格遵守真实流程（草稿必须先 `DRAFT_READY`/`PREVIEW_READY`，只有专用
   confirm 方法推进写操作）。Mock 页面顶部有醒目的 Mock 横幅。
-- `VITE_AGENT_GATEWAY=http`：`HttpAgentGateway`，调用未来的
-  `/api/agent/**` 与 `/api/ai-settings`。Java 门面就绪后仅需改环境变量。
 
 **对说明书 §7.7 接口的扩展**（页面必需，已在接口中声明）：
 `getPlanAdjustment`、`confirmPlanAdjustment`（§7.4 的轮询与确认端点）、
@@ -102,19 +102,23 @@ src/
 
 - 所有写操作（保存计划、任务操作、计划调整、执行确认）使用专用确认按钮 +
   专用接口；聊天中的“确认”只是一条消息。
+- 计划、任务和知识会话创建后把 `conversationId` 写入 URL query；刷新时通过
+  GET 门面恢复最新快照。当前服务端只保存最新知识回答，不伪造缺失的历史问题。
+- 计划草案支持结构化微调；前端把字段差异转换成明确修订消息，等待 AI 返回
+  新草案后才允许用户通过专用确认接口保存。
 - 测验提交使用 `quiz-attempt:{quizId}:{uuid}` 幂等键，同一轮重试复用。
 - 409 不自动重试：提示后刷新服务端数据。
 - 轮询（资料解析 3s、评分 2s、调整分析 2s）带错误退避（上限 5 次）、
   后台降频 3 倍、离开页面自动清理。
 
-## 待联调清单（阶段 8 Java 门面就绪后）
+## 真实 Agent 联调清单
 
 1. `POST/GET /api/agent/plan-conversations/**`（创建、消息、confirm）
 2. `POST/GET /api/agent/task-conversations/**`（创建、消息、confirm）
 3. `POST/GET /api/agent/knowledge-conversations/**`
 4. `POST /api/agent/plan-adjustments/analyze`、`GET/POST /api/agent/plan-adjustments/{id}(/confirm)`
 5. `POST /api/agent/quizzes/generate`（真实 quizId 返回后自动跳转作答页）
-6. `GET /api/ai-settings` 与 DeepSeek/Tavily Key 的 PUT/DELETE
-7. Mock 模式下「生成测验」只提示不落库；http 模式下需验证跳转链路
+6. `GET /api/ai-settings` 与 DeepSeek/Tavily Key 的 PUT/DELETE（阶段 8.3）
+7. 真实测验生成返回 `quizId` 后自动跳转作答页
 
-切换方式：`.env.development` 中 `VITE_AGENT_GATEWAY=http`。
+离线演示切换方式：在本地环境文件中显式设置 `VITE_AGENT_GATEWAY=mock`。

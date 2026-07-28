@@ -140,7 +140,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { agentGateway } from '@/services/planned'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
@@ -154,6 +155,8 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import { AxiosError } from 'axios'
 
 const toast = useToastStore()
+const route = useRoute()
+const router = useRouter()
 const targetDate = ref(todayString())
 const creating = ref(false)
 
@@ -177,8 +180,27 @@ async function startConversation() {
   try {
     conversation.value = await agentGateway.createTaskConversation(targetDate.value)
     messages.value = [{ role: 'assistant', text: conversation.value.reply }]
+    await router.replace({
+      query: { ...route.query, conversationId: conversation.value.conversationId },
+    })
   } catch (e) {
     toast.error(describeError(e))
+  } finally {
+    creating.value = false
+  }
+}
+
+async function restoreConversation() {
+  const id = route.query.conversationId
+  if (typeof id !== 'string' || !id) return
+  creating.value = true
+  try {
+    conversation.value = await agentGateway.getTaskConversation(id)
+    targetDate.value = conversation.value.targetDate
+    messages.value = [{ role: 'assistant', text: conversation.value.reply }]
+  } catch (e) {
+    toast.error(`无法恢复任务会话：${describeError(e)}`)
+    await router.replace({ query: { ...route.query, conversationId: undefined } })
   } finally {
     creating.value = false
   }
@@ -230,6 +252,8 @@ async function scrollToBottom() {
   await nextTick()
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
 }
+
+onMounted(restoreConversation)
 </script>
 
 <style scoped>
