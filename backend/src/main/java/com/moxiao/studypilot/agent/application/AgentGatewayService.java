@@ -70,6 +70,27 @@ public class AgentGatewayService {
         return exchange(baseRequest(scopedPath).GET().build());
     }
 
+    /**
+     * 测验生成的内部响应包含答案和参考实现，只允许向浏览器返回新测验 ID。
+     */
+    public GatewayResponse generateQuiz(JsonNode body, String ownerId) {
+        GatewayResponse internal = post(
+                "/internal/assessment/quizzes/generate",
+                body,
+                ownerId
+        );
+        JsonNode quizId = internal.body().get("id");
+        if (quizId == null || !quizId.isTextual() || quizId.asText().isBlank()) {
+            throw new AgentGatewayException(
+                    HttpStatus.BAD_GATEWAY,
+                    "AI 服务返回了无效的测验标识"
+            );
+        }
+        ObjectNode publicBody = objectMapper.createObjectNode();
+        publicBody.put("quizId", quizId.asText());
+        return new GatewayResponse(internal.status(), publicBody);
+    }
+
     HttpRequest.Builder baseRequest(String path) {
         return HttpRequest.newBuilder(baseUri.resolve(path))
                 .timeout(REQUEST_TIMEOUT)

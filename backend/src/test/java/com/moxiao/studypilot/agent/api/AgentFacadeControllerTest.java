@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
@@ -39,6 +40,15 @@ class AgentFacadeControllerTest {
     private static final AtomicInteger REQUEST_COUNT = new AtomicInteger();
     private static volatile int upstreamStatus = 200;
     private static volatile String retryAfterResponse;
+    private static volatile String upstreamBody;
+    private static final String PLAN_CONVERSATION_ID =
+            "11111111-1111-1111-1111-111111111111";
+    private static final String TASK_CONVERSATION_ID =
+            "22222222-2222-2222-2222-222222222222";
+    private static final String KNOWLEDGE_CONVERSATION_ID =
+            "33333333-3333-3333-3333-333333333333";
+    private static final String ADJUSTMENT_ID =
+            "44444444-4444-4444-4444-444444444444";
 
     @Autowired
     private MockMvc mockMvc;
@@ -108,66 +118,78 @@ class AgentFacadeControllerTest {
         String authorization = "Bearer " + registration.token();
         upstreamStatus = 200;
 
-        assertForwarded(post("/api/agent/plan-conversations/c1/messages")
+        assertForwarded(post("/api/agent/plan-conversations/{id}/messages", PLAN_CONVERSATION_ID)
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"hello\"}"),
-                "/internal/agent/conversations/c1/messages", "POST");
-        assertForwarded(get("/api/agent/plan-conversations/c1")
+                "/internal/agent/conversations/" + PLAN_CONVERSATION_ID + "/messages", "POST");
+        assertForwarded(get("/api/agent/plan-conversations/{id}", PLAN_CONVERSATION_ID)
                         .header("Authorization", authorization),
-                "/internal/agent/conversations/c1?ownerId=" + registration.userId(), "GET");
-        assertForwarded(post("/api/agent/plan-conversations/c1/confirm")
+                "/internal/agent/conversations/" + PLAN_CONVERSATION_ID
+                        + "?ownerId=" + registration.userId(), "GET");
+        assertForwarded(post("/api/agent/plan-conversations/{id}/confirm", PLAN_CONVERSATION_ID)
                         .header("Authorization", authorization),
-                "/internal/agent/conversations/c1/confirm", "POST");
+                "/internal/agent/conversations/" + PLAN_CONVERSATION_ID + "/confirm", "POST");
 
         assertForwarded(post("/api/agent/task-conversations")
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"targetDate\":\"2026-07-28\"}"),
                 "/internal/agent/task-conversations", "POST");
-        assertForwarded(post("/api/agent/task-conversations/c2/messages")
+        assertForwarded(post("/api/agent/task-conversations/{id}/messages", TASK_CONVERSATION_ID)
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"done\"}"),
-                "/internal/agent/task-conversations/c2/messages", "POST");
-        assertForwarded(get("/api/agent/task-conversations/c2")
+                "/internal/agent/task-conversations/" + TASK_CONVERSATION_ID + "/messages", "POST");
+        assertForwarded(get("/api/agent/task-conversations/{id}", TASK_CONVERSATION_ID)
                         .header("Authorization", authorization),
-                "/internal/agent/task-conversations/c2?ownerId=" + registration.userId(), "GET");
-        assertForwarded(post("/api/agent/task-conversations/c2/confirm")
+                "/internal/agent/task-conversations/" + TASK_CONVERSATION_ID
+                        + "?ownerId=" + registration.userId(), "GET");
+        assertForwarded(post("/api/agent/task-conversations/{id}/confirm", TASK_CONVERSATION_ID)
                         .header("Authorization", authorization),
-                "/internal/agent/task-conversations/c2/confirm", "POST");
+                "/internal/agent/task-conversations/" + TASK_CONVERSATION_ID + "/confirm", "POST");
 
         assertForwarded(post("/api/agent/knowledge-conversations")
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"mode\":\"AUTO\"}"),
                 "/internal/knowledge/conversations", "POST");
-        assertForwarded(post("/api/agent/knowledge-conversations/c3/messages")
+        assertForwarded(post("/api/agent/knowledge-conversations/{id}/messages",
+                        KNOWLEDGE_CONVERSATION_ID)
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"question\",\"webSearch\":\"AUTO\"}"),
-                "/internal/knowledge/conversations/c3/messages", "POST");
-        assertForwarded(get("/api/agent/knowledge-conversations/c3")
+                "/internal/knowledge/conversations/" + KNOWLEDGE_CONVERSATION_ID + "/messages",
+                "POST");
+        assertForwarded(get("/api/agent/knowledge-conversations/{id}",
+                        KNOWLEDGE_CONVERSATION_ID)
                         .header("Authorization", authorization),
-                "/internal/knowledge/conversations/c3?ownerId=" + registration.userId(), "GET");
+                "/internal/knowledge/conversations/" + KNOWLEDGE_CONVERSATION_ID
+                        + "?ownerId=" + registration.userId(), "GET");
 
         assertForwarded(post("/api/agent/plan-adjustments/analyze")
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"analysisDate\":\"2026-07-28\"}"),
                 "/internal/agent/plan-adjustments/analyze", "POST");
-        assertForwarded(get("/api/agent/plan-adjustments/a1")
+        assertForwarded(get("/api/agent/plan-adjustments/{id}", ADJUSTMENT_ID)
                         .header("Authorization", authorization),
-                "/internal/agent/plan-adjustments/a1?ownerId=" + registration.userId(), "GET");
-        assertForwarded(post("/api/agent/plan-adjustments/a1/confirm")
+                "/internal/agent/plan-adjustments/" + ADJUSTMENT_ID
+                        + "?ownerId=" + registration.userId(), "GET");
+        assertForwarded(post("/api/agent/plan-adjustments/{id}/confirm", ADJUSTMENT_ID)
                         .header("Authorization", authorization),
-                "/internal/agent/plan-adjustments/a1/confirm", "POST");
+                "/internal/agent/plan-adjustments/" + ADJUSTMENT_ID + "/confirm", "POST");
 
-        assertForwarded(post("/api/agent/quizzes/generate")
-                        .header("Authorization", authorization)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"taskId\":\"task-1\",\"webSearch\":\"AUTO\"}"),
-                "/internal/assessment/quizzes/generate", "POST");
+        upstreamBody = "{\"id\":\"quiz-route-test\"}";
+        try {
+            assertForwarded(post("/api/agent/quizzes/generate")
+                            .header("Authorization", authorization)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"taskId\":\"task-1\",\"webSearch\":\"AUTO\"}"),
+                    "/internal/assessment/quizzes/generate", "POST");
+        } finally {
+            upstreamBody = null;
+        }
     }
 
     @Test
@@ -176,7 +198,8 @@ class AgentFacadeControllerTest {
         String authorization = "Bearer " + registration.token();
         upstreamStatus = 200;
 
-        mockMvc.perform(post("/api/agent/plan-conversations/c1/messages")
+        mockMvc.perform(post("/api/agent/plan-conversations/{id}/messages",
+                        PLAN_CONVERSATION_ID)
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -193,7 +216,8 @@ class AgentFacadeControllerTest {
                 messageBody.get("ownerId").asText()
         );
 
-        mockMvc.perform(post("/api/agent/plan-conversations/c1/confirm")
+        mockMvc.perform(post("/api/agent/plan-conversations/{id}/confirm",
+                        PLAN_CONVERSATION_ID)
                         .header("Authorization", authorization)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"ownerId\":\"forged-owner\"}"))
@@ -238,6 +262,78 @@ class AgentFacadeControllerTest {
                 .andExpect(status().isServiceUnavailable());
 
         org.junit.jupiter.api.Assertions.assertEquals(1, REQUEST_COUNT.get());
+    }
+
+    @Test
+    void quizGenerationReturnsOnlyThePublicQuizIdentifier() throws Exception {
+        Registration registration = registerUser();
+        upstreamStatus = 201;
+        upstreamBody = """
+                {
+                  "id": "quiz-1",
+                  "ownerId": "internal-owner",
+                  "questions": [
+                    {
+                      "id": "question-1",
+                      "correctAnswers": ["secret answer"],
+                      "referenceAnswer": "secret implementation"
+                    }
+                  ]
+                }
+                """;
+        try {
+            mockMvc.perform(post("/api/agent/quizzes/generate")
+                            .header("Authorization", "Bearer " + registration.token())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"taskId\":\"task-1\"}"))
+                    .andExpect(status().isCreated())
+                    .andExpect(org.springframework.test.web.servlet.result
+                            .MockMvcResultMatchers.content().json("{\"quizId\":\"quiz-1\"}"))
+                    .andExpect(jsonPath("$.questions").doesNotExist())
+                    .andExpect(jsonPath("$.correctAnswers").doesNotExist())
+                    .andExpect(jsonPath("$.referenceAnswer").doesNotExist())
+                    .andExpect(jsonPath("$.ownerId").doesNotExist());
+        } finally {
+            upstreamBody = null;
+        }
+    }
+
+    @Test
+    void malformedQuizGenerationResponseBecomesSafeBadGateway() throws Exception {
+        Registration registration = registerUser();
+        upstreamStatus = 201;
+        upstreamBody = "{\"questions\":[{\"correctAnswers\":[\"secret\"]}]}";
+        try {
+            mockMvc.perform(post("/api/agent/quizzes/generate")
+                            .header("Authorization", "Bearer " + registration.token())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"taskId\":\"task-1\"}"))
+                    .andExpect(status().isBadGateway())
+                    .andExpect(jsonPath("$.message").value("AI 服务返回了无效的测验标识"))
+                    .andExpect(jsonPath("$.questions").doesNotExist());
+        } finally {
+            upstreamBody = null;
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "not-a-uuid",
+            "contains%3Fquery",
+            "contains%23fragment",
+            "%25",
+            ".."
+    })
+    void invalidResourceIdentifiersAreRejectedBeforeCallingPython(String maliciousId)
+            throws Exception {
+        Registration registration = registerUser();
+        REQUEST_COUNT.set(0);
+
+        mockMvc.perform(get("/api/agent/plan-conversations/" + maliciousId)
+                        .header("Authorization", "Bearer " + registration.token()))
+                .andExpect(status().isBadRequest());
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, REQUEST_COUNT.get());
     }
 
     @ParameterizedTest
@@ -319,7 +415,9 @@ class AgentFacadeControllerTest {
                 new String(requestBody, StandardCharsets.UTF_8),
                 exchange.getRequestHeaders().getFirst("X-Internal-Service-Token")
         ));
-        String response = upstreamStatus >= 400
+        String response = upstreamBody != null
+                ? upstreamBody
+                : upstreamStatus >= 400
                 ? "{\"detail\":\"上游请求无法处理\",\"secret\":\"must-not-leak\"}"
                 : """
                   {"conversationId":"conversation-1","ownerId":"internal-owner","status":"COLLECTING"}

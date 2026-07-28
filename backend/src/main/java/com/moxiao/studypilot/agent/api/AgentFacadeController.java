@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
 
+import java.util.UUID;
+
 /**
  * 浏览器可调用的 Agent API。
  *
@@ -40,7 +42,7 @@ public class AgentFacadeController {
     @PostMapping("/plan-conversations/{id}/messages")
     public ResponseEntity<JsonNode> sendPlanMessage(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id,
+            @PathVariable UUID id,
             @RequestBody JsonNode body
     ) {
         return response(gateway.post(
@@ -53,7 +55,7 @@ public class AgentFacadeController {
     @GetMapping("/plan-conversations/{id}")
     public ResponseEntity<JsonNode> getPlanConversation(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.get("/internal/agent/conversations/" + id, user.id()));
     }
@@ -61,7 +63,7 @@ public class AgentFacadeController {
     @PostMapping("/plan-conversations/{id}/confirm")
     public ResponseEntity<JsonNode> confirmPlanConversation(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.post(
                 "/internal/agent/conversations/" + id + "/confirm",
@@ -85,7 +87,7 @@ public class AgentFacadeController {
     @PostMapping("/task-conversations/{id}/messages")
     public ResponseEntity<JsonNode> sendTaskMessage(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id,
+            @PathVariable UUID id,
             @RequestBody JsonNode body
     ) {
         return response(gateway.post(
@@ -98,7 +100,7 @@ public class AgentFacadeController {
     @GetMapping("/task-conversations/{id}")
     public ResponseEntity<JsonNode> getTaskConversation(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.get(
                 "/internal/agent/task-conversations/" + id,
@@ -109,7 +111,7 @@ public class AgentFacadeController {
     @PostMapping("/task-conversations/{id}/confirm")
     public ResponseEntity<JsonNode> confirmTaskConversation(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.post(
                 "/internal/agent/task-conversations/" + id + "/confirm",
@@ -133,7 +135,7 @@ public class AgentFacadeController {
     @PostMapping("/knowledge-conversations/{id}/messages")
     public ResponseEntity<JsonNode> sendKnowledgeMessage(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id,
+            @PathVariable UUID id,
             @RequestBody JsonNode body
     ) {
         return response(gateway.post(
@@ -146,7 +148,7 @@ public class AgentFacadeController {
     @GetMapping("/knowledge-conversations/{id}")
     public ResponseEntity<JsonNode> getKnowledgeConversation(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.get(
                 "/internal/knowledge/conversations/" + id,
@@ -169,7 +171,7 @@ public class AgentFacadeController {
     @GetMapping("/plan-adjustments/{id}")
     public ResponseEntity<JsonNode> getPlanAdjustment(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.get(
                 "/internal/agent/plan-adjustments/" + id,
@@ -180,7 +182,7 @@ public class AgentFacadeController {
     @PostMapping("/plan-adjustments/{id}/confirm")
     public ResponseEntity<JsonNode> confirmPlanAdjustment(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String id
+            @PathVariable UUID id
     ) {
         return response(gateway.post(
                 "/internal/agent/plan-adjustments/" + id + "/confirm",
@@ -194,11 +196,7 @@ public class AgentFacadeController {
             @AuthenticationPrincipal AuthenticatedUser user,
             @RequestBody JsonNode body
     ) {
-        return response(gateway.post(
-                "/internal/assessment/quizzes/generate",
-                body,
-                user.id()
-        ));
+        return response(gateway.generateQuiz(body, user.id()));
     }
 
     private ResponseEntity<JsonNode> response(GatewayResponse result) {
