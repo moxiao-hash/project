@@ -11,7 +11,11 @@ class FakeCandidateSource:
             NightlyAdjustmentCandidate(
                 owner_id="user-1",
                 analysis_date=date(2026, 7, 26),
-            )
+            ),
+            NightlyAdjustmentCandidate(
+                owner_id="user-2",
+                analysis_date=date(2026, 7, 26),
+            ),
         ]
 
 
@@ -36,5 +40,34 @@ def test_scheduler_compensates_for_missed_midnight_run() -> None:
             "owner_id": "user-1",
             "analysis_date": date(2026, 7, 26),
             "trigger_type": "NIGHTLY_CHECK",
-        }
+        },
+        {
+            "owner_id": "user-2",
+            "analysis_date": date(2026, 7, 26),
+            "trigger_type": "NIGHTLY_CHECK",
+        },
     ]
+
+
+def test_scheduler_resolves_service_per_owner_and_continues_after_failure() -> None:
+    services = {
+        "user-1": FakeAdjustmentService(),
+        "user-2": FakeAdjustmentService(),
+    }
+    resolved: list[str] = []
+
+    async def service_for(owner_id: str):
+        resolved.append(owner_id)
+        if owner_id == "user-1":
+            raise RuntimeError("credential unavailable")
+        return services[owner_id]
+
+    scheduler = NightlyAdjustmentScheduler(
+        FakeCandidateSource(),
+        None,
+        adjustment_service_factory=service_for,
+    )
+    asyncio.run(scheduler.run_due(datetime(2026, 7, 27, 0, 17, tzinfo=UTC)))
+
+    assert resolved == ["user-1", "user-2"]
+    assert len(services["user-2"].calls) == 1

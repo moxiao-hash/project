@@ -4,6 +4,7 @@ from datetime import date
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import SecretStr
 
 from app.agent.adjustment_service import (
     AdjustmentOutputError,
@@ -38,8 +39,11 @@ class ConfirmPlanAdjustmentRequest(JavaContractModel):
     owner_id: str
 
 
-def build_plan_adjustment_service(settings: Settings) -> PlanAdjustmentService:
-    model = create_chat_model(settings)
+def build_plan_adjustment_service(
+    settings: Settings,
+    api_key: SecretStr | None = None,
+) -> PlanAdjustmentService:
+    model = create_chat_model(settings, api_key)
     return PlanAdjustmentService(
         DeepSeekAdjustmentGenerator(model),
         JavaBackendClient(settings, timeout_seconds=45),

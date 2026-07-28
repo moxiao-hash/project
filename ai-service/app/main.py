@@ -23,6 +23,7 @@ from app.clients.java_backend import JavaBackendClient
 from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
 from app.material.processing import MaterialProcessingService
+from app.providers.credentials import CredentialProvider, CredentialResolver
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.factory import get_hybrid_index
 from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
@@ -33,13 +34,56 @@ _material_processing_service: MaterialProcessingService | None = None
 _coding_evaluation_worker: CodingEvaluationWorker | None = None
 
 
+async def build_owner_material_analyzer(
+    owner_id: str,
+    settings,
+    java: JavaBackendClient,
+) -> MaterialAnalyzer:
+    key = await CredentialResolver(java, settings).resolve(
+        owner_id, CredentialProvider.DEEPSEEK
+    )
+    return MaterialAnalyzer(
+        DeepSeekMaterialAnalyzer(create_chat_model(settings, key))
+    )
+
+
+async def build_owner_coding_evaluator(
+    owner_id: str,
+    settings,
+    java: JavaBackendClient,
+) -> DeepSeekCodingEvaluator:
+    key = await CredentialResolver(java, settings).resolve(
+        owner_id, CredentialProvider.DEEPSEEK
+    )
+    return DeepSeekCodingEvaluator(create_chat_model(settings, key))
+
+
+async def build_owner_adjustment_service(
+    owner_id: str,
+    settings,
+    java: JavaBackendClient,
+):
+    key = await CredentialResolver(java, settings).resolve(
+        owner_id, CredentialProvider.DEEPSEEK
+    )
+    return build_plan_adjustment_service(settings, key)
+
+
 async def run_nightly_adjustment_job() -> None:
     """运行一次可补偿的夜间分析；单个周期失败不会终止应用进程。"""
 
     settings = get_settings()
     try:
-        service = build_plan_adjustment_service(settings)
-        runner = NightlyAdjustmentScheduler(JavaBackendClient(settings), service)
+        java = JavaBackendClient(settings)
+
+        async def service_for(owner_id: str):
+            return await build_owner_adjustment_service(owner_id, settings, java)
+
+        runner = NightlyAdjustmentScheduler(
+            java,
+            None,
+            adjustment_service_factory=service_for,
+        )
         await runner.run_due(datetime.now(UTC))
     except ModelConfigurationError:
         logger.warning("未配置模型，跳过本轮夜间计划调整")
@@ -54,10 +98,15 @@ async def run_material_processing_job() -> None:
     global _material_processing_service
     try:
         if _material_processing_service is None:
-            cloud_analyzer = DeepSeekMaterialAnalyzer(create_chat_model(settings))
+            java = JavaBackendClient(settings)
+
+            async def analyzer_for(owner_id: str):
+                return await build_owner_material_analyzer(owner_id, settings, java)
+
             _material_processing_service = MaterialProcessingService(
-                JavaBackendClient(settings),
-                MaterialAnalyzer(cloud_analyzer),
+                java,
+                None,
+                analyzer_factory=analyzer_for,
                 worker_id=settings.material_worker_id,
                 index=get_hybrid_index(settings.qdrant_path),
                 web_fetcher=SafeWebFetcher(),
@@ -76,9 +125,15 @@ async def run_coding_evaluation_job() -> None:
     global _coding_evaluation_worker
     try:
         if _coding_evaluation_worker is None:
+            java = JavaBackendClient(settings)
+
+            async def evaluator_for(owner_id: str):
+                return await build_owner_coding_evaluator(owner_id, settings, java)
+
             _coding_evaluation_worker = CodingEvaluationWorker(
-                JavaBackendClient(settings),
-                DeepSeekCodingEvaluator(create_chat_model(settings)),
+                java,
+                None,
+                evaluator_factory=evaluator_for,
                 worker_id=settings.coding_evaluation_worker_id,
             )
         await _coding_evaluation_worker.process_once()

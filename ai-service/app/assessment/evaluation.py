@@ -5,6 +5,7 @@
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -65,9 +66,17 @@ class DeepSeekCodingEvaluator:
 class CodingEvaluationWorker:
     """一次领取一个 Java 持久化任务，并将评估结果写回。"""
 
-    def __init__(self, java: Any, evaluator: Any, *, worker_id: str) -> None:
+    def __init__(
+        self,
+        java: Any,
+        evaluator: Any | None,
+        *,
+        evaluator_factory: Callable[[str], Awaitable[Any]] | None = None,
+        worker_id: str,
+    ) -> None:
         self._java = java
         self._evaluator = evaluator
+        self._evaluator_factory = evaluator_factory
         self._worker_id = worker_id
 
     async def process_once(self) -> bool:
@@ -83,7 +92,12 @@ class CodingEvaluationWorker:
             self._maintain_lease(job["jobId"], stop_heartbeat)
         )
         try:
-            result = await self._evaluator.evaluate(job["answers"])
+            evaluator = self._evaluator
+            if self._evaluator_factory is not None:
+                evaluator = await self._evaluator_factory(job["ownerId"])
+            if evaluator is None:
+                raise RuntimeError("代码评估器未配置")
+            result = await evaluator.evaluate(job["answers"])
             await self._java.complete_coding_evaluation_job(
                 job["jobId"],
                 {

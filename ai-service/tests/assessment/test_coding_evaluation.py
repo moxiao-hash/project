@@ -14,6 +14,7 @@ class FakeJava:
     async def claim_coding_evaluation_job(self, worker_id):
         return {
             "jobId": "job-1",
+            "ownerId": "owner-1",
             "answers": [
                 {
                     "questionId": "question-1",
@@ -69,6 +70,27 @@ async def test_worker_completes_structured_text_only_evaluation() -> None:
     assert java.completed[0] == "job-1"
     assert java.completed[1]["evaluations"][0]["score"] == 90
     assert java.heartbeats >= 1
+
+
+async def test_worker_builds_evaluator_for_claimed_owner() -> None:
+    java = FakeJava()
+    owners: list[str] = []
+
+    async def evaluator_for(owner_id: str):
+        owners.append(owner_id)
+        return FakeEvaluator()
+
+    worker = CodingEvaluationWorker(
+        java,
+        None,
+        evaluator_factory=evaluator_for,
+        worker_id="worker-1",
+    )
+
+    await worker.process_once()
+
+    assert owners == ["owner-1"]
+    assert java.completed is not None
 
 
 async def test_deepseek_evaluator_repairs_invalid_structure_once() -> None:

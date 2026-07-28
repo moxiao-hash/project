@@ -1,5 +1,6 @@
 """领取一个 Java 持久化任务并完成资料解析的应用服务。"""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from typing import Protocol
 
@@ -61,8 +62,11 @@ class MaterialProcessingService:
     def __init__(
         self,
         backend: ProcessingBackend,
-        analyzer: MaterialAnalysisService,
+        analyzer: MaterialAnalysisService | None,
         *,
+        analyzer_factory: (
+            Callable[[str], Awaitable[MaterialAnalysisService]] | None
+        ) = None,
         worker_id: str,
         parser: MaterialParser | None = None,
         chunker: MaterialChunker | None = None,
@@ -71,6 +75,7 @@ class MaterialProcessingService:
     ) -> None:
         self._backend = backend
         self._analyzer = analyzer
+        self._analyzer_factory = analyzer_factory
         self._worker_id = worker_id
         self._parser = parser or MaterialParser()
         self._chunker = chunker or MaterialChunker()
@@ -92,11 +97,7 @@ class MaterialProcessingService:
                 parse_type = job.material_type
             document = self._parser.parse(parse_type, content)
             chunks = self._chunker.split(document)
-            analysis = await self._analyzer.analyze(
-                job.privacy_level,
-                job.title,
-                chunks,
-            )
+            analysis = await self._analyze(job, chunks)
             if self._index is not None:
                 self._index.upsert(
                     IndexMaterial(
@@ -137,3 +138,16 @@ class MaterialProcessingService:
                 "资料处理失败，请检查文件格式或稍后重试",
             )
         return True
+
+    async def _analyze(self, job: ProcessingJob, chunks: list) -> MaterialAnalysis:
+        # 隐私资料不需要也不允许解析云端凭据。
+        if job.privacy_level in {"SENSITIVE", "LOCAL_ONLY"}:
+            return MaterialAnalysis(
+                warnings=("隐私资料未发送至云端模型，暂不生成 AI 摘要",)
+            )
+        analyzer = self._analyzer
+        if self._analyzer_factory is not None:
+            analyzer = await self._analyzer_factory(job.owner_id)
+        if analyzer is None:
+            raise RuntimeError("资料分析器未配置")
+        return await analyzer.analyze(job.privacy_level, job.title, chunks)

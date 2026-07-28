@@ -342,6 +342,7 @@ class QuizWorkflowTest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.attemptId").value(attemptId))
+                .andExpect(jsonPath("$.ownerId").value(registration.userId()))
                 .andExpect(jsonPath("$.answers[0].codeAnswer").isNotEmpty())
                 .andReturn();
         String jobId = objectMapper.readTree(claimed.getResponse().getContentAsString())

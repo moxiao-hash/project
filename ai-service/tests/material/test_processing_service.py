@@ -127,3 +127,25 @@ async def test_fetches_confirmed_web_material_with_safe_fetcher() -> None:
 
     assert backend.completed is not None
     assert backend.completed["chunks"][0]["text"] == "官方网页正文"
+
+
+@pytest.mark.anyio
+async def test_builds_cloud_analyzer_for_claimed_job_owner() -> None:
+    backend = FakeBackend()
+    owners: list[str] = []
+
+    async def analyzer_for(owner_id: str):
+        owners.append(owner_id)
+        return StubAnalyzer()
+
+    service = MaterialProcessingService(
+        backend,
+        None,
+        analyzer_factory=analyzer_for,
+        worker_id="worker-test",
+    )
+
+    await service.process_once()
+
+    assert owners == ["owner-1"]
+    assert backend.completed is not None

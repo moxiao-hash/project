@@ -309,7 +309,12 @@ public class QuizService {
                     );
                 })
                 .toList();
-        return new CodingJobPayload(job.getId(), attempt.getId(), answers);
+        return new CodingJobPayload(
+                job.getId(),
+                attempt.getId(),
+                attempt.getOwnerId(),
+                answers
+        );
     }
 
     @Transactional
@@ -409,6 +414,7 @@ public class QuizService {
     public record CodingJobPayload(
             String jobId,
             String attemptId,
+            String ownerId,
             List<CodingAnswerPayload> answers
     ) {
     }
