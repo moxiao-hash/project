@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import gc
 import weakref
 from collections import deque
@@ -14,6 +15,7 @@ from app.agent.task_models import (
     TaskRecognitionStatus,
 )
 from app.clients.java_backend import JavaBackendError
+from app.persistence.agent_state import AgentPersistence
 from app.schemas.learning import LearningTask, LearningTaskStatus
 
 
@@ -246,9 +248,7 @@ def test_message_during_preview_replaces_draft_without_writing() -> None:
             "user-1",
             date(2026, 7, 26),
         )
-        await service.send_message(
-            conversation.conversation_id, "这个任务完成了", "user-1"
-        )
+        await service.send_message(conversation.conversation_id, "这个任务完成了", "user-1")
         revised = await service.send_message(
             conversation.conversation_id,
             "改成延期到 7 月 28 日，原因是今天时间不足",
@@ -291,9 +291,7 @@ def test_version_conflict_marks_execution_failed_and_remains_queryable() -> None
             "user-1",
             date(2026, 7, 26),
         )
-        await service.send_message(
-            conversation.conversation_id, "任务完成了", "user-1"
-        )
+        await service.send_message(conversation.conversation_id, "任务完成了", "user-1")
         with pytest.raises(TaskVersionConflictError):
             await service.confirm(conversation.conversation_id, "user-1")
         return await service.get_conversation(conversation.conversation_id, "user-1")
@@ -356,3 +354,105 @@ def test_active_task_request_leases_recognizer_across_runtime_clear() -> None:
     recognition_holder.clear()
     gc.collect()
     assert recognition_ref() is None
+
+
+def test_task_preview_executes_once_after_process_restart(tmp_path) -> None:
+    from app.agent.task_conversation_models import TaskConversationStatus
+    from app.agent.task_conversation_service import TaskConversationService
+
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+    java = FakeJavaBackend()
+
+    async def run_flow() -> None:
+        first_persistence = await AgentPersistence.open(db_path, key)
+        first_service = TaskConversationService(
+            FakeRecognitionService([preview(version=3)]),
+            java,
+            persistence=first_persistence,
+        )
+        created = await first_service.create_conversation(
+            "user-1",
+            date(2026, 7, 26),
+        )
+        pending = await first_service.send_message(
+            created.conversation_id,
+            "任务完成了",
+            "user-1",
+        )
+        assert pending.status == TaskConversationStatus.PREVIEW_READY
+        await first_persistence.close()
+
+        second_persistence = await AgentPersistence.open(db_path, key)
+        second_service = TaskConversationService(
+            FakeRecognitionService([]),
+            java,
+            persistence=second_persistence,
+        )
+        completed = await second_service.confirm(created.conversation_id, "user-1")
+        repeated = await second_service.confirm(created.conversation_id, "user-1")
+        assert completed.status == TaskConversationStatus.COMPLETED
+        assert repeated.updated_task == completed.updated_task
+        await second_persistence.close()
+
+    asyncio.run(run_flow())
+    assert len(java.task_changes) == 1
+
+
+def test_restarted_conversation_rebuilds_one_shared_lock(tmp_path) -> None:
+    from app.agent.task_conversation_service import (
+        TaskConversationBusyError,
+        TaskConversationService,
+    )
+
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+
+    async def run_flow() -> None:
+        first_persistence = await AgentPersistence.open(db_path, key)
+        first = TaskConversationService(
+            FakeRecognitionService([]),
+            FakeJavaBackend(),
+            persistence=first_persistence,
+        )
+        created = await first.create_conversation("user-1", date(2026, 7, 26))
+        await first_persistence.close()
+
+        second_persistence = await AgentPersistence.open(db_path, key)
+        try:
+            original_load = second_persistence.store.load
+            first_loading = asyncio.Event()
+            release_load = asyncio.Event()
+
+            async def synchronized_load(**kwargs):
+                first_loading.set()
+                await release_load.wait()
+                return await original_load(**kwargs)
+
+            second_persistence.store.load = synchronized_load
+            recognition = BarrierRecognitionService()
+            second = TaskConversationService(
+                recognition,
+                FakeJavaBackend(),
+                persistence=second_persistence,
+            )
+            first_request = asyncio.create_task(
+                second.send_message(created.conversation_id, "查询任务", "user-1")
+            )
+            await first_loading.wait()
+            second_request = asyncio.create_task(
+                second.send_message(created.conversation_id, "重复查询", "user-1")
+            )
+            await asyncio.sleep(0)
+            release_load.set()
+            await recognition.started.wait()
+            try:
+                with pytest.raises(TaskConversationBusyError):
+                    await asyncio.wait_for(second_request, timeout=0.2)
+            finally:
+                recognition.release.set()
+                await asyncio.gather(first_request, return_exceptions=True)
+        finally:
+            await second_persistence.close()
+
+    asyncio.run(run_flow())

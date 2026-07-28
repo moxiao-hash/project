@@ -24,6 +24,7 @@ from app.agent.service import (
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -54,8 +55,10 @@ class OwnerScopedConversationServices:
         max_runtime_entries: int = 100,
         runtime_idle_ttl_seconds: float = 900,
         clock: Callable[[], float] = monotonic,
+        persistence: AgentPersistence | None = None,
     ) -> None:
         self._settings = settings
+        self._persistence = persistence
         self._services: dict[str, ConversationService] = {}
         self._runtime_fingerprints = OwnerRuntimeCache[str](
             max_entries=max_runtime_entries,
@@ -87,7 +90,12 @@ class OwnerScopedConversationServices:
             ),
         )
         if service is None:
-            service = ConversationService(DeepSeekPlanner(model), java, grounding)
+            service = ConversationService(
+                DeepSeekPlanner(model),
+                java,
+                grounding,
+                persistence=self._persistence,
+            )
             self._services[owner_id] = service
         else:
             service.replace_runtime(DeepSeekPlanner(model), grounding)
@@ -109,7 +117,10 @@ def get_conversation_service(
     existing = getattr(request.app.state, "conversation_service", None)
     if existing is not None:
         return existing
-    service = OwnerScopedConversationServices(settings)
+    service = OwnerScopedConversationServices(
+        settings,
+        persistence=getattr(request.app.state, "agent_persistence", None),
+    )
     request.app.state.conversation_service = service
     return service
 

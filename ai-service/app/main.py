@@ -23,6 +23,7 @@ from app.clients.java_backend import JavaBackendClient
 from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
 from app.material.processing import MaterialProcessingService
+from app.persistence.lifecycle import open_agent_persistence
 from app.providers.credentials import CredentialProvider, CredentialResolver
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.factory import get_hybrid_index
@@ -39,12 +40,8 @@ async def build_owner_material_analyzer(
     settings,
     java: JavaBackendClient,
 ) -> MaterialAnalyzer:
-    key = await CredentialResolver(java, settings).resolve(
-        owner_id, CredentialProvider.DEEPSEEK
-    )
-    return MaterialAnalyzer(
-        DeepSeekMaterialAnalyzer(create_chat_model(settings, key))
-    )
+    key = await CredentialResolver(java, settings).resolve(owner_id, CredentialProvider.DEEPSEEK)
+    return MaterialAnalyzer(DeepSeekMaterialAnalyzer(create_chat_model(settings, key)))
 
 
 async def build_owner_coding_evaluator(
@@ -52,9 +49,7 @@ async def build_owner_coding_evaluator(
     settings,
     java: JavaBackendClient,
 ) -> DeepSeekCodingEvaluator:
-    key = await CredentialResolver(java, settings).resolve(
-        owner_id, CredentialProvider.DEEPSEEK
-    )
+    key = await CredentialResolver(java, settings).resolve(owner_id, CredentialProvider.DEEPSEEK)
     return DeepSeekCodingEvaluator(create_chat_model(settings, key))
 
 
@@ -63,9 +58,7 @@ async def build_owner_adjustment_service(
     settings,
     java: JavaBackendClient,
 ):
-    key = await CredentialResolver(java, settings).resolve(
-        owner_id, CredentialProvider.DEEPSEEK
-    )
+    key = await CredentialResolver(java, settings).resolve(owner_id, CredentialProvider.DEEPSEEK)
     return build_plan_adjustment_service(settings, key)
 
 
@@ -144,8 +137,10 @@ async def run_coding_evaluation_job() -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI):
+async def lifespan(application: FastAPI):
     settings = get_settings()
+    persistence = await open_agent_persistence(settings)
+    application.state.agent_persistence = persistence
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(
         run_nightly_adjustment_job,
@@ -179,6 +174,8 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         scheduler.shutdown(wait=False)
+        await persistence.close()
+
 
 app = FastAPI(
     title="StudyPilot AI Service",

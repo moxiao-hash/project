@@ -18,6 +18,7 @@ from app.agent.task_conversation_models import (
 from app.agent.task_models import TaskActionDraft, TaskCandidate
 from app.agent.task_service import TaskRecognitionService
 from app.clients.java_backend import JavaBackendClient
+from app.persistence.agent_state import AgentPersistence
 from app.schemas.learning import LearningTask
 
 
@@ -55,15 +56,21 @@ class TaskConversationService:
         self,
         recognition_service: TaskRecognitionService,
         java_backend: JavaBackendClient,
+        *,
+        persistence: AgentPersistence | None = None,
     ) -> None:
         self._java_backend = java_backend
-        self._checkpointer = InMemorySaver()
+        self._persistence = persistence
+        self._checkpointer = (
+            persistence.checkpointer if persistence is not None else InMemorySaver()
+        )
         self._graph: Any | None = build_task_conversation_graph(
             recognition_service,
             java_backend,
             self._checkpointer,
         )
         self._conversations: dict[str, _TaskConversation] = {}
+        self._load_lock = asyncio.Lock()
 
     def replace_runtime(self, recognition_service: TaskRecognitionService) -> None:
         self._graph = build_task_conversation_graph(
@@ -94,6 +101,7 @@ class TaskConversationService:
             snapshot=snapshot,
             lock=asyncio.Lock(),
         )
+        await self._save(self._conversations[conversation_id])
         return snapshot
 
     async def send_message(
@@ -102,7 +110,7 @@ class TaskConversationService:
         message: str,
         owner_id: str,
     ) -> TaskConversationSnapshot:
-        conversation = self._require(conversation_id, owner_id)
+        conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status in {
             TaskConversationStatus.COMPLETED,
             TaskConversationStatus.FAILED,
@@ -134,6 +142,7 @@ class TaskConversationService:
                 graph_input,
             )
             conversation.started = True
+            await self._save(conversation)
             return snapshot
 
     async def get_conversation(
@@ -141,14 +150,14 @@ class TaskConversationService:
         conversation_id: str,
         owner_id: str,
     ) -> TaskConversationSnapshot:
-        return self._require(conversation_id, owner_id).snapshot
+        return (await self._require(conversation_id, owner_id)).snapshot
 
     async def confirm(
         self,
         conversation_id: str,
         owner_id: str,
     ) -> TaskConversationSnapshot:
-        conversation = self._require(conversation_id, owner_id)
+        conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status == TaskConversationStatus.COMPLETED:
             return conversation.snapshot
         if conversation.snapshot.status != TaskConversationStatus.PREVIEW_READY:
@@ -183,6 +192,7 @@ class TaskConversationService:
         )
         snapshot = self._to_snapshot(conversation.snapshot, values)
         conversation.snapshot = snapshot
+        await self._save(conversation)
         return snapshot, values.get("java_status_code")
 
     def _require_graph(self) -> Any:
@@ -205,28 +215,51 @@ class TaskConversationService:
             status=TaskConversationStatus(values.get("status", previous.status)),
             reply=values.get("reply", previous.reply),
             candidate_tasks=[
-                TaskCandidate.model_validate(task)
-                for task in values.get("candidate_tasks", [])
+                TaskCandidate.model_validate(task) for task in values.get("candidate_tasks", [])
             ],
-            action_draft=(
-                TaskActionDraft.model_validate(action_data)
-                if action_data
-                else None
-            ),
+            action_draft=(TaskActionDraft.model_validate(action_data) if action_data else None),
             execution_id=values.get("execution_id"),
-            updated_task=(
-                LearningTask.model_validate(updated_data)
-                if updated_data
-                else None
-            ),
+            updated_task=(LearningTask.model_validate(updated_data) if updated_data else None),
             error=values.get("error"),
         )
 
-    def _require(self, conversation_id: str, owner_id: str) -> _TaskConversation:
-        try:
-            conversation = self._conversations[conversation_id]
-        except KeyError as exc:
-            raise TaskConversationNotFoundError("任务会话不存在") from exc
+    async def _require(
+        self,
+        conversation_id: str,
+        owner_id: str,
+    ) -> _TaskConversation:
+        conversation = self._conversations.get(conversation_id)
+        if conversation is None and self._persistence is not None:
+            async with self._load_lock:
+                conversation = self._conversations.get(conversation_id)
+                if conversation is None:
+                    payload = await self._persistence.store.load(
+                        kind="task",
+                        conversation_id=conversation_id,
+                        owner_id=owner_id,
+                    )
+                    if payload is not None:
+                        conversation = _TaskConversation(
+                            snapshot=TaskConversationSnapshot.model_validate(payload["snapshot"]),
+                            lock=asyncio.Lock(),
+                            started=bool(payload["started"]),
+                        )
+                        self._conversations[conversation_id] = conversation
+        if conversation is None:
+            raise TaskConversationNotFoundError("任务会话不存在")
         if conversation.snapshot.owner_id != owner_id:
             raise TaskConversationNotFoundError("任务会话不存在")
         return conversation
+
+    async def _save(self, conversation: _TaskConversation) -> None:
+        if self._persistence is None:
+            return
+        await self._persistence.store.save(
+            kind="task",
+            conversation_id=conversation.snapshot.conversation_id,
+            owner_id=conversation.snapshot.owner_id,
+            payload={
+                "snapshot": conversation.snapshot.model_dump(mode="json"),
+                "started": conversation.started,
+            },
+        )

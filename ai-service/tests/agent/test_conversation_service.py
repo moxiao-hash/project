@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import gc
 import weakref
 from collections import deque
@@ -20,6 +21,7 @@ from app.agent.service import (
     GoalNotFoundError,
 )
 from app.knowledge.models import KnowledgeCitation
+from app.persistence.agent_state import AgentPersistence
 from app.schemas.learning import (
     LearningContext,
     LearningGoal,
@@ -202,9 +204,7 @@ def test_draft_can_be_revised_and_only_explicit_confirmation_persists_it() -> No
     async def run_flow() -> None:
         conversation = await service.create_conversation("user-1", "goal-1")
 
-        draft = await service.send_message(
-            conversation.conversation_id, "请生成计划", "user-1"
-        )
+        draft = await service.send_message(conversation.conversation_id, "请生成计划", "user-1")
         assert draft.status == ConversationStatus.DRAFT_READY
         assert draft.draft.tasks[0].estimated_minutes == 30
         assert java.created_plans == []
@@ -275,9 +275,7 @@ def test_plan_conversation_retrieves_grounding_on_every_user_turn() -> None:
         first = await service.send_message(
             conversation.conversation_id, "请按课程路线规划", "user-1"
         )
-        second = await service.send_message(
-            conversation.conversation_id, "每天 60 分钟", "user-1"
-        )
+        second = await service.send_message(conversation.conversation_id, "每天 60 分钟", "user-1")
         return first, second
 
     first, second = asyncio.run(run_flow())
@@ -286,3 +284,49 @@ def test_plan_conversation_retrieves_grounding_on_every_user_turn() -> None:
     assert "年底掌握 Java 智能应用开发" in grounding.queries[0][1]
     assert first.citations[0].title == "课程大纲"
     assert second.citations[0].locator == "第 1 章"
+
+
+def test_draft_can_be_confirmed_after_process_restart(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+    java = FakeJavaBackend()
+
+    async def run_flow() -> None:
+        first_persistence = await AgentPersistence.open(db_path, key)
+        first_service = ConversationService(
+            FakePlanner([ready(60)]),
+            java,
+            persistence=first_persistence,
+        )
+        created = await first_service.create_conversation("user-1", "goal-1")
+        draft = await first_service.send_message(
+            created.conversation_id,
+            "生成计划",
+            "user-1",
+        )
+        assert draft.status == ConversationStatus.DRAFT_READY
+        await first_persistence.close()
+        raw_database = db_path.read_bytes()
+        assert b"user-1" not in raw_database
+        assert "生成计划".encode() not in raw_database
+        assert "Java 学习计划".encode() not in raw_database
+
+        second_persistence = await AgentPersistence.open(db_path, key)
+        second_service = ConversationService(
+            FakePlanner([]),
+            java,
+            persistence=second_persistence,
+        )
+        restored = await second_service.get_conversation(
+            created.conversation_id,
+            "user-1",
+        )
+        assert restored.draft is not None
+        completed = await second_service.confirm(created.conversation_id, "user-1")
+        repeated = await second_service.confirm(created.conversation_id, "user-1")
+        assert completed.status == ConversationStatus.COMPLETED
+        assert repeated.saved_plan_id == completed.saved_plan_id
+        await second_persistence.close()
+
+    asyncio.run(run_flow())
+    assert len(java.created_plans) == 1

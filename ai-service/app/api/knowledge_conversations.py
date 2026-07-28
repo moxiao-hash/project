@@ -20,6 +20,7 @@ from app.knowledge.service import (
     KnowledgeConversationNotFoundError,
     KnowledgeConversationService,
 )
+from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -48,8 +49,10 @@ class OwnerScopedKnowledgeServices:
         max_runtime_entries: int = 100,
         runtime_idle_ttl_seconds: float = 900,
         clock: Callable[[], float] = monotonic,
+        persistence: AgentPersistence | None = None,
     ) -> None:
         self._settings = settings
+        self._persistence = persistence
         self._services: dict[str, KnowledgeConversationService] = {}
         self._runtime_fingerprints = OwnerRuntimeCache[str](
             max_entries=max_runtime_entries,
@@ -88,6 +91,7 @@ class OwnerScopedKnowledgeServices:
                 answerer,
                 model_provider=self._settings.model_provider,
                 model_name=self._settings.model_name,
+                persistence=self._persistence,
             )
             self._services[owner_id] = service
         else:
@@ -108,7 +112,10 @@ def get_knowledge_conversation_service(
     existing = getattr(request.app.state, "knowledge_conversation_service", None)
     if existing is not None:
         return existing
-    service = OwnerScopedKnowledgeServices(settings)
+    service = OwnerScopedKnowledgeServices(
+        settings,
+        persistence=getattr(request.app.state, "agent_persistence", None),
+    )
     request.app.state.knowledge_conversation_service = service
     return service
 

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import gc
 import weakref
 
@@ -9,6 +10,7 @@ from app.knowledge.service import (
     KnowledgeConversationNotFoundError,
     KnowledgeConversationService,
 )
+from app.persistence.agent_state import AgentPersistence
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchOutcome, WebSearchResult
 
@@ -142,9 +144,7 @@ async def test_current_version_question_combines_material_and_web_citations() ->
         "user-1",
     )
 
-    assert web.calls == [
-        ("user-1", "Spring Boot 当前推荐使用哪个 Java 版本？")
-    ]
+    assert web.calls == [("user-1", "Spring Boot 当前推荐使用哪个 Java 版本？")]
     assert len(answerer.calls) == 1
     assert {citation.source_type for citation in snapshot.citations} == {
         "MATERIAL",
@@ -287,8 +287,7 @@ async def test_model_identity_is_deterministic_and_does_not_call_retrieval_or_mo
     )
 
     assert snapshot.answer == (
-        "我是 StudyPilot 的知识助手，当前由 deepseek 提供的 "
-        "deepseek-v4-pro 模型驱动。"
+        "我是 StudyPilot 的知识助手，当前由 deepseek 提供的 deepseek-v4-pro 模型驱动。"
     )
     assert snapshot.model_provider == "deepseek"
     assert snapshot.model_name == "deepseek-v4-pro"
@@ -319,8 +318,52 @@ async def test_identity_words_inside_a_learning_question_use_normal_rag_flow() -
         "user-1",
     )
 
-    assert retriever.queries == [
-        ("user-1", "不要回答你是什么模型，请解释依赖注入")
-    ]
+    assert retriever.queries == [("user-1", "不要回答你是什么模型，请解释依赖注入")]
     assert len(answerer.calls) == 1
     assert snapshot.answer == "基于资料与官网，当前建议至少使用 Java 17。"
+
+
+async def test_knowledge_history_and_snapshot_survive_process_restart(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+    first_persistence = await AgentPersistence.open(db_path, key)
+    first_answerer = FakeAnswerer()
+    first = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        first_answerer,
+        persistence=first_persistence,
+        model_provider="deepseek",
+        model_name="deepseek-v4-pro",
+    )
+    created = await first.create_conversation("user-1", KnowledgeMode.AUTO)
+    await first.send_message(
+        created.conversation_id,
+        "先解释依赖注入",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+    await first_persistence.close()
+
+    second_persistence = await AgentPersistence.open(db_path, key)
+    second_answerer = FakeAnswerer()
+    second = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        second_answerer,
+        persistence=second_persistence,
+        model_provider="deepseek",
+        model_name="deepseek-v4-pro",
+    )
+    restored = await second.get_conversation(created.conversation_id, "user-1")
+    assert restored.answer
+    await second.send_message(
+        created.conversation_id,
+        "再解释控制反转",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+    assert second_answerer.calls[0]["history"][0][1] == "先解释依赖注入"
+    with pytest.raises(KnowledgeConversationNotFoundError):
+        await second.get_conversation(created.conversation_id, "user-2")
+    await second_persistence.close()

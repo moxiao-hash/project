@@ -12,6 +12,7 @@ from app.knowledge.models import (
     KnowledgeMode,
     WebSearchPolicy,
 )
+from app.persistence.agent_state import AgentPersistence
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchOutcome, WebSearchResult
 
@@ -61,14 +62,17 @@ class KnowledgeConversationService:
         *,
         model_provider: str = "deepseek",
         model_name: str = "unknown",
+        persistence: AgentPersistence | None = None,
     ) -> None:
         self._retriever = retriever
         self._web_searcher: KnowledgeWebSearcher | None = web_searcher
         self._answerer: KnowledgeAnswerer | None = answerer
         self._model_provider = model_provider
         self._model_name = model_name
+        self._persistence = persistence
         self._conversations: dict[str, _Conversation] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._load_lock = asyncio.Lock()
 
     def replace_runtime(
         self,
@@ -107,6 +111,7 @@ class KnowledgeConversationService:
             snapshot=snapshot,
         )
         self._locks[conversation_id] = asyncio.Lock()
+        await self._save(self._conversations[conversation_id])
         return snapshot
 
     async def get_conversation(
@@ -114,7 +119,7 @@ class KnowledgeConversationService:
         conversation_id: str,
         owner_id: str,
     ) -> KnowledgeConversationSnapshot:
-        conversation = self._find(conversation_id, owner_id)
+        conversation = await self._find(conversation_id, owner_id)
         assert conversation.snapshot is not None
         return conversation.snapshot
 
@@ -125,8 +130,8 @@ class KnowledgeConversationService:
         web_search: WebSearchPolicy,
         owner_id: str,
     ) -> KnowledgeConversationSnapshot:
-        conversation = self._find(conversation_id, owner_id)
-        lock = self._locks[conversation_id]
+        conversation = await self._find(conversation_id, owner_id)
+        lock = self._locks.setdefault(conversation_id, asyncio.Lock())
         if lock.locked():
             raise KnowledgeConversationBusyError("知识会话正在处理另一条消息")
         async with lock:
@@ -136,16 +141,13 @@ class KnowledgeConversationService:
             answerer = self._answerer
             if self._is_model_identity_question(message):
                 snapshot = self._identity_snapshot(conversation)
-                conversation.history.extend(
-                    [("USER", message), ("ASSISTANT", snapshot.answer)]
-                )
+                conversation.history.extend([("USER", message), ("ASSISTANT", snapshot.answer)])
                 conversation.snapshot = snapshot
+                await self._save(conversation)
                 return snapshot
             materials = await retriever.search(conversation.owner_id, message)
             private = [
-                item
-                for item in materials
-                if item.privacy_level in {"SENSITIVE", "LOCAL_ONLY"}
+                item for item in materials if item.privacy_level in {"SENSITIVE", "LOCAL_ONLY"}
             ]
             if private:
                 snapshot = self._private_snapshot(conversation, private)
@@ -169,16 +171,53 @@ class KnowledgeConversationService:
                 )
             conversation.history.extend([("USER", message), ("ASSISTANT", snapshot.answer)])
             conversation.snapshot = snapshot
+            await self._save(conversation)
             return snapshot
 
-    def _find(self, conversation_id: str, owner_id: str) -> _Conversation:
-        try:
-            conversation = self._conversations[conversation_id]
-        except KeyError as exc:
-            raise KnowledgeConversationNotFoundError("知识会话不存在") from exc
+    async def _find(self, conversation_id: str, owner_id: str) -> _Conversation:
+        conversation = self._conversations.get(conversation_id)
+        if conversation is None and self._persistence is not None:
+            async with self._load_lock:
+                conversation = self._conversations.get(conversation_id)
+                if conversation is None:
+                    payload = await self._persistence.store.load(
+                        kind="knowledge",
+                        conversation_id=conversation_id,
+                        owner_id=owner_id,
+                    )
+                    if payload is not None:
+                        conversation = _Conversation(
+                            conversation_id=conversation_id,
+                            owner_id=payload["owner_id"],
+                            mode=KnowledgeMode(payload["mode"]),
+                            history=[tuple(item) for item in payload["history"]],
+                            snapshot=KnowledgeConversationSnapshot.model_validate(
+                                payload["snapshot"]
+                            ),
+                        )
+                        self._conversations[conversation_id] = conversation
+                        self._locks.setdefault(conversation_id, asyncio.Lock())
+        if conversation is None:
+            raise KnowledgeConversationNotFoundError("知识会话不存在")
         if conversation.owner_id != owner_id:
             raise KnowledgeConversationNotFoundError("知识会话不存在")
         return conversation
+
+    async def _save(self, conversation: _Conversation) -> None:
+        if self._persistence is None:
+            return
+        assert conversation.snapshot is not None
+        await self._persistence.store.save(
+            kind="knowledge",
+            conversation_id=conversation.conversation_id,
+            owner_id=conversation.owner_id,
+            payload={
+                "owner_id": conversation.owner_id,
+                "mode": conversation.mode.value,
+                "history": conversation.history,
+                "snapshot": conversation.snapshot.model_dump(mode="json"),
+            },
+        )
 
     @staticmethod
     def _is_model_identity_question(question: str) -> bool:
@@ -258,9 +297,7 @@ class KnowledgeConversationService:
         conversation: _Conversation,
         materials: list[RetrievedEvidence],
     ) -> KnowledgeConversationSnapshot:
-        excerpts = "\n".join(
-            f"- {item.title}（{item.locator}）：{item.text}" for item in materials
-        )
+        excerpts = "\n".join(f"- {item.title}（{item.locator}）：{item.text}" for item in materials)
         return KnowledgeConversationSnapshot(
             conversation_id=conversation.conversation_id,
             owner_id=conversation.owner_id,

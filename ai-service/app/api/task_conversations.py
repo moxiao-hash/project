@@ -27,6 +27,7 @@ from app.agent.task_service import TaskRecognitionService
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -51,8 +52,10 @@ class OwnerScopedTaskConversationServices:
         max_runtime_entries: int = 100,
         runtime_idle_ttl_seconds: float = 900,
         clock: Callable[[], float] = monotonic,
+        persistence: AgentPersistence | None = None,
     ) -> None:
         self._settings = settings
+        self._persistence = persistence
         self._services: dict[str, TaskConversationService] = {}
         self._runtime_fingerprints = OwnerRuntimeCache[str](
             max_entries=max_runtime_entries,
@@ -77,7 +80,11 @@ class OwnerScopedTaskConversationServices:
             java,
         )
         if service is None:
-            service = TaskConversationService(recognition_service, java)
+            service = TaskConversationService(
+                recognition_service,
+                java,
+                persistence=self._persistence,
+            )
             self._services[owner_id] = service
         else:
             service.replace_runtime(recognition_service)
@@ -99,7 +106,10 @@ def get_task_conversation_service(
     existing = getattr(request.app.state, "task_conversation_service", None)
     if existing is not None:
         return existing
-    service = OwnerScopedTaskConversationServices(settings)
+    service = OwnerScopedTaskConversationServices(
+        settings,
+        persistence=getattr(request.app.state, "agent_persistence", None),
+    )
     request.app.state.task_conversation_service = service
     return service
 
@@ -154,9 +164,7 @@ async def create_task_conversation(
     ],
 ) -> TaskConversationSnapshot:
     scoped = await _for_owner(service, body.owner_id)
-    return await _translate_errors(
-        scoped.create_conversation(body.owner_id, body.target_date)
-    )
+    return await _translate_errors(scoped.create_conversation(body.owner_id, body.target_date))
 
 
 @router.post("/{conversation_id}/messages", response_model=TaskConversationSnapshot)

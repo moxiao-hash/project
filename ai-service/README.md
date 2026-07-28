@@ -65,6 +65,9 @@ JAVA_BACKEND_BASE_URL=http://localhost:8080
 INTERNAL_SERVICE_TOKEN=local-dev-internal-token
 TAVILY_API_KEY=填写你自己的Key
 QDRANT_PATH=./data/qdrant
+AGENT_STATE_DB_PATH=./data/agent-state.sqlite3
+LANGGRAPH_AES_KEY=使用 openssl rand -base64 32 生成
+AGENT_WORKER_COUNT=1
 ```
 
 Java 启动时的 `INTERNAL_SERVICE_TOKEN` 必须与 Python 相同。`.env` 已被根目录
@@ -119,8 +122,13 @@ POST /internal/agent/conversations/{conversationId}/confirm
 完整请求顺序见 [`../docs/agent-api-examples.http`](../docs/agent-api-examples.http)，
 可以直接在 IntelliJ IDEA HTTP Client 中逐条运行。
 
-当前使用 `InMemorySaver` 保存上下文，因此 Python 进程重启后会话失效。这是第一版
-有意保留的限制；后续可以换成数据库 Checkpointer，而不改变会话 API。
+学习计划与任务图使用加密的 `AsyncSqliteSaver`，知识会话及三类会话快照也保存在同一
+SQLite 文件中，因此进程重启后可以按 `conversationId` 恢复。磁盘上不保存用户消息、
+草稿、回答或 owner ID 明文。`LANGGRAPH_AES_KEY` 是 Base64 编码的 32 字节主密钥，
+丢失后旧会话不可恢复，必须像数据库密钥一样备份且不得提交 Git。
+
+当前 SQLite 与本地 Qdrant 部署仅支持一个 FastAPI worker。请保持 Uvicorn 默认的单
+worker 启动方式；多进程和横向扩容将在改用共享数据库 checkpointer 后支持。
 
 ## 5. 资料处理与知识问答
 

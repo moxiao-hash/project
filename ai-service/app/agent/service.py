@@ -14,6 +14,7 @@ from app.agent.grounding import PlanGrounding, PlanGroundingService
 from app.agent.models import ConversationSnapshot, ConversationStatus, PlanDraft
 from app.agent.planner import PlanTurnGenerator
 from app.clients.java_backend import JavaBackendClient
+from app.persistence.agent_state import AgentPersistence
 from app.schemas.learning import LearningContext
 
 
@@ -49,9 +50,14 @@ class ConversationService:
         planner: PlanTurnGenerator,
         java_backend: JavaBackendClient,
         grounding: PlanGroundingService | None = None,
+        *,
+        persistence: AgentPersistence | None = None,
     ) -> None:
         self._java_backend = java_backend
-        self._checkpointer = InMemorySaver()
+        self._persistence = persistence
+        self._checkpointer = (
+            persistence.checkpointer if persistence is not None else InMemorySaver()
+        )
         self._graph: Any | None = build_learning_plan_graph(
             planner,
             java_backend,
@@ -59,6 +65,7 @@ class ConversationService:
         )
         self._grounding = grounding
         self._conversations: dict[str, _Conversation] = {}
+        self._load_lock = asyncio.Lock()
 
     def replace_runtime(
         self,
@@ -103,6 +110,7 @@ class ConversationService:
             snapshot=snapshot,
             lock=asyncio.Lock(),
         )
+        await self._save(self._conversations[conversation_id])
         return snapshot
 
     async def send_message(
@@ -111,7 +119,7 @@ class ConversationService:
         message: str,
         owner_id: str,
     ) -> ConversationSnapshot:
-        conversation = self._require(conversation_id, owner_id)
+        conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             raise InvalidConversationStateError("已完成的会话不能继续发送消息")
         if conversation.lock.locked():
@@ -161,6 +169,7 @@ class ConversationService:
                 graph_input,
             )
             conversation.started = True
+            await self._save(conversation)
             return result
 
     async def get_conversation(
@@ -168,14 +177,14 @@ class ConversationService:
         conversation_id: str,
         owner_id: str,
     ) -> ConversationSnapshot:
-        return self._require(conversation_id, owner_id).snapshot
+        return (await self._require(conversation_id, owner_id)).snapshot
 
     async def confirm(
         self,
         conversation_id: str,
         owner_id: str,
     ) -> ConversationSnapshot:
-        conversation = self._require(conversation_id, owner_id)
+        conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             return conversation.snapshot
         if conversation.snapshot.status != ConversationStatus.DRAFT_READY:
@@ -204,6 +213,7 @@ class ConversationService:
         )
         snapshot = self._to_snapshot(conversation.snapshot, values)
         conversation.snapshot = snapshot
+        await self._save(conversation)
         return snapshot
 
     @staticmethod
@@ -234,9 +244,7 @@ class ConversationService:
         if grounding_service is None:
             return PlanGrounding()
         goal = next(
-            goal
-            for goal in conversation.context.goals
-            if goal.id == conversation.snapshot.goal_id
+            goal for goal in conversation.context.goals if goal.id == conversation.snapshot.goal_id
         )
         query = f"{goal.title}\n{message}"
         return await grounding_service.retrieve(conversation.snapshot.owner_id, query)
@@ -247,12 +255,42 @@ class ConversationService:
             raise RuntimeError("学习计划模型运行时尚未注入")
         return graph
 
-    def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
-        try:
-            conversation = self._conversations[conversation_id]
-        except KeyError as exc:
-            raise ConversationNotFoundError("会话不存在") from exc
+    async def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
+        conversation = self._conversations.get(conversation_id)
+        if conversation is None and self._persistence is not None:
+            async with self._load_lock:
+                conversation = self._conversations.get(conversation_id)
+                if conversation is None:
+                    payload = await self._persistence.store.load(
+                        kind="plan",
+                        conversation_id=conversation_id,
+                        owner_id=owner_id,
+                    )
+                    if payload is not None:
+                        conversation = _Conversation(
+                            context=LearningContext.model_validate(payload["context"]),
+                            snapshot=ConversationSnapshot.model_validate(payload["snapshot"]),
+                            lock=asyncio.Lock(),
+                            started=bool(payload["started"]),
+                        )
+                        self._conversations[conversation_id] = conversation
+        if conversation is None:
+            raise ConversationNotFoundError("会话不存在")
         if conversation.snapshot.owner_id != owner_id:
             # 对越权访问也返回不存在，避免通过 ID 探测其他用户的会话。
             raise ConversationNotFoundError("会话不存在")
         return conversation
+
+    async def _save(self, conversation: _Conversation) -> None:
+        if self._persistence is None:
+            return
+        await self._persistence.store.save(
+            kind="plan",
+            conversation_id=conversation.snapshot.conversation_id,
+            owner_id=conversation.snapshot.owner_id,
+            payload={
+                "context": conversation.context.model_dump(mode="json"),
+                "snapshot": conversation.snapshot.model_dump(mode="json"),
+                "started": conversation.started,
+            },
+        )

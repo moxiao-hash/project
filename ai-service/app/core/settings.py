@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     qdrant_path: str = "./data/qdrant"
     tavily_api_key: SecretStr = SecretStr("")
     tavily_base_url: str = "https://api.tavily.com"
+    agent_state_db_path: str = "./data/agent-state.sqlite3"
+    langgraph_aes_key: SecretStr = SecretStr("")
+    agent_worker_count: int = 1
 
     @property
     def model_is_configured(self) -> bool:
