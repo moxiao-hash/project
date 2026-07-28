@@ -22,6 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -35,7 +36,9 @@ class AgentFacadeControllerTest {
 
     private static final HttpServer AI_SERVER = createServer();
     private static final AtomicReference<CapturedRequest> LAST_REQUEST = new AtomicReference<>();
+    private static final AtomicInteger REQUEST_COUNT = new AtomicInteger();
     private static volatile int upstreamStatus = 200;
+    private static volatile String retryAfterResponse;
 
     @Autowired
     private MockMvc mockMvc;
@@ -167,6 +170,76 @@ class AgentFacadeControllerTest {
                 "/internal/assessment/quizzes/generate", "POST");
     }
 
+    @Test
+    void messageAndConfirmAlwaysForwardTheAuthenticatedOwner() throws Exception {
+        Registration registration = registerUser();
+        String authorization = "Bearer " + registration.token();
+        upstreamStatus = 200;
+
+        mockMvc.perform(post("/api/agent/plan-conversations/c1/messages")
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"message":"hello","ownerId":"forged-owner"}
+                                """))
+                .andExpect(status().isOk());
+        JsonNode messageBody = objectMapper.readTree(LAST_REQUEST.get().body());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                registration.userId(),
+                messageBody.get("ownerId").asText()
+        );
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+                "forged-owner",
+                messageBody.get("ownerId").asText()
+        );
+
+        mockMvc.perform(post("/api/agent/plan-conversations/c1/confirm")
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ownerId\":\"forged-owner\"}"))
+                .andExpect(status().isOk());
+        JsonNode confirmBody = objectMapper.readTree(LAST_REQUEST.get().body());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                registration.userId(),
+                confirmBody.get("ownerId").asText()
+        );
+    }
+
+    @Test
+    void rateLimitPreservesRetryAfterAndGatewayDoesNotRetry() throws Exception {
+        Registration registration = registerUser();
+        upstreamStatus = 429;
+        retryAfterResponse = "17";
+        REQUEST_COUNT.set(0);
+        try {
+            mockMvc.perform(post("/api/agent/quizzes/generate")
+                            .header("Authorization", "Bearer " + registration.token())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"taskId\":\"task-1\"}"))
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                            .header().string("Retry-After", "17"));
+            org.junit.jupiter.api.Assertions.assertEquals(1, REQUEST_COUNT.get());
+        } finally {
+            retryAfterResponse = null;
+        }
+    }
+
+    @Test
+    void upstreamFailureIsSentOnlyOnceWithoutAutomaticRetry() throws Exception {
+        Registration registration = registerUser();
+        upstreamStatus = 503;
+        REQUEST_COUNT.set(0);
+
+        mockMvc.perform(post("/api/agent/plan-conversations")
+                        .header("Authorization", "Bearer " + registration.token())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"goalId\":\"goal-1\"}"))
+                .andExpect(status().isServiceUnavailable());
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, REQUEST_COUNT.get());
+    }
+
     @ParameterizedTest
     @CsvSource({
             "400,400",
@@ -235,6 +308,7 @@ class AgentFacadeControllerTest {
     }
 
     private static void handle(HttpExchange exchange) throws IOException {
+        REQUEST_COUNT.incrementAndGet();
         byte[] requestBody = exchange.getRequestBody().readAllBytes();
         String query = exchange.getRequestURI().getRawQuery();
         String path = exchange.getRequestURI().getRawPath()
@@ -252,6 +326,9 @@ class AgentFacadeControllerTest {
                   """;
         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
+        if (retryAfterResponse != null) {
+            exchange.getResponseHeaders().add("Retry-After", retryAfterResponse);
+        }
         exchange.sendResponseHeaders(upstreamStatus, bytes.length);
         exchange.getResponseBody().write(bytes);
         exchange.close();

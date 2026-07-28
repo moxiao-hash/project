@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from app.agent.adjustment_service import (
     AdjustmentOutputError,
     DeepSeekAdjustmentGenerator,
+    PlanAdjustmentNotFoundError,
     PlanAdjustmentService,
 )
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
@@ -59,9 +60,19 @@ def get_plan_adjustment_service(
 
 
 def translate_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, PlanAdjustmentNotFoundError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="计划调整不存在",
+        )
     if isinstance(exc, JavaBackendError):
-        if exc.status_code in {404, 409}:
-            return HTTPException(status_code=exc.status_code, detail=exc.detail or str(exc))
+        if exc.status_code == 404:
+            return HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="计划调整不存在",
+            )
+        if exc.status_code == 409:
+            return HTTPException(status_code=409, detail=exc.detail or str(exc))
         return HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="计划调整依赖服务暂时不可用",

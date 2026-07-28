@@ -2,21 +2,37 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
+from app.agent.adjustment_service import PlanAdjustmentNotFoundError
 from app.api.plan_adjustments import get_plan_adjustment_service
+from app.clients.java_backend import JavaBackendError
 from app.core.settings import get_settings
 from app.main import app
 from app.schemas.learning import PlanAdjustment
 
 
 class FakeService:
+    deny_access = False
+    missing = False
+
     async def analyze(self, **kwargs):
         return adjustment("DRAFT_READY")
 
     async def get(self, adjustment_id, owner_id):
+        if self.deny_access:
+            raise PlanAdjustmentNotFoundError("计划调整不存在")
+        if self.missing:
+            raise JavaBackendError(
+                "Java 返回 404",
+                path="/internal/plan-adjustments/missing",
+                status_code=404,
+                detail="数据库中的原始不存在细节",
+            )
         assert owner_id == "user-1"
         return adjustment("DRAFT_READY")
 
     async def confirm(self, adjustment_id, owner_id):
+        if self.deny_access:
+            raise PlanAdjustmentNotFoundError("计划调整不存在")
         return adjustment("COMPLETED")
 
 
@@ -75,5 +91,69 @@ def test_plan_adjustment_endpoints_require_token_and_expose_confirmation() -> No
         )
         assert confirmed.status_code == 200
         assert confirmed.json()["status"] == "COMPLETED"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cross_owner_get_and_confirm_are_indistinguishable_from_not_found() -> None:
+    fake = FakeService()
+    fake.deny_access = True
+    app.dependency_overrides[get_plan_adjustment_service] = lambda: fake
+    secret = type(
+        "Secret",
+        (),
+        {"get_secret_value": lambda self: "token"},
+    )()
+    app.dependency_overrides[get_settings] = lambda: type(
+        "TestSettings",
+        (),
+        {"internal_service_token": secret},
+    )()
+    client = TestClient(app)
+    headers = {"X-Internal-Service-Token": "token"}
+    try:
+        fetched = client.get(
+            "/internal/agent/plan-adjustments/adjustment-1",
+            headers=headers,
+            params={"ownerId": "user-2"},
+        )
+        confirmed = client.post(
+            "/internal/agent/plan-adjustments/adjustment-1/confirm",
+            headers=headers,
+            json={"ownerId": "user-2"},
+        )
+
+        assert fetched.status_code == confirmed.status_code == 404
+        assert fetched.json() == confirmed.json() == {"detail": "计划调整不存在"}
+        assert "其他用户" not in fetched.text
+        assert "不属于" not in confirmed.text
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_missing_adjustment_uses_the_same_blurred_not_found_response() -> None:
+    fake = FakeService()
+    fake.missing = True
+    app.dependency_overrides[get_plan_adjustment_service] = lambda: fake
+    secret = type(
+        "Secret",
+        (),
+        {"get_secret_value": lambda self: "token"},
+    )()
+    app.dependency_overrides[get_settings] = lambda: type(
+        "TestSettings",
+        (),
+        {"internal_service_token": secret},
+    )()
+    client = TestClient(app)
+    try:
+        response = client.get(
+            "/internal/agent/plan-adjustments/missing",
+            headers={"X-Internal-Service-Token": "token"},
+            params={"ownerId": "user-2"},
+        )
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": "计划调整不存在"}
     finally:
         app.dependency_overrides.clear()

@@ -1,12 +1,18 @@
 import asyncio
 from datetime import date
 
+import pytest
+
 from app.agent.adjustment_models import (
     AdjustmentOperation,
     AdjustmentOperationType,
     PlanAdjustmentDraft,
 )
-from app.agent.adjustment_service import DeepSeekAdjustmentGenerator, PlanAdjustmentService
+from app.agent.adjustment_service import (
+    DeepSeekAdjustmentGenerator,
+    PlanAdjustmentNotFoundError,
+    PlanAdjustmentService,
+)
 from app.schemas.agent import AgentExecution
 from app.schemas.learning import (
     AdaptationContext,
@@ -94,6 +100,7 @@ class FakeBackend:
         self.executions = 0
         self.notifications: list[str] = []
         self.persisted_adjustment: PlanAdjustment | None = None
+        self.confirm_calls = 0
 
     async def get_adaptation_context(self, *args, **kwargs):
         return self.context
@@ -136,6 +143,14 @@ class FakeBackend:
             updated_at="2026-07-27T00:00:00Z",
         )
         return self.persisted_adjustment
+
+    async def get_plan_adjustment(self, adjustment_id):
+        assert self.persisted_adjustment is not None
+        return self.persisted_adjustment
+
+    async def confirm_agent_execution(self, execution_id, owner_id):
+        self.confirm_calls += 1
+        raise AssertionError("越权确认不得触发治理执行")
 
     async def execute_plan_adjustment(self, adjustment_id, request):
         self.executions += 1
@@ -258,3 +273,35 @@ def test_repeated_analysis_returns_completed_adjustment_without_reexecution() ->
     assert service._generator.calls == 1
     assert backend.executions == 1
     assert backend.notifications == []
+
+
+def test_get_and_confirm_hide_another_owners_adjustment() -> None:
+    backend = FakeBackend(context(signals=[]), "WAITING_AUTHORIZATION")
+    backend.persisted_adjustment = PlanAdjustment(
+        id="adjustment-1",
+        owner_id="user-1",
+        plan_id="plan-1",
+        idempotency_key="plan-adjustment:user:user-1:2026-07-27",
+        analysis_date=date(2026, 7, 27),
+        trigger_type="USER_REQUEST",
+        signals=["OVERDUE_TASKS"],
+        summary="顺延逾期任务",
+        operations=[],
+        risk_level="LOW",
+        status="DRAFT_READY",
+        execution_id="execution-1",
+        before_plan_version=2,
+        created_at="2026-07-27T00:00:00Z",
+        updated_at="2026-07-27T00:00:00Z",
+    )
+    service = PlanAdjustmentService(FakeGenerator(), backend)
+
+    async def run_checks() -> None:
+        with pytest.raises(PlanAdjustmentNotFoundError, match="计划调整不存在"):
+            await service.get("adjustment-1", "user-2")
+        with pytest.raises(PlanAdjustmentNotFoundError, match="计划调整不存在"):
+            await service.confirm("adjustment-1", "user-2")
+
+    asyncio.run(run_checks())
+
+    assert backend.confirm_calls == 0

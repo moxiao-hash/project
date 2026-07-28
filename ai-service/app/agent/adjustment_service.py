@@ -28,6 +28,10 @@ class AdjustmentOutputError(RuntimeError):
     """模型草稿无法通过结构或业务边界校验。"""
 
 
+class PlanAdjustmentNotFoundError(LookupError):
+    """不存在和越权使用同一错误，避免通过 ID 探测其他用户数据。"""
+
+
 class AdjustmentGenerator(Protocol):
     async def generate(self, adaptation_context: AdaptationContext) -> PlanAdjustmentDraft: ...
 
@@ -169,7 +173,7 @@ class PlanAdjustmentService:
     async def get(self, adjustment_id: str, owner_id: str) -> PlanAdjustment:
         adjustment = await self._java.get_plan_adjustment(adjustment_id)
         if adjustment.owner_id != owner_id:
-            raise AdjustmentOutputError("计划调整不存在")
+            raise PlanAdjustmentNotFoundError("计划调整不存在")
         return adjustment
 
     async def confirm(
@@ -179,7 +183,7 @@ class PlanAdjustmentService:
     ) -> PlanAdjustment:
         adjustment = await self._java.get_plan_adjustment(adjustment_id)
         if adjustment.owner_id != owner_id:
-            raise AdjustmentOutputError("计划调整不属于当前用户")
+            raise PlanAdjustmentNotFoundError("计划调整不存在")
         if adjustment.status == "COMPLETED":
             return adjustment
         if not adjustment.execution_id:
