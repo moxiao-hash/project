@@ -130,6 +130,10 @@ class KnowledgeConversationService:
         if lock.locked():
             raise KnowledgeConversationBusyError("知识会话正在处理另一条消息")
         async with lock:
+            # 在第一次 await 前租用完整运行时快照，避免缓存淘汰中断活跃请求。
+            retriever = self._retriever
+            web_searcher = self._web_searcher
+            answerer = self._answerer
             if self._is_model_identity_question(message):
                 snapshot = self._identity_snapshot(conversation)
                 conversation.history.extend(
@@ -137,7 +141,7 @@ class KnowledgeConversationService:
                 )
                 conversation.snapshot = snapshot
                 return snapshot
-            materials = await self._retriever.search(conversation.owner_id, message)
+            materials = await retriever.search(conversation.owner_id, message)
             private = [
                 item
                 for item in materials
@@ -146,12 +150,12 @@ class KnowledgeConversationService:
             if private:
                 snapshot = self._private_snapshot(conversation, private)
             else:
-                if self._web_searcher is None or self._answerer is None:
+                if web_searcher is None or answerer is None:
                     raise RuntimeError("知识问答模型运行时尚未注入")
                 outcome = WebSearchOutcome(query=message)
                 if self._should_search_web(conversation.mode, web_search, message):
-                    outcome = await self._web_searcher.search(conversation.owner_id, message)
-                answer = await self._answerer.answer(
+                    outcome = await web_searcher.search(conversation.owner_id, message)
+                answer = await answerer.answer(
                     question=message,
                     history=list(conversation.history),
                     materials=materials,

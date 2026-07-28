@@ -108,25 +108,33 @@ class TaskConversationService:
             TaskConversationStatus.FAILED,
         }:
             raise InvalidTaskConversationStateError("已结束的任务会话不能继续发送消息")
+        if conversation.lock.locked():
+            raise TaskConversationBusyError("该任务会话正在处理另一条请求")
+        async with conversation.lock:
+            graph = self._require_graph()
+            if conversation.snapshot.status == TaskConversationStatus.PREVIEW_READY:
+                graph_input: dict | Command = Command(
+                    resume={"action": "revise", "feedback": message}
+                )
+            elif conversation.started:
+                graph_input = {"messages": [HumanMessage(content=message)]}
+            else:
+                graph_input = {
+                    "conversation_id": conversation_id,
+                    "owner_id": conversation.snapshot.owner_id,
+                    "target_date": conversation.snapshot.target_date,
+                    "messages": [HumanMessage(content=message)],
+                    "status": TaskConversationStatus.COLLECTING.value,
+                }
 
-        if conversation.snapshot.status == TaskConversationStatus.PREVIEW_READY:
-            graph_input: dict | Command = Command(
-                resume={"action": "revise", "feedback": message}
+            snapshot, _ = await self._invoke_locked(
+                graph,
+                conversation_id,
+                conversation,
+                graph_input,
             )
-        elif conversation.started:
-            graph_input = {"messages": [HumanMessage(content=message)]}
-        else:
-            graph_input = {
-                "conversation_id": conversation_id,
-                "owner_id": conversation.snapshot.owner_id,
-                "target_date": conversation.snapshot.target_date,
-                "messages": [HumanMessage(content=message)],
-                "status": TaskConversationStatus.COLLECTING.value,
-            }
-
-        snapshot, _ = await self._invoke(conversation_id, conversation, graph_input)
-        conversation.started = True
-        return snapshot
+            conversation.started = True
+            return snapshot
 
     async def get_conversation(
         self,
@@ -146,35 +154,42 @@ class TaskConversationService:
         if conversation.snapshot.status != TaskConversationStatus.PREVIEW_READY:
             raise InvalidTaskConversationStateError("只有操作预览就绪的任务会话可以确认")
 
-        snapshot, java_status_code = await self._invoke(
-            conversation_id,
-            conversation,
-            Command(resume={"action": "approve"}),
-        )
+        if conversation.lock.locked():
+            raise TaskConversationBusyError("该任务会话正在处理另一条请求")
+        async with conversation.lock:
+            graph = self._require_graph()
+            snapshot, java_status_code = await self._invoke_locked(
+                graph,
+                conversation_id,
+                conversation,
+                Command(resume={"action": "approve"}),
+            )
         if snapshot.status == TaskConversationStatus.FAILED:
             if java_status_code == 409:
                 raise TaskVersionConflictError(snapshot.error or "任务版本已变化")
             raise TaskExecutionUnavailableError(snapshot.error or "任务操作执行失败")
         return snapshot
 
-    async def _invoke(
+    async def _invoke_locked(
         self,
+        graph: Any,
         conversation_id: str,
         conversation: _TaskConversation,
         graph_input: dict | Command,
     ) -> tuple[TaskConversationSnapshot, int | None]:
-        if conversation.lock.locked():
-            raise TaskConversationBusyError("该任务会话正在处理另一条请求")
-        async with conversation.lock:
-            if self._graph is None:
-                raise RuntimeError("任务识别模型运行时尚未注入")
-            values = await self._graph.ainvoke(
-                graph_input,
-                config={"configurable": {"thread_id": conversation_id}},
-            )
-            snapshot = self._to_snapshot(conversation.snapshot, values)
-            conversation.snapshot = snapshot
-            return snapshot, values.get("java_status_code")
+        values = await graph.ainvoke(
+            graph_input,
+            config={"configurable": {"thread_id": conversation_id}},
+        )
+        snapshot = self._to_snapshot(conversation.snapshot, values)
+        conversation.snapshot = snapshot
+        return snapshot, values.get("java_status_code")
+
+    def _require_graph(self) -> Any:
+        graph = self._graph
+        if graph is None:
+            raise RuntimeError("任务识别模型运行时尚未注入")
+        return graph
 
     @staticmethod
     def _to_snapshot(

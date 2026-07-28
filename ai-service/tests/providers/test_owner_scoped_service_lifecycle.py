@@ -1,3 +1,4 @@
+import asyncio
 import gc
 import weakref
 from datetime import date
@@ -81,6 +82,17 @@ class FakeGrounding:
         return PlanGrounding()
 
 
+class BarrierGrounding:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def retrieve(self, _owner_id: str, _query: str) -> PlanGrounding:
+        self.started.set()
+        await self.release.wait()
+        return PlanGrounding()
+
+
 async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -93,6 +105,9 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
     }
     created_keys: list[str] = []
     planner_refs: list[weakref.ReferenceType[FakePlanner]] = []
+    grounding_holder = [BarrierGrounding()]
+    grounding_ref = weakref.ref(grounding_holder[0])
+    grounding_calls = [0]
 
     class FakeResolver:
         def __init__(self, _java, _settings) -> None:
@@ -107,6 +122,10 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
         planner_refs.append(weakref.ref(planner))
         return planner
 
+    def create_grounding(*_args) -> FakeGrounding | BarrierGrounding:
+        grounding_calls[0] += 1
+        return grounding_holder[0] if grounding_calls[0] == 1 else FakeGrounding()
+
     monkeypatch.setattr(conversations_api, "JavaBackendClient", FakeJavaBackend)
     monkeypatch.setattr(conversations_api, "CredentialResolver", FakeResolver)
     monkeypatch.setattr(conversations_api, "create_chat_model", create_model)
@@ -115,7 +134,7 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
     monkeypatch.setattr(conversations_api, "AsyncHybridRetriever", lambda _index: object())
     monkeypatch.setattr(conversations_api, "TavilySearchClient", lambda *_a, **_k: object())
     monkeypatch.setattr(conversations_api, "WebSearchService", lambda *_a: object())
-    monkeypatch.setattr(conversations_api, "PlanGroundingService", lambda *_a: FakeGrounding())
+    monkeypatch.setattr(conversations_api, "PlanGroundingService", create_grounding)
 
     registry = conversations_api.OwnerScopedConversationServices(
         Settings(),
@@ -125,12 +144,21 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
     )
     owner_one = await registry.for_owner("owner-1")
     created = await owner_one.create_conversation("owner-1", "goal-1")
-    await owner_one.send_message(created.conversation_id, "生成草稿", "owner-1")
 
-    # 容量淘汰只释放 owner-1 的模型运行时，不删除它的会话/checkpointer。
+    # 请求持有运行时租约期间，另一 owner 的容量淘汰不得中断活跃调用。
+    in_flight = asyncio.create_task(
+        owner_one.send_message(created.conversation_id, "生成草稿", "owner-1")
+    )
+    await grounding_holder[0].started.wait()
     await registry.for_owner("owner-2")
+    assert planner_refs[0]() is not None
+    grounding_holder[0].release.set()
+    assert (await in_flight).status == ConversationStatus.DRAFT_READY
+    del in_flight
+    grounding_holder.clear()
     gc.collect()
     assert planner_refs[0]() is None
+    assert grounding_ref() is None
 
     keys[("owner-1", CredentialProvider.DEEPSEEK)] = "deepseek-new"
     restored = await registry.for_owner("owner-1")

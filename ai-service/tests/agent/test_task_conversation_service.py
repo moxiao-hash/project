@@ -64,6 +64,30 @@ class FakeRecognitionService:
         return self.results.popleft()
 
 
+class BarrierRecognitionService(FakeRecognitionService):
+    def __init__(self) -> None:
+        super().__init__(
+            [
+                TaskRecognitionResult(
+                    status=TaskRecognitionStatus.LIST_READY,
+                    reply="今天有一个任务。",
+                    candidate_tasks=[candidate()],
+                )
+            ]
+        )
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def recognize(self, *, owner_id, message, target_date):
+        self.started.set()
+        await self.release.wait()
+        return await super().recognize(
+            owner_id=owner_id,
+            message=message,
+            target_date=target_date,
+        )
+
+
 class FakeJavaBackend:
     def __init__(self) -> None:
         self.created_executions = []
@@ -300,3 +324,35 @@ def test_clearing_task_runtime_releases_recognizer_but_keeps_conversation() -> N
     assert recognition_ref() is None
     snapshot = asyncio.run(service.get_conversation(conversation_id, "user-1"))
     assert snapshot.conversation_id == conversation_id
+
+
+def test_active_task_request_leases_recognizer_across_runtime_clear() -> None:
+    from app.agent.task_conversation_service import TaskConversationService
+
+    recognition_holder = [BarrierRecognitionService()]
+    recognition_ref = weakref.ref(recognition_holder[0])
+    service = TaskConversationService(recognition_holder[0], FakeJavaBackend())
+
+    async def run_flow() -> None:
+        conversation = await service.create_conversation(
+            "user-1",
+            date(2026, 7, 26),
+        )
+        in_flight = asyncio.create_task(
+            service.send_message(
+                conversation.conversation_id,
+                "今天有什么任务？",
+                "user-1",
+            )
+        )
+        await recognition_holder[0].started.wait()
+        service.clear_runtime()
+        assert recognition_ref() is not None
+        recognition_holder[0].release.set()
+        snapshot = await in_flight
+        assert snapshot.reply == "今天有一个任务。"
+
+    asyncio.run(run_flow())
+    recognition_holder.clear()
+    gc.collect()
+    assert recognition_ref() is None

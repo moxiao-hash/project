@@ -1,3 +1,4 @@
+import asyncio
 import gc
 import weakref
 
@@ -22,6 +23,19 @@ class FakeRetriever:
     async def search(self, owner_id: str, query: str) -> list[RetrievedEvidence]:
         self.queries.append((owner_id, query))
         return self.evidence
+
+
+class BarrierRetriever(FakeRetriever):
+    def __init__(self) -> None:
+        super().__init__([])
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def search(self, owner_id: str, query: str) -> list[RetrievedEvidence]:
+        self.queries.append((owner_id, query))
+        self.started.set()
+        await self.release.wait()
+        return []
 
 
 class FakeWebSearcher:
@@ -216,6 +230,40 @@ async def test_clearing_runtime_releases_clients_but_keeps_conversation() -> Non
     assert answerer_ref() is None
     snapshot = await service.get_conversation(created.conversation_id, "user-1")
     assert snapshot.conversation_id == created.conversation_id
+
+
+async def test_active_knowledge_request_leases_clients_across_runtime_clear() -> None:
+    retriever = BarrierRetriever()
+    web = FakeWebSearcher()
+    answerer = FakeAnswerer()
+    web_ref = weakref.ref(web)
+    answerer_ref = weakref.ref(answerer)
+    service = KnowledgeConversationService(retriever, web, answerer)
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    del web
+    del answerer
+
+    in_flight = asyncio.create_task(
+        service.send_message(
+            created.conversation_id,
+            "请搜索最新版 Spring Boot",
+            WebSearchPolicy.ENABLED,
+            "user-1",
+        )
+    )
+    await retriever.started.wait()
+    service.clear_runtime()
+    assert web_ref() is not None
+    assert answerer_ref() is not None
+
+    retriever.release.set()
+    snapshot = await in_flight
+    assert snapshot.answer
+    del in_flight
+    del snapshot
+    gc.collect()
+    assert web_ref() is None
+    assert answerer_ref() is None
 
 
 async def test_model_identity_is_deterministic_and_does_not_call_retrieval_or_model() -> None:

@@ -114,40 +114,54 @@ class ConversationService:
         conversation = self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             raise InvalidConversationStateError("已完成的会话不能继续发送消息")
-
-        grounding = await self._retrieve_grounding(conversation, message)
-        grounding_update = {
-            "knowledge_context": grounding.context,
-            "citations": [
-                citation.model_dump(by_alias=True, mode="json")
-                for citation in grounding.citations
-            ],
-            "warnings": grounding.warnings,
-        }
-        if conversation.snapshot.status == ConversationStatus.DRAFT_READY:
-            graph_input: dict | Command = Command(
-                resume={"action": "revise", "feedback": message},
-                update=grounding_update,
+        if conversation.lock.locked():
+            raise ConversationBusyError("该会话正在处理另一条请求")
+        async with conversation.lock:
+            # 在第一次 await 前取得完整租约；clear_runtime 只会清长期引用。
+            graph = self._require_graph()
+            grounding_service = self._grounding
+            grounding = await self._retrieve_grounding(
+                conversation,
+                message,
+                grounding_service,
             )
-        elif conversation.started:
-            graph_input = {
-                "messages": [HumanMessage(content=message)],
-                **grounding_update,
+            grounding_update = {
+                "knowledge_context": grounding.context,
+                "citations": [
+                    citation.model_dump(by_alias=True, mode="json")
+                    for citation in grounding.citations
+                ],
+                "warnings": grounding.warnings,
             }
-        else:
-            graph_input = {
-                "conversation_id": conversation_id,
-                "owner_id": conversation.snapshot.owner_id,
-                "goal_id": conversation.snapshot.goal_id,
-                "messages": [HumanMessage(content=message)],
-                "learning_context": conversation.context.model_dump(mode="json"),
-                "status": ConversationStatus.COLLECTING.value,
-                **grounding_update,
-            }
+            if conversation.snapshot.status == ConversationStatus.DRAFT_READY:
+                graph_input: dict | Command = Command(
+                    resume={"action": "revise", "feedback": message},
+                    update=grounding_update,
+                )
+            elif conversation.started:
+                graph_input = {
+                    "messages": [HumanMessage(content=message)],
+                    **grounding_update,
+                }
+            else:
+                graph_input = {
+                    "conversation_id": conversation_id,
+                    "owner_id": conversation.snapshot.owner_id,
+                    "goal_id": conversation.snapshot.goal_id,
+                    "messages": [HumanMessage(content=message)],
+                    "learning_context": conversation.context.model_dump(mode="json"),
+                    "status": ConversationStatus.COLLECTING.value,
+                    **grounding_update,
+                }
 
-        result = await self._invoke(conversation_id, conversation, graph_input)
-        conversation.started = True
-        return result
+            result = await self._invoke_locked(
+                graph,
+                conversation_id,
+                conversation,
+                graph_input,
+            )
+            conversation.started = True
+            return result
 
     async def get_conversation(
         self,
@@ -166,30 +180,31 @@ class ConversationService:
             return conversation.snapshot
         if conversation.snapshot.status != ConversationStatus.DRAFT_READY:
             raise InvalidConversationStateError("只有草稿就绪的会话可以确认")
-        return await self._invoke(
-            conversation_id,
-            conversation,
-            Command(resume={"action": "approve"}),
-        )
+        if conversation.lock.locked():
+            raise ConversationBusyError("该会话正在处理另一条请求")
+        async with conversation.lock:
+            graph = self._require_graph()
+            return await self._invoke_locked(
+                graph,
+                conversation_id,
+                conversation,
+                Command(resume={"action": "approve"}),
+            )
 
-    async def _invoke(
+    async def _invoke_locked(
         self,
+        graph: Any,
         conversation_id: str,
         conversation: _Conversation,
         graph_input: dict | Command,
     ) -> ConversationSnapshot:
-        if conversation.lock.locked():
-            raise ConversationBusyError("该会话正在处理另一条请求")
-        async with conversation.lock:
-            if self._graph is None:
-                raise RuntimeError("学习计划模型运行时尚未注入")
-            values = await self._graph.ainvoke(
-                graph_input,
-                config={"configurable": {"thread_id": conversation_id}},
-            )
-            snapshot = self._to_snapshot(conversation.snapshot, values)
-            conversation.snapshot = snapshot
-            return snapshot
+        values = await graph.ainvoke(
+            graph_input,
+            config={"configurable": {"thread_id": conversation_id}},
+        )
+        snapshot = self._to_snapshot(conversation.snapshot, values)
+        conversation.snapshot = snapshot
+        return snapshot
 
     @staticmethod
     def _to_snapshot(
@@ -214,8 +229,9 @@ class ConversationService:
         self,
         conversation: _Conversation,
         message: str,
+        grounding_service: PlanGroundingService | None,
     ) -> PlanGrounding:
-        if self._grounding is None:
+        if grounding_service is None:
             return PlanGrounding()
         goal = next(
             goal
@@ -223,7 +239,13 @@ class ConversationService:
             if goal.id == conversation.snapshot.goal_id
         )
         query = f"{goal.title}\n{message}"
-        return await self._grounding.retrieve(conversation.snapshot.owner_id, query)
+        return await grounding_service.retrieve(conversation.snapshot.owner_id, query)
+
+    def _require_graph(self) -> Any:
+        graph = self._graph
+        if graph is None:
+            raise RuntimeError("学习计划模型运行时尚未注入")
+        return graph
 
     def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
         try:
