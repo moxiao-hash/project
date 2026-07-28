@@ -1,6 +1,7 @@
 """多轮知识会话、检索路由和隐私边界。"""
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import uuid4
@@ -159,16 +160,16 @@ class KnowledgeConversationService:
 
     @staticmethod
     def _is_model_identity_question(question: str) -> bool:
-        normalized = "".join(question.lower().split())
-        identity_markers = (
-            "你背后是什么模型",
-            "你是什么模型",
-            "你用的是什么模型",
-            "底层是什么模型",
+        normalized = re.sub(r"[\s？?。.!！,，]", "", question.lower())
+        chinese_identity = re.fullmatch(
+            r"(请问|请告诉我)?(你背后|你|底层)"
+            r"(使用的|用的|是)?(什么|哪个)模型(呢)?",
+            normalized,
+        )
+        return chinese_identity is not None or normalized in {
             "whatmodelareyou",
             "whichmodelareyou",
-        )
-        return any(marker in normalized for marker in identity_markers)
+        }
 
     def _identity_snapshot(
         self,

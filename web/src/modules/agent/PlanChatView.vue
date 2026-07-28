@@ -117,10 +117,21 @@
             <div v-for="(task, i) in editableDraft.tasks" :key="i" class="draft-task">
               <div class="form-field">
                 <label class="form-label">任务 {{ i + 1 }}</label>
-                <input v-model.trim="task.title" class="input" maxlength="160" />
+                <input
+                  v-model.trim="task.title"
+                  class="input"
+                  maxlength="160"
+                  :aria-label="`任务 ${i + 1} 标题`"
+                />
               </div>
               <div class="draft-task-fields">
-                <input v-model="task.scheduledDate" class="input" type="date" />
+                <input
+                  v-model="task.scheduledDate"
+                  :data-test="`draft-task-date-${i}`"
+                  class="input"
+                  type="date"
+                  :aria-label="`任务 ${i + 1} 日期`"
+                />
                 <input
                   v-model.number="task.estimatedMinutes"
                   :data-test="`draft-task-minutes-${i}`"
@@ -128,6 +139,7 @@
                   type="number"
                   min="1"
                   max="720"
+                  :aria-label="`任务 ${i + 1} 预计分钟`"
                 />
               </div>
             </div>
@@ -186,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { learningApi } from '@/services/current/learning'
 import { agentGateway, gatewayMode } from '@/services/planned'
@@ -227,6 +239,7 @@ const waitingInBackground = ref(false)
 const confirming = ref(false)
 const confirmDialog = ref(false)
 const messagesEl = ref<HTMLElement | null>(null)
+let mounted = true
 
 const inputPlaceholder = computed(() => {
   if (!conversation.value) return ''
@@ -281,11 +294,12 @@ async function loadGoals() {
 
 async function startConversation() {
   if (!selectedGoalId.value || creating.value) return
+  const startLocation = route.fullPath
   creating.value = true
   try {
     conversation.value = await agentGateway.createPlanConversation(selectedGoalId.value)
     messages.value = [{ role: 'assistant', text: conversation.value.reply }]
-    await saveConversationToUrl(conversation.value.conversationId)
+    await saveConversationToUrl(conversation.value.conversationId, startLocation)
     await scrollToBottom()
   } catch (e) {
     toast.error(describeError(e))
@@ -294,7 +308,8 @@ async function startConversation() {
   }
 }
 
-async function saveConversationToUrl(id: string) {
+async function saveConversationToUrl(id: string, startLocation: string) {
+  if (!mounted || route.fullPath !== startLocation) return
   await router.replace({ query: { ...route.query, conversationId: id } })
 }
 
@@ -390,7 +405,12 @@ async function scrollToBottom() {
 }
 
 onMounted(async () => {
+  mounted = true
   await Promise.all([loadGoals(), restoreConversation()])
+})
+
+onBeforeUnmount(() => {
+  mounted = false
 })
 </script>
 

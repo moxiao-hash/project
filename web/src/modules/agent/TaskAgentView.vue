@@ -140,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { agentGateway } from '@/services/planned'
 import { describeError } from '@/services/http'
@@ -167,6 +167,7 @@ const sending = ref(false)
 const confirming = ref(false)
 const confirmDialog = ref(false)
 const messagesEl = ref<HTMLElement | null>(null)
+let mounted = true
 
 const confirmButtonText = computed(() => {
   const d = conversation.value?.actionDraft
@@ -176,13 +177,16 @@ const confirmButtonText = computed(() => {
 
 async function startConversation() {
   if (creating.value) return
+  const startLocation = route.fullPath
   creating.value = true
   try {
     conversation.value = await agentGateway.createTaskConversation(targetDate.value)
     messages.value = [{ role: 'assistant', text: conversation.value.reply }]
-    await router.replace({
-      query: { ...route.query, conversationId: conversation.value.conversationId },
-    })
+    if (mounted && route.fullPath === startLocation) {
+      await router.replace({
+        query: { ...route.query, conversationId: conversation.value.conversationId },
+      })
+    }
   } catch (e) {
     toast.error(describeError(e))
   } finally {
@@ -253,7 +257,14 @@ async function scrollToBottom() {
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
 }
 
-onMounted(restoreConversation)
+onMounted(() => {
+  mounted = true
+  void restoreConversation()
+})
+
+onBeforeUnmount(() => {
+  mounted = false
+})
 </script>
 
 <style scoped>

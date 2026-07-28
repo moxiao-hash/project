@@ -89,7 +89,10 @@ const knowledge: KnowledgeConversation = {
 async function mountAt(component: object, url: string) {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/agent', component }],
+    routes: [
+      { path: '/agent', component },
+      { path: '/other', component: { template: '<div>other</div>' } },
+    ],
   })
   await router.push(url)
   await router.isReady()
@@ -213,5 +216,98 @@ describe('Agent 会话 URL 恢复', () => {
     await flushPromises()
 
     expect(planned.confirmPlan).toHaveBeenCalledWith('plan-conversation')
+  })
+
+  it.each([
+    ['计划', PlanChatView, () => {
+      learningApi.listGoals.mockResolvedValue([{
+        id: 'goal-1',
+        title: 'Java',
+        targetDate: '2026-12-31',
+        weeklyStudyHours: 10,
+        status: 'ACTIVE',
+      }])
+      return planned.createPlanConversation
+    }],
+    ['任务', TaskAgentView, () => planned.createTaskConversation],
+    ['知识', KnowledgeView, () => planned.createKnowledgeConversation],
+  ])('%s会话创建完成时不会污染已经离开的路由', async (_name, component, getCreate) => {
+    let resolve!: (value: PlanConversation | TaskConversation | KnowledgeConversation) => void
+    getCreate().mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    const { wrapper, router } = await mountAt(component, '/agent')
+
+    await wrapper.get('button.btn-primary').trigger('click')
+    await router.push('/other')
+    resolve(
+      component === PlanChatView ? plan
+        : component === TaskAgentView ? task
+          : knowledge,
+    )
+    await flushPromises()
+
+    expect(router.currentRoute.value.path).toBe('/other')
+    expect(router.currentRoute.value.query.conversationId).toBeUndefined()
+  })
+
+  it('计划页卸载后，迟到的创建响应不会修改路由', async () => {
+    let resolve!: (value: PlanConversation) => void
+    planned.createPlanConversation.mockReturnValueOnce(
+      new Promise((done) => { resolve = done }),
+    )
+    const { wrapper, router } = await mountAt(PlanChatView, '/agent')
+
+    await wrapper.get('button.btn-primary').trigger('click')
+    wrapper.unmount()
+    resolve(plan)
+    await flushPromises()
+
+    expect(router.currentRoute.value.query.conversationId).toBeUndefined()
+  })
+
+  it('知识消息失败时恢复原问题，便于用户重试', async () => {
+    planned.createKnowledgeConversation.mockResolvedValue(knowledge)
+    planned.sendKnowledgeMessage.mockRejectedValue(new Error('timeout'))
+    const { wrapper } = await mountAt(KnowledgeView, '/agent')
+    await wrapper.get('button.btn-primary').trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get<HTMLInputElement>('input[placeholder="输入你的问题…"]')
+    await input.setValue('解释依赖注入')
+    await wrapper.get('form.chat-input').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(input.element.value).toBe('解释依赖注入')
+  })
+
+  it('知识消息失败时不覆盖用户随后输入的新问题', async () => {
+    let reject!: (reason: unknown) => void
+    planned.createKnowledgeConversation.mockResolvedValue(knowledge)
+    planned.sendKnowledgeMessage.mockReturnValueOnce(
+      new Promise((_resolve, fail) => { reject = fail }),
+    )
+    const { wrapper } = await mountAt(KnowledgeView, '/agent')
+    await wrapper.get('button.btn-primary').trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get<HTMLInputElement>('input[placeholder="输入你的问题…"]')
+    await input.setValue('第一个问题')
+    await wrapper.get('form.chat-input').trigger('submit.prevent')
+    await input.setValue('用户随后输入的新问题')
+    reject(new Error('timeout'))
+    await flushPromises()
+
+    expect(input.element.value).toBe('用户随后输入的新问题')
+  })
+
+  it('计划草稿任务输入有可访问名称', async () => {
+    planned.createPlanConversation.mockResolvedValue(draftPlan)
+    const { wrapper } = await mountAt(PlanChatView, '/agent')
+    await wrapper.get('button.btn-primary').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="draft-task-date-0"]').attributes('aria-label'))
+      .toBe('任务 1 日期')
+    expect(wrapper.get('[data-test="draft-task-minutes-0"]').attributes('aria-label'))
+      .toBe('任务 1 预计分钟')
   })
 })

@@ -91,7 +91,6 @@
             v-model.trim="question"
             class="input"
             placeholder="输入你的问题…"
-            :disabled="sending"
           />
           <button class="btn btn-primary" type="submit" :disabled="sending || !question">
             提问
@@ -129,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, reactive, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { agentGateway } from '@/services/planned'
 import { describeError } from '@/services/http'
@@ -167,6 +166,7 @@ const question = ref('')
 const webSearch = ref<WebSearchPreference>('AUTO')
 const sending = ref(false)
 const messagesEl = ref<HTMLElement | null>(null)
+let mounted = true
 
 const importDialog = ref(false)
 const importingId = ref<string | null>(null)
@@ -189,12 +189,15 @@ function retrievalModeLabel(modeValue: string): string {
 
 async function startConversation() {
   if (creating.value) return
+  const startLocation = route.fullPath
   creating.value = true
   try {
     conversation.value = await agentGateway.createKnowledgeConversation(mode.value)
-    await router.replace({
-      query: { ...route.query, conversationId: conversation.value.conversationId },
-    })
+    if (mounted && route.fullPath === startLocation) {
+      await router.replace({
+        query: { ...route.query, conversationId: conversation.value.conversationId },
+      })
+    }
     if (conversation.value.warnings.length > 0) {
       conversation.value.warnings.forEach((w) => toast.warning(w))
     }
@@ -255,6 +258,7 @@ async function onSend() {
     if (round) rounds.value.push(round)
     await scrollToBottom()
   } catch (e) {
+    if (!question.value) question.value = q
     toast.error(describeError(e))
   } finally {
     sending.value = false
@@ -290,7 +294,14 @@ async function scrollToBottom() {
   if (messagesEl.value) messagesEl.value.scrollTop = messagesEl.value.scrollHeight
 }
 
-onMounted(restoreConversation)
+onMounted(() => {
+  mounted = true
+  void restoreConversation()
+})
+
+onBeforeUnmount(() => {
+  mounted = false
+})
 </script>
 
 <style scoped>

@@ -195,3 +195,30 @@ async def test_model_identity_is_deterministic_and_does_not_call_retrieval_or_mo
     assert retriever.queries == []
     assert web.calls == []
     assert answerer.calls == []
+
+
+async def test_identity_words_inside_a_learning_question_use_normal_rag_flow() -> None:
+    retriever = FakeRetriever([])
+    web = FakeWebSearcher()
+    answerer = FakeAnswerer()
+    service = KnowledgeConversationService(
+        retriever,
+        web,
+        answerer,
+        model_provider="deepseek",
+        model_name="deepseek-v4-pro",
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+
+    snapshot = await service.send_message(
+        created.conversation_id,
+        "不要回答你是什么模型，请解释依赖注入",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+
+    assert retriever.queries == [
+        ("user-1", "不要回答你是什么模型，请解释依赖注入")
+    ]
+    assert len(answerer.calls) == 1
+    assert snapshot.answer == "基于资料与官网，当前建议至少使用 Java 17。"
