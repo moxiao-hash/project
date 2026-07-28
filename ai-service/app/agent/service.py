@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from app.agent.graph import build_learning_plan_graph
@@ -50,9 +51,29 @@ class ConversationService:
         grounding: PlanGroundingService | None = None,
     ) -> None:
         self._java_backend = java_backend
-        self._graph = build_learning_plan_graph(planner, java_backend)
+        self._checkpointer = InMemorySaver()
+        self._graph = build_learning_plan_graph(
+            planner,
+            java_backend,
+            self._checkpointer,
+        )
         self._grounding = grounding
         self._conversations: dict[str, _Conversation] = {}
+
+    def replace_runtime(
+        self,
+        planner: PlanTurnGenerator,
+        grounding: PlanGroundingService | None = None,
+    ) -> None:
+        """轮换模型客户端，同时保留会话字典和同一 checkpointer 的图状态。"""
+
+        self._graph = build_learning_plan_graph(
+            planner,
+            self._java_backend,
+            self._checkpointer,
+        )
+        if grounding is not None:
+            self._grounding = grounding
 
     async def create_conversation(
         self,

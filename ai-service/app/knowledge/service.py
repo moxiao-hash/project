@@ -70,6 +70,16 @@ class KnowledgeConversationService:
         self._conversations: dict[str, _Conversation] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
+    def replace_runtime(
+        self,
+        web_searcher: KnowledgeWebSearcher,
+        answerer: KnowledgeAnswerer,
+    ) -> None:
+        """轮换外部客户端但保留会话历史和并发锁。"""
+
+        self._web_searcher = web_searcher
+        self._answerer = answerer
+
     async def create_conversation(
         self,
         owner_id: str,

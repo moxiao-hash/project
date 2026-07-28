@@ -53,6 +53,18 @@ export class MockAgentGateway implements AgentGateway {
   private aiSettings: AiSettings = {
     modelProvider: 'deepseek',
     modelName: 'deepseek-chat',
+    deepseek: {
+      configured: true,
+      source: 'SERVER_DEFAULT',
+      maskedSuffix: 'a1b2',
+      available: true,
+    },
+    tavily: {
+      configured: false,
+      source: 'NONE',
+      maskedSuffix: null,
+      available: false,
+    },
     deepseekConfigured: true,
     deepseekMaskedSuffix: 'a1b2',
     tavilyConfigured: false,
@@ -432,6 +444,12 @@ export class MockAgentGateway implements AgentGateway {
       ...this.aiSettings,
       deepseekConfigured: true,
       deepseekMaskedSuffix: apiKey.slice(-4),
+      deepseek: {
+        configured: true,
+        source: 'USER',
+        maskedSuffix: apiKey.slice(-4),
+        available: true,
+      },
     }
     return { ...this.aiSettings }
   }
@@ -442,6 +460,12 @@ export class MockAgentGateway implements AgentGateway {
       ...this.aiSettings,
       deepseekConfigured: false,
       deepseekMaskedSuffix: null,
+      deepseek: {
+        configured: false,
+        source: 'NONE',
+        maskedSuffix: null,
+        available: false,
+      },
     }
     return { ...this.aiSettings }
   }
@@ -452,6 +476,12 @@ export class MockAgentGateway implements AgentGateway {
       ...this.aiSettings,
       tavilyConfigured: true,
       tavilyMaskedSuffix: apiKey.slice(-4),
+      tavily: {
+        configured: true,
+        source: 'USER',
+        maskedSuffix: apiKey.slice(-4),
+        available: true,
+      },
     }
     return { ...this.aiSettings }
   }
@@ -462,6 +492,12 @@ export class MockAgentGateway implements AgentGateway {
       ...this.aiSettings,
       tavilyConfigured: false,
       tavilyMaskedSuffix: null,
+      tavily: {
+        configured: false,
+        source: 'NONE',
+        maskedSuffix: null,
+        available: false,
+      },
     }
     return { ...this.aiSettings }
   }

@@ -1,6 +1,6 @@
 """由任务触发的内部自适应测验生成 API。"""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -15,6 +15,11 @@ from app.assessment.service import (
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.providers.credentials import (
+    CredentialProvider,
+    CredentialResolver,
+    CredentialServiceUnavailableError,
+)
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.async_retriever import AsyncHybridRetriever
 from app.retrieval.factory import get_hybrid_index
@@ -28,32 +33,48 @@ router = APIRouter(
 )
 
 
+class OwnerScopedQuizServices:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def for_owner(self, owner_id: str) -> QuizGenerationService:
+        java = JavaBackendClient(self._settings)
+        resolver = CredentialResolver(java, self._settings)
+        deepseek_key = await resolver.resolve(owner_id, CredentialProvider.DEEPSEEK)
+        tavily_key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
+        service = QuizGenerationService(
+            java,
+            AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
+            WebSearchService(
+                TavilySearchClient(
+                    tavily_key,
+                    base_url=self._settings.tavily_base_url,
+                ),
+                java,
+            ),
+            DeepSeekQuizGenerator(create_chat_model(self._settings, deepseek_key)),
+        )
+        return service
+
+
 def get_quiz_generation_service(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> QuizGenerationService:
+) -> Any:
     existing = getattr(request.app.state, "quiz_generation_service", None)
     if existing is not None:
         return existing
-    try:
-        model = create_chat_model(settings)
-    except ModelConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    java = JavaBackendClient(settings)
-    service = QuizGenerationService(
-        java,
-        AsyncHybridRetriever(get_hybrid_index(settings.qdrant_path)),
-        WebSearchService(
-            TavilySearchClient(
-                settings.tavily_api_key,
-                base_url=settings.tavily_base_url,
-            ),
-            java,
-        ),
-        DeepSeekQuizGenerator(model),
-    )
+    service = OwnerScopedQuizServices(settings)
     request.app.state.quiz_generation_service = service
     return service
+
+
+async def _for_owner(service: Any, owner_id: str) -> QuizGenerationService:
+    factory = getattr(service, "for_owner", None)
+    try:
+        return await factory(owner_id) if factory is not None else service
+    except (CredentialServiceUnavailableError, ModelConfigurationError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/generate", status_code=status.HTTP_201_CREATED)
@@ -62,7 +83,8 @@ async def generate_quiz(
     service: Annotated[QuizGenerationService, Depends(get_quiz_generation_service)],
 ) -> dict:
     try:
-        return await service.generate(body.owner_id, body.task_id, body.web_search)
+        scoped = await _for_owner(service, body.owner_id)
+        return await scoped.generate(body.owner_id, body.task_id, body.web_search)
     except AssessmentTaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PrivateAssessmentSourceError as exc:

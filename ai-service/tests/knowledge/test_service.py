@@ -164,6 +164,38 @@ async def test_each_turn_retrieves_again_and_passes_visible_history() -> None:
     assert web.calls == []
 
 
+async def test_runtime_rotation_keeps_conversation_and_uses_new_clients() -> None:
+    first_answerer = FakeAnswerer()
+    second_answerer = FakeAnswerer()
+    first_web = FakeWebSearcher()
+    second_web = FakeWebSearcher()
+    service = KnowledgeConversationService(
+        FakeRetriever([]),
+        first_web,
+        first_answerer,
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    await service.send_message(
+        created.conversation_id,
+        "先解释依赖注入",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+
+    service.replace_runtime(second_web, second_answerer)
+    snapshot = await service.send_message(
+        created.conversation_id,
+        "再解释控制反转",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+
+    assert snapshot.conversation_id == created.conversation_id
+    assert len(first_answerer.calls) == 1
+    assert len(second_answerer.calls) == 1
+    assert second_answerer.calls[0]["history"][0][1] == "先解释依赖注入"
+
+
 async def test_model_identity_is_deterministic_and_does_not_call_retrieval_or_model() -> None:
     retriever = FakeRetriever([])
     web = FakeWebSearcher()

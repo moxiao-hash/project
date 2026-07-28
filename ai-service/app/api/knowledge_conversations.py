@@ -1,7 +1,7 @@
 """资料与联网融合的内部知识会话 API。"""
 
 from collections.abc import Awaitable
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -19,6 +19,12 @@ from app.knowledge.service import (
     KnowledgeConversationNotFoundError,
     KnowledgeConversationService,
 )
+from app.providers.credentials import (
+    CredentialProvider,
+    CredentialResolver,
+    CredentialServiceUnavailableError,
+    credential_fingerprint,
+)
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.async_retriever import AsyncHybridRetriever
 from app.retrieval.factory import get_hybrid_index
@@ -32,36 +38,65 @@ router = APIRouter(
 )
 
 
+class OwnerScopedKnowledgeServices:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._services: dict[str, tuple[str, KnowledgeConversationService]] = {}
+
+    async def for_owner(self, owner_id: str) -> KnowledgeConversationService:
+        java = JavaBackendClient(self._settings)
+        resolver = CredentialResolver(java, self._settings)
+        deepseek_key = await resolver.resolve(owner_id, CredentialProvider.DEEPSEEK)
+        tavily_key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
+        fingerprint = credential_fingerprint(deepseek_key, tavily_key)
+        web = WebSearchService(
+            TavilySearchClient(
+                tavily_key,
+                base_url=self._settings.tavily_base_url,
+            ),
+            java,
+        )
+        answerer = DeepSeekKnowledgeAnswerer(
+            create_chat_model(self._settings, deepseek_key),
+            model_provider=self._settings.model_provider,
+            model_name=self._settings.model_name,
+        )
+        existing = self._services.get(owner_id)
+        if existing is not None:
+            old_fingerprint, service = existing
+            if old_fingerprint != fingerprint:
+                service.replace_runtime(web, answerer)
+                self._services[owner_id] = (fingerprint, service)
+            return service
+        service = KnowledgeConversationService(
+            AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
+            web,
+            answerer,
+            model_provider=self._settings.model_provider,
+            model_name=self._settings.model_name,
+        )
+        self._services[owner_id] = (fingerprint, service)
+        return service
+
+
 def get_knowledge_conversation_service(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> KnowledgeConversationService:
+) -> Any:
     existing = getattr(request.app.state, "knowledge_conversation_service", None)
     if existing is not None:
         return existing
-    try:
-        model = create_chat_model(settings)
-    except ModelConfigurationError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    service = KnowledgeConversationService(
-        AsyncHybridRetriever(get_hybrid_index(settings.qdrant_path)),
-        WebSearchService(
-            TavilySearchClient(
-                settings.tavily_api_key,
-                base_url=settings.tavily_base_url,
-            ),
-            JavaBackendClient(settings),
-        ),
-        DeepSeekKnowledgeAnswerer(
-            model,
-            model_provider=settings.model_provider,
-            model_name=settings.model_name,
-        ),
-        model_provider=settings.model_provider,
-        model_name=settings.model_name,
-    )
+    service = OwnerScopedKnowledgeServices(settings)
     request.app.state.knowledge_conversation_service = service
     return service
+
+
+async def _for_owner(service: Any, owner_id: str) -> KnowledgeConversationService:
+    factory = getattr(service, "for_owner", None)
+    try:
+        return await factory(owner_id) if factory is not None else service
+    except (CredentialServiceUnavailableError, ModelConfigurationError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 async def _translate_errors[T](awaitable: Awaitable[T]) -> T:
@@ -87,7 +122,8 @@ async def create_conversation(
         Depends(get_knowledge_conversation_service),
     ],
 ) -> KnowledgeConversationSnapshot:
-    return await _translate_errors(service.create_conversation(body.owner_id, body.mode))
+    scoped = await _for_owner(service, body.owner_id)
+    return await _translate_errors(scoped.create_conversation(body.owner_id, body.mode))
 
 
 @router.post("/{conversation_id}/messages", response_model=KnowledgeConversationSnapshot)
@@ -99,8 +135,9 @@ async def send_message(
         Depends(get_knowledge_conversation_service),
     ],
 ) -> KnowledgeConversationSnapshot:
+    scoped = await _for_owner(service, body.owner_id)
     return await _translate_errors(
-        service.send_message(
+        scoped.send_message(
             conversation_id,
             body.message,
             body.web_search,
@@ -118,4 +155,5 @@ async def get_conversation(
         Depends(get_knowledge_conversation_service),
     ],
 ) -> KnowledgeConversationSnapshot:
-    return await _translate_errors(service.get_conversation(conversation_id, owner_id))
+    scoped = await _for_owner(service, owner_id)
+    return await _translate_errors(scoped.get_conversation(conversation_id, owner_id))

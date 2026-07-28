@@ -1,7 +1,7 @@
 """计划自适应分析、查询和显式确认 API。"""
 
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -14,6 +14,11 @@ from app.agent.adjustment_service import (
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.providers.credentials import (
+    CredentialProvider,
+    CredentialResolver,
+    CredentialServiceUnavailableError,
+)
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.schemas.learning import JavaContractModel, PlanAdjustment
 
@@ -41,22 +46,40 @@ def build_plan_adjustment_service(settings: Settings) -> PlanAdjustmentService:
     )
 
 
+class OwnerScopedAdjustmentServices:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    async def for_owner(self, owner_id: str) -> PlanAdjustmentService:
+        java = JavaBackendClient(self._settings, timeout_seconds=45)
+        key = await CredentialResolver(java, self._settings).resolve(
+            owner_id, CredentialProvider.DEEPSEEK
+        )
+        service = PlanAdjustmentService(
+            DeepSeekAdjustmentGenerator(create_chat_model(self._settings, key)),
+            java,
+        )
+        return service
+
+
 def get_plan_adjustment_service(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> PlanAdjustmentService:
+) -> Any:
     existing = getattr(request.app.state, "plan_adjustment_service", None)
     if existing is not None:
         return existing
-    try:
-        service = build_plan_adjustment_service(settings)
-    except ModelConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
+    service = OwnerScopedAdjustmentServices(settings)
     request.app.state.plan_adjustment_service = service
     return service
+
+
+async def _for_owner(service: Any, owner_id: str) -> PlanAdjustmentService:
+    factory = getattr(service, "for_owner", None)
+    try:
+        return await factory(owner_id) if factory is not None else service
+    except (CredentialServiceUnavailableError, ModelConfigurationError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 def translate_error(exc: Exception) -> HTTPException:
@@ -97,8 +120,9 @@ async def analyze_plan_adjustment(
     body: AnalyzePlanAdjustmentRequest,
     service: Annotated[PlanAdjustmentService, Depends(get_plan_adjustment_service)],
 ) -> PlanAdjustment:
+    scoped = await _for_owner(service, body.owner_id)
     try:
-        return await service.analyze(
+        return await scoped.analyze(
             owner_id=body.owner_id,
             analysis_date=body.analysis_date,
             trigger_type="USER_REQUEST",
@@ -113,8 +137,9 @@ async def get_plan_adjustment(
     owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
     service: Annotated[PlanAdjustmentService, Depends(get_plan_adjustment_service)],
 ) -> PlanAdjustment:
+    scoped = await _for_owner(service, owner_id)
     try:
-        return await service.get(adjustment_id, owner_id)
+        return await scoped.get(adjustment_id, owner_id)
     except Exception as exc:
         raise translate_error(exc) from exc
 
@@ -125,7 +150,8 @@ async def confirm_plan_adjustment(
     body: ConfirmPlanAdjustmentRequest,
     service: Annotated[PlanAdjustmentService, Depends(get_plan_adjustment_service)],
 ) -> PlanAdjustment:
+    scoped = await _for_owner(service, body.owner_id)
     try:
-        return await service.confirm(adjustment_id, body.owner_id)
+        return await scoped.confirm(adjustment_id, body.owner_id)
     except Exception as exc:
         raise translate_error(exc) from exc

@@ -4,7 +4,7 @@ from datetime import date
 from typing import Any
 
 import httpx
-from pydantic import TypeAdapter
+from pydantic import SecretStr, TypeAdapter
 
 from app.core.settings import Settings
 from app.material.processing import ProcessingJob
@@ -80,6 +80,25 @@ class JavaBackendClient:
             f"/internal/users/{owner_id}/learning-context",
         )
         return LearningContext.model_validate(response.json())
+
+    async def get_ai_credential(self, owner_id: str, provider: str) -> SecretStr:
+        """读取只用于当前运行时的用户凭据，不记录或持久化明文。"""
+
+        path = f"/internal/ai-credentials/{provider.lower()}"
+        response = await self._request(
+            "GET",
+            path,
+            params={"ownerId": owner_id},
+        )
+        payload = response.json()
+        api_key = payload.get("apiKey") if isinstance(payload, dict) else None
+        if not isinstance(api_key, str) or not api_key:
+            raise JavaBackendError(
+                "Java 返回了无效的运行时凭据",
+                path=path,
+                status_code=502,
+            )
+        return SecretStr(api_key)
 
     async def create_quiz(self, payload: dict[str, Any]) -> dict[str, Any]:
         """保存 Python 已完成结构校验的测验；Java 仍会执行领域校验。"""

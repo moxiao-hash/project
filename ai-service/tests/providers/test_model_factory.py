@@ -26,3 +26,11 @@ def test_rejects_missing_deepseek_api_key() -> None:
 
     with pytest.raises(ModelConfigurationError, match="DEEPSEEK_API_KEY"):
         create_chat_model(settings)
+
+
+def test_runtime_user_key_overrides_server_default() -> None:
+    settings = Settings(deepseek_api_key=SecretStr("server-default-key"))
+
+    model = create_chat_model(settings, SecretStr("user-runtime-key"))
+
+    assert model.openai_api_key.get_secret_value() == "user-runtime-key"

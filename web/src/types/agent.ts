@@ -132,10 +132,20 @@ export interface PlanAdjustment {
 export interface AiSettings {
   modelProvider: 'deepseek'
   modelName: string
+  deepseek?: AiProviderStatus
+  tavily?: AiProviderStatus
   deepseekConfigured: boolean
   deepseekMaskedSuffix: string | null
   tavilyConfigured: boolean
   tavilyMaskedSuffix: string | null
+  warning?: string | null
+}
+
+export interface AiProviderStatus {
+  configured: boolean
+  source: 'USER' | 'SERVER_DEFAULT' | 'NONE'
+  maskedSuffix: string | null
+  available: boolean
 }
 
 /**

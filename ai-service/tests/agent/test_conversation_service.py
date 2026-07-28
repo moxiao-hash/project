@@ -120,7 +120,7 @@ def test_conversation_operations_reject_a_different_owner() -> None:
         with pytest.raises(ConversationNotFoundError):
             await service.confirm(conversation.conversation_id, "user-2")
 
-    asyncio.run(run_flow())
+        asyncio.run(run_flow())
 
 
 def test_same_conversation_keeps_context_and_conversations_are_isolated() -> None:
@@ -149,6 +149,28 @@ def test_same_conversation_keeps_context_and_conversations_are_isolated() -> Non
     assert "只讨论 Python" in planner.seen_messages[2]
     assert java.created_executions == []
     assert java.created_plans == []
+
+
+def test_runtime_rotation_keeps_graph_history_and_uses_new_planner() -> None:
+    first = FakePlanner([collecting("第一轮")])
+    second = FakePlanner([collecting("第二轮")])
+    service = ConversationService(first, FakeJavaBackend())
+
+    async def run_flow() -> None:
+        conversation = await service.create_conversation("user-1", "goal-1")
+        await service.send_message(conversation.conversation_id, "问题一", "user-1")
+        service.replace_runtime(second)
+        snapshot = await service.send_message(
+            conversation.conversation_id,
+            "问题二",
+            "user-1",
+        )
+        assert snapshot.reply == "第二轮"
+        assert len(first.seen_messages) == 1
+        assert len(second.seen_messages) == 1
+        assert "问题一" in second.seen_messages[0]
+
+    asyncio.run(run_flow())
 
 
 def test_draft_can_be_revised_and_only_explicit_confirmation_persists_it() -> None:

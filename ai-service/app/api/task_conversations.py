@@ -1,7 +1,7 @@
 """任务状态操作 Agent 的内部会话 API。"""
 
 from collections.abc import Awaitable
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
@@ -26,6 +26,12 @@ from app.agent.task_service import TaskRecognitionService
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.providers.credentials import (
+    CredentialProvider,
+    CredentialResolver,
+    CredentialServiceUnavailableError,
+    credential_fingerprint,
+)
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 
 router = APIRouter(
@@ -35,30 +41,53 @@ router = APIRouter(
 )
 
 
+class OwnerScopedTaskConversationServices:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._services: dict[str, tuple[str, TaskConversationService]] = {}
+
+    async def for_owner(self, owner_id: str) -> TaskConversationService:
+        java = JavaBackendClient(self._settings)
+        key = await CredentialResolver(java, self._settings).resolve(
+            owner_id, CredentialProvider.DEEPSEEK
+        )
+        fingerprint = credential_fingerprint(key)
+        recognition_service = TaskRecognitionService(
+            DeepSeekTaskRecognizer(create_chat_model(self._settings, key)),
+            java,
+        )
+        existing = self._services.get(owner_id)
+        if existing is not None:
+            old_fingerprint, service = existing
+            if old_fingerprint != fingerprint:
+                service.replace_runtime(recognition_service)
+                self._services[owner_id] = (fingerprint, service)
+            return service
+        service = TaskConversationService(recognition_service, java)
+        self._services[owner_id] = (fingerprint, service)
+        return service
+
+
 def get_task_conversation_service(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
-) -> TaskConversationService:
+) -> Any:
     """惰性创建任务会话服务，应用启动时不会调用模型。"""
 
     existing = getattr(request.app.state, "task_conversation_service", None)
     if existing is not None:
         return existing
-    try:
-        model = create_chat_model(settings)
-    except ModelConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    java_backend = JavaBackendClient(settings)
-    recognition_service = TaskRecognitionService(
-        DeepSeekTaskRecognizer(model),
-        java_backend,
-    )
-    service = TaskConversationService(recognition_service, java_backend)
+    service = OwnerScopedTaskConversationServices(settings)
     request.app.state.task_conversation_service = service
     return service
+
+
+async def _for_owner(service: Any, owner_id: str) -> TaskConversationService:
+    factory = getattr(service, "for_owner", None)
+    try:
+        return await factory(owner_id) if factory is not None else service
+    except (CredentialServiceUnavailableError, ModelConfigurationError) as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 async def _translate_errors[T](awaitable: Awaitable[T]) -> T:
@@ -102,8 +131,9 @@ async def create_task_conversation(
         Depends(get_task_conversation_service),
     ],
 ) -> TaskConversationSnapshot:
+    scoped = await _for_owner(service, body.owner_id)
     return await _translate_errors(
-        service.create_conversation(body.owner_id, body.target_date)
+        scoped.create_conversation(body.owner_id, body.target_date)
     )
 
 
@@ -116,8 +146,9 @@ async def send_task_message(
         Depends(get_task_conversation_service),
     ],
 ) -> TaskConversationSnapshot:
+    scoped = await _for_owner(service, body.owner_id)
     return await _translate_errors(
-        service.send_message(conversation_id, body.message, body.owner_id)
+        scoped.send_message(conversation_id, body.message, body.owner_id)
     )
 
 
@@ -130,7 +161,8 @@ async def get_task_conversation(
         Depends(get_task_conversation_service),
     ],
 ) -> TaskConversationSnapshot:
-    return await _translate_errors(service.get_conversation(conversation_id, owner_id))
+    scoped = await _for_owner(service, owner_id)
+    return await _translate_errors(scoped.get_conversation(conversation_id, owner_id))
 
 
 @router.post("/{conversation_id}/confirm", response_model=TaskConversationSnapshot)
@@ -142,4 +174,5 @@ async def confirm_task_conversation(
         Depends(get_task_conversation_service),
     ],
 ) -> TaskConversationSnapshot:
-    return await _translate_errors(service.confirm(conversation_id, body.owner_id))
+    scoped = await _for_owner(service, body.owner_id)
+    return await _translate_errors(scoped.confirm(conversation_id, body.owner_id))

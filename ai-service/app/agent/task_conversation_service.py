@@ -7,6 +7,7 @@ from typing import Any
 from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from app.agent.task_conversation_graph import build_task_conversation_graph
@@ -55,11 +56,21 @@ class TaskConversationService:
         recognition_service: TaskRecognitionService,
         java_backend: JavaBackendClient,
     ) -> None:
+        self._java_backend = java_backend
+        self._checkpointer = InMemorySaver()
         self._graph = build_task_conversation_graph(
             recognition_service,
             java_backend,
+            self._checkpointer,
         )
         self._conversations: dict[str, _TaskConversation] = {}
+
+    def replace_runtime(self, recognition_service: TaskRecognitionService) -> None:
+        self._graph = build_task_conversation_graph(
+            recognition_service,
+            self._java_backend,
+            self._checkpointer,
+        )
 
     async def create_conversation(
         self,

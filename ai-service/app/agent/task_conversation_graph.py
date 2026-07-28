@@ -42,6 +42,7 @@ class TaskConversationState(TypedDict, total=False):
 def build_task_conversation_graph(
     recognition_service: TaskRecognitionService,
     java_backend: JavaBackendClient,
+    checkpointer=None,
 ):
     """构建识别、预览、暂停确认和幂等执行工作流。"""
 
@@ -203,4 +204,4 @@ def build_task_conversation_graph(
     builder.add_conditional_edges("recognize_task", route_after_recognition)
     builder.add_edge("register_execution", "await_confirmation")
     builder.add_edge("execute_task", END)
-    return builder.compile(checkpointer=InMemorySaver())
+    return builder.compile(checkpointer=checkpointer or InMemorySaver())

@@ -36,6 +36,7 @@
         </div>
         <p v-if="settings.deepseekConfigured" class="muted" style="font-size: 13px">
           当前 Key 尾号：••••{{ settings.deepseekMaskedSuffix }}
+          · 来源：{{ sourceLabel(settings.deepseek?.source) }}
         </p>
         <p v-else class="muted" style="font-size: 13px">
           未配置时由服务器级 .env 提供 Key；配置后以你的 Key 为准。
@@ -52,7 +53,7 @@
             {{ savingKey === 'deepseek' ? '保存中…' : '保存 Key' }}
           </button>
           <button
-            v-if="settings.deepseekConfigured"
+            v-if="settings.deepseek?.source === 'USER'"
             class="btn btn-danger"
             type="button"
             :disabled="savingKey === 'deepseek'"
@@ -75,6 +76,7 @@
         </div>
         <p v-if="settings.tavilyConfigured" class="muted" style="font-size: 13px">
           当前 Key 尾号：••••{{ settings.tavilyMaskedSuffix }}
+          · 来源：{{ sourceLabel(settings.tavily?.source) }}
         </p>
         <p v-else class="muted" style="font-size: 13px">
           未配置时知识问答的联网搜索不可用，会降级为仅本地检索。
@@ -91,7 +93,7 @@
             {{ savingKey === 'tavily' ? '保存中…' : '保存 Key' }}
           </button>
           <button
-            v-if="settings.tavilyConfigured"
+            v-if="settings.tavily?.source === 'USER'"
             class="btn btn-danger"
             type="button"
             :disabled="savingKey === 'tavily'"
@@ -105,6 +107,9 @@
       <div class="alert alert-info">
         安全说明：Key 仅保存在服务端，前端只保留输入框的临时值，提交成功立即清空；
         不会写入 Pinia 持久化、LocalStorage 或日志。
+      </div>
+      <div v-if="settings.warning" class="alert alert-warning">
+        {{ settings.warning }}
       </div>
     </template>
   </div>
@@ -131,18 +136,24 @@ const deepseekKey = ref('')
 const tavilyKey = ref('')
 const savingKey = ref<'deepseek' | 'tavily' | null>(null)
 
+function sourceLabel(source?: 'USER' | 'SERVER_DEFAULT' | 'NONE') {
+  if (source === 'USER') return '个人配置'
+  if (source === 'SERVER_DEFAULT') return '开发环境默认'
+  return '未配置'
+}
+
 async function onUpdate(kind: 'deepseek' | 'tavily') {
   const key = kind === 'deepseek' ? deepseekKey.value : tavilyKey.value
   if (!key || savingKey.value) return
   savingKey.value = kind
   try {
-    settings.value =
-      kind === 'deepseek'
-        ? await agentGateway.updateDeepseekKey(key)
-        : await agentGateway.updateTavilyKey(key)
+    if (kind === 'deepseek') await agentGateway.updateDeepseekKey(key)
+    else await agentGateway.updateTavilyKey(key)
     // 提交成功后立即清空输入和组件状态
     if (kind === 'deepseek') deepseekKey.value = ''
     else tavilyKey.value = ''
+    // 重新读取服务端安全摘要，避免依赖写接口的临时响应。
+    await load()
     toast.success('Key 已保存')
   } catch (e) {
     toast.error(describeError(e))
@@ -155,10 +166,9 @@ async function onDelete(kind: 'deepseek' | 'tavily') {
   if (savingKey.value) return
   savingKey.value = kind
   try {
-    settings.value =
-      kind === 'deepseek'
-        ? await agentGateway.deleteDeepseekKey()
-        : await agentGateway.deleteTavilyKey()
+    if (kind === 'deepseek') await agentGateway.deleteDeepseekKey()
+    else await agentGateway.deleteTavilyKey()
+    await load()
     toast.success('Key 已删除')
   } catch (e) {
     toast.error(describeError(e))

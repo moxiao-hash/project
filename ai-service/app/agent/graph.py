@@ -25,6 +25,7 @@ from app.schemas.learning import (
 def build_learning_plan_graph(
     planner: PlanTurnGenerator,
     java_backend: JavaBackendClient,
+    checkpointer=None,
 ):
     """构建带短期记忆和人工确认暂停点的学习计划图。"""
 
@@ -152,4 +153,4 @@ def build_learning_plan_graph(
     builder.add_conditional_edges("plan_turn", route_after_planning)
     builder.add_edge("register_execution", "await_approval")
     builder.add_edge("persist_plan", END)
-    return builder.compile(checkpointer=InMemorySaver())
+    return builder.compile(checkpointer=checkpointer or InMemorySaver())

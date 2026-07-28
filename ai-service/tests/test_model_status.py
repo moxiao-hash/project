@@ -13,6 +13,7 @@ from app.main import app
 def settings() -> Settings:
     return Settings(
         deepseek_api_key=SecretStr("secret-key"),
+        tavily_api_key=SecretStr("tavily-secret"),
         internal_service_token=SecretStr("test-internal-token"),
     )
 
@@ -56,3 +57,18 @@ def test_model_status_never_exposes_api_key() -> None:
         "configured": True,
     }
     assert "secret-key" not in response.text
+
+
+def test_default_credential_status_only_returns_masked_metadata() -> None:
+    response = request(
+        "/internal/model/default-credentials",
+        token="test-internal-token",
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "deepseek": {"configured": True, "maskedSuffix": "-key"},
+        "tavily": {"configured": True, "maskedSuffix": "cret"},
+    }
+    assert "secret-key" not in response.text
+    assert "tavily-secret" not in response.text
