@@ -155,24 +155,26 @@ async def run_coding_evaluation_job() -> None:
 async def lifespan(application: FastAPI):
     settings = get_settings()
     persistence = await open_agent_persistence(settings)
-    application.state.agent_persistence = persistence
-    # 三类 registry 必须在单线程启动阶段一次性创建。同步 FastAPI 依赖只读取这些
-    # 实例，避免多个首请求在线程池中同时构造出不同 registry 和不同会话锁。
-    application.state.conversation_service = OwnerScopedConversationServices(
-        settings,
-        persistence=persistence,
-    )
-    application.state.task_conversation_service = OwnerScopedTaskConversationServices(
-        settings,
-        persistence=persistence,
-    )
-    application.state.knowledge_conversation_service = OwnerScopedKnowledgeServices(
-        settings,
-        persistence=persistence,
-    )
-    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler = None
     scheduler_started = False
+    original_error: BaseException | None = None
     try:
+        application.state.agent_persistence = persistence
+        # 三类 registry 必须在单线程启动阶段一次性创建。同步 FastAPI 依赖只读取这些
+        # 实例，避免多个首请求在线程池中同时构造出不同 registry 和不同会话锁。
+        application.state.conversation_service = OwnerScopedConversationServices(
+            settings,
+            persistence=persistence,
+        )
+        application.state.task_conversation_service = OwnerScopedTaskConversationServices(
+            settings,
+            persistence=persistence,
+        )
+        application.state.knowledge_conversation_service = OwnerScopedKnowledgeServices(
+            settings,
+            persistence=persistence,
+        )
+        scheduler = AsyncIOScheduler(timezone="UTC")
         scheduler.add_job(
             run_nightly_adjustment_job,
             "interval",
@@ -203,9 +205,16 @@ async def lifespan(application: FastAPI):
         scheduler.start()
         scheduler_started = True
         yield
+    except BaseException as exc:
+        original_error = exc
+        raise
     finally:
-        if scheduler_started:
-            scheduler.shutdown(wait=False)
+        cleanup_errors: list[Exception] = []
+        if scheduler_started and scheduler is not None:
+            try:
+                scheduler.shutdown(wait=False)
+            except Exception as exc:
+                cleanup_errors.append(exc)
         for state_name in (
             "conversation_service",
             "task_conversation_service",
@@ -214,7 +223,23 @@ async def lifespan(application: FastAPI):
         ):
             if hasattr(application.state, state_name):
                 delattr(application.state, state_name)
-        await persistence.close()
+        try:
+            await persistence.close()
+        except Exception as exc:
+            cleanup_errors.append(exc)
+        if cleanup_errors:
+            if original_error is not None:
+                for cleanup_error in cleanup_errors:
+                    logger.error(
+                        "FastAPI 启动或运行失败后的资源清理也发生异常",
+                        exc_info=(
+                            type(cleanup_error),
+                            cleanup_error,
+                            cleanup_error.__traceback__,
+                        ),
+                    )
+            else:
+                raise ExceptionGroup("FastAPI 生命周期资源清理失败", cleanup_errors)
 
 
 app = FastAPI(
