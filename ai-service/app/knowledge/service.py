@@ -73,6 +73,10 @@ class KnowledgeConversationService:
         self._conversations: dict[str, _Conversation] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._load_lock = asyncio.Lock()
+        self._pending_mutations: dict[
+            tuple[str, str, WebSearchPolicy],
+            tuple[KnowledgeConversationSnapshot, list[tuple[str, str]]],
+        ] = {}
 
     def replace_runtime(
         self,
@@ -104,14 +108,15 @@ class KnowledgeConversationService:
             model_provider=self._model_provider,
             model_name=self._model_name,
         )
-        self._conversations[conversation_id] = _Conversation(
+        conversation = _Conversation(
             conversation_id=conversation_id,
             owner_id=owner_id,
             mode=mode,
             snapshot=snapshot,
         )
+        await self._save(conversation)
+        self._conversations[conversation_id] = conversation
         self._locks[conversation_id] = asyncio.Lock()
-        await self._save(self._conversations[conversation_id])
         return snapshot
 
     async def get_conversation(
@@ -130,21 +135,39 @@ class KnowledgeConversationService:
         web_search: WebSearchPolicy,
         owner_id: str,
     ) -> KnowledgeConversationSnapshot:
+        retriever = self._retriever
+        web_searcher = self._web_searcher
+        answerer = self._answerer
         conversation = await self._find(conversation_id, owner_id)
         lock = self._locks.setdefault(conversation_id, asyncio.Lock())
         if lock.locked():
             raise KnowledgeConversationBusyError("知识会话正在处理另一条消息")
         async with lock:
             # 在第一次 await 前租用完整运行时快照，避免缓存淘汰中断活跃请求。
-            retriever = self._retriever
-            web_searcher = self._web_searcher
-            answerer = self._answerer
+            pending_key = (conversation_id, message, web_search)
+            pending = self._pending_mutations.get(pending_key)
+            if pending is not None:
+                snapshot, history = pending
+                previous_history = list(conversation.history)
+                previous_snapshot = conversation.snapshot
+                conversation.history = list(history)
+                conversation.snapshot = snapshot
+                try:
+                    await self._save(conversation)
+                except Exception:
+                    conversation.history = previous_history
+                    conversation.snapshot = previous_snapshot
+                    raise
+                self._pending_mutations.pop(pending_key, None)
+                return snapshot
             if self._is_model_identity_question(message):
                 snapshot = self._identity_snapshot(conversation)
-                conversation.history.extend([("USER", message), ("ASSISTANT", snapshot.answer)])
-                conversation.snapshot = snapshot
-                await self._save(conversation)
-                return snapshot
+                return await self._commit_mutation(
+                    conversation,
+                    message,
+                    web_search,
+                    snapshot,
+                )
             materials = await retriever.search(conversation.owner_id, message)
             private = [
                 item for item in materials if item.privacy_level in {"SENSITIVE", "LOCAL_ONLY"}
@@ -169,10 +192,39 @@ class KnowledgeConversationService:
                     materials,
                     outcome,
                 )
-            conversation.history.extend([("USER", message), ("ASSISTANT", snapshot.answer)])
-            conversation.snapshot = snapshot
+            return await self._commit_mutation(
+                conversation,
+                message,
+                web_search,
+                snapshot,
+            )
+
+    async def _commit_mutation(
+        self,
+        conversation: _Conversation,
+        message: str,
+        web_search: WebSearchPolicy,
+        snapshot: KnowledgeConversationSnapshot,
+    ) -> KnowledgeConversationSnapshot:
+        previous_history = list(conversation.history)
+        previous_snapshot = conversation.snapshot
+        next_history = [
+            *previous_history,
+            ("USER", message),
+            ("ASSISTANT", snapshot.answer),
+        ]
+        conversation.history = next_history
+        conversation.snapshot = snapshot
+        key = (conversation.conversation_id, message, web_search)
+        try:
             await self._save(conversation)
-            return snapshot
+        except Exception:
+            conversation.history = previous_history
+            conversation.snapshot = previous_snapshot
+            self._pending_mutations[key] = (snapshot, next_history)
+            raise
+        self._pending_mutations.pop(key, None)
+        return snapshot
 
     async def _find(self, conversation_id: str, owner_id: str) -> _Conversation:
         conversation = self._conversations.get(conversation_id)

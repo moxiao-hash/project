@@ -330,3 +330,121 @@ def test_draft_can_be_confirmed_after_process_restart(tmp_path) -> None:
 
     asyncio.run(run_flow())
     assert len(java.created_plans) == 1
+
+
+def test_runtime_is_leased_before_persistent_conversation_load(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+
+    async def run_flow() -> None:
+        first_persistence = await AgentPersistence.open(db_path, key)
+        first = ConversationService(
+            FakePlanner([]),
+            FakeJavaBackend(),
+            persistence=first_persistence,
+        )
+        created = await first.create_conversation("user-1", "goal-1")
+        await first_persistence.close()
+
+        second_persistence = await AgentPersistence.open(db_path, key)
+        original_load = second_persistence.store.load
+        loading = asyncio.Event()
+        release = asyncio.Event()
+
+        async def blocked_load(**kwargs):
+            loading.set()
+            await release.wait()
+            return await original_load(**kwargs)
+
+        second_persistence.store.load = blocked_load
+        second = ConversationService(
+            FakePlanner([collecting("运行时租约仍然有效")]),
+            FakeJavaBackend(),
+            persistence=second_persistence,
+        )
+        request = asyncio.create_task(
+            second.send_message(created.conversation_id, "继续", "user-1")
+        )
+        await loading.wait()
+        second.clear_runtime()
+        release.set()
+        result = await request
+        assert result.reply == "运行时租约仍然有效"
+        await second_persistence.close()
+
+    asyncio.run(run_flow())
+
+
+def test_create_failure_does_not_publish_in_memory_conversation(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+
+    async def run_flow() -> None:
+        persistence = await AgentPersistence.open(
+            tmp_path / "agent-state.sqlite3",
+            key,
+        )
+        service = ConversationService(
+            FakePlanner([]),
+            FakeJavaBackend(),
+            persistence=persistence,
+        )
+        original_save = persistence.store.save
+
+        async def fail_save(**_kwargs):
+            raise OSError("disk full")
+
+        persistence.store.save = fail_save
+        with pytest.raises(OSError, match="disk full"):
+            await service.create_conversation("user-1", "goal-1")
+        persistence.store.save = original_save
+        assert service._conversations == {}
+        await persistence.close()
+
+    asyncio.run(run_flow())
+
+
+def test_checkpoint_recovers_when_snapshot_save_fails_after_graph(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+    java = FakeJavaBackend()
+
+    async def run_flow() -> None:
+        first_persistence = await AgentPersistence.open(db_path, key)
+        first = ConversationService(
+            FakePlanner([ready(60)]),
+            java,
+            persistence=first_persistence,
+        )
+        created = await first.create_conversation("user-1", "goal-1")
+        original_save = first_persistence.store.save
+
+        async def fail_save(**_kwargs):
+            raise OSError("metadata unavailable")
+
+        first_persistence.store.save = fail_save
+        draft = await first.send_message(
+            created.conversation_id,
+            "生成计划",
+            "user-1",
+        )
+        assert draft.status == ConversationStatus.DRAFT_READY
+        first_persistence.store.save = original_save
+        await first_persistence.close()
+
+        second_persistence = await AgentPersistence.open(db_path, key)
+        second = ConversationService(
+            FakePlanner([]),
+            java,
+            persistence=second_persistence,
+        )
+        restored = await second.get_conversation(
+            created.conversation_id,
+            "user-1",
+        )
+        assert restored.status == ConversationStatus.DRAFT_READY
+        await second.confirm(created.conversation_id, "user-1")
+        await second.confirm(created.conversation_id, "user-1")
+        await second_persistence.close()
+
+    asyncio.run(run_flow())
+    assert len(java.created_plans) == 1

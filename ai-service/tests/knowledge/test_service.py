@@ -367,3 +367,50 @@ async def test_knowledge_history_and_snapshot_survive_process_restart(tmp_path) 
     with pytest.raises(KnowledgeConversationNotFoundError):
         await second.get_conversation(created.conversation_id, "user-2")
     await second_persistence.close()
+
+
+async def test_failed_knowledge_save_rolls_back_and_retry_reuses_model_result(
+    tmp_path,
+) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    persistence = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        key,
+    )
+    answerer = FakeAnswerer()
+    service = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        answerer,
+        persistence=persistence,
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    original_save = persistence.store.save
+    attempts = 0
+
+    async def fail_once(**kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise OSError("disk full")
+        await original_save(**kwargs)
+
+    persistence.store.save = fail_once
+    with pytest.raises(OSError, match="disk full"):
+        await service.send_message(
+            created.conversation_id,
+            "解释依赖注入",
+            WebSearchPolicy.DISABLED,
+            "user-1",
+        )
+    assert (await service.get_conversation(created.conversation_id, "user-1")).answer == ""
+
+    result = await service.send_message(
+        created.conversation_id,
+        "解释依赖注入",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+    assert result.answer
+    assert len(answerer.calls) == 1
+    await persistence.close()

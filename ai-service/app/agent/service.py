@@ -1,6 +1,7 @@
 """面向 FastAPI 的学习计划会话应用服务。"""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
@@ -16,6 +17,8 @@ from app.agent.planner import PlanTurnGenerator
 from app.clients.java_backend import JavaBackendClient
 from app.persistence.agent_state import AgentPersistence
 from app.schemas.learning import LearningContext
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationNotFoundError(LookupError):
@@ -105,12 +108,13 @@ class ConversationService:
             status=ConversationStatus.COLLECTING,
             reply="会话已创建，请告诉我你的学习安排和要求。",
         )
-        self._conversations[conversation_id] = _Conversation(
+        conversation = _Conversation(
             context=context,
             snapshot=snapshot,
             lock=asyncio.Lock(),
         )
-        await self._save(self._conversations[conversation_id])
+        await self._save(conversation)
+        self._conversations[conversation_id] = conversation
         return snapshot
 
     async def send_message(
@@ -119,6 +123,8 @@ class ConversationService:
         message: str,
         owner_id: str,
     ) -> ConversationSnapshot:
+        graph = self._require_graph()
+        grounding_service = self._grounding
         conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             raise InvalidConversationStateError("已完成的会话不能继续发送消息")
@@ -126,8 +132,6 @@ class ConversationService:
             raise ConversationBusyError("该会话正在处理另一条请求")
         async with conversation.lock:
             # 在第一次 await 前取得完整租约；clear_runtime 只会清长期引用。
-            graph = self._require_graph()
-            grounding_service = self._grounding
             grounding = await self._retrieve_grounding(
                 conversation,
                 message,
@@ -169,7 +173,10 @@ class ConversationService:
                 graph_input,
             )
             conversation.started = True
-            await self._save(conversation)
+            try:
+                await self._save(conversation)
+            except Exception:
+                logger.exception("学习计划已进入 checkpoint，但 started 快照补写失败")
             return result
 
     async def get_conversation(
@@ -184,6 +191,7 @@ class ConversationService:
         conversation_id: str,
         owner_id: str,
     ) -> ConversationSnapshot:
+        graph = self._graph
         conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status == ConversationStatus.COMPLETED:
             return conversation.snapshot
@@ -192,7 +200,8 @@ class ConversationService:
         if conversation.lock.locked():
             raise ConversationBusyError("该会话正在处理另一条请求")
         async with conversation.lock:
-            graph = self._require_graph()
+            if graph is None:
+                raise RuntimeError("学习计划模型运行时尚未注入")
             return await self._invoke_locked(
                 graph,
                 conversation_id,
@@ -213,7 +222,10 @@ class ConversationService:
         )
         snapshot = self._to_snapshot(conversation.snapshot, values)
         conversation.snapshot = snapshot
-        await self._save(conversation)
+        try:
+            await self._save(conversation)
+        except Exception:
+            logger.exception("学习计划 checkpoint 已保存，但会话快照补写失败")
         return snapshot
 
     @staticmethod
@@ -273,6 +285,7 @@ class ConversationService:
                             lock=asyncio.Lock(),
                             started=bool(payload["started"]),
                         )
+                        await self._reconcile_checkpoint(conversation)
                         self._conversations[conversation_id] = conversation
         if conversation is None:
             raise ConversationNotFoundError("会话不存在")
@@ -280,6 +293,27 @@ class ConversationService:
             # 对越权访问也返回不存在，避免通过 ID 探测其他用户的会话。
             raise ConversationNotFoundError("会话不存在")
         return conversation
+
+    async def _reconcile_checkpoint(self, conversation: _Conversation) -> None:
+        if self._persistence is None:
+            return
+        checkpoint = await self._checkpointer.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": conversation.snapshot.conversation_id,
+                    "checkpoint_ns": "",
+                }
+            }
+        )
+        if checkpoint is None:
+            return
+        values = checkpoint.checkpoint.get("channel_values", {})
+        conversation.snapshot = self._to_snapshot(conversation.snapshot, values)
+        conversation.started = True
+        try:
+            await self._save(conversation)
+        except Exception:
+            logger.exception("从学习计划 checkpoint 重建快照后的补写失败")
 
     async def _save(self, conversation: _Conversation) -> None:
         if self._persistence is None:

@@ -456,3 +456,56 @@ def test_restarted_conversation_rebuilds_one_shared_lock(tmp_path) -> None:
             await second_persistence.close()
 
     asyncio.run(run_flow())
+
+
+def test_task_checkpoint_recovers_when_snapshot_save_fails(tmp_path) -> None:
+    from app.agent.task_conversation_models import TaskConversationStatus
+    from app.agent.task_conversation_service import TaskConversationService
+
+    key = base64.b64encode(bytes(range(32))).decode()
+    db_path = tmp_path / "agent-state.sqlite3"
+    java = FakeJavaBackend()
+
+    async def run_flow() -> None:
+        first_persistence = await AgentPersistence.open(db_path, key)
+        first = TaskConversationService(
+            FakeRecognitionService([preview(version=3)]),
+            java,
+            persistence=first_persistence,
+        )
+        created = await first.create_conversation(
+            "user-1",
+            date(2026, 7, 26),
+        )
+        original_save = first_persistence.store.save
+
+        async def fail_save(**_kwargs):
+            raise OSError("metadata unavailable")
+
+        first_persistence.store.save = fail_save
+        pending = await first.send_message(
+            created.conversation_id,
+            "任务完成了",
+            "user-1",
+        )
+        assert pending.status == TaskConversationStatus.PREVIEW_READY
+        first_persistence.store.save = original_save
+        await first_persistence.close()
+
+        second_persistence = await AgentPersistence.open(db_path, key)
+        second = TaskConversationService(
+            FakeRecognitionService([]),
+            java,
+            persistence=second_persistence,
+        )
+        restored = await second.get_conversation(
+            created.conversation_id,
+            "user-1",
+        )
+        assert restored.status == TaskConversationStatus.PREVIEW_READY
+        await second.confirm(created.conversation_id, "user-1")
+        await second.confirm(created.conversation_id, "user-1")
+        await second_persistence.close()
+
+    asyncio.run(run_flow())
+    assert len(java.task_changes) == 1

@@ -1,6 +1,7 @@
 """面向 FastAPI 的任务操作会话服务。"""
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -20,6 +21,8 @@ from app.agent.task_service import TaskRecognitionService
 from app.clients.java_backend import JavaBackendClient
 from app.persistence.agent_state import AgentPersistence
 from app.schemas.learning import LearningTask
+
+logger = logging.getLogger(__name__)
 
 
 class TaskConversationNotFoundError(LookupError):
@@ -97,11 +100,12 @@ class TaskConversationService:
             status=TaskConversationStatus.COLLECTING,
             reply="任务会话已创建，请查询任务或告诉我你要完成、跳过或延期的任务。",
         )
-        self._conversations[conversation_id] = _TaskConversation(
+        conversation = _TaskConversation(
             snapshot=snapshot,
             lock=asyncio.Lock(),
         )
-        await self._save(self._conversations[conversation_id])
+        await self._save(conversation)
+        self._conversations[conversation_id] = conversation
         return snapshot
 
     async def send_message(
@@ -110,6 +114,7 @@ class TaskConversationService:
         message: str,
         owner_id: str,
     ) -> TaskConversationSnapshot:
+        graph = self._require_graph()
         conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status in {
             TaskConversationStatus.COMPLETED,
@@ -119,7 +124,6 @@ class TaskConversationService:
         if conversation.lock.locked():
             raise TaskConversationBusyError("该任务会话正在处理另一条请求")
         async with conversation.lock:
-            graph = self._require_graph()
             if conversation.snapshot.status == TaskConversationStatus.PREVIEW_READY:
                 graph_input: dict | Command = Command(
                     resume={"action": "revise", "feedback": message}
@@ -142,7 +146,10 @@ class TaskConversationService:
                 graph_input,
             )
             conversation.started = True
-            await self._save(conversation)
+            try:
+                await self._save(conversation)
+            except Exception:
+                logger.exception("任务会话已进入 checkpoint，但 started 快照补写失败")
             return snapshot
 
     async def get_conversation(
@@ -157,6 +164,7 @@ class TaskConversationService:
         conversation_id: str,
         owner_id: str,
     ) -> TaskConversationSnapshot:
+        graph = self._graph
         conversation = await self._require(conversation_id, owner_id)
         if conversation.snapshot.status == TaskConversationStatus.COMPLETED:
             return conversation.snapshot
@@ -166,7 +174,8 @@ class TaskConversationService:
         if conversation.lock.locked():
             raise TaskConversationBusyError("该任务会话正在处理另一条请求")
         async with conversation.lock:
-            graph = self._require_graph()
+            if graph is None:
+                raise RuntimeError("任务识别模型运行时尚未注入")
             snapshot, java_status_code = await self._invoke_locked(
                 graph,
                 conversation_id,
@@ -192,7 +201,10 @@ class TaskConversationService:
         )
         snapshot = self._to_snapshot(conversation.snapshot, values)
         conversation.snapshot = snapshot
-        await self._save(conversation)
+        try:
+            await self._save(conversation)
+        except Exception:
+            logger.exception("任务 checkpoint 已保存，但会话快照补写失败")
         return snapshot, values.get("java_status_code")
 
     def _require_graph(self) -> Any:
@@ -244,12 +256,34 @@ class TaskConversationService:
                             lock=asyncio.Lock(),
                             started=bool(payload["started"]),
                         )
+                        await self._reconcile_checkpoint(conversation)
                         self._conversations[conversation_id] = conversation
         if conversation is None:
             raise TaskConversationNotFoundError("任务会话不存在")
         if conversation.snapshot.owner_id != owner_id:
             raise TaskConversationNotFoundError("任务会话不存在")
         return conversation
+
+    async def _reconcile_checkpoint(self, conversation: _TaskConversation) -> None:
+        if self._persistence is None:
+            return
+        checkpoint = await self._checkpointer.aget_tuple(
+            {
+                "configurable": {
+                    "thread_id": conversation.snapshot.conversation_id,
+                    "checkpoint_ns": "",
+                }
+            }
+        )
+        if checkpoint is None:
+            return
+        values = checkpoint.checkpoint.get("channel_values", {})
+        conversation.snapshot = self._to_snapshot(conversation.snapshot, values)
+        conversation.started = True
+        try:
+            await self._save(conversation)
+        except Exception:
+            logger.exception("从任务 checkpoint 重建快照后的补写失败")
 
     async def _save(self, conversation: _TaskConversation) -> None:
         if self._persistence is None:

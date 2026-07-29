@@ -1,8 +1,10 @@
+import asyncio
 import base64
 import os
 import sqlite3
 import subprocess
 import sys
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
@@ -23,6 +25,7 @@ OTHER_KEY = base64.b64encode(bytes(reversed(range(32)))).decode()
 async def test_state_survives_reopen_without_plaintext_on_disk(tmp_path: Path) -> None:
     path = tmp_path / "agent-state.sqlite3"
     persistence = await AgentPersistence.open(path, TEST_KEY)
+    assert persistence.connection is not persistence.checkpoint_connection
     await persistence.store.save(
         kind="knowledge",
         conversation_id="conversation-1",
@@ -57,6 +60,68 @@ async def test_state_survives_reopen_without_plaintext_on_disk(tmp_path: Path) -
         is None
     )
     await reopened.close()
+
+
+async def test_lock_backend_failure_does_not_leave_database_locked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.persistence import agent_state
+
+    original_acquire = agent_state.FileLock.acquire
+
+    def fail_acquire(_self, *_args, **_kwargs):
+        raise OSError("lock backend failed")
+
+    monkeypatch.setattr(agent_state.FileLock, "acquire", fail_acquire)
+    with pytest.raises(OSError, match="lock backend failed"):
+        await AgentPersistence.open(tmp_path / "agent-state.sqlite3", TEST_KEY)
+
+    monkeypatch.setattr(agent_state.FileLock, "acquire", original_acquire)
+    reopened = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        TEST_KEY,
+    )
+    await reopened.close()
+
+
+async def test_cancelled_checkpoint_write_cannot_commit_store_transaction(
+    tmp_path: Path,
+) -> None:
+    persistence = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        TEST_KEY,
+    )
+    await persistence.connection.execute("CREATE TABLE transaction_probe(value TEXT)")
+    await persistence.connection.commit()
+    await persistence.connection.execute("BEGIN IMMEDIATE")
+    await persistence.connection.execute(
+        "INSERT INTO transaction_probe(value) VALUES ('uncommitted')"
+    )
+
+    checkpoint_write = asyncio.create_task(
+        persistence.checkpointer.aput_writes(
+            {
+                "configurable": {
+                    "thread_id": "thread-1",
+                    "checkpoint_ns": "",
+                    "checkpoint_id": "checkpoint-1",
+                }
+            },
+            [("messages", "checkpoint value")],
+            "task-1",
+        )
+    )
+    await asyncio.sleep(0.05)
+    checkpoint_write.cancel()
+    await persistence.connection.rollback()
+    with suppress(asyncio.CancelledError):
+        await checkpoint_write
+
+    cursor = await persistence.connection.execute("SELECT COUNT(*) FROM transaction_probe")
+    assert (await cursor.fetchone())[0] == 0
+    await cursor.close()
+    await persistence.close()
 
 
 async def test_wrong_key_fails_closed_without_returning_data(tmp_path: Path) -> None:

@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import base64
 import binascii
-import fcntl
 import hashlib
 import hmac
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import aiosqlite
 from Crypto.Cipher import AES
+from filelock import FileLock, Timeout
 from langgraph.checkpoint.serde.encrypted import EncryptedSerializer
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -203,44 +202,61 @@ class EncryptedConversationStore:
 
 @dataclass
 class AgentPersistence:
-    """同一连接承载业务快照与 LangGraph checkpoint，供整个进程共享。"""
+    """同一数据库的独立连接分别承载快照与 checkpoint，供整个进程共享。"""
 
     connection: aiosqlite.Connection
+    checkpoint_connection: aiosqlite.Connection
     store: EncryptedConversationStore
     checkpointer: AsyncSqliteSaver
-    lock_fd: int
+    process_lock: FileLock
 
     @classmethod
     async def open(cls, path: str | Path, encoded_key: str) -> AgentPersistence:
         key = _decode_key(encoded_key)
         db_path = Path(path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        lock_fd = _acquire_process_lock(db_path)
-        connection: aiosqlite.Connection | None = None
+        process_lock = _acquire_process_lock(db_path)
+        store_connection: aiosqlite.Connection | None = None
+        checkpoint_connection: aiosqlite.Connection | None = None
         try:
-            connection = await aiosqlite.connect(db_path)
-            await connection.execute("PRAGMA journal_mode=WAL")
-            await connection.execute("PRAGMA busy_timeout=5000")
-            await connection.execute("PRAGMA foreign_keys=ON")
-            store = EncryptedConversationStore(connection, key)
+            store_connection = await aiosqlite.connect(db_path)
+            checkpoint_connection = await aiosqlite.connect(db_path)
+            for connection in (store_connection, checkpoint_connection):
+                await connection.execute("PRAGMA journal_mode=WAL")
+                await connection.execute("PRAGMA busy_timeout=5000")
+                await connection.execute("PRAGMA foreign_keys=ON")
+            store = EncryptedConversationStore(store_connection, key)
             await store.setup()
             serializer = EncryptedSerializer.from_pycryptodome_aes(key=key)
-            checkpointer = AsyncSqliteSaver(connection, serde=serializer)
+            checkpointer = AsyncSqliteSaver(checkpoint_connection, serde=serializer)
             await checkpointer.setup()
-            return cls(connection, store, checkpointer, lock_fd)
+            return cls(
+                store_connection,
+                checkpoint_connection,
+                store,
+                checkpointer,
+                process_lock,
+            )
         except Exception:
-            if connection is not None:
-                await connection.close()
-            _release_process_lock(lock_fd)
+            for connection in (checkpoint_connection, store_connection):
+                if connection is not None:
+                    await connection.close()
+            process_lock.release()
             raise
 
     async def close(self) -> None:
+        close_errors: list[Exception] = []
         try:
-            await self.connection.close()
+            for connection in (self.checkpoint_connection, self.connection):
+                try:
+                    await connection.close()
+                except Exception as exc:
+                    close_errors.append(exc)
         finally:
-            if self.lock_fd >= 0:
-                _release_process_lock(self.lock_fd)
-                self.lock_fd = -1
+            if self.process_lock.is_locked:
+                self.process_lock.release()
+        if close_errors:
+            raise ExceptionGroup("Agent 状态数据库连接关闭失败", close_errors)
 
 
 def _decode_key(value: str) -> bytes:
@@ -253,21 +269,13 @@ def _decode_key(value: str) -> bytes:
     return key
 
 
-def _acquire_process_lock(db_path: Path) -> int:
+def _acquire_process_lock(db_path: Path) -> FileLock:
     lock_path = db_path.with_name(f"{db_path.name}.lock")
-    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    process_lock = FileLock(lock_path)
     try:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError as exc:
-        os.close(lock_fd)
+        process_lock.acquire(timeout=0)
+    except Timeout as exc:
         raise AgentStateProcessLockError(
             "Agent 状态 SQLite 仅单进程运行；当前数据库已被另一个进程占用"
         ) from exc
-    return lock_fd
-
-
-def _release_process_lock(lock_fd: int) -> None:
-    try:
-        fcntl.flock(lock_fd, fcntl.LOCK_UN)
-    finally:
-        os.close(lock_fd)
+    return process_lock
