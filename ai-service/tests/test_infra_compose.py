@@ -116,6 +116,8 @@ def test_compose_wires_java_agent_gateway_to_internal_ai_service() -> None:
         backend_environment["STUDYPILOT_AI_SERVICE_BASE_URL"]
         == "http://ai-service:8000"
     )
+    assert backend_environment["SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE"] == "20MB"
+    assert backend_environment["SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE"] == "25MB"
     web = document["services"]["web"]
     assert web["ports"] == ["127.0.0.1:${WEB_PORT:-5173}:8080"]
     assert document["services"]["ai-service"]["environment"][
