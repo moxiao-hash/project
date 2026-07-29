@@ -7,6 +7,7 @@ import pytest
 import uvicorn
 from fastapi import FastAPI
 from pydantic import SecretStr
+from uvicorn.logging import AccessFormatter
 
 from app import main as main_module
 from app.core.settings import Settings
@@ -35,6 +36,34 @@ def test_log_filter_removes_credentials_without_touching_safe_fields() -> None:
     assert "service-secret" not in rendered
     assert "json-secret" not in rendered
     assert rendered.count("[REDACTED]") == 4
+
+
+def test_log_filter_preserves_uvicorn_access_record_structure() -> None:
+    record = logging.LogRecord(
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "%s %s HTTP/%s" %d',
+        (
+            "127.0.0.1:50000",
+            "GET",
+            "/health?api_key=access-secret",
+            "1.1",
+            200,
+        ),
+        None,
+    )
+
+    SecretRedactionFilter().filter(record)
+    rendered = AccessFormatter(
+        fmt='%(client_addr)s - "%(request_line)s" %(status_code)s'
+    ).format(record)
+
+    assert "127.0.0.1:50000" in rendered
+    assert "GET" in rendered
+    assert "200" in rendered
+    assert "access-secret" not in rendered
 
 
 def test_logger_exception_redacts_traceback_and_keeps_diagnostics() -> None:

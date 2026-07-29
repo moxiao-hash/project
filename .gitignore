@@ -21,6 +21,7 @@
 venv/
 **/data/materials/
 **/data/qdrant/
+**/data/fastembed/
 **/data/agent-state.sqlite3*
 
 # Local configuration and generated files

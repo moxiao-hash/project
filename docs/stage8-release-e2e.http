@@ -1,0 +1,378 @@
+### StudyPilot 阶段 8：公共 API 发布验收
+### 浏览器同样只能访问 Java /api/**。本文件不需要 ownerId 或内部服务令牌。
+###
+### IntelliJ HTTP Client 环境变量：
+###   javaHost=http://127.0.0.1:18080
+###   demoPassword=<符合后端规则的临时密码>
+###   deepseekApiKey=<可选；不填时使用服务器级回退>
+###
+### 从上到下执行。模型请求允许 2 分钟；资料解析与代码评分需要重复执行轮询请求。
+
+@javaHost = http://127.0.0.1:18080
+
+### 0. Java 健康检查（唯一不需要 Bearer Token 的运维接口）
+GET {{javaHost}}/actuator/health
+
+### 1. 注册唯一演示用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "stage8-{{$timestamp}}@example.com",
+  "password": "{{demoPassword}}",
+  "displayName": "阶段 8 发布验收"
+}
+
+> {%
+  client.test("注册成功且只保存 Bearer Token", function () {
+    client.assert(response.status === 201, "注册应返回 201");
+    client.assert(Boolean(response.body.accessToken), "应返回 accessToken");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+%}
+
+### 2. AI 设置：应显示 USER / SERVER_DEFAULT / NONE，不返回明文 Key
+GET {{javaHost}}/api/ai-settings
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("AI 设置不泄露 Key", function () {
+    client.assert(response.status === 200, "设置查询应成功");
+    client.assert(JSON.stringify(response.body).indexOf("apiKey") === -1,
+      "响应不得包含 apiKey");
+  });
+%}
+
+### 2B. 可选：写入当前用户 DeepSeek Key；服务器已有回退 Key 时跳过
+PUT {{javaHost}}/api/ai-settings/deepseek-key
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "apiKey": "{{deepseekApiKey}}"
+}
+
+### 3. 创建未来学习目标
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "完成 Java + Python 智能学习助手闭环",
+  "targetDate": "2027-12-31",
+  "weeklyStudyHours": 8
+}
+
+> {%
+  client.test("学习目标创建成功", function () {
+    client.assert(response.status === 201, "目标创建应返回 201");
+  });
+  client.global.set("goalId", response.body.id);
+%}
+
+### 4. 导入少量课程大纲；Python 后台异步解析
+POST {{javaHost}}/api/materials/text
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "阶段 8 演示课程大纲",
+  "content": "第一章 Java 与 Spring Boot；第二章 FastAPI 与服务通信；第三章 RAG 与来源引用；第四章 Agent 授权、预览和确认。学习顺序必须依次进行。",
+  "category": "SYLLABUS",
+  "privacyLevel": "NORMAL"
+}
+
+> {%
+  client.test("资料进入解析队列", function () {
+    client.assert(response.status === 201, "文本导入应返回 201");
+  });
+  client.global.set("materialId", response.body.id);
+%}
+
+### 4B. 可选 URL 导入（会执行 SSRF 防护，网络不可用时可能进入 FAILED）
+POST {{javaHost}}/api/materials/web
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "Spring Boot 官方参考",
+  "url": "https://docs.spring.io/spring-boot/",
+  "category": "REFERENCE",
+  "privacyLevel": "NORMAL"
+}
+
+### 5. 重复执行，直到 processingStatus 为 READY；失败时查看 warnings/error
+GET {{javaHost}}/api/materials/{{materialId}}
+Authorization: Bearer {{accessToken}}
+
+### 6. 创建知识会话
+POST {{javaHost}}/api/agent/knowledge-conversations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "mode": "AUTO"
+}
+
+> {%
+  client.test("公共门面创建知识会话", function () {
+    client.assert(response.status === 201 || response.status === 200,
+      "知识会话应创建成功");
+  });
+  client.global.set("knowledgeConversationId", response.body.conversationId);
+%}
+
+### 7. 验证真实模型身份；不得回答“Spring Boot 是模型”
+# @timeout 2 m
+POST {{javaHost}}/api/agent/knowledge-conversations/{{knowledgeConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "你背后的模型提供商和模型名称是什么？请直接回答配置中的真实信息。",
+  "webSearch": "DISABLED"
+}
+
+> {%
+  client.test("模型身份字段和回答可见", function () {
+    client.assert(response.status === 200, "消息应成功");
+    client.assert(Boolean(response.body.modelProvider), "应返回 modelProvider");
+    client.assert(Boolean(response.body.modelName), "应返回 modelName");
+    client.assert(Boolean(response.body.answer), "应返回模型回答");
+  });
+%}
+
+### 8. 大纲问答；READY 后应优先返回 MATERIAL 引用
+# @timeout 2 m
+POST {{javaHost}}/api/agent/knowledge-conversations/{{knowledgeConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "根据我导入的课程大纲，应该按什么顺序学习？",
+  "webSearch": "DISABLED"
+}
+
+> {%
+  client.test("回答不伪造来源", function () {
+    client.assert(response.status === 200, "知识问答应成功");
+    client.assert(Array.isArray(response.body.citations), "citations 必须是数组");
+    client.assert(Array.isArray(response.body.warnings), "warnings 必须是数组");
+  });
+%}
+
+### 9. 创建学习计划会话
+POST {{javaHost}}/api/agent/plan-conversations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "goalId": "{{goalId}}"
+}
+
+> {%
+  client.global.set("planConversationId", response.body.conversationId);
+%}
+
+### 10. 多轮补齐约束
+# @timeout 2 m
+POST {{javaHost}}/api/agent/plan-conversations/{{planConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "从明天开始安排一周。工作日每天 60 分钟，周末每天 120 分钟，以动手编程为主。"
+}
+
+### 11. 若仍是 COLLECTING，再补充明确交付物；重复至 DRAFT_READY
+# @timeout 2 m
+POST {{javaHost}}/api/agent/plan-conversations/{{planConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "交付物是一个可运行的 Spring Boot 与 FastAPI 通信小闭环，需要测试和 README。"
+}
+
+> {%
+  if (response.body.status === "DRAFT_READY") {
+    client.global.set("firstTaskDate", response.body.draft.tasks[0].scheduled_date
+      || response.body.draft.tasks[0].scheduledDate);
+  }
+%}
+
+### 12. DRAFT_READY 后发修订消息；普通聊天不能代替确认
+# @timeout 2 m
+POST {{javaHost}}/api/agent/plan-conversations/{{planConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "请保留现有日期，把最后一天改成端到端联调和复盘，并确保每天总时长不超过 120 分钟。"
+}
+
+> {%
+  client.test("修订后仍等待专用确认", function () {
+    client.assert(response.body.status === "DRAFT_READY",
+      "修订只更新草稿，不应保存");
+  });
+  client.global.set("firstTaskDate", response.body.draft.tasks[0].scheduled_date
+    || response.body.draft.tasks[0].scheduledDate);
+%}
+
+### 13. 专用确认接口保存学习计划
+# @timeout 2 m
+POST {{javaHost}}/api/agent/plan-conversations/{{planConversationId}}/confirm
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("计划确认完成", function () {
+    client.assert(response.body.status === "COMPLETED", "计划应保存完成");
+  });
+  client.global.set("planId", response.body.savedPlanId);
+%}
+
+### 14. 查询保存后的任务并选择第一条
+GET {{javaHost}}/api/learning-tasks
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("确认后存在真实任务", function () {
+    client.assert(response.body.length > 0, "应至少存在一条任务");
+  });
+  client.global.set("taskId", response.body[0].id);
+  client.global.set("taskTitle", response.body[0].title);
+  client.global.set("firstTaskDate", response.body[0].scheduledDate);
+%}
+
+### 15. 创建对应日期的任务 Agent 会话
+POST {{javaHost}}/api/agent/task-conversations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "targetDate": "{{firstTaskDate}}"
+}
+
+> {%
+  client.global.set("taskConversationId", response.body.conversationId);
+%}
+
+### 16. 自然语言选择任务，只生成 PREVIEW_READY
+# @timeout 2 m
+POST {{javaHost}}/api/agent/task-conversations/{{taskConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "我已完成“{{taskTitle}}”，请生成标记完成的操作预览。"
+}
+
+> {%
+  client.test("任务写入前必须预览", function () {
+    client.assert(response.body.status === "PREVIEW_READY",
+      "消息只能生成 PREVIEW_READY");
+  });
+%}
+
+### 17. 专用确认后执行
+# @timeout 2 m
+POST {{javaHost}}/api/agent/task-conversations/{{taskConversationId}}/confirm
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("确认后完成任务", function () {
+    client.assert(response.body.status === "COMPLETED", "任务动作应完成");
+  });
+  client.global.set("confirmedTaskVersion", response.body.updatedTask.version);
+%}
+
+### 18. 重复确认保持幂等，version 不再增长
+POST {{javaHost}}/api/agent/task-conversations/{{taskConversationId}}/confirm
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("重复任务确认幂等", function () {
+    client.assert(response.body.updatedTask.version ===
+      Number(client.global.get("confirmedTaskVersion")), "任务 version 不得再次增加");
+  });
+%}
+
+### 19. 从真实任务生成自适应测验
+# @timeout 2 m
+POST {{javaHost}}/api/agent/quizzes/generate
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "taskId": "{{taskId}}",
+  "webSearch": "DISABLED"
+}
+
+> {%
+  client.test("测验生成成功", function () {
+    client.assert(Boolean(response.body.quizId), "应返回 quizId");
+  });
+  client.global.set("quizId", response.body.quizId);
+%}
+
+### 20. 读取题目；响应不含正确答案或参考实现
+GET {{javaHost}}/api/quizzes/{{quizId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("测验固定五题且答案不泄漏", function () {
+    client.assert(response.body.questions.length === 5, "应生成五题");
+    client.assert(JSON.stringify(response.body).indexOf("correctAnswers") === -1,
+      "作答前不得泄露正确答案");
+  });
+  const answers = response.body.questions.map(q => {
+    if (q.type === "CODING") {
+      return {questionId: q.id, codeAnswer: q.starterCode || "// 请在此补全实现"};
+    }
+    return {questionId: q.id, selectedAnswers: [q.options[0]]};
+  });
+  client.global.set("quizAnswers", JSON.stringify(answers));
+%}
+
+### 21. 提交作答（把 {{quizAnswers}} 保持为 JSON 数组，不要加引号）
+POST {{javaHost}}/api/quizzes/{{quizId}}/attempts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "idempotencyKey": "stage8-attempt-{{$timestamp}}",
+  "answers": {{quizAnswers}}
+}
+
+> {%
+  client.global.set("attemptId", response.body.id);
+%}
+
+### 22. 重复执行直到 GRADED 或 PARTIALLY_GRADED
+GET {{javaHost}}/api/quiz-attempts/{{attemptId}}
+Authorization: Bearer {{accessToken}}
+
+### 23. FastAPI 重启恢复验证（手动停止并重启 FastAPI 后执行）
+### 必须保持相同 AGENT_STATE_DB_PATH 与 LANGGRAPH_AES_KEY。
+GET {{javaHost}}/api/agent/knowledge-conversations/{{knowledgeConversationId}}
+Authorization: Bearer {{accessToken}}
+
+### 24. 重启后继续同一知识会话
+# @timeout 2 m
+POST {{javaHost}}/api/agent/knowledge-conversations/{{knowledgeConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "请用一句话回顾我刚才要求的学习顺序。",
+  "webSearch": "DISABLED"
+}
+
+### 25. 重启后计划与任务会话也可按 ID 恢复
+GET {{javaHost}}/api/agent/plan-conversations/{{planConversationId}}
+Authorization: Bearer {{accessToken}}
+
+###
+GET {{javaHost}}/api/agent/task-conversations/{{taskConversationId}}
+Authorization: Bearer {{accessToken}}

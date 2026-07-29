@@ -24,8 +24,21 @@ def _redact(value: str) -> str:
 
 class SecretRedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = _redact(record.getMessage())
-        record.args = ()
+        if (
+            record.name == "uvicorn.access"
+            and isinstance(record.args, tuple)
+            and len(record.args) == 5
+        ):
+            # AccessFormatter unpacks this five-element tuple to derive
+            # client_addr/request_line/status_code. Flattening it via
+            # getMessage() makes every Uvicorn access log fail to format.
+            record.args = tuple(
+                _redact(value) if isinstance(value, str) else value
+                for value in record.args
+            )
+        else:
+            record.msg = _redact(record.getMessage())
+            record.args = ()
         if record.exc_info is not None:
             # 先格式化再脱敏，并移除原始异常元组，防止 Formatter 再次输出原文。
             record.exc_text = _redact(

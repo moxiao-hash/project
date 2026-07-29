@@ -51,6 +51,10 @@ public class AgentGatewayService {
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
+                // Uvicorn serves HTTP/1.1 by default. Forcing the version avoids
+                // the JDK client's clear-text HTTP/2 upgrade (h2c), which
+                // Uvicorn rejects before FastAPI can return a JSON response.
+                .version(HttpClient.Version.HTTP_1_1)
                 .build();
     }
 
@@ -103,6 +107,10 @@ public class AgentGatewayService {
             builder.header(RequestCorrelationFilter.HEADER, requestId);
         }
         return builder;
+    }
+
+    HttpClient.Version httpVersion() {
+        return httpClient.version();
     }
 
     private GatewayResponse exchange(HttpRequest request) {

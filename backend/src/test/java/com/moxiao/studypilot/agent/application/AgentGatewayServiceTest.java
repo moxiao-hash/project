@@ -6,6 +6,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import com.moxiao.studypilot.shared.web.RequestCorrelationFilter;
 
+import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.time.Duration;
 
@@ -45,5 +46,16 @@ class AgentGatewayServiceTest {
                 .build();
 
         assertEquals(Duration.ofSeconds(120), request.timeout().orElseThrow());
+    }
+
+    @Test
+    void usesHttp11BecauseUvicornDoesNotSupportCleartextHttp2Upgrade() {
+        AgentGatewayService service = new AgentGatewayService(
+                "http://127.0.0.1:8000",
+                "internal-token",
+                new ObjectMapper()
+        );
+
+        assertEquals(HttpClient.Version.HTTP_1_1, service.httpVersion());
     }
 }

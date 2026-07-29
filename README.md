@@ -2,7 +2,7 @@
 
 面向个人学习者的 AI 学习执行工作台。用户可以导入学习资料、通过对话建立学习计划、完成任务与测验；在授权边界内，Agent 会整理资料、生成练习并调整后续学习安排。
 
-Java 业务后端与 Python AI 服务已经完成阶段 7。完整产品范围见
+阶段 8 已完成，Vue、Java 和 Python 可以通过真实公共 API 形成完整闭环。完整产品范围见
 [产品需求说明](docs/studypilot-product-requirements.md)，前端架构和最新公共契约见
 [前端开发对接说明](docs/前端开发对接说明.md)。早期 Java 实现记录仍保留在
 [后端开发说明](后端开发说明.md)。
@@ -21,24 +21,58 @@ docs/        产品、架构、迭代与开发文档
 
 - Java 17 + Spring Boot
 - Python 3.12 + FastAPI + LangGraph + DeepSeek API
-- Vue 3 + TypeScript + Vite（待初始化）
+- Vue 3 + TypeScript + Vite + Pinia
 - MySQL 8 + Flyway
-- Docker Compose
-- 向量检索、Redis（进入 Python/异步阶段后按需引入）
+- LangGraph + DeepSeek + Tavily
+- FastEmbed + Qdrant 本地混合检索
+- 加密 SQLite Checkpointer
+- Docker Compose + Nginx + 可选 Prometheus
 
 ## 开发原则
 
 - Java 服务是业务事实来源与权限边界；Python Agent 不直接写核心业务数据库。
 - 每个功能以一个小的垂直切片交付：先写失败测试，再实现，再本地验证。
-- 先完成可用 MVP，再引入 Redis、向量库、GUI 自动化等增强能力。
+- Agent 普通聊天不会自动授权写操作；计划、任务与调整都使用结构化预览和专用确认。
 
-## 快速验证
+## 快速启动
+
+原生开发按 MySQL → Spring Boot → FastAPI → Vue 的顺序启动。三个服务端安全值
+`INTERNAL_SERVICE_TOKEN`、`AI_CREDENTIAL_MASTER_KEY`、`LANGGRAPH_AES_KEY`
+首次生成后必须稳定保存。详细命令、Docker Compose、演示数据和五分钟演示路线见
+[部署与演示指南](docs/部署与演示指南.md)。
+
+生成一组不含秘密输出的最小演示数据：
+
+```bash
+DEMO_PASSWORD='临时强密码' scripts/demo-data.sh
+```
+
+## 全量验证
 
 ```bash
 cd backend
 ./mvnw test
+
+cd ../ai-service
+.venv/bin/python -m pytest -q
+.venv/bin/python -m ruff check app tests
+
+cd ../web
+npm test -- --run
+npm run typecheck
+npm run build
 ```
 
-完整容器启动方式见 [infra/README.md](infra/README.md)。学习计划 Agent 的本地启动、
-测试和代码阅读顺序见 [AI 服务说明](ai-service/README.md)，IntelliJ 联调请求见
-[Agent API 示例](docs/agent-api-examples.http)。
+## 文档入口
+
+- [系统架构](docs/architecture.md)
+- [部署与演示指南](docs/部署与演示指南.md)
+- [阶段 8 公共 API 联调](docs/stage8-release-e2e.http)
+- [阶段 8 真实验收结果](docs/stage8-e2e-result.md)
+- [前端开发对接说明](docs/前端开发对接说明.md)
+- [AI 服务说明](ai-service/README.md)
+- [项目开发步骤](项目开发步骤.md)
+- [Docker Compose 说明](infra/README.md)
+
+浏览器只调用 Java `/api/**`。`/internal/**` 只用于 Java 与 Python 服务间通信，不能
+暴露内部令牌给前端。
