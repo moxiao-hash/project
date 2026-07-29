@@ -128,7 +128,9 @@ SQLite 文件中，因此进程重启后可以按 `conversationId` 恢复。磁�
 丢失后旧会话不可恢复，必须像数据库密钥一样备份且不得提交 Git。
 
 当前 SQLite 与本地 Qdrant 部署仅支持一个 FastAPI worker。请保持 Uvicorn 默认的单
-worker 启动方式；多进程和横向扩容将在改用共享数据库 checkpointer 后支持。
+worker 启动方式。进程启动时还会对数据库旁的 `.lock` 文件取得操作系统级独占锁，
+第二个进程会立即拒绝启动；正常关闭或进程崩溃后锁由操作系统释放。多进程和横向扩容
+将在改用共享数据库 checkpointer 后支持。
 
 ## 5. 资料处理与知识问答
 

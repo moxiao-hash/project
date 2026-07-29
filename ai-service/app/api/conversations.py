@@ -112,17 +112,15 @@ def get_conversation_service(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Any:
-    """惰性创建应用级单例；创建客户端本身不会调用模型或消耗 Token。"""
+    """读取 lifespan 预建的唯一 registry。"""
 
     existing = getattr(request.app.state, "conversation_service", None)
-    if existing is not None:
-        return existing
-    service = OwnerScopedConversationServices(
-        settings,
-        persistence=getattr(request.app.state, "agent_persistence", None),
-    )
-    request.app.state.conversation_service = service
-    return service
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI 会话服务尚未完成启动",
+        )
+    return existing
 
 
 async def _for_owner(service: Any, owner_id: str) -> ConversationService:

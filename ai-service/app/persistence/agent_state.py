@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import hashlib
 import hmac
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +29,10 @@ class AgentStateDecryptionError(RuntimeError):
 
 class AgentStateSchemaError(RuntimeError):
     """数据库来自当前程序无法读取的更新版本。"""
+
+
+class AgentStateProcessLockError(RuntimeError):
+    """另一个 FastAPI 进程已经持有本地 Agent 状态数据库。"""
 
 
 class EncryptedConversationStore:
@@ -202,14 +208,17 @@ class AgentPersistence:
     connection: aiosqlite.Connection
     store: EncryptedConversationStore
     checkpointer: AsyncSqliteSaver
+    lock_fd: int
 
     @classmethod
     async def open(cls, path: str | Path, encoded_key: str) -> AgentPersistence:
         key = _decode_key(encoded_key)
         db_path = Path(path)
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        connection = await aiosqlite.connect(db_path)
+        lock_fd = _acquire_process_lock(db_path)
+        connection: aiosqlite.Connection | None = None
         try:
+            connection = await aiosqlite.connect(db_path)
             await connection.execute("PRAGMA journal_mode=WAL")
             await connection.execute("PRAGMA busy_timeout=5000")
             await connection.execute("PRAGMA foreign_keys=ON")
@@ -218,13 +227,20 @@ class AgentPersistence:
             serializer = EncryptedSerializer.from_pycryptodome_aes(key=key)
             checkpointer = AsyncSqliteSaver(connection, serde=serializer)
             await checkpointer.setup()
-            return cls(connection, store, checkpointer)
+            return cls(connection, store, checkpointer, lock_fd)
         except Exception:
-            await connection.close()
+            if connection is not None:
+                await connection.close()
+            _release_process_lock(lock_fd)
             raise
 
     async def close(self) -> None:
-        await self.connection.close()
+        try:
+            await self.connection.close()
+        finally:
+            if self.lock_fd >= 0:
+                _release_process_lock(self.lock_fd)
+                self.lock_fd = -1
 
 
 def _decode_key(value: str) -> bytes:
@@ -235,3 +251,23 @@ def _decode_key(value: str) -> bytes:
     if len(key) != 32:
         raise AgentStateKeyError("LANGGRAPH_AES_KEY 必须是 Base64 编码的 32 字节密钥")
     return key
+
+
+def _acquire_process_lock(db_path: Path) -> int:
+    lock_path = db_path.with_name(f"{db_path.name}.lock")
+    lock_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as exc:
+        os.close(lock_fd)
+        raise AgentStateProcessLockError(
+            "Agent 状态 SQLite 仅单进程运行；当前数据库已被另一个进程占用"
+        ) from exc
+    return lock_fd
+
+
+def _release_process_lock(lock_fd: int) -> None:
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+    finally:
+        os.close(lock_fd)

@@ -183,3 +183,52 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
     assert (
         await restored_after_ttl.get_conversation(created.conversation_id, "owner-1")
     ).conversation_id == created.conversation_id
+
+
+async def test_concurrent_first_owner_lookup_returns_one_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first_resolution_started = asyncio.Event()
+    release_first_resolution = asyncio.Event()
+    deepseek_calls = 0
+
+    class BarrierResolver:
+        def __init__(self, _java, _settings) -> None:
+            pass
+
+        async def resolve(
+            self,
+            _owner_id: str,
+            provider: CredentialProvider,
+        ) -> SecretStr:
+            nonlocal deepseek_calls
+            if provider == CredentialProvider.DEEPSEEK:
+                deepseek_calls += 1
+                if deepseek_calls == 1:
+                    first_resolution_started.set()
+                    await release_first_resolution.wait()
+            return SecretStr(f"{provider.value.lower()}-key")
+
+    monkeypatch.setattr(conversations_api, "JavaBackendClient", FakeJavaBackend)
+    monkeypatch.setattr(conversations_api, "CredentialResolver", BarrierResolver)
+    monkeypatch.setattr(
+        conversations_api,
+        "create_chat_model",
+        lambda _settings, key: FakePlanner(key.get_secret_value()),
+    )
+    monkeypatch.setattr(conversations_api, "DeepSeekPlanner", lambda model: model)
+    monkeypatch.setattr(conversations_api, "get_hybrid_index", lambda _path: object())
+    monkeypatch.setattr(conversations_api, "AsyncHybridRetriever", lambda _index: object())
+    monkeypatch.setattr(conversations_api, "TavilySearchClient", lambda *_a, **_k: object())
+    monkeypatch.setattr(conversations_api, "WebSearchService", lambda *_a: object())
+    monkeypatch.setattr(conversations_api, "PlanGroundingService", lambda *_a: FakeGrounding())
+
+    registry = conversations_api.OwnerScopedConversationServices(Settings())
+    first = asyncio.create_task(registry.for_owner("owner-1"))
+    await first_resolution_started.wait()
+    second = asyncio.create_task(registry.for_owner("owner-1"))
+    await asyncio.sleep(0)
+    release_first_resolution.set()
+    first_service, second_service = await asyncio.gather(first, second)
+
+    assert first_service is second_service

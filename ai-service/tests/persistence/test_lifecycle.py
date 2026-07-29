@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import SecretStr
 
+from app import main as main_module
 from app.core.settings import Settings
 from app.persistence.lifecycle import AgentPersistenceConfigurationError, open_agent_persistence
 
@@ -42,3 +43,38 @@ async def test_lifecycle_rejects_missing_key_or_multiple_workers(
     )
     with pytest.raises(AgentPersistenceConfigurationError):
         await open_agent_persistence(settings)
+
+
+async def test_lifespan_releases_process_lock_when_scheduler_start_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = Settings(
+        _env_file=None,
+        agent_state_db_path=str(tmp_path / "agent-state.sqlite3"),
+        langgraph_aes_key=SecretStr(base64.b64encode(bytes(range(32))).decode()),
+        agent_worker_count=1,
+    )
+
+    class BrokenScheduler:
+        def __init__(self, **_kwargs) -> None:
+            pass
+
+        def add_job(self, *_args, **_kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            raise RuntimeError("scheduler failed")
+
+        def shutdown(self, **_kwargs) -> None:
+            pass
+
+    monkeypatch.setattr(main_module, "get_settings", lambda: settings)
+    monkeypatch.setattr(main_module, "AsyncIOScheduler", BrokenScheduler)
+
+    with pytest.raises(RuntimeError, match="scheduler failed"):
+        async with main_module.lifespan(main_module.FastAPI()):
+            pass
+
+    reopened = await open_agent_persistence(settings)
+    await reopened.close()

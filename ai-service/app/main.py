@@ -11,13 +11,28 @@ from datetime import UTC, datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
-from app.api.conversations import router as conversations_router
-from app.api.knowledge_conversations import router as knowledge_conversations_router
+from app.api.conversations import (
+    OwnerScopedConversationServices,
+)
+from app.api.conversations import (
+    router as conversations_router,
+)
+from app.api.knowledge_conversations import (
+    OwnerScopedKnowledgeServices,
+)
+from app.api.knowledge_conversations import (
+    router as knowledge_conversations_router,
+)
 from app.api.model_status import router as model_status_router
 from app.api.plan_adjustments import build_plan_adjustment_service
 from app.api.plan_adjustments import router as plan_adjustments_router
 from app.api.quiz_generation import router as quiz_generation_router
-from app.api.task_conversations import router as task_conversations_router
+from app.api.task_conversations import (
+    OwnerScopedTaskConversationServices,
+)
+from app.api.task_conversations import (
+    router as task_conversations_router,
+)
 from app.assessment.evaluation import CodingEvaluationWorker, DeepSeekCodingEvaluator
 from app.clients.java_backend import JavaBackendClient
 from app.core.settings import get_settings
@@ -141,39 +156,64 @@ async def lifespan(application: FastAPI):
     settings = get_settings()
     persistence = await open_agent_persistence(settings)
     application.state.agent_persistence = persistence
+    # 三类 registry 必须在单线程启动阶段一次性创建。同步 FastAPI 依赖只读取这些
+    # 实例，避免多个首请求在线程池中同时构造出不同 registry 和不同会话锁。
+    application.state.conversation_service = OwnerScopedConversationServices(
+        settings,
+        persistence=persistence,
+    )
+    application.state.task_conversation_service = OwnerScopedTaskConversationServices(
+        settings,
+        persistence=persistence,
+    )
+    application.state.knowledge_conversation_service = OwnerScopedKnowledgeServices(
+        settings,
+        persistence=persistence,
+    )
     scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(
-        run_nightly_adjustment_job,
-        "interval",
-        minutes=settings.nightly_adjustment_interval_minutes,
-        id="nightly-plan-adjustments",
-        coalesce=True,
-        max_instances=1,
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        run_material_processing_job,
-        "interval",
-        seconds=settings.material_processing_interval_seconds,
-        id="material-processing",
-        coalesce=True,
-        max_instances=1,
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        run_coding_evaluation_job,
-        "interval",
-        seconds=settings.coding_evaluation_interval_seconds,
-        id="coding-evaluation",
-        coalesce=True,
-        max_instances=1,
-        replace_existing=True,
-    )
-    scheduler.start()
+    scheduler_started = False
     try:
+        scheduler.add_job(
+            run_nightly_adjustment_job,
+            "interval",
+            minutes=settings.nightly_adjustment_interval_minutes,
+            id="nightly-plan-adjustments",
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_material_processing_job,
+            "interval",
+            seconds=settings.material_processing_interval_seconds,
+            id="material-processing",
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_coding_evaluation_job,
+            "interval",
+            seconds=settings.coding_evaluation_interval_seconds,
+            id="coding-evaluation",
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+        scheduler.start()
+        scheduler_started = True
         yield
     finally:
-        scheduler.shutdown(wait=False)
+        if scheduler_started:
+            scheduler.shutdown(wait=False)
+        for state_name in (
+            "conversation_service",
+            "task_conversation_service",
+            "knowledge_conversation_service",
+            "agent_persistence",
+        ):
+            if hasattr(application.state, state_name):
+                delattr(application.state, state_name)
         await persistence.close()
 
 

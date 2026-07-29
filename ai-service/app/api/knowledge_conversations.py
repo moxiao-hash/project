@@ -110,14 +110,12 @@ def get_knowledge_conversation_service(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> Any:
     existing = getattr(request.app.state, "knowledge_conversation_service", None)
-    if existing is not None:
-        return existing
-    service = OwnerScopedKnowledgeServices(
-        settings,
-        persistence=getattr(request.app.state, "agent_persistence", None),
-    )
-    request.app.state.knowledge_conversation_service = service
-    return service
+    if existing is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI 知识会话服务尚未完成启动",
+        )
+    return existing
 
 
 async def _for_owner(service: Any, owner_id: str) -> KnowledgeConversationService:

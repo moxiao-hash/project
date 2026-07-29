@@ -1,5 +1,8 @@
 import base64
+import os
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -69,6 +72,8 @@ async def test_wrong_key_fails_closed_without_returning_data(tmp_path: Path) -> 
 
     with pytest.raises(AgentStateDecryptionError):
         await AgentPersistence.open(path, OTHER_KEY)
+    reopened = await AgentPersistence.open(path, TEST_KEY)
+    await reopened.close()
 
 
 @pytest.mark.parametrize(
@@ -91,3 +96,102 @@ async def test_newer_database_schema_is_rejected_safely(tmp_path: Path) -> None:
 
     with pytest.raises(AgentStateSchemaError):
         await AgentPersistence.open(path, TEST_KEY)
+
+
+async def test_second_process_is_rejected_until_first_process_closes(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "agent-state.sqlite3"
+    first = await AgentPersistence.open(path, TEST_KEY)
+    script = """
+import asyncio
+import sys
+from app.persistence.agent_state import AgentPersistence, AgentStateProcessLockError
+
+async def main():
+    try:
+        persistence = await AgentPersistence.open(sys.argv[1], sys.argv[2])
+    except AgentStateProcessLockError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(23)
+    await persistence.close()
+
+asyncio.run(main())
+"""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+    blocked = subprocess.run(
+        [sys.executable, "-c", script, str(path), TEST_KEY],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=5,
+        check=False,
+    )
+    assert blocked.returncode == 23
+    assert "仅单进程" in blocked.stderr
+
+    await first.close()
+    reopened = subprocess.run(
+        [sys.executable, "-c", script, str(path), TEST_KEY],
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=5,
+        check=False,
+    )
+    assert reopened.returncode == 0, reopened.stderr
+
+
+async def test_process_crash_releases_os_lock(tmp_path: Path) -> None:
+    path = tmp_path / "agent-state.sqlite3"
+    holder_script = """
+import asyncio
+import sys
+from app.persistence.agent_state import AgentPersistence
+
+async def main():
+    persistence = await AgentPersistence.open(sys.argv[1], sys.argv[2])
+    print("READY", flush=True)
+    await asyncio.Event().wait()
+
+asyncio.run(main())
+"""
+    probe_script = """
+import asyncio
+import sys
+from app.persistence.agent_state import AgentPersistence
+
+async def main():
+    persistence = await AgentPersistence.open(sys.argv[1], sys.argv[2])
+    await persistence.close()
+
+asyncio.run(main())
+"""
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+    holder = subprocess.Popen(
+        [sys.executable, "-c", holder_script, str(path), TEST_KEY],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=environment,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "READY"
+        holder.kill()
+        holder.wait(timeout=5)
+        reopened = subprocess.run(
+            [sys.executable, "-c", probe_script, str(path), TEST_KEY],
+            capture_output=True,
+            text=True,
+            env=environment,
+            timeout=5,
+            check=False,
+        )
+        assert reopened.returncode == 0, reopened.stderr
+    finally:
+        if holder.poll() is None:
+            holder.kill()
+            holder.wait(timeout=5)
