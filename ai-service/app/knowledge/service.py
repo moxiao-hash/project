@@ -218,10 +218,15 @@ class KnowledgeConversationService:
         except Exception:
             conversation.history = previous_history
             conversation.snapshot = previous_snapshot
+            self._clear_pending_for_conversation(conversation.conversation_id)
             self._pending_mutations[key] = (snapshot, tuple(previous_history))
             raise
-        self._pending_mutations.pop(key, None)
+        self._clear_pending_for_conversation(conversation.conversation_id)
         return snapshot
+
+    def _clear_pending_for_conversation(self, conversation_id: str) -> None:
+        for key in [key for key in self._pending_mutations if key[0] == conversation_id]:
+            self._pending_mutations.pop(key, None)
 
     async def _find(self, conversation_id: str, owner_id: str) -> _Conversation:
         conversation = self._conversations.get(conversation_id)

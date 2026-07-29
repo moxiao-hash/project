@@ -464,3 +464,85 @@ async def test_stale_pending_result_never_overwrites_newer_history(tmp_path) -> 
     assert len(answerer.calls) == 3
     assert answerer.calls[-1]["history"][-2][1] == "问题 B"
     await persistence.close()
+
+
+async def test_successful_turn_clears_all_pending_for_conversation(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    persistence = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        key,
+    )
+    service = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        FakeAnswerer(),
+        persistence=persistence,
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    original_save = persistence.store.save
+    fail_next = True
+
+    async def fail_once(**kwargs):
+        nonlocal fail_next
+        if fail_next:
+            fail_next = False
+            raise OSError("disk full")
+        await original_save(**kwargs)
+
+    persistence.store.save = fail_once
+    with pytest.raises(OSError):
+        await service.send_message(
+            created.conversation_id,
+            "问题 A",
+            WebSearchPolicy.DISABLED,
+            "user-1",
+        )
+    await service.send_message(
+        created.conversation_id,
+        "问题 B",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+    assert not any(key[0] == created.conversation_id for key in service._pending_mutations)
+    await persistence.close()
+
+
+async def test_each_conversation_keeps_at_most_one_pending_mutation(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    persistence = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        key,
+    )
+    service = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        FakeAnswerer(),
+        persistence=persistence,
+    )
+    first = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    second = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+
+    async def always_fail(**_kwargs):
+        raise OSError("disk full")
+
+    persistence.store.save = always_fail
+    for message in ("问题 A", "问题 C", "问题 D"):
+        with pytest.raises(OSError):
+            await service.send_message(
+                first.conversation_id,
+                message,
+                WebSearchPolicy.DISABLED,
+                "user-1",
+            )
+        assert sum(key[0] == first.conversation_id for key in service._pending_mutations) == 1
+
+    with pytest.raises(OSError):
+        await service.send_message(
+            second.conversation_id,
+            "另一个会话的问题",
+            WebSearchPolicy.DISABLED,
+            "user-1",
+        )
+    assert sum(key[0] == first.conversation_id for key in service._pending_mutations) == 1
+    assert sum(key[0] == second.conversation_id for key in service._pending_mutations) == 1
+    await persistence.close()
