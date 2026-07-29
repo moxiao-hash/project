@@ -8,7 +8,9 @@ FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 RUN apk add --no-cache curl \
     && addgroup -S studypilot \
-    && adduser -S studypilot -G studypilot
+    && adduser -S studypilot -G studypilot \
+    && mkdir -p /app/data \
+    && chown -R studypilot:studypilot /app/data
 COPY --from=builder /workspace/target/studypilot-backend-0.0.1-SNAPSHOT.jar app.jar
 USER studypilot
 EXPOSE 8080

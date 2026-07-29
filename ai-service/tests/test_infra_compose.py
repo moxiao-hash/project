@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import yaml
+
 
 def test_backend_receives_required_stable_credential_master_key() -> None:
     compose = (
@@ -49,6 +51,16 @@ def test_container_and_nginx_contracts_do_not_expose_internal_api() -> None:
     assert "chown -R studypilot:studypilot /data" in ai_dockerfile
     assert "apk add --no-cache curl" in backend_dockerfile
     assert 'CMD ["curl", "--fail"' in backend_dockerfile
+    runtime_stage = backend_dockerfile.split(
+        "FROM eclipse-temurin:17-jre-alpine",
+        1,
+    )[1]
+    assert "mkdir -p /app/data" in runtime_stage
+    assert "chown -R studypilot:studypilot /app/data" in runtime_stage
+    assert runtime_stage.index("mkdir -p /app/data") < runtime_stage.index("USER studypilot")
+    assert runtime_stage.index(
+        "chown -R studypilot:studypilot /app/data"
+    ) < runtime_stage.index("USER studypilot")
     assert "FROM node:" in web_dockerfile
     assert "FROM nginx:" in web_dockerfile
     assert "location /api/" in nginx
@@ -82,3 +94,14 @@ def test_compose_has_no_development_secret_defaults() -> None:
     ):
         assert forbidden not in compose
         assert forbidden not in example
+
+
+def test_compose_wires_java_agent_gateway_to_internal_ai_service() -> None:
+    root = Path(__file__).resolve().parents[2]
+    document = yaml.safe_load((root / "infra" / "docker-compose.yml").read_text())
+    backend_environment = document["services"]["backend"]["environment"]
+
+    assert (
+        backend_environment["STUDYPILOT_AI_SERVICE_BASE_URL"]
+        == "http://ai-service:8000"
+    )

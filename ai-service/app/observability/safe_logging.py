@@ -27,8 +27,17 @@ class SecretRedactionFilter(logging.Filter):
 
 
 def install_secret_redaction() -> None:
-    redactor = SecretRedactionFilter()
-    root = logging.getLogger()
-    for handler in root.handlers:
-        if not any(isinstance(item, SecretRedactionFilter) for item in handler.filters):
-            handler.addFilter(redactor)
+    """把过滤器安装到 Uvicorn 完成配置后实际使用的所有 handler。
+
+    Uvicorn 会在导入应用前后重新配置 named logger，因此这里只在模块导入时调用
+    不足以覆盖生产日志。函数可重复调用，每个 handler 最多安装一个过滤器。
+    """
+
+    for logger_name in ("", "uvicorn", "uvicorn.error", "uvicorn.access"):
+        logger = logging.getLogger(logger_name)
+        for handler in logger.handlers:
+            if not any(
+                isinstance(item, SecretRedactionFilter)
+                for item in handler.filters
+            ):
+                handler.addFilter(SecretRedactionFilter())

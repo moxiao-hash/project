@@ -163,6 +163,9 @@ async def run_coding_evaluation_job() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    # Uvicorn 可能在导入 app 后重建 handler；启动阶段再次幂等安装，确保生产日志
+    # 也经过敏感字段脱敏。
+    install_secret_redaction()
     settings = get_settings()
     persistence = await open_agent_persistence(settings)
     scheduler = None
