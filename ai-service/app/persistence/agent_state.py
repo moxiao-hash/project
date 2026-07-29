@@ -237,26 +237,42 @@ class AgentPersistence:
                 checkpointer,
                 process_lock,
             )
-        except Exception:
+        except BaseException as original_error:
+            cleanup_errors: list[BaseException] = []
             for connection in (checkpoint_connection, store_connection):
                 if connection is not None:
-                    await connection.close()
-            process_lock.release()
+                    try:
+                        await connection.close()
+                    except BaseException as cleanup_error:
+                        cleanup_errors.append(cleanup_error)
+            try:
+                process_lock.release()
+            except BaseException as cleanup_error:
+                cleanup_errors.append(cleanup_error)
+            for cleanup_error in cleanup_errors:
+                original_error.add_note(
+                    f"额外资源清理异常：{type(cleanup_error).__name__}: {cleanup_error}"
+                )
             raise
 
     async def close(self) -> None:
-        close_errors: list[Exception] = []
+        close_errors: list[BaseException] = []
         try:
             for connection in (self.checkpoint_connection, self.connection):
                 try:
                     await connection.close()
-                except Exception as exc:
+                except BaseException as exc:
                     close_errors.append(exc)
         finally:
             if self.process_lock.is_locked:
-                self.process_lock.release()
+                try:
+                    self.process_lock.release()
+                except BaseException as exc:
+                    close_errors.append(exc)
+        if len(close_errors) == 1:
+            raise close_errors[0]
         if close_errors:
-            raise ExceptionGroup("Agent 状态数据库连接关闭失败", close_errors)
+            raise BaseExceptionGroup("Agent 状态数据库连接关闭失败", close_errors)
 
 
 def _decode_key(value: str) -> bytes:

@@ -414,3 +414,53 @@ async def test_failed_knowledge_save_rolls_back_and_retry_reuses_model_result(
     assert result.answer
     assert len(answerer.calls) == 1
     await persistence.close()
+
+
+async def test_stale_pending_result_never_overwrites_newer_history(tmp_path) -> None:
+    key = base64.b64encode(bytes(range(32))).decode()
+    persistence = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        key,
+    )
+    answerer = FakeAnswerer()
+    service = KnowledgeConversationService(
+        FakeRetriever([]),
+        FakeWebSearcher(),
+        answerer,
+        persistence=persistence,
+    )
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    original_save = persistence.store.save
+    fail_next = True
+
+    async def fail_first_mutation(**kwargs):
+        nonlocal fail_next
+        if fail_next:
+            fail_next = False
+            raise OSError("disk full")
+        await original_save(**kwargs)
+
+    persistence.store.save = fail_first_mutation
+    with pytest.raises(OSError, match="disk full"):
+        await service.send_message(
+            created.conversation_id,
+            "问题 A",
+            WebSearchPolicy.DISABLED,
+            "user-1",
+        )
+    await service.send_message(
+        created.conversation_id,
+        "问题 B",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+    await service.send_message(
+        created.conversation_id,
+        "问题 A",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+    )
+
+    assert len(answerer.calls) == 3
+    assert answerer.calls[-1]["history"][-2][1] == "问题 B"
+    await persistence.close()

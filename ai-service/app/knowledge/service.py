@@ -75,7 +75,7 @@ class KnowledgeConversationService:
         self._load_lock = asyncio.Lock()
         self._pending_mutations: dict[
             tuple[str, str, WebSearchPolicy],
-            tuple[KnowledgeConversationSnapshot, list[tuple[str, str]]],
+            tuple[KnowledgeConversationSnapshot, tuple[tuple[str, str], ...]],
         ] = {}
 
     def replace_runtime(
@@ -147,19 +147,16 @@ class KnowledgeConversationService:
             pending_key = (conversation_id, message, web_search)
             pending = self._pending_mutations.get(pending_key)
             if pending is not None:
-                snapshot, history = pending
-                previous_history = list(conversation.history)
-                previous_snapshot = conversation.snapshot
-                conversation.history = list(history)
-                conversation.snapshot = snapshot
-                try:
-                    await self._save(conversation)
-                except Exception:
-                    conversation.history = previous_history
-                    conversation.snapshot = previous_snapshot
-                    raise
+                snapshot, base_history = pending
+                if tuple(conversation.history) == base_history:
+                    return await self._commit_mutation(
+                        conversation,
+                        message,
+                        web_search,
+                        snapshot,
+                    )
+                # 期间已有其他轮次成功，旧结果的上下文已经过期，必须重新调用模型。
                 self._pending_mutations.pop(pending_key, None)
-                return snapshot
             if self._is_model_identity_question(message):
                 snapshot = self._identity_snapshot(conversation)
                 return await self._commit_mutation(
@@ -221,7 +218,7 @@ class KnowledgeConversationService:
         except Exception:
             conversation.history = previous_history
             conversation.snapshot = previous_snapshot
-            self._pending_mutations[key] = (snapshot, next_history)
+            self._pending_mutations[key] = (snapshot, tuple(previous_history))
             raise
         self._pending_mutations.pop(key, None)
         return snapshot

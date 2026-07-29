@@ -124,6 +124,75 @@ async def test_cancelled_checkpoint_write_cannot_commit_store_transaction(
     await persistence.close()
 
 
+async def test_open_cancellation_releases_lock_and_closes_first_connection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.persistence import agent_state
+
+    original_connect = agent_state.aiosqlite.connect
+    opened_connections = []
+
+    async def cancel_second_connection(path):
+        if opened_connections:
+            raise asyncio.CancelledError
+        connection = await original_connect(path)
+        original_close = connection.close
+        close_called = False
+
+        async def tracked_close():
+            nonlocal close_called
+            close_called = True
+            await original_close()
+
+        connection.close = tracked_close
+        opened_connections.append((connection, lambda: close_called))
+        return connection
+
+    monkeypatch.setattr(agent_state.aiosqlite, "connect", cancel_second_connection)
+    with pytest.raises(asyncio.CancelledError):
+        await AgentPersistence.open(
+            tmp_path / "agent-state.sqlite3",
+            TEST_KEY,
+        )
+    assert opened_connections[0][1]()
+
+    monkeypatch.setattr(agent_state.aiosqlite, "connect", original_connect)
+    reopened = await AgentPersistence.open(
+        tmp_path / "agent-state.sqlite3",
+        TEST_KEY,
+    )
+    await reopened.close()
+
+
+async def test_close_continues_after_first_connection_error_and_releases_lock(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "agent-state.sqlite3"
+    persistence = await AgentPersistence.open(path, TEST_KEY)
+    checkpoint_close = persistence.checkpoint_connection.close
+    store_close = persistence.connection.close
+    store_closed = False
+
+    async def close_checkpoint_then_fail():
+        await checkpoint_close()
+        raise OSError("checkpoint close failed")
+
+    async def tracked_store_close():
+        nonlocal store_closed
+        store_closed = True
+        await store_close()
+
+    persistence.checkpoint_connection.close = close_checkpoint_then_fail
+    persistence.connection.close = tracked_store_close
+    with pytest.raises(BaseException, match="checkpoint close failed"):
+        await persistence.close()
+    assert store_closed
+
+    reopened = await AgentPersistence.open(path, TEST_KEY)
+    await reopened.close()
+
+
 async def test_wrong_key_fails_closed_without_returning_data(tmp_path: Path) -> None:
     path = tmp_path / "agent-state.sqlite3"
     first = await AgentPersistence.open(path, TEST_KEY)
