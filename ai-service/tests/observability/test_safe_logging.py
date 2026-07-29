@@ -37,6 +37,38 @@ def test_log_filter_removes_credentials_without_touching_safe_fields() -> None:
     assert rendered.count("[REDACTED]") == 4
 
 
+def test_logger_exception_redacts_traceback_and_keeps_diagnostics() -> None:
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.addFilter(SecretRedactionFilter())
+    logger = logging.getLogger("test.safe.exception")
+    logger.handlers = [handler]
+    logger.propagate = False
+    logger.setLevel(logging.INFO)
+    try:
+        try:
+            raise RuntimeError(
+                "Authorization: Bearer traceback-secret "
+                "api_key=traceback-api-secret"
+            )
+        except RuntimeError:
+            logger.exception(
+                "operation failed X-Internal-Service-Token: traceback-service-secret",
+                stack_info=True,
+            )
+    finally:
+        logger.handlers = []
+        logger.propagate = True
+
+    rendered = stream.getvalue()
+    assert "RuntimeError" in rendered
+    assert "Traceback" in rendered
+    assert "test_logger_exception_redacts_traceback" in rendered
+    assert "traceback-secret" not in rendered
+    assert "traceback-api-secret" not in rendered
+    assert "traceback-service-secret" not in rendered
+
+
 def test_install_after_uvicorn_configuration_covers_real_handlers() -> None:
     uvicorn.Config("app.main:app", log_config=uvicorn.config.LOGGING_CONFIG).configure_logging()
     stream = StringIO()

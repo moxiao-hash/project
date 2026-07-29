@@ -6,5 +6,5 @@ from app.retrieval.hybrid_index import QdrantHybridIndex
 
 
 @lru_cache
-def get_hybrid_index(path: str) -> QdrantHybridIndex:
-    return QdrantHybridIndex.persistent(path)
+def get_hybrid_index(path: str, cache_dir: str | None = None) -> QdrantHybridIndex:
+    return QdrantHybridIndex.persistent(path, cache_dir)

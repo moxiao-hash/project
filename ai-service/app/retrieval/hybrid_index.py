@@ -39,9 +39,10 @@ class FastEmbedProvider:
             "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
         ),
         sparse_model: str = "Qdrant/bm25",
+        cache_dir: str | None = None,
     ) -> None:
-        self._dense = TextEmbedding(model_name=dense_model)
-        self._sparse = SparseTextEmbedding(model_name=sparse_model)
+        self._dense = TextEmbedding(model_name=dense_model, cache_dir=cache_dir)
+        self._sparse = SparseTextEmbedding(model_name=sparse_model, cache_dir=cache_dir)
         self.dimension = 384
 
     def embed(self, texts: list[str]) -> list[EmbeddingPair]:
@@ -73,9 +74,18 @@ class QdrantHybridIndex:
         self._ensure_collection()
 
     @classmethod
-    def persistent(cls, path: str) -> "QdrantHybridIndex":
+    def persistent(
+        cls,
+        path: str,
+        cache_dir: str | None = None,
+    ) -> "QdrantHybridIndex":
         Path(path).mkdir(parents=True, exist_ok=True)
-        return cls(QdrantClient(path=path), FastEmbedProvider())
+        if cache_dir is not None:
+            Path(cache_dir).mkdir(parents=True, exist_ok=True)
+        return cls(
+            QdrantClient(path=path),
+            FastEmbedProvider(cache_dir=cache_dir),
+        )
 
     def upsert(
         self,

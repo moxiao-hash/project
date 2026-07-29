@@ -25,7 +25,7 @@ docker compose --profile observability \
 ```
 
 首次启动 FastEmbed 会下载模型，所需时间取决于网络。MySQL、Agent SQLite、
-Qdrant 和 Hugging Face 缓存均使用命名卷持久化。当前限流与 SQLite 都面向单实例；
+Qdrant、FastEmbed 与 Hugging Face 缓存均使用命名卷持久化。当前限流与 SQLite 都面向单实例；
 横向扩容时需迁移到 Redis 和服务化存储。
 
 只希望在 IDEA 中运行 Java 时，可以单独启动 MySQL：

@@ -59,4 +59,21 @@ class AgentRateLimiterTest {
             executor.shutdownNow();
         }
     }
+
+    @Test
+    void expiredInactiveUserBucketsAreSweptWithoutDroppingCurrentRequest() {
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-07-29T00:00:00Z"));
+        AgentRateLimiter limiter = new AgentRateLimiter(2, Duration.ofMinutes(1), now::get);
+        for (int index = 0; index < 1_000; index++) {
+            assertTrue(limiter.tryAcquire("expired-" + index).allowed());
+        }
+        assertEquals(1_000, limiter.bucketCount());
+
+        now.set(now.get().plusSeconds(61));
+        assertTrue(limiter.tryAcquire("current-user").allowed());
+
+        assertEquals(1, limiter.bucketCount());
+        assertTrue(limiter.tryAcquire("current-user").allowed());
+        assertFalse(limiter.tryAcquire("current-user").allowed());
+    }
 }

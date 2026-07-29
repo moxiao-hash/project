@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     coding_evaluation_interval_seconds: int = 5
     coding_evaluation_worker_id: str = "studypilot-ai-coding-local"
     qdrant_path: str = "./data/qdrant"
+    fastembed_cache_path: str = "./data/fastembed"
     tavily_api_key: SecretStr = SecretStr("")
     tavily_base_url: str = "https://api.tavily.com"
     agent_state_db_path: str = "./data/agent-state.sqlite3"

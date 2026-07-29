@@ -86,7 +86,12 @@ class OwnerScopedKnowledgeServices:
         )
         if service is None:
             service = KnowledgeConversationService(
-                AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
+                AsyncHybridRetriever(
+                    get_hybrid_index(
+                        self._settings.qdrant_path,
+                        self._settings.fastembed_cache_path,
+                    )
+                ),
                 web,
                 answerer,
                 model_provider=self._settings.model_provider,

@@ -44,7 +44,12 @@ class OwnerScopedQuizServices:
         tavily_key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
         service = QuizGenerationService(
             java,
-            AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
+            AsyncHybridRetriever(
+                get_hybrid_index(
+                    self._settings.qdrant_path,
+                    self._settings.fastembed_cache_path,
+                )
+            ),
             WebSearchService(
                 TavilySearchClient(
                     tavily_key,

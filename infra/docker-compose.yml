@@ -54,6 +54,7 @@ services:
       LANGGRAPH_AES_KEY: ${LANGGRAPH_AES_KEY:?set LANGGRAPH_AES_KEY in infra/.env}
       AGENT_STATE_DB_PATH: /data/agent-state.sqlite3
       QDRANT_PATH: /data/qdrant
+      FASTEMBED_CACHE_PATH: /cache/fastembed
       AGENT_WORKER_COUNT: "1"
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
@@ -62,6 +63,7 @@ services:
     volumes:
       - studypilot-agent-data:/data
       - studypilot-hf-cache:/home/studypilot/.cache/huggingface
+      - studypilot-fastembed-cache:/cache/fastembed
     depends_on:
       backend:
         condition: service_healthy
@@ -80,14 +82,14 @@ services:
         VITE_API_BASE_URL: ""
         VITE_AGENT_GATEWAY: http
     ports:
-      - "127.0.0.1:${WEB_PORT:-5173}:80"
+      - "127.0.0.1:${WEB_PORT:-5173}:8080"
     depends_on:
       backend:
         condition: service_healthy
       ai-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -112,4 +114,5 @@ volumes:
   studypilot-backend-data:
   studypilot-agent-data:
   studypilot-hf-cache:
+  studypilot-fastembed-cache:
   studypilot-prometheus-data:

@@ -130,7 +130,11 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
     monkeypatch.setattr(conversations_api, "CredentialResolver", FakeResolver)
     monkeypatch.setattr(conversations_api, "create_chat_model", create_model)
     monkeypatch.setattr(conversations_api, "DeepSeekPlanner", lambda model: model)
-    monkeypatch.setattr(conversations_api, "get_hybrid_index", lambda _path: object())
+    monkeypatch.setattr(
+        conversations_api,
+        "get_hybrid_index",
+        lambda _path, _cache_dir: object(),
+    )
     monkeypatch.setattr(conversations_api, "AsyncHybridRetriever", lambda _index: object())
     monkeypatch.setattr(conversations_api, "TavilySearchClient", lambda *_a, **_k: object())
     monkeypatch.setattr(conversations_api, "WebSearchService", lambda *_a: object())
@@ -217,7 +221,11 @@ async def test_concurrent_first_owner_lookup_returns_one_service(
         lambda _settings, key: FakePlanner(key.get_secret_value()),
     )
     monkeypatch.setattr(conversations_api, "DeepSeekPlanner", lambda model: model)
-    monkeypatch.setattr(conversations_api, "get_hybrid_index", lambda _path: object())
+    monkeypatch.setattr(
+        conversations_api,
+        "get_hybrid_index",
+        lambda _path, _cache_dir: object(),
+    )
     monkeypatch.setattr(conversations_api, "AsyncHybridRetriever", lambda _index: object())
     monkeypatch.setattr(conversations_api, "TavilySearchClient", lambda *_a, **_k: object())
     monkeypatch.setattr(conversations_api, "WebSearchService", lambda *_a: object())

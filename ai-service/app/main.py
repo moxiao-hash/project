@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api.conversations import (
@@ -126,7 +126,10 @@ async def run_material_processing_job() -> None:
                 None,
                 analyzer_factory=analyzer_for,
                 worker_id=settings.material_worker_id,
-                index=get_hybrid_index(settings.qdrant_path),
+                index=get_hybrid_index(
+                    settings.qdrant_path,
+                    settings.fastembed_cache_path,
+                ),
                 web_fetcher=SafeWebFetcher(),
             )
         await _material_processing_service.process_once()
@@ -268,8 +271,26 @@ async def request_correlation(request: Request, call_next):
 
     token = bind_request_id(request.headers.get(REQUEST_ID_HEADER))
     try:
-        response = await call_next(request)
-        response.headers[REQUEST_ID_HEADER] = current_request_id() or ""
+        request_id = current_request_id() or ""
+        try:
+            response = await call_next(request)
+        except Exception:
+            # 不记录 query/body/header，只保留安全路径与关联 ID；日志过滤器负责
+            # 对异常 traceback 中意外出现的凭据做最后一道脱敏。
+            logger.exception(
+                "http.request.failed requestId=%s method=%s path=%s",
+                request_id,
+                request.method,
+                request.url.path,
+            )
+            response = JSONResponse(
+                status_code=500,
+                content={
+                    "code": "INTERNAL_ERROR",
+                    "message": "服务内部错误",
+                },
+            )
+        response.headers[REQUEST_ID_HEADER] = request_id
         return response
     finally:
         reset_request_id(token)

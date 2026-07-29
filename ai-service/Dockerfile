@@ -7,8 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN groupadd --system studypilot \
     && useradd --system --gid studypilot --home-dir /home/studypilot --create-home studypilot \
-    && mkdir -p /data /home/studypilot/.cache/huggingface \
-    && chown -R studypilot:studypilot /data /home/studypilot
+    && mkdir -p /data /cache/fastembed /home/studypilot/.cache/huggingface \
+    && chown -R studypilot:studypilot /data /cache/fastembed /home/studypilot
 
 COPY pyproject.toml README.md ./
 COPY app ./app

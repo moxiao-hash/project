@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import yaml
@@ -33,7 +34,7 @@ def test_full_stack_is_private_persistent_and_health_checked() -> None:
     assert "QDRANT_PATH: /data/qdrant" in compose
     assert "studypilot-agent-data:/data" in compose
     assert "studypilot-hf-cache:/home/studypilot/.cache/huggingface" in compose
-    assert '"127.0.0.1:${WEB_PORT:-5173}:80"' in compose
+    assert '"127.0.0.1:${WEB_PORT:-5173}:8080"' in compose
     assert "8000:8000" not in compose
     assert "condition: service_healthy" in compose
 
@@ -62,15 +63,25 @@ def test_container_and_nginx_contracts_do_not_expose_internal_api() -> None:
         "chown -R studypilot:studypilot /app/data"
     ) < runtime_stage.index("USER studypilot")
     assert "FROM node:" in web_dockerfile
-    assert "FROM nginx:" in web_dockerfile
+    assert "FROM nginxinc/nginx-unprivileged:" in web_dockerfile
     assert "location /api/" in nginx
     assert "proxy_pass http://backend:8080;" in nginx
+    assert "proxy_read_timeout 130s;" in nginx
+    assert "proxy_send_timeout 130s;" in nginx
+    body_limit = re.search(r"client_max_body_size\s+(\d+)m;", nginx)
+    assert body_limit is not None
+    assert int(body_limit.group(1)) >= 20
     assert "try_files $uri $uri/ /index.html;" in nginx
     assert "location /internal" in nginx
     internal_block = nginx.split("location /internal", 1)[1].split("}", 1)[0]
     assert "return 404" in internal_block
     assert "ai-service" not in nginx
     assert "X-Request-ID" in nginx
+    assert "add_header X-Request-ID" not in nginx
+    assert "Content-Security-Policy" in nginx
+    assert "frame-ancestors 'none'" in nginx
+    assert "X-Content-Type-Options" in nginx
+    assert "Referrer-Policy" in nginx
 
 
 def test_compose_has_no_development_secret_defaults() -> None:
@@ -105,3 +116,11 @@ def test_compose_wires_java_agent_gateway_to_internal_ai_service() -> None:
         backend_environment["STUDYPILOT_AI_SERVICE_BASE_URL"]
         == "http://ai-service:8000"
     )
+    web = document["services"]["web"]
+    assert web["ports"] == ["127.0.0.1:${WEB_PORT:-5173}:8080"]
+    assert document["services"]["ai-service"]["environment"][
+        "FASTEMBED_CACHE_PATH"
+    ] == "/cache/fastembed"
+    assert "studypilot-fastembed-cache:/cache/fastembed" in document["services"][
+        "ai-service"
+    ]["volumes"]

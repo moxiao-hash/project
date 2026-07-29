@@ -17,12 +17,23 @@ _JSON_SECRET = re.compile(
 )
 
 
+def _redact(value: str) -> str:
+    value = _JSON_SECRET.sub(r"\1[REDACTED]", value)
+    return _SECRET.sub(r"\1\2[REDACTED]", value)
+
+
 class SecretRedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        rendered = record.getMessage()
-        rendered = _JSON_SECRET.sub(r"\1[REDACTED]", rendered)
-        record.msg = _SECRET.sub(r"\1\2[REDACTED]", rendered)
+        record.msg = _redact(record.getMessage())
         record.args = ()
+        if record.exc_info is not None:
+            # 先格式化再脱敏，并移除原始异常元组，防止 Formatter 再次输出原文。
+            record.exc_text = _redact(
+                logging.Formatter().formatException(record.exc_info)
+            )
+            record.exc_info = None
+        if record.stack_info:
+            record.stack_info = _redact(record.stack_info)
         return True
 
 

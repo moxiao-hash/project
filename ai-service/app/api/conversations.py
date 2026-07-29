@@ -80,7 +80,12 @@ class OwnerScopedConversationServices:
 
         model = create_chat_model(self._settings, deepseek_key)
         grounding = PlanGroundingService(
-            AsyncHybridRetriever(get_hybrid_index(self._settings.qdrant_path)),
+            AsyncHybridRetriever(
+                get_hybrid_index(
+                    self._settings.qdrant_path,
+                    self._settings.fastembed_cache_path,
+                )
+            ),
             WebSearchService(
                 TavilySearchClient(
                     tavily_key,
