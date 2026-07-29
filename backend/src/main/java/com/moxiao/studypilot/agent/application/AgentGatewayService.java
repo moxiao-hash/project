@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
+import org.slf4j.MDC;
+import com.moxiao.studypilot.shared.web.RequestCorrelationFilter;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -92,10 +94,15 @@ public class AgentGatewayService {
     }
 
     HttpRequest.Builder baseRequest(String path) {
-        return HttpRequest.newBuilder(baseUri.resolve(path))
+        HttpRequest.Builder builder = HttpRequest.newBuilder(baseUri.resolve(path))
                 .timeout(REQUEST_TIMEOUT)
                 .header("Accept", "application/json")
                 .header("X-Internal-Service-Token", internalToken);
+        String requestId = MDC.get(RequestCorrelationFilter.MDC_KEY);
+        if (requestId != null && !requestId.isBlank()) {
+            builder.header(RequestCorrelationFilter.HEADER, requestId);
+        }
+        return builder;
     }
 
     private GatewayResponse exchange(HttpRequest request) {

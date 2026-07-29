@@ -2,6 +2,8 @@ package com.moxiao.studypilot.auth.config;
 
 import com.moxiao.studypilot.auth.security.BearerTokenAuthenticationFilter;
 import com.moxiao.studypilot.auth.security.InternalServiceTokenFilter;
+import com.moxiao.studypilot.agent.application.AgentRateLimitFilter;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,7 +27,8 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             BearerTokenAuthenticationFilter bearerTokenAuthenticationFilter,
-            InternalServiceTokenFilter internalServiceTokenFilter
+            InternalServiceTokenFilter internalServiceTokenFilter,
+            AgentRateLimitFilter agentRateLimitFilter
     ) throws Exception {
         return http
                 .csrf(csrf -> csrf.disable())
@@ -53,7 +56,25 @@ public class SecurityConfig {
                         bearerTokenAuthenticationFilter,
                         InternalServiceTokenFilter.class
                 )
+                .addFilterAfter(
+                        agentRateLimitFilter,
+                        BearerTokenAuthenticationFilter.class
+                )
                 .build();
+    }
+
+    /**
+     * 该过滤器只应在 Spring Security 链中执行（Bearer 认证之后），禁止 Servlet
+     * 容器把 Component 过滤器再注册一次。
+     */
+    @Bean
+    FilterRegistrationBean<AgentRateLimitFilter> disableAgentRateLimitAutoRegistration(
+            AgentRateLimitFilter filter
+    ) {
+        FilterRegistrationBean<AgentRateLimitFilter> registration =
+                new FilterRegistrationBean<>(filter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
@@ -69,7 +90,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
-        configuration.setExposedHeaders(List.of("Location"));
+        configuration.setExposedHeaders(List.of("Location", "Retry-After", "X-Request-ID"));
         configuration.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", configuration);

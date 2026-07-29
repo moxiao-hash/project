@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.core.request_context import outbound_request_headers
+
 
 class PrivateNetworkUrlError(ValueError):
     """URL 解析到非公网地址，禁止服务端访问。"""
@@ -51,6 +53,7 @@ class SafeWebFetcher:
             transport=self._transport,
             timeout=self._timeout,
             follow_redirects=False,
+            headers=outbound_request_headers(),
         ) as client:
             for _ in range(4):
                 self._validate(current)

@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 from pydantic import SecretStr, TypeAdapter
 
+from app.core.request_context import outbound_request_headers
 from app.core.settings import Settings
 from app.material.processing import ProcessingJob
 from app.schemas.agent import (
@@ -447,7 +448,10 @@ class JavaBackendClient:
         path: str,
         **kwargs: Any,
     ) -> httpx.Response:
-        headers = {"X-Internal-Service-Token": self._internal_token}
+        headers = {
+            "X-Internal-Service-Token": self._internal_token,
+            **outbound_request_headers(),
+        }
         try:
             async with httpx.AsyncClient(
                 base_url=self._base_url,

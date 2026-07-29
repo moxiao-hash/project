@@ -1,25 +1,35 @@
-# Infrastructure
+# StudyPilot 本地容器栈
 
-当前 Compose 提供 MySQL 与 Java 后端。Python Agent、Redis 和向量库会在下一阶段按真实需求加入。
+Compose 提供 MySQL、Spring Boot、单进程 FastAPI、Vue/Nginx；Prometheus 是可选
+profile。浏览器只通过 Nginx 同源访问 Java `/api/**`，不会暴露 Python
+`/internal/**`。
 
 ```bash
 cp infra/.env.example infra/.env
+# 填写数据库密码，并按注释生成三个稳定密钥
 docker compose --env-file infra/.env -f infra/docker-compose.yml up --build
 ```
 
-后端健康检查地址为 `http://localhost:8080/actuator/health`。
+打开 `http://localhost:5173`。健康检查：
 
-如果希望从 IntelliJ IDEA 启动 Java，只启动数据库即可：
+```text
+http://localhost:5173/health
+http://localhost:8080/actuator/health
+```
+
+启用仅监听回环地址的 Prometheus：
+
+```bash
+docker compose --profile observability \
+  --env-file infra/.env -f infra/docker-compose.yml up --build
+```
+
+首次启动 FastEmbed 会下载模型，所需时间取决于网络。MySQL、Agent SQLite、
+Qdrant 和 Hugging Face 缓存均使用命名卷持久化。当前限流与 SQLite 都面向单实例；
+横向扩容时需迁移到 Redis 和服务化存储。
+
+只希望在 IDEA 中运行 Java 时，可以单独启动 MySQL：
 
 ```bash
 docker compose --env-file infra/.env -f infra/docker-compose.yml up -d mysql
 ```
-
-然后在 IDEA 的运行配置中设置：
-
-```text
-SPRING_PROFILES_ACTIVE=local
-INTERNAL_SERVICE_TOKEN=local-dev-internal-token
-```
-
-`application-local.properties` 仅包含本机演示数据库的默认账号。公开部署时必须通过环境变量提供独立强密码和内部服务令牌。

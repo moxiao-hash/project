@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
 from app.core.settings import Settings
+from app.observability.model_metrics import ModelMetricsCallback
 
 
 class ModelConfigurationError(ValueError):
@@ -33,4 +34,5 @@ def create_chat_model(
         base_url=settings.model_base_url,
         model=settings.model_name,
         temperature=0,
+        callbacks=[ModelMetricsCallback(settings.model_provider, settings.model_name)],
     )

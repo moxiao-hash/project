@@ -3,6 +3,7 @@
 import httpx
 from pydantic import SecretStr
 
+from app.core.request_context import outbound_request_headers
 from app.search.models import WebSearchOutcome, WebSearchResult
 
 
@@ -31,7 +32,10 @@ class TavilySearchClient:
                 base_url=self._base_url,
                 transport=self._transport,
                 timeout=self._timeout,
-                headers={"Authorization": f"Bearer {self._api_key}"},
+                headers={
+                    "Authorization": f"Bearer {self._api_key}",
+                    **outbound_request_headers(),
+                },
             ) as client:
                 response = await client.post(
                     "/search",

@@ -9,7 +9,9 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app.api.conversations import (
     OwnerScopedConversationServices,
@@ -35,9 +37,16 @@ from app.api.task_conversations import (
 )
 from app.assessment.evaluation import CodingEvaluationWorker, DeepSeekCodingEvaluator
 from app.clients.java_backend import JavaBackendClient
+from app.core.request_context import (
+    REQUEST_ID_HEADER,
+    bind_request_id,
+    current_request_id,
+    reset_request_id,
+)
 from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
 from app.material.processing import MaterialProcessingService
+from app.observability.safe_logging import install_secret_redaction
 from app.persistence.lifecycle import open_agent_persistence
 from app.providers.credentials import CredentialProvider, CredentialResolver
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
@@ -46,6 +55,7 @@ from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
 from app.search.web_fetcher import SafeWebFetcher
 
 logger = logging.getLogger(__name__)
+install_secret_redaction()
 _material_processing_service: MaterialProcessingService | None = None
 _coding_evaluation_worker: CodingEvaluationWorker | None = None
 
@@ -247,12 +257,34 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def request_correlation(request: Request, call_next):
+    """贯穿 FastAPI 与所有 httpx 下游请求的关联标识。"""
+
+    token = bind_request_id(request.headers.get(REQUEST_ID_HEADER))
+    try:
+        response = await call_next(request)
+        response.headers[REQUEST_ID_HEADER] = current_request_id() or ""
+        return response
+    finally:
+        reset_request_id(token)
+
+
 app.include_router(model_status_router)
 app.include_router(conversations_router)
 app.include_router(task_conversations_router)
 app.include_router(plan_adjustments_router)
 app.include_router(knowledge_conversations_router)
 app.include_router(quiz_generation_router)
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics() -> Response:
+    """Prometheus 抓取端点；不包含 owner、请求 ID、正文或凭据标签。"""
+
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")

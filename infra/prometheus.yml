@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: studypilot-ai
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["ai-service:8000"]
