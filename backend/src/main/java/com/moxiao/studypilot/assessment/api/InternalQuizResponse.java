@@ -8,6 +8,7 @@ import java.util.Set;
 
 public record InternalQuizResponse(
         String id,
+        String lessonId,
         String title,
         List<InternalQuestionResponse> questions
 ) {
@@ -17,6 +18,7 @@ public record InternalQuizResponse(
     ) {
         return new InternalQuizResponse(
                 quiz.getId(),
+                quiz.getLessonId(),
                 quiz.getTitle(),
                 questions.stream()
                         .map(question -> new InternalQuestionResponse(

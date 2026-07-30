@@ -25,6 +25,9 @@ import com.moxiao.studypilot.assessment.domain.QuestionType;
 import com.moxiao.studypilot.assessment.domain.QuizAttemptStatus;
 import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import com.moxiao.studypilot.learning.infrastructure.LearningTaskJpaRepository;
+import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
+import com.moxiao.studypilot.course.infrastructure.LessonProgressEntity;
+import com.moxiao.studypilot.course.infrastructure.LessonProgressJpaRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +53,8 @@ public class QuizService {
     private final CodingEvaluationJobJpaRepository codingJobRepository;
     private final LearningTaskJpaRepository learningTaskRepository;
     private final ReviewTaskCandidateService reviewTaskCandidateService;
+    private final LessonJpaRepository lessonRepository;
+    private final LessonProgressJpaRepository lessonProgressRepository;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -61,7 +66,9 @@ public class QuizService {
             ObjectMapper objectMapper,
             CodingEvaluationJobJpaRepository codingJobRepository,
             LearningTaskJpaRepository learningTaskRepository,
-            ReviewTaskCandidateService reviewTaskCandidateService
+            ReviewTaskCandidateService reviewTaskCandidateService,
+            LessonJpaRepository lessonRepository,
+            LessonProgressJpaRepository lessonProgressRepository
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -73,6 +80,8 @@ public class QuizService {
         this.codingJobRepository = codingJobRepository;
         this.learningTaskRepository = learningTaskRepository;
         this.reviewTaskCandidateService = reviewTaskCandidateService;
+        this.lessonRepository = lessonRepository;
+        this.lessonProgressRepository = lessonProgressRepository;
     }
 
     @Transactional
@@ -80,12 +89,20 @@ public class QuizService {
         if (!userRepository.existsById(request.ownerId())) {
             throw new ResourceNotFoundException("用户不存在");
         }
+        if (request.taskId() != null && request.lessonId() != null) {
+            throw new IllegalArgumentException("taskId 与 lessonId 只能提供一个");
+        }
+        if (request.lessonId() != null
+                && !lessonRepository.existsById(request.lessonId())) {
+            throw new ResourceNotFoundException("课时不存在");
+        }
         String quizId = UUID.randomUUID().toString();
         QuizEntity quiz = quizRepository.save(new QuizEntity(
                 quizId,
                 request.ownerId(),
                 request.materialId(),
                 request.taskId(),
+                request.lessonId(),
                 request.title().trim(),
                 request.modelName(),
                 Instant.now()
@@ -264,6 +281,7 @@ public class QuizService {
             reviewTaskCandidateService.createCandidates(
                     bundle.quiz(), attemptId, Set.of()
             );
+            markLessonQuizPassed(bundle.quiz(), objectiveScore, now);
         }
         return new QuizAttemptResponse(
                 attemptId, objectiveScore, attemptStatus.name(), null, results
@@ -349,6 +367,7 @@ public class QuizService {
                         .findFirst().orElseThrow().getKnowledgePoint())
                 .collect(java.util.stream.Collectors.toSet());
         reviewTaskCandidateService.createCandidates(quiz, attempt.getId(), weakCodingPoints);
+        markLessonQuizPassed(quiz, finalScore, now);
         return toAttemptResponse(attemptRepository.save(attempt), questions);
     }
 
@@ -522,6 +541,22 @@ public class QuizService {
                                     quiz.getOwnerId(), point, taskScore, task.getId(), now
                             ));
                 });
+    }
+
+    private void markLessonQuizPassed(QuizEntity quiz, double score, Instant now) {
+        if (quiz.getLessonId() == null || score < 60) {
+            return;
+        }
+        LessonProgressEntity progress = lessonProgressRepository
+                .findByOwnerIdAndLessonId(quiz.getOwnerId(), quiz.getLessonId())
+                .orElseGet(() -> new LessonProgressEntity(
+                        UUID.randomUUID().toString(),
+                        quiz.getOwnerId(),
+                        quiz.getLessonId(),
+                        now
+                ));
+        progress.markQuizPassed(now);
+        lessonProgressRepository.save(progress);
     }
 
     private void recordTaskMastery(

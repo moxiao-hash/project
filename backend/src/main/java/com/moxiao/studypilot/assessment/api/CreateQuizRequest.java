@@ -16,6 +16,7 @@ public record CreateQuizRequest(
         @NotBlank String ownerId,
         String materialId,
         String taskId,
+        String lessonId,
         @NotBlank @Size(max = 160) String title,
         @NotBlank @Size(max = 100) String modelName,
         @NotEmpty List<@Valid QuestionInput> questions

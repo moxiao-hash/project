@@ -4,6 +4,8 @@ import com.moxiao.studypilot.course.api.CourseDetailResponse;
 import com.moxiao.studypilot.course.api.CourseSummaryResponse;
 import com.moxiao.studypilot.course.api.LessonProgressResponse;
 import com.moxiao.studypilot.course.api.LessonResponse;
+import com.moxiao.studypilot.course.api.LessonCheckpointResult;
+import com.moxiao.studypilot.course.api.SubmitLessonCheckpointRequest;
 import com.moxiao.studypilot.course.api.UpdateLessonProgressRequest;
 import com.moxiao.studypilot.course.domain.CoursePublicationStatus;
 import com.moxiao.studypilot.course.domain.LessonProgressStatus;
@@ -132,6 +134,48 @@ public class CourseLearningService {
         );
         progressRepository.save(progress);
         return lessonResponse(lesson, progress);
+    }
+
+    @Transactional
+    public LessonCheckpointResult submitCheckpoint(
+            String ownerId,
+            String lessonId,
+            String blockKey,
+            SubmitLessonCheckpointRequest request
+    ) {
+        LessonEntity lesson = findPublishedLesson(lessonId);
+        tools.jackson.databind.JsonNode block = objectMapper
+                .readTree(lesson.getContentJson())
+                .path("blocks")
+                .valueStream()
+                .filter(candidate -> blockKey.equals(candidate.path("key").asText()))
+                .findFirst()
+                .orElseThrow(() -> new ResourceNotFoundException("课时检查题不存在"));
+        if (!"CHECKPOINT".equals(block.path("type").asText())) {
+            throw new IllegalArgumentException("指定内容不是检查题");
+        }
+        int optionCount = block.path("options").size();
+        if (request.selectedOption() >= optionCount) {
+            throw new IllegalArgumentException("选择项超出范围");
+        }
+        boolean correct = request.selectedOption() == block.path("correctOption").asInt(-1);
+        LessonProgressEntity progress = progressRepository
+                .findByOwnerIdAndLessonId(ownerId, lessonId)
+                .orElseGet(() -> new LessonProgressEntity(
+                        UUID.randomUUID().toString(),
+                        ownerId,
+                        lessonId,
+                        Instant.now()
+                ));
+        if (correct) {
+            progress.markCheckpointPassed(Instant.now());
+            progressRepository.save(progress);
+        }
+        return new LessonCheckpointResult(
+                correct,
+                block.path("explanation").asText(),
+                progressResponse(progress)
+        );
     }
 
     @Transactional(readOnly = true)

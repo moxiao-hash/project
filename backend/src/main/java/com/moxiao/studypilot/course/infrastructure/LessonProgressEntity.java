@@ -36,6 +36,12 @@ public class LessonProgressEntity {
     @Column(name = "practice_completed", nullable = false)
     private boolean practiceCompleted;
 
+    @Column(name = "checkpoint_passed", nullable = false)
+    private boolean checkpointPassed;
+
+    @Column(name = "quiz_passed", nullable = false)
+    private boolean quizPassed;
+
     @Column(name = "last_section_key", length = 120)
     private String lastSectionKey;
 
@@ -74,8 +80,16 @@ public class LessonProgressEntity {
         recalculate(now);
     }
 
-    public void markPracticeCompleted(Instant now) {
-        practiceCompleted = true;
+    public void markCheckpointPassed(Instant now) {
+        checkpointPassed = true;
+        if (startedAt == null) {
+            startedAt = now;
+        }
+        recalculate(now);
+    }
+
+    public void markQuizPassed(Instant now) {
+        quizPassed = true;
         if (startedAt == null) {
             startedAt = now;
         }
@@ -83,6 +97,7 @@ public class LessonProgressEntity {
     }
 
     private void recalculate(Instant now) {
+        practiceCompleted = checkpointPassed && quizPassed;
         if (videoCompleted && readingCompleted && practiceCompleted) {
             status = LessonProgressStatus.COMPLETED;
             completedAt = completedAt == null ? now : completedAt;
@@ -103,6 +118,8 @@ public class LessonProgressEntity {
     public boolean isVideoCompleted() { return videoCompleted; }
     public boolean isReadingCompleted() { return readingCompleted; }
     public boolean isPracticeCompleted() { return practiceCompleted; }
+    public boolean isCheckpointPassed() { return checkpointPassed; }
+    public boolean isQuizPassed() { return quizPassed; }
     public String getLastSectionKey() { return lastSectionKey; }
     public Instant getStartedAt() { return startedAt; }
     public Instant getCompletedAt() { return completedAt; }

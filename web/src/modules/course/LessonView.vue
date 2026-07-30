@@ -1,24 +1,29 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import { courseApi } from '@/services/course'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
-import type { Lesson } from '@/types/course'
+import type { Lesson, LessonCheckpointResult } from '@/types/course'
 import BilibiliPlayer from './components/BilibiliPlayer.vue'
 import LessonBlockRenderer from './components/LessonBlockRenderer.vue'
+import LessonCheckpointPanel from './components/LessonCheckpointPanel.vue'
 import LessonProgressRail from './components/LessonProgressRail.vue'
 import LessonTutorPanel from './components/LessonTutorPanel.vue'
 
 const route = useRoute()
+const router = useRouter()
 const toast = useToastStore()
 const lesson = ref<Lesson | null>(null)
 const loading = ref(true)
 const saving = ref(false)
+const checkpointSubmitting = ref(false)
+const quizGenerating = ref(false)
 const error = ref('')
+const checkpointResults = ref<Record<string, LessonCheckpointResult>>({})
 
 const videoSource = computed(() =>
   lesson.value?.sources.find(
@@ -55,6 +60,38 @@ async function saveProgress(
     toast.error(describeError(cause))
   } finally {
     saving.value = false
+  }
+}
+
+async function submitCheckpoint(blockKey: string, selectedOption: number) {
+  if (!lesson.value || checkpointSubmitting.value) return
+  checkpointSubmitting.value = true
+  try {
+    const result = await courseApi.submitCheckpoint(
+      lesson.value.id,
+      blockKey,
+      selectedOption,
+    )
+    checkpointResults.value[blockKey] = result
+    lesson.value = { ...lesson.value, progress: result.progress }
+    if (result.correct) toast.success('检查题回答正确，可以开始课时测验')
+  } catch (cause) {
+    toast.error(describeError(cause))
+  } finally {
+    checkpointSubmitting.value = false
+  }
+}
+
+async function generateQuiz() {
+  if (!lesson.value || quizGenerating.value) return
+  quizGenerating.value = true
+  try {
+    const result = await courseApi.generateLessonQuiz(lesson.value.id)
+    await router.push(`/quizzes/${result.quizId}`)
+  } catch (cause) {
+    toast.error(describeError(cause))
+  } finally {
+    quizGenerating.value = false
   }
 }
 
@@ -113,14 +150,44 @@ onMounted(load)
           </div>
           <div v-else-if="!lesson.progress.practiceCompleted" class="practice-status">
             <strong>练习尚未完成</strong>
-            <span>完成视频与讲义后，下一步将接通课时检查题和掌握度。</span>
+            <span>通过检查题并在 5 题课时测验中达到 60 分。</span>
           </div>
 
-          <LessonBlockRenderer
+          <template
             v-for="block in lesson.content.blocks"
             :key="block.key"
-            :block="block"
-          />
+          >
+            <LessonCheckpointPanel
+              v-if="block.type === 'CHECKPOINT'"
+              :block="block"
+              :result="checkpointResults[block.key]"
+              :submitting="checkpointSubmitting"
+              @submit="submitCheckpoint(block.key, $event)"
+            />
+            <LessonBlockRenderer v-else :block="block" />
+          </template>
+
+          <section class="quiz-callout">
+            <div>
+              <span class="quiz-kicker">5 题自适应测验</span>
+              <h2>用选择题和编程题检验真正掌握</h2>
+              <p>达到 60 分后写入掌握度；编程题只做 AI 文本评估，不会运行代码。</p>
+            </div>
+            <button
+              class="btn btn-primary"
+              data-test="generate-lesson-quiz"
+              :disabled="quizGenerating || !lesson.progress.checkpointPassed"
+              @click="generateQuiz"
+            >
+              {{
+                !lesson.progress.checkpointPassed
+                  ? '先通过检查题'
+                  : quizGenerating
+                    ? '正在出题…'
+                    : '生成课时测验'
+              }}
+            </button>
+          </section>
 
           <section class="sources">
             <h2>本课来源</h2>
@@ -207,6 +274,36 @@ onMounted(load)
   border: 1px solid var(--color-border);
   border-radius: 14px;
   background: white;
+}
+
+.quiz-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 20px;
+  border-radius: 14px;
+  background: #191d2b;
+  color: white;
+}
+
+.quiz-callout h2 {
+  margin: 5px 0;
+  font-size: 18px;
+}
+
+.quiz-callout p {
+  margin: 0;
+  color: #aab0c4;
+  font-size: 12px;
+}
+
+.quiz-kicker {
+  color: #a5b4fc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .1em;
 }
 
 .sources h2 {

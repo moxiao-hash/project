@@ -559,7 +559,7 @@ cd ../ai-service
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/main/java/com/moxiao/studypilot/course \
@@ -758,7 +758,7 @@ git push origin main
 - Test: `ai-service/tests/assessment/test_service.py`
 - Test: `web/src/modules/course/LessonView.spec.ts`
 
-- [ ] **Step 1: 写确定性检查题与课时测验失败测试**
+- [x] **Step 1: 写确定性检查题与课时测验失败测试**
 
 ```java
 @Test
@@ -787,7 +787,7 @@ void lessonQuizUsesTheLessonInsteadOfRequiringATask() {
 }
 ```
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run:
 
@@ -801,7 +801,7 @@ cd ../ai-service
 
 Expected: FAIL，测验目前只支持 taskId。
 
-- [ ] **Step 3: 扩展数据库与请求契约**
+- [x] **Step 3: 扩展数据库与请求契约**
 
 ```sql
 ALTER TABLE quizzes ADD COLUMN lesson_id VARCHAR(80) NULL;
@@ -814,7 +814,7 @@ CREATE INDEX idx_quizzes_owner_lesson ON quizzes (owner_id, lesson_id);
 Python 通过 Java 内部课时上下文读取当前课时、来源和相关掌握度，继续复用阶段 7 的
 5 题生成、代码文本评估和来源校验。
 
-- [ ] **Step 4: 将练习结果接入进度和掌握度**
+- [x] **Step 4: 将练习结果接入进度和掌握度**
 
 - 检查题答对后记录 `practiceCompleted=true` 的资格，但课时最终完成仍要求 5 题测验
   达到 60 分。
@@ -823,7 +823,7 @@ Python 通过 Java 内部课时上下文读取当前课时、来源和相关掌�
 - 低于 60 分时保持 `IN_PROGRESS`，AI 导师收到薄弱知识点并优先解释；达到 60 分后
   自动完成课时并让“继续学习”指向下一课。
 
-- [ ] **Step 5: 运行局部测试**
+- [x] **Step 5: 运行局部测试**
 
 Run:
 

@@ -14,6 +14,8 @@ export interface LessonProgress {
   videoCompleted: boolean
   readingCompleted: boolean
   practiceCompleted: boolean
+  checkpointPassed: boolean
+  quizPassed: boolean
   lastSectionKey: string | null
   startedAt?: string | null
   completedAt?: string | null
@@ -102,4 +104,10 @@ export interface TeachingConversation {
   >
   modelProvider: string
   modelName: string
+}
+
+export interface LessonCheckpointResult {
+  correct: boolean
+  explanation: string
+  progress: LessonProgress
 }

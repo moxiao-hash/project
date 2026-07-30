@@ -10,6 +10,7 @@ public record QuizResponse(
         String id,
         String materialId,
         String taskId,
+        String lessonId,
         String title,
         String modelName,
         List<QuestionResponse> questions
@@ -19,6 +20,7 @@ public record QuizResponse(
                 quiz.getId(),
                 quiz.getMaterialId(),
                 quiz.getTaskId(),
+                quiz.getLessonId(),
                 quiz.getTitle(),
                 quiz.getModelName(),
                 questions.stream().map(QuestionResponse::from).toList()

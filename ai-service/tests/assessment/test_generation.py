@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.assessment.generator import DeepSeekQuizGenerator
 from app.assessment.models import (
@@ -7,6 +8,7 @@ from app.assessment.models import (
     Difficulty,
     GeneratedQuestion,
     GeneratedQuiz,
+    GenerateQuizRequest,
     QuestionType,
     QuizSource,
     WebSearchPolicy,
@@ -47,6 +49,18 @@ def test_fixed_five_question_mix_changes_with_mastery(
     )
     assert mix[QuestionType.CODING] == coding_count
     assert mix.difficulty == difficulty
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"ownerId": "user-1"},
+        {"ownerId": "user-1", "taskId": "task-1", "lessonId": "lesson-1"},
+    ],
+)
+def test_generation_requires_exactly_one_target(payload) -> None:
+    with pytest.raises(ValidationError):
+        GenerateQuizRequest.model_validate(payload)
 
 
 class FakeContext:
@@ -90,6 +104,34 @@ class FakeContext:
     async def create_quiz(self, payload):
         self.payload = payload
         return {"id": "quiz-1", "title": payload["title"], "questions": []}
+
+    async def get_lesson_context(self, owner_id, lesson_id):
+        return {
+            "lesson": {
+                "id": lesson_id,
+                "title": "Controller、REST API 与参数校验",
+                "summary": "从真实项目理解 Controller。",
+                "estimatedMinutes": 90,
+                "content": {
+                    "blocks": [
+                        {
+                            "key": "request-flow",
+                            "type": "EXPLANATION",
+                            "title": "请求流",
+                            "markdown": "Controller 负责 HTTP 契约。",
+                        }
+                    ]
+                },
+                "sources": [
+                    {
+                        "type": "OFFICIAL_DOC",
+                        "title": "Spring MVC Annotated Controllers",
+                        "url": "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller.html",
+                        "locator": "Annotated Controllers",
+                    }
+                ],
+            }
+        }
 
 
 class FakeRetriever:
@@ -160,6 +202,24 @@ async def test_generation_persists_exact_mix_and_material_sources() -> None:
     assert java.payload["taskId"] == "task-1"
     assert len(java.payload["questions"]) == 5
     assert java.payload["questions"][0]["sources"][0]["materialId"] == "material-1"
+
+
+@pytest.mark.anyio
+async def test_lesson_generation_uses_lesson_context_without_task() -> None:
+    java = FakeContext()
+    service = QuizGenerationService(java, FakeRetriever(), FakeWeb(), FakeGenerator())
+
+    result = await service.generate(
+        "user-1",
+        None,
+        WebSearchPolicy.DISABLED,
+        lesson_id="lesson-rest-controller",
+    )
+
+    assert result["id"] == "quiz-1"
+    assert java.payload["lessonId"] == "lesson-rest-controller"
+    assert "taskId" not in java.payload
+    assert java.payload["questions"][0]["sources"][0]["sourceType"] == "LESSON_SOURCE"
 
 
 @pytest.mark.anyio

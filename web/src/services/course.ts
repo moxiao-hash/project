@@ -3,6 +3,7 @@ import type {
   CourseDetail,
   CourseSummary,
   Lesson,
+  LessonCheckpointResult,
   TeachingConversation,
 } from '@/types/course'
 
@@ -32,6 +33,23 @@ export const courseApi = {
   updateProgress(lessonId: string, body: UpdateLessonProgress) {
     return http
       .put<Lesson>(`/api/lessons/${lessonId}/progress`, body)
+      .then((response) => response.data)
+  },
+  submitCheckpoint(lessonId: string, blockKey: string, selectedOption: number) {
+    return http
+      .post<LessonCheckpointResult>(
+        `/api/lessons/${lessonId}/checkpoints/${blockKey}/attempts`,
+        { selectedOption },
+      )
+      .then((response) => response.data)
+  },
+  generateLessonQuiz(lessonId: string) {
+    return http
+      .post<{ quizId: string }>(
+        '/api/agent/quizzes/generate',
+        { lessonId, webSearch: 'AUTO' },
+        agentRequest,
+      )
       .then((response) => response.data)
   },
 }

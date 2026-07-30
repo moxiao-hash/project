@@ -138,5 +138,12 @@ class GenerateQuizRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
     owner_id: str = Field(min_length=1)
-    task_id: str = Field(min_length=1)
+    task_id: str | None = Field(default=None, min_length=1)
+    lesson_id: str | None = Field(default=None, min_length=1)
     web_search: WebSearchPolicy = WebSearchPolicy.AUTO
+
+    @model_validator(mode="after")
+    def require_exactly_one_target(self):
+        if (self.task_id is None) == (self.lesson_id is None):
+            raise ValueError("taskId 与 lessonId 必须且只能提供一个")
+        return self

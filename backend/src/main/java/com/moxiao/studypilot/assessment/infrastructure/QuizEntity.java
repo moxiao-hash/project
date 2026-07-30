@@ -23,6 +23,9 @@ public class QuizEntity {
     @Column(name = "task_id")
     private String taskId;
 
+    @Column(name = "lesson_id")
+    private String lessonId;
+
     @Column(nullable = false, length = 160)
     private String title;
 
@@ -43,7 +46,7 @@ public class QuizEntity {
             String modelName,
             Instant createdAt
     ) {
-        this(id, ownerId, materialId, null, title, modelName, createdAt);
+        this(id, ownerId, materialId, null, null, title, modelName, createdAt);
     }
 
     public QuizEntity(
@@ -51,6 +54,7 @@ public class QuizEntity {
             String ownerId,
             String materialId,
             String taskId,
+            String lessonId,
             String title,
             String modelName,
             Instant createdAt
@@ -59,6 +63,7 @@ public class QuizEntity {
         this.ownerId = ownerId;
         this.materialId = materialId;
         this.taskId = taskId;
+        this.lessonId = lessonId;
         this.title = title;
         this.modelName = modelName;
         this.createdAt = createdAt;
@@ -78,6 +83,10 @@ public class QuizEntity {
 
     public String getTaskId() {
         return taskId;
+    }
+
+    public String getLessonId() {
+        return lessonId;
     }
 
     public String getTitle() {

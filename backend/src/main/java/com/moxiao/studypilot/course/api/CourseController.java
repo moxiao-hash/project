@@ -8,6 +8,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -61,5 +62,15 @@ public class CourseController {
             @Valid @RequestBody UpdateLessonProgressRequest request
     ) {
         return service.updateProgress(user.id(), lessonId, request);
+    }
+
+    @PostMapping("/lessons/{lessonId}/checkpoints/{blockKey}/attempts")
+    public LessonCheckpointResult submitCheckpoint(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String lessonId,
+            @PathVariable String blockKey,
+            @Valid @RequestBody SubmitLessonCheckpointRequest request
+    ) {
+        return service.submitCheckpoint(user.id(), lessonId, blockKey, request);
     }
 }

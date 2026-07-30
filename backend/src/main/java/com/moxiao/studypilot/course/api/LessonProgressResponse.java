@@ -10,6 +10,8 @@ public record LessonProgressResponse(
         boolean videoCompleted,
         boolean readingCompleted,
         boolean practiceCompleted,
+        boolean checkpointPassed,
+        boolean quizPassed,
         String lastSectionKey,
         Instant startedAt,
         Instant completedAt,
@@ -18,6 +20,8 @@ public record LessonProgressResponse(
     public static LessonProgressResponse notStarted() {
         return new LessonProgressResponse(
                 LessonProgressStatus.NOT_STARTED,
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -34,6 +38,8 @@ public record LessonProgressResponse(
                 entity.isVideoCompleted(),
                 entity.isReadingCompleted(),
                 entity.isPracticeCompleted(),
+                entity.isCheckpointPassed(),
+                entity.isQuizPassed(),
                 entity.getLastSectionKey(),
                 entity.getStartedAt(),
                 entity.getCompletedAt(),

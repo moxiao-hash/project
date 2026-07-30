@@ -192,6 +192,7 @@ export interface Quiz {
   id: string
   materialId: string | null
   taskId: string | null
+  lessonId: string | null
   title: string
   modelName: string
   questions: QuizQuestion[]

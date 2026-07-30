@@ -1,5 +1,6 @@
 """自适应题目配比和测验生成编排。"""
 
+from datetime import date
 from typing import Any, Protocol
 
 from app.assessment.models import (
@@ -59,6 +60,12 @@ class AssessmentJavaBackend(Protocol):
 
     async def create_quiz(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+    async def get_lesson_context(
+        self,
+        owner_id: str,
+        lesson_id: str,
+    ) -> dict[str, Any]: ...
+
 
 class AssessmentRetriever(Protocol):
     async def search(self, owner_id: str, query: str) -> list[RetrievedEvidence]: ...
@@ -94,13 +101,47 @@ class QuizGenerationService:
     async def generate(
         self,
         owner_id: str,
-        task_id: str,
+        task_id: str | None,
         web_policy: WebSearchPolicy,
+        *,
+        lesson_id: str | None = None,
     ) -> dict[str, Any]:
         context = await self._java.get_learning_context(owner_id)
-        task = next((item for item in context.tasks if item.id == task_id), None)
-        if task is None:
-            raise AssessmentTaskNotFoundError("学习任务不存在或不属于当前用户")
+        lesson_sources: list[QuizSource] = []
+        if lesson_id is not None:
+            lesson_context = await self._java.get_lesson_context(owner_id, lesson_id)
+            lesson = lesson_context["lesson"]
+            task = LearningTask(
+                id=f"lesson:{lesson_id}",
+                planId=f"course:{lesson.get('moduleId', 'unknown')}",
+                title=lesson["title"],
+                scheduledDate=date.today(),
+                estimatedMinutes=lesson.get("estimatedMinutes", 60),
+                status="TODO",
+                version=1,
+            )
+            lesson_sources = [
+                QuizSource(
+                    source_type="LESSON_SOURCE",
+                    title=source["title"],
+                    locator=source.get("locator"),
+                    snippet=source.get("locator") or source["title"],
+                )
+                for source in lesson.get("sources", [])
+            ]
+            if not lesson_sources:
+                lesson_sources.append(
+                    QuizSource(
+                        source_type="LESSON_SOURCE",
+                        title=lesson["title"],
+                        locator="课时讲义",
+                        snippet=lesson.get("summary", lesson["title"]),
+                    )
+                )
+        else:
+            task = next((item for item in context.tasks if item.id == task_id), None)
+            if task is None:
+                raise AssessmentTaskNotFoundError("学习任务不存在或不属于当前用户")
         evidence = await self._retriever.search(owner_id, task.title)
         if any(
             item.privacy_level in {"SENSITIVE", "LOCAL_ONLY"} for item in evidence
@@ -108,7 +149,10 @@ class QuizGenerationService:
             raise PrivateAssessmentSourceError(
                 "命中隐私资料，未向 DeepSeek 或 Tavily 发送题目上下文"
             )
-        sources = [self._material_source(item) for item in evidence]
+        sources = [
+            *lesson_sources,
+            *(self._material_source(item) for item in evidence),
+        ]
         if self._should_search(task.title, web_policy):
             outcome = await self._web.search(owner_id, task.title)
             sources.extend(
@@ -150,15 +194,17 @@ class QuizGenerationService:
                 for index in question.source_indexes
             ]
             questions.append(payload)
-        return await self._java.create_quiz(
-            {
-                "ownerId": owner_id,
-                "taskId": task_id,
-                "title": generated.title,
-                "modelName": "deepseek",
-                "questions": questions,
-            }
-        )
+        payload = {
+            "ownerId": owner_id,
+            "title": generated.title,
+            "modelName": "deepseek",
+            "questions": questions,
+        }
+        if lesson_id is not None:
+            payload["lessonId"] = lesson_id
+        else:
+            payload["taskId"] = task_id
+        return await self._java.create_quiz(payload)
 
     @staticmethod
     def _material_source(item: RetrievedEvidence) -> QuizSource:

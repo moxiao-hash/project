@@ -89,6 +89,13 @@ async def generate_quiz(
 ) -> dict:
     try:
         scoped = await _for_owner(service, body.owner_id)
+        if body.lesson_id is not None:
+            return await scoped.generate(
+                body.owner_id,
+                body.task_id,
+                body.web_search,
+                lesson_id=body.lesson_id,
+            )
         return await scoped.generate(body.owner_id, body.task_id, body.web_search)
     except AssessmentTaskNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
