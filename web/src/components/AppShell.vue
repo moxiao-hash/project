@@ -77,6 +77,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
   {
     title: '学习',
     items: [
+      { to: '/courses', icon: '🎓', label: '课程学习' },
       { to: '/goals', icon: '🎯', label: '学习目标' },
       { to: '/plans', icon: '🗓️', label: '学习计划' },
       { to: '/materials', icon: '📚', label: '学习资料' },

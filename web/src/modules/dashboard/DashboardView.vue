@@ -14,6 +14,30 @@
     <ErrorState v-else-if="error" :message="error" @retry="load" />
 
     <template v-else-if="dashboard">
+      <section v-if="continueLesson" class="continue-card">
+        <div>
+          <span class="continue-kicker">CONTINUE LEARNING</span>
+          <h2>{{ continueLesson.title }}</h2>
+          <p>{{ continueLesson.summary }}</p>
+          <div class="continue-meta">
+            <span>{{ continueLesson.estimatedMinutes }} 分钟</span>
+            <span>·</span>
+            <span>{{ continueLesson.progress.status === 'NOT_STARTED' ? '尚未开始' : '学习中' }}</span>
+          </div>
+        </div>
+        <RouterLink :to="`/lessons/${continueLesson.id}`" class="btn btn-primary">
+          {{ continueLesson.progress.status === 'NOT_STARTED' ? '开始第一课' : '继续学习' }}
+        </RouterLink>
+      </section>
+      <section v-else class="continue-card completed">
+        <div>
+          <span class="continue-kicker">COURSE COMPLETE</span>
+          <h2>当前开放课时已完成</h2>
+          <p>可以回到课程路线查看即将开放的 Java + AI 内容。</p>
+        </div>
+        <RouterLink to="/courses" class="btn btn-secondary">查看课程路线</RouterLink>
+      </section>
+
       <div class="grid cols-3 stat-grid">
         <div class="card stat">
           <div class="stat-value">{{ dashboard.activeGoalCount }}</div>
@@ -92,15 +116,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { dashboardApi } from '@/services/current/dashboard'
+import { courseApi } from '@/services/course'
 import { describeError } from '@/services/http'
 import { useAuthStore } from '@/stores/auth'
 import type { Dashboard } from '@/types/api'
+import type { Lesson } from '@/types/course'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import EmptyState from '@/components/EmptyState.vue'
 
 const auth = useAuthStore()
 const dashboard = ref<Dashboard | null>(null)
+const continueLesson = ref<Lesson | null>(null)
 const loading = ref(true)
 const error = ref('')
 
@@ -130,7 +157,12 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    dashboard.value = await dashboardApi.get()
+    const [dashboardResult, lessonResult] = await Promise.all([
+      dashboardApi.get(),
+      courseApi.getContinueLesson(),
+    ])
+    dashboard.value = dashboardResult
+    continueLesson.value = lessonResult
   } catch (e) {
     error.value = describeError(e)
   } finally {
@@ -142,6 +174,60 @@ onMounted(load)
 </script>
 
 <style scoped>
+.continue-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+  padding: 24px;
+  border: 1px solid #30374d;
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 90% 10%, rgba(99, 102, 241, .3), transparent 35%),
+    #191d2b;
+  color: white;
+}
+
+.continue-card.completed {
+  border-color: var(--color-border);
+  background: white;
+  color: var(--color-text);
+}
+
+.continue-card h2 {
+  margin-top: 5px;
+  font-size: 20px;
+}
+
+.continue-card p {
+  margin: 5px 0;
+  color: #b5bbcf;
+}
+
+.continue-card.completed p {
+  color: var(--color-text-secondary);
+}
+
+.continue-kicker {
+  color: #a5b4fc;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.continue-meta {
+  color: #969db4;
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .continue-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .stat-grid {
   margin-bottom: 16px;
 }

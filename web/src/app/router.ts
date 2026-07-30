@@ -33,6 +33,24 @@ const router = createRouter({
           meta: { title: '学习目标' },
         },
         {
+          path: 'courses',
+          name: 'courses',
+          component: () => import('@/modules/course/CourseCatalogView.vue'),
+          meta: { title: '课程学习' },
+        },
+        {
+          path: 'courses/:slug',
+          name: 'course-detail',
+          component: () => import('@/modules/course/CourseDetailView.vue'),
+          meta: { title: '课程路线' },
+        },
+        {
+          path: 'lessons/:lessonId',
+          name: 'lesson',
+          component: () => import('@/modules/course/LessonView.vue'),
+          meta: { title: '课时学习' },
+        },
+        {
           path: 'plans',
           name: 'plans',
           component: () => import('@/modules/learning/PlansView.vue'),

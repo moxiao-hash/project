@@ -597,7 +597,7 @@ git push origin main
 - Test: `web/src/modules/course/components/BilibiliPlayer.spec.ts`
 - Test: `web/src/modules/course/LessonView.spec.ts`
 
-- [ ] **Step 1: 写播放器安全、原页面回退和学习页失败测试**
+- [x] **Step 1: 写播放器安全、原页面回退和学习页失败测试**
 
 ```ts
 it('uses the official Bilibili external player and keeps the original link', () => {
@@ -629,7 +629,7 @@ it('does not mark the lesson complete before practice is finished', async () => 
 })
 ```
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run:
 
@@ -640,7 +640,7 @@ npm test -- --run src/modules/course
 
 Expected: FAIL，课程组件和路由不存在。
 
-- [ ] **Step 3: 实现课程 API、路由和导航**
+- [x] **Step 3: 实现课程 API、路由和导航**
 
 增加路由：
 
@@ -659,7 +659,7 @@ Expected: FAIL，课程组件和路由不存在。
 工作台第一张主卡显示 `GET /api/courses/continue` 的结果，主按钮为“继续学习”；
 计划和今日任务保留为辅助入口。
 
-- [ ] **Step 4: 实现官方播放器、回退链接和讲义渲染**
+- [x] **Step 4: 实现官方播放器、回退链接和讲义渲染**
 
 播放器 URL 构造器：
 
@@ -703,7 +703,7 @@ DOMPurify 处理的模型或资料文本。Nginx CSP 增加：
 frame-src 'self' https://player.bilibili.com;
 ```
 
-- [ ] **Step 5: 实现课内导师和进度交互**
+- [x] **Step 5: 实现课内导师和进度交互**
 
 课时页布局：
 
@@ -717,7 +717,7 @@ frame-src 'self' https://player.bilibili.com;
 `PUT /api/lessons/{lessonId}/progress`。按钮提交期间禁用；失败时保留本地状态并提示
 重试，不显示伪成功。
 
-- [ ] **Step 6: 运行前端验证**
+- [x] **Step 6: 运行前端验证**
 
 Run:
 
