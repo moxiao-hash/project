@@ -47,6 +47,8 @@ class AgentFacadeControllerTest {
             "22222222-2222-2222-2222-222222222222";
     private static final String KNOWLEDGE_CONVERSATION_ID =
             "33333333-3333-3333-3333-333333333333";
+    private static final String TEACHING_CONVERSATION_ID =
+            "55555555-5555-5555-5555-555555555555";
     private static final String ADJUSTMENT_ID =
             "44444444-4444-4444-4444-444444444444";
 
@@ -165,6 +167,24 @@ class AgentFacadeControllerTest {
                         KNOWLEDGE_CONVERSATION_ID)
                         .header("Authorization", authorization),
                 "/internal/knowledge/conversations/" + KNOWLEDGE_CONVERSATION_ID
+                        + "?ownerId=" + registration.userId(), "GET");
+
+        assertForwarded(post("/api/agent/teaching-conversations")
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"lessonId\":\"lesson-rest-controller\"}"),
+                "/internal/teaching/conversations", "POST");
+        assertForwarded(post("/api/agent/teaching-conversations/{id}/messages",
+                        TEACHING_CONVERSATION_ID)
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"为什么需要 DTO？\"}"),
+                "/internal/teaching/conversations/" + TEACHING_CONVERSATION_ID
+                        + "/messages", "POST");
+        assertForwarded(get("/api/agent/teaching-conversations/{id}",
+                        TEACHING_CONVERSATION_ID)
+                        .header("Authorization", authorization),
+                "/internal/teaching/conversations/" + TEACHING_CONVERSATION_ID
                         + "?ownerId=" + registration.userId(), "GET");
 
         assertForwarded(post("/api/agent/plan-adjustments/analyze")

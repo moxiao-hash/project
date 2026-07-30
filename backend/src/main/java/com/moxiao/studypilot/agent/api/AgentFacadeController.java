@@ -156,6 +156,42 @@ public class AgentFacadeController {
         ));
     }
 
+    @PostMapping("/teaching-conversations")
+    public ResponseEntity<JsonNode> createTeachingConversation(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @RequestBody JsonNode body
+    ) {
+        return response(gateway.post(
+                "/internal/teaching/conversations",
+                body,
+                user.id()
+        ));
+    }
+
+    @PostMapping("/teaching-conversations/{id}/messages")
+    public ResponseEntity<JsonNode> sendTeachingMessage(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID id,
+            @RequestBody JsonNode body
+    ) {
+        return response(gateway.post(
+                "/internal/teaching/conversations/" + id + "/messages",
+                body,
+                user.id()
+        ));
+    }
+
+    @GetMapping("/teaching-conversations/{id}")
+    public ResponseEntity<JsonNode> getTeachingConversation(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID id
+    ) {
+        return response(gateway.get(
+                "/internal/teaching/conversations/" + id,
+                user.id()
+        ));
+    }
+
     @PostMapping("/plan-adjustments/analyze")
     public ResponseEntity<JsonNode> analyzePlanAdjustment(
             @AuthenticationPrincipal AuthenticatedUser user,

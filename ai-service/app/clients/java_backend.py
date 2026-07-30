@@ -101,6 +101,20 @@ class JavaBackendClient:
             )
         return SecretStr(api_key)
 
+    async def get_lesson_context(
+        self,
+        owner_id: str,
+        lesson_id: str,
+    ) -> dict[str, Any]:
+        """读取当前课时和用户进度；检查题答案已由 Java 在公共 DTO 中裁剪。"""
+
+        response = await self._request(
+            "GET",
+            f"/internal/teaching/lessons/{lesson_id}/context",
+            params={"ownerId": owner_id},
+        )
+        return response.json()
+
     async def create_quiz(self, payload: dict[str, Any]) -> dict[str, Any]:
         """保存 Python 已完成结构校验的测验；Java 仍会执行领域校验。"""
 

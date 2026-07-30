@@ -35,6 +35,8 @@ from app.api.task_conversations import (
 from app.api.task_conversations import (
     router as task_conversations_router,
 )
+from app.api.teaching_conversations import OwnerScopedTeachingServices
+from app.api.teaching_conversations import router as teaching_conversations_router
 from app.assessment.evaluation import CodingEvaluationWorker, DeepSeekCodingEvaluator
 from app.clients.java_backend import JavaBackendClient
 from app.core.request_context import (
@@ -190,6 +192,10 @@ async def lifespan(application: FastAPI):
             settings,
             persistence=persistence,
         )
+        application.state.teaching_conversation_service = OwnerScopedTeachingServices(
+            settings,
+            persistence=persistence,
+        )
         scheduler = AsyncIOScheduler(timezone="UTC")
         scheduler.add_job(
             run_nightly_adjustment_job,
@@ -235,6 +241,7 @@ async def lifespan(application: FastAPI):
             "conversation_service",
             "task_conversation_service",
             "knowledge_conversation_service",
+            "teaching_conversation_service",
             "agent_persistence",
         ):
             if hasattr(application.state, state_name):
@@ -301,6 +308,7 @@ app.include_router(conversations_router)
 app.include_router(task_conversations_router)
 app.include_router(plan_adjustments_router)
 app.include_router(knowledge_conversations_router)
+app.include_router(teaching_conversations_router)
 app.include_router(quiz_generation_router)
 
 

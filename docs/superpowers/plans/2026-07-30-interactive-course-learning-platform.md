@@ -453,7 +453,7 @@ git push origin main
 - Test: `ai-service/tests/teaching/test_service.py`
 - Test: `ai-service/tests/api/test_teaching_conversations.py`
 
-- [ ] **Step 1: 写课时隔离和教学策略失败测试**
+- [x] **Step 1: 写课时隔离和教学策略失败测试**
 
 ```python
 async def test_tutor_receives_the_current_lesson_and_visible_history():
@@ -476,7 +476,7 @@ async def test_tutor_does_not_claim_to_have_watched_the_video():
 Java 测试断言浏览器请求不接受 `ownerId`，由 Bearer Token 注入；Python 内部路由必须
 验证 `X-Owner-Id` 与会话 owner 一致。
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run:
 
@@ -490,7 +490,7 @@ cd ../ai-service
 
 Expected: FAIL，教学会话尚不存在。
 
-- [ ] **Step 3: 实现 Java 课时上下文和公共门面**
+- [x] **Step 3: 实现 Java 课时上下文和公共门面**
 
 内部上下文：
 
@@ -514,7 +514,7 @@ GET  /api/agent/teaching-conversations/{id}
 
 Java 转发时注入当前登录用户，拒绝前端传入的 owner 字段。
 
-- [ ] **Step 4: 实现 Python 教学会话**
+- [x] **Step 4: 实现 Python 教学会话**
 
 响应模型：
 
@@ -544,7 +544,7 @@ class TeachingConversationSnapshot(BaseModel):
 
 会话通过现有 `AgentPersistence` 以 `kind="teaching"` 保存，FastAPI 重启后可恢复。
 
-- [ ] **Step 5: 运行局部测试和 Ruff**
+- [x] **Step 5: 运行局部测试和 Ruff**
 
 Run:
 
