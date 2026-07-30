@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchResult
+from app.study_scope import STUDYPILOT_SCOPE_POLICY
 
 
 class DeepSeekKnowledgeAnswerer:
@@ -47,6 +48,7 @@ class DeepSeekKnowledgeAnswerer:
                         f" {self._model_name}；被问及身份时必须如实使用这两个配置值。"
                         "优先遵守用户当前约束，大纲只决定学习顺序，最新技术事实以可靠"
                         "网页来源为准。使用 [M1]、[W1] 标记依据。"
+                        f"{STUDYPILOT_SCOPE_POLICY}"
                     )
                 ),
                 HumanMessage(

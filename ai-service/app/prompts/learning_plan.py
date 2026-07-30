@@ -6,6 +6,7 @@ from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.agent.state import ConversationState
+from app.study_scope import STUDYPILOT_SCOPE_POLICY
 
 
 def build_learning_plan_prompt(
@@ -72,6 +73,7 @@ def build_learning_plan_prompt(
 8. 如果多个来源冲突，reply 必须明确列出来源冲突，不得自行伪造确定结论。
 9. 今天、明天、本周等相对日期必须以上述 current_date 为基准。用户已经使用相对
    日期明确表达安排时，直接换算为具体日期，不得再次追问“今天是哪一天”。
+10. {STUDYPILOT_SCOPE_POLICY}
 
 COLLECTING 的完整 JSON 形状：
 {{

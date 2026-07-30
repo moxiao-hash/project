@@ -33,10 +33,10 @@ class FakeRetriever:
 
 class FakeWeb:
     def __init__(self):
-        self.calls = 0
+        self.calls = []
 
     async def search(self, owner_id, query):
-        self.calls += 1
+        self.calls.append((owner_id, query))
         return WebSearchOutcome(query=query)
 
 
@@ -50,4 +50,30 @@ async def test_plan_grounding_excludes_private_text_from_cloud_context() -> None
     assert result.context[0]["title"] == "公开大纲"
     assert "不能发送的正文" not in str(result.context)
     assert "隐私资料" in result.warnings[0]
-    assert web.calls == 0
+    assert web.calls == []
+
+
+class PublicRetriever:
+    async def search(self, owner_id, query):
+        return []
+
+
+async def test_plan_tutorial_query_searches_with_itheima_priority() -> None:
+    web = FakeWeb()
+    service = PlanGroundingService(PublicRetriever(), web)
+
+    await service.retrieve("user-1", "推荐一套 Spring Boot 学习课程")
+
+    assert web.calls == [
+        ("user-1", "黑马程序员 itheima B站 推荐一套 Spring Boot 学习课程")
+    ]
+
+
+async def test_plan_version_query_keeps_original_official_search_terms() -> None:
+    web = FakeWeb()
+    service = PlanGroundingService(PublicRetriever(), web)
+    query = "Spring Boot 当前支持哪个 Java 版本？"
+
+    await service.retrieve("user-1", query)
+
+    assert web.calls == [("user-1", query)]

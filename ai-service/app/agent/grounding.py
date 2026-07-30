@@ -6,6 +6,11 @@ from typing import Protocol
 from app.knowledge.models import KnowledgeCitation
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchOutcome
+from app.study_scope import (
+    build_learning_web_query,
+    is_tutorial_query,
+    needs_fresh_facts,
+)
 
 
 class PlanRetriever(Protocol):
@@ -46,8 +51,11 @@ class PlanGroundingService:
             else []
         )
         outcome = WebSearchOutcome(query=query)
-        if not private and self._needs_fresh_facts(query):
-            outcome = await self._web_searcher.search(owner_id, query)
+        if not private and self._needs_web_search(query):
+            outcome = await self._web_searcher.search(
+                owner_id,
+                build_learning_web_query(query),
+            )
 
         context = [
             {
@@ -96,19 +104,5 @@ class PlanGroundingService:
         )
 
     @staticmethod
-    def _needs_fresh_facts(query: str) -> bool:
-        lowered = query.lower()
-        return any(
-            marker in lowered
-            for marker in (
-                "当前",
-                "最新",
-                "版本",
-                "官方",
-                "api",
-                "current",
-                "latest",
-                "version",
-                "release",
-            )
-        )
+    def _needs_web_search(query: str) -> bool:
+        return needs_fresh_facts(query) or is_tutorial_query(query)

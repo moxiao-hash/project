@@ -15,6 +15,11 @@ from app.knowledge.models import (
 from app.persistence.agent_state import AgentPersistence
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchOutcome, WebSearchResult
+from app.study_scope import (
+    build_learning_web_query,
+    is_tutorial_query,
+    needs_fresh_facts,
+)
 
 
 class KnowledgeConversationNotFoundError(LookupError):
@@ -176,7 +181,11 @@ class KnowledgeConversationService:
                     raise RuntimeError("知识问答模型运行时尚未注入")
                 outcome = WebSearchOutcome(query=message)
                 if self._should_search_web(conversation.mode, web_search, message):
-                    outcome = await web_searcher.search(conversation.owner_id, message)
+                    web_query = build_learning_web_query(message)
+                    outcome = await web_searcher.search(
+                        conversation.owner_id,
+                        web_query,
+                    )
                 answer = await answerer.answer(
                     question=message,
                     history=list(conversation.history),
@@ -315,21 +324,7 @@ class KnowledgeConversationService:
             return False
         if policy == WebSearchPolicy.ENABLED:
             return True
-        recency_markers = (
-            "当前",
-            "最新",
-            "版本",
-            "官方",
-            "发布",
-            "api",
-            "today",
-            "latest",
-            "current",
-            "version",
-            "release",
-        )
-        lowered = query.lower()
-        return any(marker in lowered for marker in recency_markers)
+        return needs_fresh_facts(query) or is_tutorial_query(query)
 
     @staticmethod
     def _material_citations(

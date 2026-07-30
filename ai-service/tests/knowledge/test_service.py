@@ -153,6 +153,25 @@ async def test_current_version_question_combines_material_and_web_citations() ->
     assert snapshot.retrieval_mode == "HYBRID"
 
 
+async def test_tutorial_question_searches_web_with_itheima_priority() -> None:
+    retriever = FakeRetriever([])
+    web = FakeWebSearcher()
+    answerer = FakeAnswerer()
+    service = KnowledgeConversationService(retriever, web, answerer)
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+
+    await service.send_message(
+        created.conversation_id,
+        "推荐 Spring Boot 学习视频",
+        WebSearchPolicy.AUTO,
+        "user-1",
+    )
+
+    assert web.calls == [
+        ("user-1", "黑马程序员 itheima B站 推荐 Spring Boot 学习视频")
+    ]
+
+
 async def test_each_turn_retrieves_again_and_passes_visible_history() -> None:
     retriever = FakeRetriever([evidence()])
     web = FakeWebSearcher()
