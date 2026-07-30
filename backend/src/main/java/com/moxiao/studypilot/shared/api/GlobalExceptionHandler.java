@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.shared.api;
 
 import com.moxiao.studypilot.agent.application.AgentGatewayException;
+import com.moxiao.studypilot.aicredential.application.AiCredentialSecurityException;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.InvalidCredentialsException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
@@ -79,6 +80,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(exception.status())
                 .header("Retry-After", exception.retryAfter())
                 .body(response.getBody());
+    }
+
+    @ExceptionHandler(AiCredentialSecurityException.class)
+    public ResponseEntity<ApiError> handleAiCredentialSecurity(
+            AiCredentialSecurityException exception,
+            HttpServletRequest request
+    ) {
+        return build(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "用户 AI 凭据暂时不可用",
+                request,
+                null
+        );
     }
 
     private ResponseEntity<ApiError> build(

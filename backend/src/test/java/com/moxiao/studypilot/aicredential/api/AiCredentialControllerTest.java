@@ -1,6 +1,10 @@
 package com.moxiao.studypilot.aicredential.api;
 
 import com.moxiao.studypilot.agent.infrastructure.AuditLogJpaRepository;
+import com.moxiao.studypilot.aicredential.application.AiCredentialCipher;
+import com.moxiao.studypilot.aicredential.domain.AiProvider;
+import com.moxiao.studypilot.aicredential.infrastructure.AiCredentialEntity;
+import com.moxiao.studypilot.aicredential.infrastructure.AiCredentialJpaRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -10,6 +14,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+
+import java.time.Instant;
+import java.util.Base64;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -29,6 +37,7 @@ class AiCredentialControllerTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired AuditLogJpaRepository auditRepository;
+    @Autowired AiCredentialJpaRepository credentialRepository;
 
     @Test
     void publicApiNeverEchoesSecretAndKeepsUsersIsolated() throws Exception {
@@ -103,6 +112,38 @@ class AiCredentialControllerTest {
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .queryParam("ownerId", user.userId()))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unreadableCredentialIsAServiceFailureAndDoesNotInvalidateLogin() throws Exception {
+        Registration user = register("credential-key-mismatch@example.com");
+        String anotherMasterKey = Base64.getEncoder().encodeToString(
+                "a-different-32-byte-master-key!!".getBytes()
+        );
+        AiCredentialCipher anotherCipher = new AiCredentialCipher(anotherMasterKey);
+        AiCredentialCipher.EncryptedValue encrypted = anotherCipher.encrypt(
+                user.userId(),
+                AiProvider.TAVILY,
+                "tvly-key-encrypted-with-another-master-key"
+        );
+        credentialRepository.saveAndFlush(new AiCredentialEntity(
+                UUID.randomUUID().toString(),
+                user.userId(),
+                AiProvider.TAVILY,
+                encrypted.ciphertext(),
+                encrypted.iv(),
+                Instant.now()
+        ));
+
+        mockMvc.perform(get("/api/ai-settings")
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("用户 AI 凭据暂时不可用"));
+
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", bearer(user)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.email").value("credential-key-mismatch@example.com"));
     }
 
     private Registration register(String email) throws Exception {
