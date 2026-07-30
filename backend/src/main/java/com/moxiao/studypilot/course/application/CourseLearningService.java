@@ -21,6 +21,7 @@ import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -233,7 +234,7 @@ public class CourseLearningService {
                 lesson.getTitle(),
                 lesson.getSummary(),
                 lesson.getEstimatedMinutes(),
-                objectMapper.readTree(lesson.getContentJson()),
+                publicContent(lesson.getContentJson()),
                 lesson.isPublished(),
                 sources,
                 progressResponse(progress)
@@ -249,6 +250,17 @@ public class CourseLearningService {
                 source.getBvid(),
                 source.getVideoPage()
         );
+    }
+
+    private tools.jackson.databind.JsonNode publicContent(String contentJson) {
+        tools.jackson.databind.JsonNode content = objectMapper.readTree(contentJson).deepCopy();
+        content.path("blocks").forEach(block -> {
+            if (block instanceof ObjectNode object) {
+                object.remove("correctOption");
+                object.remove("explanation");
+            }
+        });
+        return content;
     }
 
     private LessonProgressResponse progressResponse(LessonProgressEntity progress) {

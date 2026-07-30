@@ -265,7 +265,7 @@ git push origin main
 - Create: `backend/src/main/java/com/moxiao/studypilot/course/config/CourseCatalogConfiguration.java`
 - Test: `backend/src/test/java/com/moxiao/studypilot/course/application/CourseCatalogImporterTest.java`
 
-- [ ] **Step 1: 写幂等导入和来源校验失败测试**
+- [x] **Step 1: 写幂等导入和来源校验失败测试**
 
 ```java
 @Test
@@ -284,7 +284,7 @@ void rejectsNonBilibiliVideoHosts() {
 }
 ```
 
-- [ ] **Step 2: 运行测试并确认失败**
+- [x] **Step 2: 运行测试并确认失败**
 
 Run:
 
@@ -295,7 +295,7 @@ cd backend
 
 Expected: FAIL，导入器和课程资源不存在。
 
-- [ ] **Step 3: 编写课程资源**
+- [x] **Step 3: 编写课程资源**
 
 `studypilot-java-ai-v1.json` 使用稳定 ID。课程目录先导入
 `docs/studypilot-java-ai-starter-syllabus.md` 中的完整九阶段路线；未制作完成的模块
@@ -397,7 +397,7 @@ Expected: FAIL，导入器和课程资源不存在。
 
 公共响应不得返回 `correctOption`；答案只保存在 Java 端用于确定性判分。
 
-- [ ] **Step 4: 实现启动时幂等导入**
+- [x] **Step 4: 实现启动时幂等导入**
 
 导入器以 `slug + version` 更新课程，以稳定 ID upsert 模块、课时和来源。校验规则：
 
@@ -412,7 +412,7 @@ private static final Set<String> VIDEO_HOSTS = Set.of(
 只有 `VIDEO` 来源允许 `bvid/videoPage`；页码必须大于 0；课程导入失败时阻止启动并输出
 不包含秘密的结构化错误。
 
-- [ ] **Step 5: 运行局部测试**
+- [x] **Step 5: 运行局部测试**
 
 Run:
 
@@ -423,7 +423,7 @@ cd backend
 
 Expected: PASS，API 中看不到检查题答案。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/main/resources/courses \

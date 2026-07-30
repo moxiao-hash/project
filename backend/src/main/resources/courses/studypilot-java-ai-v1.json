@@ -1,0 +1,327 @@
+{
+  "id": "course-java-ai",
+  "slug": "studypilot-java-ai",
+  "title": "StudyPilot Java + AI 智能应用开发",
+  "description": "通过开发 StudyPilot，系统学习 Java 后端、Python Agent、Vue 前端与 RAG。",
+  "techStack": "Java,Spring Boot,MySQL,Vue,TypeScript,Python,FastAPI,DeepSeek,LangGraph,RAG,Qdrant,Tavily,Git,Docker",
+  "version": 1,
+  "modules": [
+    {
+      "id": "module-java-foundation",
+      "order": 1,
+      "title": "Java 基础",
+      "description": "语法、面向对象、集合、异常、泛型和常用 API。",
+      "lessons": [
+        {
+          "id": "lesson-java-foundation-roadmap",
+          "slug": "java-foundation-roadmap",
+          "order": 1,
+          "title": "Java 基础路线导览",
+          "summary": "建立完成 StudyPilot 后端所需的 Java 基础地图。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从项目代码学习 Java 核心语法。"}],
+          "sources": [
+            {
+              "id": "source-java-roadmap",
+              "type": "MATERIAL",
+              "title": "黑马程序员 Java 学习路线图",
+              "url": "https://www.itheima.com/news/20230109/161816.html",
+              "locator": "Java SE 基础到 Spring Boot"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-spring-rest",
+      "order": 2,
+      "title": "Spring Boot 3 与 REST API",
+      "description": "从真实注册接口理解 Controller、DTO、Service、校验和异常响应。",
+      "lessons": [
+        {
+          "id": "lesson-rest-controller",
+          "slug": "controller-rest-api-validation",
+          "order": 1,
+          "title": "Controller、REST API 与参数校验",
+          "summary": "从 StudyPilot 注册接口理解 Controller、DTO 和参数校验。",
+          "estimatedMinutes": 90,
+          "published": true,
+          "blocks": [
+            {
+              "key": "objectives",
+              "type": "OBJECTIVES",
+              "title": "学完你能做到",
+              "markdown": "解释 Controller 的职责；手写 POST 接口；区分 DTO 校验与业务校验。"
+            },
+            {
+              "key": "request-flow",
+              "type": "EXPLANATION",
+              "title": "一次请求如何流动",
+              "markdown": "浏览器请求先进入 Controller，DTO 描述输入契约，Service 执行业务规则，最终返回响应 DTO。"
+            },
+            {
+              "key": "project-code",
+              "type": "PROJECT_CODE",
+              "title": "StudyPilot 真实代码",
+              "projectPath": "backend/src/main/java/com/moxiao/studypilot/auth/api/AuthenticationController.java",
+              "markdown": "观察 `@RestController`、`@PostMapping`、`@Valid` 和请求 DTO 的职责边界。"
+            },
+            {
+              "key": "checkpoint",
+              "type": "CHECKPOINT",
+              "title": "检查理解",
+              "question": "为什么注册接口接收 RegisterRequest，而不是直接接收 Entity？",
+              "options": ["避免暴露持久化模型并集中输入校验", "减少 HTTP 请求数量", "绕过 Service"],
+              "correctOption": 0,
+              "explanation": "DTO 明确公共契约，避免前端直接控制持久化字段。"
+            },
+            {
+              "key": "summary",
+              "type": "SUMMARY",
+              "title": "本课总结",
+              "markdown": "Controller 负责 HTTP 契约，Service 负责业务规则，Entity 负责持久化。"
+            }
+          ],
+          "sources": [
+            {
+              "id": "source-rest-video-15",
+              "type": "VIDEO",
+              "title": "黑马程序员 SpringBoot3+Vue3：注册接口",
+              "url": "https://www.bilibili.com/video/BV14z4y1N7pg?p=15",
+              "locator": "实战篇-03_注册接口",
+              "bvid": "BV14z4y1N7pg",
+              "videoPage": 15
+            },
+            {
+              "id": "source-rest-video-16",
+              "type": "VIDEO",
+              "title": "黑马程序员 SpringBoot3+Vue3：注册接口参数校验",
+              "url": "https://www.bilibili.com/video/BV14z4y1N7pg?p=16",
+              "locator": "实战篇-04_注册接口参数校验",
+              "bvid": "BV14z4y1N7pg",
+              "videoPage": 16
+            },
+            {
+              "id": "source-rest-official",
+              "type": "OFFICIAL_DOC",
+              "title": "Spring MVC Annotated Controllers",
+              "url": "https://docs.spring.io/spring-framework/reference/web/webmvc/mvc-controller.html",
+              "locator": "Annotated Controllers"
+            },
+            {
+              "id": "source-rest-project",
+              "type": "PROJECT_CODE",
+              "title": "StudyPilot AuthenticationController",
+              "url": "project://backend/src/main/java/com/moxiao/studypilot/auth/api/AuthenticationController.java",
+              "locator": "注册与登录端点"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-mysql-jpa",
+      "order": 3,
+      "title": "MySQL 与 JPA",
+      "description": "SQL、表关系、事务、Repository、Flyway 和乐观锁。",
+      "lessons": [
+        {
+          "id": "lesson-mysql-jpa-roadmap",
+          "slug": "mysql-jpa-roadmap",
+          "order": 1,
+          "title": "MySQL 与 JPA 路线导览",
+          "summary": "从 StudyPilot 数据表理解持久化。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从 Flyway 和实体关系学习数据库。"}],
+          "sources": [
+            {
+              "id": "source-mysql-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 MySQL 数据库入门到精通",
+              "url": "https://www.bilibili.com/video/BV1Kr4y1i7ru",
+              "locator": "完整课程",
+              "bvid": "BV1Kr4y1i7ru",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-vue-typescript",
+      "order": 4,
+      "title": "Vue 3 与 TypeScript",
+      "description": "组件、状态、路由、API 类型和页面交互。",
+      "lessons": [
+        {
+          "id": "lesson-vue-typescript-roadmap",
+          "slug": "vue-typescript-roadmap",
+          "order": 1,
+          "title": "Vue 与 TypeScript 路线导览",
+          "summary": "从 StudyPilot 前端学习 Vue 工程化。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从真实页面理解 Vue 组件。"}],
+          "sources": [
+            {
+              "id": "source-vue-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 Vue 全套视频教程",
+              "url": "https://www.bilibili.com/video/BV1zq4y1p7ga",
+              "locator": "完整课程",
+              "bvid": "BV1zq4y1p7ga",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-python-fastapi",
+      "order": 5,
+      "title": "Python 与 FastAPI",
+      "description": "类型标注、异步编程、Pydantic、路由和内部服务契约。",
+      "lessons": [
+        {
+          "id": "lesson-python-fastapi-roadmap",
+          "slug": "python-fastapi-roadmap",
+          "order": 1,
+          "title": "Python 与 FastAPI 路线导览",
+          "summary": "理解 StudyPilot AI 服务的 Python 基础。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从 FastAPI 路由学习 Python 异步服务。"}],
+          "sources": [
+            {
+              "id": "source-fastapi-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 FastAPI 教程",
+              "url": "https://www.bilibili.com/video/BV1zV2QBtE39",
+              "locator": "完整课程",
+              "bvid": "BV1zV2QBtE39",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-deepseek-prompt",
+      "order": 6,
+      "title": "DeepSeek API 与提示词",
+      "description": "模型调用、结构化输出、可信边界、Token 和安全配置。",
+      "lessons": [
+        {
+          "id": "lesson-deepseek-prompt-roadmap",
+          "slug": "deepseek-prompt-roadmap",
+          "order": 1,
+          "title": "DeepSeek API 与提示词路线导览",
+          "summary": "理解 StudyPilot 如何真实调用模型。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从模型调用与提示词边界开始。"}],
+          "sources": [
+            {
+              "id": "source-java-ai-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 Java + AI 智能应用开发教程",
+              "url": "https://www.bilibili.com/video/BV1gb42177hm",
+              "locator": "完整课程",
+              "bvid": "BV1gb42177hm",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-langgraph-agent",
+      "order": 7,
+      "title": "LangChain、LangGraph 与 Agent",
+      "description": "状态、节点、工具、持久化、人机确认和幂等执行。",
+      "lessons": [
+        {
+          "id": "lesson-langgraph-agent-roadmap",
+          "slug": "langgraph-agent-roadmap",
+          "order": 1,
+          "title": "LangGraph 与 Agent 路线导览",
+          "summary": "理解 StudyPilot Agent 的状态与工具边界。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从状态图和专用确认接口学习 Agent。"}],
+          "sources": [
+            {
+              "id": "source-agent-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 RAG + Agent 实战教程",
+              "url": "https://www.bilibili.com/video/BV1yjz5BLEoY",
+              "locator": "完整课程",
+              "bvid": "BV1yjz5BLEoY",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-rag-search",
+      "order": 8,
+      "title": "RAG、Qdrant 与 Tavily",
+      "description": "资料分段、Embedding、混合检索、联网搜索和来源引用。",
+      "lessons": [
+        {
+          "id": "lesson-rag-search-roadmap",
+          "slug": "rag-search-roadmap",
+          "order": 1,
+          "title": "RAG 与联网搜索路线导览",
+          "summary": "理解 StudyPilot 如何基于证据回答。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从资料进入向量索引的过程开始。"}],
+          "sources": [
+            {
+              "id": "source-rag-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 RAG + Agent 实战教程",
+              "url": "https://www.bilibili.com/video/BV1yjz5BLEoY",
+              "locator": "RAG 相关章节",
+              "bvid": "BV1yjz5BLEoY",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "module-quality-delivery",
+      "order": 9,
+      "title": "测试、安全、Git 与 Docker",
+      "description": "TDD、认证授权、秘密管理、Git 工作流和本地部署。",
+      "lessons": [
+        {
+          "id": "lesson-quality-delivery-roadmap",
+          "slug": "quality-delivery-roadmap",
+          "order": 1,
+          "title": "测试、安全与交付路线导览",
+          "summary": "让 StudyPilot 具备可验证、可发布的工程质量。",
+          "estimatedMinutes": 60,
+          "published": false,
+          "blocks": [{"key": "overview", "type": "SUMMARY", "title": "即将开放", "markdown": "本课将从测试循环和 Docker 部署开始。"}],
+          "sources": [
+            {
+              "id": "source-docker-video",
+              "type": "VIDEO",
+              "title": "黑马程序员 Docker 快速入门到项目部署",
+              "url": "https://www.bilibili.com/video/BV1HP4118797",
+              "locator": "完整课程",
+              "bvid": "BV1HP4118797",
+              "videoPage": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
