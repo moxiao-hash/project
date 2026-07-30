@@ -35,6 +35,7 @@ class InternalLearningToolContractTest {
         mockMvc.perform(get("/internal/users/{ownerId}/learning-context", registration.userId())
                         .header("X-Internal-Service-Token", "test-internal-token"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.timeZone").value("Asia/Shanghai"))
                 .andExpect(jsonPath("$.goals[0].id").value(goalId))
                 .andExpect(jsonPath("$.tasks").isEmpty());
 

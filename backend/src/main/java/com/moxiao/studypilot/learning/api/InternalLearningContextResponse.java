@@ -6,6 +6,7 @@ import com.moxiao.studypilot.material.api.MaterialResponse;
 import java.util.List;
 
 public record InternalLearningContextResponse(
+        String timeZone,
         List<LearningGoalResponse> goals,
         List<LearningPlanResponse> plans,
         List<LearningTaskResponse> tasks,

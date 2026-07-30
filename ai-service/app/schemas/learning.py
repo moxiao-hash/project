@@ -97,6 +97,7 @@ class Mastery(JavaContractModel):
 class LearningContext(JavaContractModel):
     """Agent 生成学习方案时所需的只读业务上下文。"""
 
+    time_zone: str = "Asia/Shanghai"
     goals: list[LearningGoal]
     plans: list[LearningPlan]
     tasks: list[LearningTask]
