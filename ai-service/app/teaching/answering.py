@@ -17,7 +17,12 @@ class DeepSeekTeachingAnswerer:
         model_provider: str,
         model_name: str,
     ) -> None:
-        self._model = chat_model.with_structured_output(TeachingTurn)
+        # DeepSeek 的 OpenAI 兼容端点当前不接受 json_schema response_format；
+        # json_mode 仍能约束为 JSON，再由 Pydantic 做严格字段校验。
+        self._model = chat_model.with_structured_output(
+            TeachingTurn,
+            method="json_mode",
+        )
         self._model_provider = model_provider
         self._model_name = model_name
 

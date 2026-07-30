@@ -9,8 +9,10 @@ pytestmark = pytest.mark.anyio
 class FakeStructuredModel:
     def __init__(self) -> None:
         self.messages = []
+        self.structured_method = None
 
-    def with_structured_output(self, _schema):
+    def with_structured_output(self, _schema, *, method=None):
+        self.structured_method = method
         return self
 
     async def ainvoke(self, messages):
@@ -46,5 +48,6 @@ async def test_tutor_is_limited_to_the_current_lesson_and_never_claims_video_acc
     assert "当前课时的 AI 导师" in str(system.content)
     assert "不得声称已经观看或转录 B 站视频" in str(system.content)
     assert "不要在学生尚未尝试练习前直接给完整答案" in str(system.content)
+    assert model.structured_method == "json_mode"
     assert result.answer.startswith("DTO")
     assert result.suggested_actions == ["CHECK_UNDERSTANDING"]

@@ -1,10 +1,12 @@
 # StudyPilot
 
-StudyPilot 是 moxiao 个人使用的 Java + AI 智能应用开发学习平台，不是面向
-通用学科、教师端或多人课程市场的泛学习平台。它围绕本项目的技术栈导入资料、
-生成计划、执行任务与测验；在授权边界内，Agent 会整理资料、生成练习并调整安排。
+StudyPilot 是 moxiao 个人使用的 Java + AI 交互式学习平台，不是面向通用学科、
+教师端或多人课程市场的泛学习平台。登录后的第一入口是课程学习：沿九模块路线观看
+黑马程序员原课程、阅读站内讲义与 StudyPilot 真实代码、向课内 AI 导师提问并完成
+练习。计划、任务和 Agent 监督用于辅助教学闭环，而不是产品本体。
 
-阶段 8 已完成，Vue、Java 和 Python 可以通过真实公共 API 形成完整闭环。完整产品范围见
+阶段 9 已完成首节端到端示范课，Vue、Java 和 Python 可以通过真实公共 API 形成
+“课程—导师—练习—掌握度”闭环。完整产品范围见
 [产品需求说明](docs/studypilot-product-requirements.md)，前端架构和最新公共契约见
 [前端开发对接说明](docs/前端开发对接说明.md)。早期 Java 实现记录仍保留在
 [后端开发说明](后端开发说明.md)。
@@ -75,6 +77,8 @@ npm run build
 - [部署与演示指南](docs/部署与演示指南.md)
 - [阶段 8 公共 API 联调](docs/stage8-release-e2e.http)
 - [阶段 8 真实验收结果](docs/stage8-e2e-result.md)
+- [阶段 9 课程学习联调](docs/course-learning-e2e.http)
+- [阶段 9 真实教学验收结果](docs/course-learning-e2e-result.md)
 - [前端开发对接说明](docs/前端开发对接说明.md)
 - [Java + AI 基础学习路线](docs/studypilot-java-ai-starter-syllabus.md)
 - [AI 服务说明](ai-service/README.md)

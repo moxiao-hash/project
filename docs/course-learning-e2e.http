@@ -1,0 +1,204 @@
+### StudyPilot 阶段 9：交互式课程学习端到端联调
+### 浏览器只调用 Java /api/**，本文件不需要 ownerId 或内部服务令牌。
+###
+### IntelliJ HTTP Client 环境变量：
+###   demoPassword=<符合后端规则的临时密码>
+###
+### 启动顺序：MySQL → Spring Boot :8080 → FastAPI :8000 → Vue :5173。
+### 从上到下执行；DeepSeek 请求允许 2 分钟，代码文本评价需要轮询。
+
+@javaHost = http://127.0.0.1:8080
+
+### 0. 健康检查
+GET {{javaHost}}/actuator/health
+
+### 1. 注册独立验收用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "course-e2e-{{$timestamp}}@example.com",
+  "password": "{{demoPassword}}",
+  "displayName": "课程学习验收"
+}
+
+> {%
+  client.test("注册成功", function () {
+    client.assert(response.status === 201, "注册应返回 201");
+    client.assert(Boolean(response.body.accessToken), "应返回 accessToken");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+%}
+
+### 2. 课程中心应返回九模块课程
+GET {{javaHost}}/api/courses
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("课程已发布", function () {
+    client.assert(response.status === 200, "课程列表应成功");
+    client.assert(response.body[0].slug === "studypilot-java-ai", "课程 slug 应稳定");
+    client.assert(response.body[0].moduleCount === 9, "应展示九模块路线");
+  });
+%}
+
+### 3. 查询路线；当前只有第一节示范课可进入，其余模块显示即将开放
+GET {{javaHost}}/api/courses/studypilot-java-ai
+Authorization: Bearer {{accessToken}}
+
+### 4. 打开第一节课
+GET {{javaHost}}/api/lessons/lesson-rest-controller
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("课时来源和检查题答案安全", function () {
+    client.assert(response.status === 200, "课时查询应成功");
+    client.assert(response.body.sources.length === 4, "应包含视频、官方文档和项目代码");
+    client.assert(JSON.stringify(response.body).indexOf("correctOption") === -1,
+      "作答前不得泄露检查题答案");
+  });
+%}
+
+### B 站官方播放器（浏览器直接请求 B 站，不经过 StudyPilot）
+### https://player.bilibili.com/player.html?bvid=BV14z4y1N7pg&p=15&autoplay=0&danmaku=0
+### 原页面回退：https://www.bilibili.com/video/BV14z4y1N7pg?p=15
+### 下一段视频：https://www.bilibili.com/video/BV14z4y1N7pg?p=16
+
+### 5. 标记视频和讲义已学习；practiceCompleted 不能由前端伪造
+PUT {{javaHost}}/api/lessons/lesson-rest-controller/progress
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "videoCompleted": true,
+  "readingCompleted": true,
+  "lastSectionKey": "checkpoint"
+}
+
+### 6. 创建限定在当前课时的导师会话
+# @timeout 2 m
+POST {{javaHost}}/api/agent/teaching-conversations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "lessonId": "lesson-rest-controller"
+}
+
+> {%
+  client.test("导师会话绑定当前课时", function () {
+    client.assert(response.status === 200 || response.status === 201,
+      "导师会话应创建成功");
+  });
+  client.global.set("teachingConversationId", response.body.conversationId);
+%}
+
+### 7. 第一次课内追问
+# @timeout 2 m
+POST {{javaHost}}/api/agent/teaching-conversations/{{teachingConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "请结合当前课时和 StudyPilot 注册接口，解释为什么要使用 DTO。"
+}
+
+> {%
+  client.test("由真实模型返回课内回答", function () {
+    client.assert(response.status === 200, "导师回答应成功");
+    client.assert(response.body.modelProvider === "deepseek", "应公开真实 provider");
+    client.assert(Boolean(response.body.answer), "回答不能为空");
+  });
+%}
+
+### 8. 连续追问，验证同一会话上下文
+# @timeout 2 m
+POST {{javaHost}}/api/agent/teaching-conversations/{{teachingConversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "那 @Valid、Controller 和全局异常处理器在这条请求链路中分别负责什么？"
+}
+
+### 9. 提交确定性检查题
+POST {{javaHost}}/api/lessons/lesson-rest-controller/checkpoints/checkpoint/attempts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "selectedOption": 0
+}
+
+> {%
+  client.test("检查题由 Java 确定性判分", function () {
+    client.assert(response.status === 200, "检查题提交应成功");
+    client.assert(response.body.correct === true, "示例答案应通过");
+  });
+%}
+
+### 10. 从当前课时生成固定五题
+# @timeout 2 m
+POST {{javaHost}}/api/agent/quizzes/generate
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "lessonId": "lesson-rest-controller",
+  "webSearch": "AUTO"
+}
+
+> {%
+  client.test("课时测验生成成功", function () {
+    client.assert(response.status === 200 || response.status === 201,
+      "测验生成应成功");
+    client.assert(Boolean(response.body.quizId), "应返回 quizId");
+  });
+  client.global.set("quizId", response.body.quizId);
+%}
+
+### 11. 查询公开测验；响应不包含正确答案、Rubric 参考实现
+GET {{javaHost}}/api/quizzes/{{quizId}}
+Authorization: Bearer {{accessToken}}
+
+### 12. 在页面完成五题后，将公开 questionId 和你的答案填入此请求
+### 选择题 selectedAnswers 必须传完整选项文本；编程题传 codeAnswer。
+POST {{javaHost}}/api/quizzes/{{quizId}}/attempts
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "idempotencyKey": "course-e2e-attempt-{{$uuid}}",
+  "answers": [
+    {
+      "questionId": "<choice-question-id>",
+      "selectedAnswers": ["<你的选项文本>"]
+    },
+    {
+      "questionId": "<coding-question-id>",
+      "codeAnswer": "<你的 Java 代码>"
+    }
+  ]
+}
+
+> {%
+  if (response.status === 201) {
+    client.global.set("attemptId", response.body.id);
+  }
+%}
+
+### 13. 含编程题时重复轮询，直到 GRADED / PARTIALLY_GRADED
+GET {{javaHost}}/api/quiz-attempts/{{attemptId}}
+Authorization: Bearer {{accessToken}}
+
+### 14. 查看测验证据产生的知识点掌握度
+GET {{javaHost}}/api/mastery
+Authorization: Bearer {{accessToken}}
+
+### 15. 重新查询课时；检查题通过且测验 >= 60 后应为 COMPLETED
+GET {{javaHost}}/api/lessons/lesson-rest-controller
+Authorization: Bearer {{accessToken}}
+
+### 16. 当前全部已发布课时完成后返回 204；发布下一课后返回下一课 Lesson
+GET {{javaHost}}/api/courses/continue
+Authorization: Bearer {{accessToken}}

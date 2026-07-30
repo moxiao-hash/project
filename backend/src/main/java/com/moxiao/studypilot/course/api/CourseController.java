@@ -36,7 +36,10 @@ public class CourseController {
     public ResponseEntity<LessonResponse> continueLearning(
             @AuthenticationPrincipal AuthenticatedUser user
     ) {
-        return ResponseEntity.ofNullable(service.continueLearning(user.id()));
+        LessonResponse lesson = service.continueLearning(user.id());
+        return lesson == null
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.ok(lesson);
     }
 
     @GetMapping("/courses/{courseSlug}")

@@ -730,7 +730,7 @@ npm run build
 
 Expected: Vitest、类型检查和生产构建全部通过。
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 ```bash
 git add web/package.json web/package-lock.json web/src infra/nginx/default.conf
@@ -840,7 +840,7 @@ npm test -- --run src/modules/course
 
 Expected: PASS。
 
-- [ ] **Step 6: 提交**
+- [x] **Step 6: 提交**
 
 ```bash
 git add backend/src/main/resources/db/migration/V23__link_quizzes_to_lessons.sql \
@@ -866,7 +866,7 @@ git push origin main
 - Modify: `docs/前端开发对接说明.md`
 - Modify: `项目开发步骤.md`
 
-- [ ] **Step 1: 编写独立联调脚本**
+- [x] **Step 1: 编写独立联调脚本**
 
 `docs/course-learning-e2e.http` 覆盖：
 
@@ -887,7 +887,7 @@ git push origin main
 → “继续学习”返回下一节
 ```
 
-- [ ] **Step 2: 运行全量自动化验证**
+- [x] **Step 2: 运行全量自动化验证**
 
 Run:
 
@@ -910,7 +910,7 @@ git diff --check
 
 Expected: Java、Python、Vue、Ruff、类型检查、构建和差异检查全部通过。
 
-- [ ] **Step 3: 真实运行验收**
+- [x] **Step 3: 真实运行验收**
 
 按 MySQL → Spring Boot → FastAPI → Vue 顺序启动，使用当前账号完成整节课。验收结果
 记录：
@@ -929,12 +929,12 @@ DeepSeek provider/model
 
 不得把 DeepSeek、Tavily、数据库或内部服务秘密写入结果文档。
 
-- [ ] **Step 4: 更新产品主入口**
+- [x] **Step 4: 更新产品主入口**
 
 README 和产品需求将 StudyPilot 定义为“Java + AI 交互式学习平台”；任务、计划和监督
 降级为教学辅助。`项目开发步骤.md` 新增阶段 9 六个步骤、测试数量、真实验收和提交。
 
-- [ ] **Step 5: 精确提交并推送**
+- [x] **Step 5: 精确提交并推送**
 
 不暂存用户本地修改：
 

@@ -3,7 +3,6 @@ package com.moxiao.studypilot.course.infrastructure;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 @Entity
@@ -31,8 +30,7 @@ public class LessonEntity {
     @Column(name = "estimated_minutes", nullable = false)
     private int estimatedMinutes;
 
-    @Lob
-    @Column(name = "content_json", nullable = false)
+    @Column(name = "content_json", nullable = false, columnDefinition = "LONGTEXT")
     private String contentJson;
 
     @Column(nullable = false)
