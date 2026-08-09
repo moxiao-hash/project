@@ -27,6 +27,8 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -98,6 +100,7 @@ class RoadmapEnrollmentServiceTest {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired MockMvc mockMvc;
     @Autowired JdbcTemplate jdbcTemplate;
+    @PersistenceContext EntityManager entityManager;
 
     @BeforeEach
     void resetDatabaseAndImportCatalog() {
@@ -552,9 +555,14 @@ class RoadmapEnrollmentServiceTest {
                 .collect(Collectors.toMap(UserRoadmapNodeEntity::getId,
                         UserRoadmapNodeEntity::getUpdatedAt));
 
-        countingService.recalculateAvailability(enrollment.id());
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            countingService.recalculateAvailability(enrollment.id());
+            countingStates.flush();
+            entityManager.clear();
+        });
 
-        verify(countingEnrollments, times(1)).findById(enrollment.id());
+        verify(countingEnrollments, times(1)).findByIdForUpdate(enrollment.id());
+        verify(countingEnrollments, times(0)).findById(enrollment.id());
         verify(countingStates, times(1)).findAllByUserRoadmapId(enrollment.id());
         verify(countingPrerequisites, times(1))
                 .findAllByTemplateId("studypilot-java-ai-v1");
@@ -591,6 +599,46 @@ class RoadmapEnrollmentServiceTest {
         assertThat(edges).allSatisfy(edge ->
                 assertThat(userNode(enrollment.id(), edge.getPrerequisiteNodeId())
                         .getCompletionStatus()).isEqualTo(CompletionStatus.INCOMPLETE));
+    }
+
+    @Test
+    void concurrentPrerequisiteCompletionsCannotLoseTheFinalUnlock() throws Exception {
+        String ownerId = createUser("concurrent-prerequisites");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        List<RoadmapNodePrerequisiteEntity> edges = multiPrerequisiteEdges();
+        String dependentNodeId = edges.get(0).getNodeId();
+        edges.stream().skip(2).forEach(edge ->
+                completeNode(enrollment.id(), edge.getPrerequisiteNodeId()));
+        CyclicBarrier bothPrerequisitesUpdated = new CyclicBarrier(2);
+        CountDownLatch bothRecalculationsFinished = new CountDownLatch(2);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            List<? extends Future<?>> futures = edges.stream().limit(2)
+                    .map(edge -> executor.submit(() -> {
+                        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+                            completeNode(enrollment.id(), edge.getPrerequisiteNodeId());
+                            await(bothPrerequisitesUpdated);
+                            enrollmentService.recalculateAvailability(enrollment.id());
+                            bothRecalculationsFinished.countDown();
+                            awaitBriefly(bothRecalculationsFinished);
+                        });
+                    }))
+                    .toList();
+            for (Future<?> future : futures) {
+                future.get(10, TimeUnit.SECONDS);
+            }
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+
+        assertThat(edges).allSatisfy(edge ->
+                assertThat(userNode(enrollment.id(), edge.getPrerequisiteNodeId())
+                        .getCompletionStatus()).isEqualTo(CompletionStatus.COMPLETED));
+        assertThat(userNode(enrollment.id(), dependentNodeId).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.AVAILABLE);
     }
 
     @Test
@@ -787,6 +835,15 @@ class RoadmapEnrollmentServiceTest {
         } catch (TimeoutException exception) {
             throw new AssertionError("并发绑定线程未在 10 秒内抵达碰撞点", exception);
         } catch (Exception exception) {
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    private static void awaitBriefly(CountDownLatch latch) {
+        try {
+            latch.await(1, TimeUnit.SECONDS);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
             throw new IllegalStateException(exception);
         }
     }

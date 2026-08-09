@@ -108,7 +108,7 @@ public class RoadmapEnrollmentService {
 
     @Transactional
     public void recalculateAvailability(String enrollmentId) {
-        UserRoadmapEntity enrollment = userRoadmapRepository.findById(enrollmentId)
+        UserRoadmapEntity enrollment = userRoadmapRepository.findByIdForUpdate(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习路线绑定不存在"));
         List<UserRoadmapNodeEntity> states = userNodeRepository
                 .findAllByUserRoadmapId(enrollmentId);
