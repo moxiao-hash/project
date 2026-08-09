@@ -9,25 +9,25 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
-import tools.jackson.databind.node.ArrayNode;
-import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.UnaryOperator;
 
 @Component
 public class RoadmapCatalogImporter {
@@ -42,43 +42,98 @@ public class RoadmapCatalogImporter {
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     private final ObjectMapper objectMapper;
     private final RoadmapCatalogValidator graphValidator = new RoadmapCatalogValidator();
+    private final TransactionTemplate transactionTemplate;
+    private final Runnable beforeInsert;
+    private final UnaryOperator<String> checksumTransform;
 
+    @Autowired
     public RoadmapCatalogImporter(
             RoadmapTemplateJpaRepository templateRepository,
             RoadmapStageJpaRepository stageRepository,
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager
+    ) {
+        this(templateRepository, stageRepository, nodeRepository, prerequisiteRepository,
+                objectMapper, transactionManager, () -> { }, UnaryOperator.identity());
+    }
+
+    RoadmapCatalogImporter(
+            RoadmapTemplateJpaRepository templateRepository,
+            RoadmapStageJpaRepository stageRepository,
+            RoadmapNodeJpaRepository nodeRepository,
+            RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager,
+            Runnable beforeInsert,
+            UnaryOperator<String> checksumTransform
     ) {
         this.templateRepository = templateRepository;
         this.stageRepository = stageRepository;
         this.nodeRepository = nodeRepository;
         this.prerequisiteRepository = prerequisiteRepository;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.beforeInsert = beforeInsert;
+        this.checksumTransform = checksumTransform;
     }
 
-    @Transactional
     public void importCatalog() {
         ParsedCatalog parsed = readCatalog();
         validateCatalog(parsed.catalog());
 
+        try {
+            transactionTemplate.executeWithoutResult(status -> importInTransaction(parsed));
+        } catch (ConcurrentTemplateInsertException collision) {
+            recoverConcurrentInsert(parsed, collision);
+        }
+    }
+
+    private void importInTransaction(ParsedCatalog parsed) {
         var existing = templateRepository.findByRoadmapCodeAndTemplateVersion(
                 parsed.catalog().roadmapCode(), parsed.catalog().version());
         if (existing.isPresent()) {
-            if (existing.get().getContentChecksum().equals(parsed.checksum())) {
-                return;
-            }
-            throw new IllegalStateException("已发布路线版本不可修改");
+            verifyChecksum(existing.get(), parsed.checksum());
+            return;
         }
 
-        persist(parsed.catalog(), parsed.checksum());
+        beforeInsert.run();
+        try {
+            persistTemplate(parsed.catalog(), parsed.checksum());
+            templateRepository.flush();
+        } catch (DataIntegrityViolationException exception) {
+            throw new ConcurrentTemplateInsertException(exception);
+        }
+        persistChildren(parsed.catalog());
+    }
+
+    private void recoverConcurrentInsert(ParsedCatalog parsed, ConcurrentTemplateInsertException collision) {
+        Boolean recovered = transactionTemplate.execute(status -> templateRepository
+                .findByRoadmapCodeAndTemplateVersion(parsed.catalog().roadmapCode(), parsed.catalog().version())
+                .map(existing -> {
+                    verifyChecksum(existing, parsed.checksum());
+                    return true;
+                })
+                .orElse(false));
+        if (!Boolean.TRUE.equals(recovered)) {
+            throw collision.integrityViolation();
+        }
+    }
+
+    private static void verifyChecksum(RoadmapTemplateEntity existing, String checksum) {
+        if (!existing.getContentChecksum().equals(checksum)) {
+            throw new IllegalStateException("已发布路线版本不可修改");
+        }
     }
 
     private ParsedCatalog readCatalog() {
         try (var input = new ClassPathResource(CATALOG_PATH).getInputStream()) {
             JsonNode root = objectMapper.readTree(input);
             Catalog catalog = objectMapper.treeToValue(root, Catalog.class);
-            return new ParsedCatalog(catalog, checksum(root));
+            String checksum = RoadmapCatalogChecksum.sha256(objectMapper, root);
+            return new ParsedCatalog(catalog, checksumTransform.apply(checksum));
         } catch (IOException exception) {
             throw new IllegalStateException("无法读取内置路线目录", exception);
         }
@@ -163,7 +218,7 @@ public class RoadmapCatalogImporter {
         require(node.prerequisites() != null, "prerequisites 不能为空: " + node.code());
     }
 
-    private void persist(Catalog catalog, String checksum) {
+    private void persistTemplate(Catalog catalog, String checksum) {
         String templateId = catalog.roadmapCode() + "-v" + catalog.version();
         Instant now = Instant.now();
         templateRepository.save(new RoadmapTemplateEntity(
@@ -176,7 +231,10 @@ public class RoadmapCatalogImporter {
                 checksum,
                 now
         ));
+    }
 
+    private void persistChildren(Catalog catalog) {
+        String templateId = catalog.roadmapCode() + "-v" + catalog.version();
         for (Stage stage : catalog.stages()) {
             String stageId = templateId + "-" + stage.stageCode();
             stageRepository.save(new RoadmapStageEntity(
@@ -208,31 +266,6 @@ public class RoadmapCatalogImporter {
                 }
             }
         }
-    }
-
-    private String checksum(JsonNode root) {
-        try {
-            byte[] canonicalBytes = objectMapper.writeValueAsBytes(canonicalize(root));
-            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonicalBytes));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("SHA-256 不可用", exception);
-        }
-    }
-
-    private JsonNode canonicalize(JsonNode node) {
-        if (node.isObject()) {
-            ObjectNode sorted = objectMapper.createObjectNode();
-            node.properties().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .forEach(entry -> sorted.set(entry.getKey(), canonicalize(entry.getValue())));
-            return sorted;
-        }
-        if (node.isArray()) {
-            ArrayNode ordered = objectMapper.createArrayNode();
-            node.forEach(element -> ordered.add(canonicalize(element)));
-            return ordered;
-        }
-        return node.deepCopy();
     }
 
     private String writeJson(Object value) {
@@ -309,5 +342,18 @@ public class RoadmapCatalogImporter {
     }
 
     private record LegacyLessonMapping(String lessonId, String nodeCode) {
+    }
+
+    private static final class ConcurrentTemplateInsertException extends RuntimeException {
+        private final DataIntegrityViolationException integrityViolation;
+
+        private ConcurrentTemplateInsertException(DataIntegrityViolationException integrityViolation) {
+            super(integrityViolation);
+            this.integrityViolation = integrityViolation;
+        }
+
+        private DataIntegrityViolationException integrityViolation() {
+            return integrityViolation;
+        }
     }
 }

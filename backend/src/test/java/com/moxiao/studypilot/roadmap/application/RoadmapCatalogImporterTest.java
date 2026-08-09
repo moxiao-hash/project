@@ -7,10 +7,10 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRe
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
@@ -18,7 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
-@Transactional
 class RoadmapCatalogImporterTest {
 
     @Autowired RoadmapCatalogImporter importer;
@@ -27,6 +26,14 @@ class RoadmapCatalogImporterTest {
     @Autowired RoadmapNodeJpaRepository nodeRepository;
     @Autowired RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     @Autowired LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
+
+    @BeforeEach
+    void cleanCatalog() {
+        prerequisiteRepository.deleteAll();
+        nodeRepository.deleteAll();
+        stageRepository.deleteAll();
+        templateRepository.deleteAll();
+    }
 
     @Test
     void importsVersionedCatalogIdempotently() {

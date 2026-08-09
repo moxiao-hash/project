@@ -17,8 +17,8 @@
           "nodeOrder": 1,
           "title": "Java 语法、面向对象与代码规范",
           "objectives": [
-            "能够实现并演示record 与 sealed class与封装继承多态",
-            "能够为equals/hashCode 契约场景编写Stream 与 Optional验证并解释Checkstyle 代码规范取舍"
+            "用 record 建模不可变请求数据，并用 sealed class 限定状态层次",
+            "重写 equals 与 hashCode 后，通过测试证明对象在 HashSet 中的相等性契约"
           ],
           "highFrequency": [
             "record 与 sealed class；封装继承多态",
@@ -57,8 +57,8 @@
           "nodeOrder": 2,
           "title": "集合框架与泛型",
           "objectives": [
-            "能够实现并演示HashMap 扩容与冲突与泛型上下界 <? extends/super>",
-            "能够为ArrayList 与 LinkedList 选型场景编写Comparator 稳定排序验证并解释ConcurrentModificationException取舍"
+            "使用 HashMap 完成按用户分组，并解释 hashCode 与 equals 对键查找的影响",
+            "为泛型仓库设计 extends 与 super 边界，比较 ArrayList 和 LinkedList 的访问成本"
           ],
           "highFrequency": [
             "HashMap 扩容与冲突；泛型上下界 <? extends/super>",
@@ -99,8 +99,8 @@
           "nodeOrder": 3,
           "title": "异常处理与 Java I/O",
           "objectives": [
-            "能够实现并演示try-with-resources与受检异常与异常链",
-            "能够为Files/Path NIO.2场景编写字符集 UTF-8验证并解释缓冲流与大文件取舍"
+            "用 try-with-resources 流式读取 UTF-8 文件，并保留异常链中的原始原因",
+            "针对大文件实现 NIO.2 复制程序，验证失败时流与文件句柄均被关闭"
           ],
           "highFrequency": [
             "try-with-resources；受检异常与异常链",
@@ -141,8 +141,8 @@
           "nodeOrder": 4,
           "title": "Java 并发与 JVM 基础",
           "objectives": [
-            "能够实现并演示ExecutorService 线程池与CompletableFuture 组合",
-            "能够为synchronized 与 ReentrantLock场景编写volatile 可见性验证并解释JVM 堆栈与 GC取舍"
+            "组合 CompletableFuture 完成并行调用，设置超时并汇总部分失败",
+            "配置有界 ExecutorService，通过压测说明队列、拒绝策略与 JVM 内存的关系"
           ],
           "highFrequency": [
             "ExecutorService 线程池；CompletableFuture 组合",
@@ -183,8 +183,8 @@
           "nodeOrder": 5,
           "title": "Maven 构建与自动化测试",
           "objectives": [
-            "能够实现并演示Maven 生命周期与 scope与JUnit 5 参数化测试",
-            "能够为AssertJ 断言场景编写Mockito 测试替身验证并解释Surefire 与 JaCoCo取舍"
+            "配置 Maven scope 和 Surefire，使单元测试与集成测试在指定生命周期运行",
+            "编写 JUnit 5 参数化测试与 AssertJ 断言，并从 JaCoCo 报告定位未覆盖分支"
           ],
           "highFrequency": [
             "Maven 生命周期与 scope；JUnit 5 参数化测试",
@@ -234,8 +234,8 @@
           "nodeOrder": 1,
           "title": "Spring IoC 与依赖注入",
           "objectives": [
-            "能够实现并演示构造器注入与Bean scope 与生命周期",
-            "能够为@Configuration/@Bean场景编写条件装配验证并解释循环依赖诊断取舍"
+            "使用构造器注入组装服务，并在测试中替换条件 Bean",
+            "记录 singleton 与 prototype Bean 生命周期，定位一个可复现的循环依赖"
           ],
           "highFrequency": [
             "构造器注入；Bean scope 与生命周期",
@@ -276,8 +276,8 @@
           "nodeOrder": 2,
           "title": "Spring MVC 与 REST API",
           "objectives": [
-            "能够实现并演示@RestController 与 @RequestMapping与HTTP 状态码与 ResponseEntity",
-            "能够为请求 DTO 与 Jackson场景编写REST 资源命名验证并解释MockMvc 接口测试取舍"
+            "用 @RestController 和 ResponseEntity 实现资源创建、查询及正确状态码",
+            "通过 MockMvc 验证请求 DTO、Jackson 序列化与 REST 路径契约"
           ],
           "highFrequency": [
             "@RestController 与 @RequestMapping；HTTP 状态码与 ResponseEntity",
@@ -318,8 +318,8 @@
           "nodeOrder": 3,
           "title": "参数校验与统一异常处理",
           "objectives": [
-            "能够实现并演示Bean Validation DTO 约束与@Valid 与分组校验",
-            "能够为@RestControllerAdvice场景编写ProblemDetail 错误契约验证并解释MethodArgumentNotValidException取舍"
+            "为 REST DTO 配置 Bean Validation 与 @Valid，并返回字段级校验错误",
+            "使用 @RestControllerAdvice 统一 ProblemDetail 契约，测试参数错误和业务异常"
           ],
           "highFrequency": [
             "Bean Validation DTO 约束；@Valid 与分组校验",
@@ -360,8 +360,8 @@
           "nodeOrder": 4,
           "title": "Spring 配置管理与日志",
           "objectives": [
-            "能够实现并演示@ConfigurationProperties与profile 配置覆盖",
-            "能够为Logback MDC场景编写结构化 JSON 日志验证并解释敏感字段脱敏取舍"
+            "将分层配置绑定到 @ConfigurationProperties，并验证 profile 覆盖顺序",
+            "把 requestId 写入 MDC 结构化日志，同时证明 token 和密码已被脱敏"
           ],
           "highFrequency": [
             "@ConfigurationProperties；profile 配置覆盖",
@@ -402,8 +402,8 @@
           "nodeOrder": 5,
           "title": "文件处理与定时任务",
           "objectives": [
-            "能够实现并演示MultipartFile 上传限制与Path normalize 防穿越",
-            "能够为@Scheduled cron场景编写任务锁与幂等验证并解释流式下载响应取舍"
+            "对 MultipartFile 文件名执行 Path normalize，阻止目录穿越并限制上传大小",
+            "实现可幂等的 @Scheduled 清理任务，验证多次触发不会重复删除业务数据"
           ],
           "highFrequency": [
             "MultipartFile 上传限制；Path normalize 防穿越",
@@ -453,8 +453,8 @@
           "nodeOrder": 1,
           "title": "MySQL SQL 与数据建模",
           "objectives": [
-            "能够实现并演示主键与外键约束与一对多表设计",
-            "能够为JOIN 与聚合场景编写窗口函数验证并解释EXPLAIN 执行计划取舍"
+            "为订单与明细建立主外键模型，写出 JOIN、聚合和窗口函数查询",
+            "使用 EXPLAIN 比较两种 SQL 方案，并说明扫描行数与临时表差异"
           ],
           "highFrequency": [
             "主键与外键约束；一对多表设计",
@@ -495,8 +495,8 @@
           "nodeOrder": 2,
           "title": "MySQL 索引与事务",
           "objectives": [
-            "能够实现并演示B+Tree 联合索引与最左前缀",
-            "能够为MVCC 隔离级别场景编写死锁分析验证并解释慢查询日志取舍"
+            "按查询谓词设计联合 B+Tree 索引，用 EXPLAIN 验证最左前缀是否命中",
+            "并发执行两个事务复现死锁，依据锁等待信息调整访问顺序"
           ],
           "highFrequency": [
             "B+Tree 联合索引；最左前缀",
@@ -537,8 +537,8 @@
           "nodeOrder": 3,
           "title": "MyBatis 核心映射",
           "objectives": [
-            "能够实现并演示resultMap 关联映射与动态 SQL if/foreach",
-            "能够为#{ } 参数绑定场景编写一级二级缓存验证并解释Mapper XML 测试取舍"
+            "用 resultMap 映射一对多结果，并处理列别名与空关联",
+            "编写含 if 和 foreach 的动态 SQL，验证参数使用 #{} 而非字符串拼接"
           ],
           "highFrequency": [
             "resultMap 关联映射；动态 SQL if/foreach",
@@ -579,8 +579,8 @@
           "nodeOrder": 4,
           "title": "MyBatis-Plus 工程实践",
           "objectives": [
-            "能够实现并演示BaseMapper 与 IService与LambdaQueryWrapper",
-            "能够为分页插件场景编写逻辑删除验证并解释自动填充 MetaObjectHandler取舍"
+            "用 LambdaQueryWrapper 实现类型安全筛选，并启用分页插件验证 limit SQL",
+            "配置逻辑删除和 MetaObjectHandler，测试删除数据不可见且审计字段自动填充"
           ],
           "highFrequency": [
             "BaseMapper 与 IService；LambdaQueryWrapper",
@@ -621,8 +621,8 @@
           "nodeOrder": 5,
           "title": "Spring Data JPA 核心",
           "objectives": [
-            "能够实现并演示实体状态与持久化上下文与Repository 派生查询",
-            "能够为fetch join 与 EntityGraph场景编写乐观锁 @Version验证并解释事务脏检查取舍"
+            "构建聚合关联并观察持久化上下文的脏检查，验证事务提交后的 SQL",
+            "用 fetch join 消除 N+1，并通过 @Version 测试并发更新冲突"
           ],
           "highFrequency": [
             "实体状态与持久化上下文；Repository 派生查询",
@@ -663,8 +663,8 @@
           "nodeOrder": 6,
           "title": "数据访问方案选型与对比",
           "objectives": [
-            "能够实现并演示MyBatis 显式 SQL与JPA 聚合建模",
-            "能够为N+1 查询检测场景编写批量写入策略验证并解释迁移成本评估取舍"
+            "分别用 MyBatis 与 JPA 实现同一复杂查询，比较 SQL 可控性与建模成本",
+            "测量批量写入和关联读取的查询次数，给出可复核的数据访问选型结论"
           ],
           "highFrequency": [
             "MyBatis 显式 SQL；JPA 聚合建模",
@@ -715,8 +715,8 @@
           "nodeOrder": 1,
           "title": "Redis 缓存设计",
           "objectives": [
-            "能够实现并演示缓存穿透与空值缓存与缓存击穿与互斥锁",
-            "能够为TTL 抖动场景编写Cache Aside 一致性验证并解释RedisTemplate 序列化取舍"
+            "实现 Cache Aside 查询，使用空值缓存阻断缓存穿透并为 TTL 增加抖动",
+            "通过并发测试复现缓存击穿，再验证互斥回源只访问一次数据库"
           ],
           "highFrequency": [
             "缓存穿透与空值缓存；缓存击穿与互斥锁",
@@ -757,8 +757,8 @@
           "nodeOrder": 2,
           "title": "JWT 认证与 Spring Security",
           "objectives": [
-            "能够实现并演示SecurityFilterChain与JWT 签名与过期",
-            "能够为OncePerRequestFilter场景编写BCrypt 密码散列验证并解释RBAC 方法授权取舍"
+            "配置 SecurityFilterChain 与 OncePerRequestFilter，完成 JWT 验签和过期处理",
+            "使用 BCrypt 保存密码并通过 RBAC 测试区分 401、403 与合法访问"
           ],
           "highFrequency": [
             "SecurityFilterChain；JWT 签名与过期",
@@ -799,8 +799,8 @@
           "nodeOrder": 3,
           "title": "API 文档与集成测试",
           "objectives": [
-            "能够实现并演示OpenAPI 3 注解与springdoc 接口文档",
-            "能够为MockMvc 集成测试场景编写Testcontainers 数据库验证并解释契约示例校验取舍"
+            "从真实 DTO 生成 OpenAPI 示例，并检查 springdoc 文档字段没有漂移",
+            "使用 MockMvc 和 Testcontainers 验证成功、校验失败及数据库约束错误契约"
           ],
           "highFrequency": [
             "OpenAPI 3 注解；springdoc 接口文档",
@@ -841,8 +841,8 @@
           "nodeOrder": 4,
           "title": "幂等、并发控制与审计",
           "objectives": [
-            "能够实现并演示Idempotency-Key与数据库唯一约束",
-            "能够为乐观锁与悲观锁场景编写审计日志 actor/action验证并解释重复请求状态机取舍"
+            "利用 Idempotency-Key、请求指纹和唯一约束阻止并发重复扣款",
+            "记录 actor、action 与结果审计事件，验证重放请求返回首次执行结果"
           ],
           "highFrequency": [
             "Idempotency-Key；数据库唯一约束",
@@ -884,8 +884,8 @@
           "nodeOrder": 5,
           "title": "监控、日志与可观测性",
           "objectives": [
-            "能够实现并演示Micrometer 指标与Actuator health",
-            "能够为OpenTelemetry trace场景编写SLI/SLO 告警验证并解释日志 traceId 关联取舍"
+            "用 Micrometer 发布低基数业务指标，并为 SLI 阈值配置告警",
+            "串联 traceId、结构化日志和 OpenTelemetry span，定位一次下游超时"
           ],
           "highFrequency": [
             "Micrometer 指标；Actuator health",
@@ -935,8 +935,8 @@
           "nodeOrder": 1,
           "title": "Vue 3 与 TypeScript 基础",
           "objectives": [
-            "能够实现并演示Composition API setup与ref/reactive 响应式",
-            "能够为TypeScript Props 类型场景编写computed/watch验证并解释Vitest 组件测试取舍"
+            "使用 Composition API 构建类型安全表单，让 computed 随输入正确更新",
+            "抽取可复用组合式函数，并用 Vitest 验证 ref 与 reactive 的响应行为"
           ],
           "highFrequency": [
             "Composition API setup；ref/reactive 响应式",
@@ -977,8 +977,8 @@
           "nodeOrder": 2,
           "title": "Vue Router 与 Pinia 状态管理",
           "objectives": [
-            "能够实现并演示Pinia defineStore与Vue Router 导航守卫",
-            "能够为持久化状态场景编写动态路由权限验证并解释storeToRefs取舍"
+            "用 Pinia 保存会话并通过 storeToRefs 保持组件解构后的响应性",
+            "配置 Vue Router 导航守卫和动态权限路由，验证刷新后的状态恢复"
           ],
           "highFrequency": [
             "Pinia defineStore；Vue Router 导航守卫",
@@ -1019,8 +1019,8 @@
           "nodeOrder": 3,
           "title": "前后端 API 集成与认证",
           "objectives": [
-            "能够实现并演示Axios 拦截器与Bearer token 刷新",
-            "能够为CORS 预检场景编写统一错误码验证并解释请求取消与竞态取舍"
+            "在 Axios 拦截器中实现单飞 token 刷新，避免并发 401 形成刷新风暴",
+            "处理 CORS 预检、统一错误码和请求取消，验证页面只展示最新响应"
           ],
           "highFrequency": [
             "Axios 拦截器；Bearer token 刷新",
@@ -1062,8 +1062,8 @@
           "nodeOrder": 4,
           "title": "Git、Linux 与 Nginx",
           "objectives": [
-            "能够实现并演示Git rebase 与冲突与Linux 权限与 systemd",
-            "能够为Nginx reverse_proxy场景编写静态资源缓存头验证并解释TLS 终止取舍"
+            "用 Git rebase 整理功能分支并记录一次冲突的安全解决过程",
+            "配置 systemd 与 Nginx reverse_proxy，验证 SPA fallback、缓存头和 TLS 转发"
           ],
           "highFrequency": [
             "Git rebase 与冲突；Linux 权限与 systemd",
@@ -1104,8 +1104,8 @@
           "nodeOrder": 5,
           "title": "Docker 容器化交付",
           "objectives": [
-            "能够实现并演示多阶段 Dockerfile与Compose healthcheck",
-            "能够为镜像层缓存场景编写非 root 用户验证并解释滚动发布与回滚取舍"
+            "编写多阶段 Dockerfile，比较构建前后镜像大小并以非 root 用户运行",
+            "用 Compose healthcheck 编排前后端依赖，演练服务失败后的回滚启动"
           ],
           "highFrequency": [
             "多阶段 Dockerfile；Compose healthcheck",
@@ -1156,8 +1156,8 @@
           "nodeOrder": 1,
           "title": "Python 工程基础",
           "objectives": [
-            "能够实现并演示venv 与 pyproject.toml与类型提示与 mypy",
-            "能够为pytest fixture场景编写ruff 格式检查验证并解释包结构与依赖锁定取舍"
+            "建立 pyproject.toml 与锁定依赖的虚拟环境，使 ruff、mypy 和 pytest 一键通过",
+            "重组 Python 包边界消除循环导入，并用 fixture 隔离外部依赖"
           ],
           "highFrequency": [
             "venv 与 pyproject.toml；类型提示与 mypy",
@@ -1198,8 +1198,8 @@
           "nodeOrder": 2,
           "title": "Pydantic 数据建模与校验",
           "objectives": [
-            "能够实现并演示BaseModel 字段约束与field_validator",
-            "能够为model_validator场景编写model_dump验证并解释SettingsConfigDict取舍"
+            "用 BaseModel 和 field_validator 校验嵌套请求，输出稳定的字段错误",
+            "通过 model_validator 约束跨字段关系，并验证 model_dump 的序列化结果"
           ],
           "highFrequency": [
             "BaseModel 字段约束；field_validator",
@@ -1240,8 +1240,8 @@
           "nodeOrder": 3,
           "title": "FastAPI REST 服务",
           "objectives": [
-            "能够实现并演示FastAPI Depends与Pydantic 请求响应模型",
-            "能够为APIRouter场景编写HTTPException验证并解释TestClient/OpenAPI取舍"
+            "用 FastAPI APIRouter、Depends 和 Pydantic 实现类型安全 REST 接口",
+            "通过 TestClient 检查 HTTPException、response_model 脱敏和 OpenAPI 定义"
           ],
           "highFrequency": [
             "FastAPI Depends；Pydantic 请求响应模型",
@@ -1282,8 +1282,8 @@
           "nodeOrder": 4,
           "title": "Python 异步编程与 HTTP 客户端",
           "objectives": [
-            "能够实现并演示asyncio TaskGroup与httpx.AsyncClient",
-            "能够为连接池与超时场景编写指数退避重试验证并解释取消传播取舍"
+            "复用 httpx.AsyncClient 连接池，并为连接、读取分别设置超时",
+            "使用 asyncio TaskGroup 实现并发限流，验证重试退避与取消能传播到子任务"
           ],
           "highFrequency": [
             "asyncio TaskGroup；httpx.AsyncClient",
@@ -1324,8 +1324,8 @@
           "nodeOrder": 5,
           "title": "Java-Python 接口契约",
           "objectives": [
-            "能够实现并演示OpenAPI 契约与JSON 字段命名",
-            "能够为时区与 ISO-8601场景编写错误码映射验证并解释契约测试取舍"
+            "从同一 OpenAPI 契约生成 Java 与 Python 模型，校验字段命名一致",
+            "构造时区、长整数和错误响应样例，证明两端序列化能够互操作"
           ],
           "highFrequency": [
             "OpenAPI 契约；JSON 字段命名",
@@ -1376,8 +1376,8 @@
           "nodeOrder": 1,
           "title": "大模型 API 调用基础",
           "objectives": [
-            "能够实现并演示DeepSeek Chat API与messages role",
-            "能够为temperature/max_tokens场景编写流式 SSE验证并解释usage token 统计取舍"
+            "封装 DeepSeek Chat API，正确发送 messages 并统计 usage token",
+            "消费流式 SSE 响应，测试 UTF-8 分片、超时和服务端错误分类"
           ],
           "highFrequency": [
             "DeepSeek Chat API；messages role",
@@ -1418,8 +1418,8 @@
           "nodeOrder": 2,
           "title": "提示词工程",
           "objectives": [
-            "能够实现并演示system/user 消息分层与few-shot 示例",
-            "能够为提示词变量模板场景编写上下文窗口预算验证并解释提示注入防护取舍"
+            "把 system 规则、用户输入和 few-shot 示例分层，运行固定评测集比较效果",
+            "限制上下文 token 预算，并用提示注入样例验证不可信文本无法覆盖指令"
           ],
           "highFrequency": [
             "system/user 消息分层；few-shot 示例",
@@ -1460,8 +1460,8 @@
           "nodeOrder": 3,
           "title": "大模型结构化输出",
           "objectives": [
-            "能够实现并演示DeepSeek structured output与JSON Schema",
-            "能够为Pydantic model_validate_json场景编写拒绝与截断处理验证并解释schema 版本兼容取舍"
+            "为 DeepSeek structured output 定义 JSON Schema，并用 Pydantic 校验结果",
+            "分别处理拒绝、截断和字段缺失响应，输出可定位的解析错误"
           ],
           "highFrequency": [
             "DeepSeek structured output；JSON Schema",
@@ -1503,8 +1503,8 @@
           "nodeOrder": 4,
           "title": "模型成本控制、限流与重试",
           "objectives": [
-            "能够实现并演示token 预算与429 Retry-After",
-            "能够为指数退避加 jitter场景编写熔断与降级验证并解释模型路由成本取舍"
+            "读取 429 Retry-After 并加入指数退避与 jitter，验证最大重试次数",
+            "按 token 预算路由模型，模拟熔断后降级并生成单次调用成本记录"
           ],
           "highFrequency": [
             "token 预算；429 Retry-After",
@@ -1545,8 +1545,8 @@
           "nodeOrder": 5,
           "title": "大模型输入输出安全",
           "objectives": [
-            "能够实现并演示prompt injection与输出内容过滤",
-            "能够为工具参数 allowlist场景编写PII 脱敏验证并解释模型越权防护取舍"
+            "使用恶意提示集测试 prompt injection 防线，隔离 system 指令与外部文档",
+            "对工具参数执行 allowlist 和 PII 脱敏，证明模型不能调用越权资源"
           ],
           "highFrequency": [
             "prompt injection；输出内容过滤",
@@ -1597,8 +1597,8 @@
           "nodeOrder": 1,
           "title": "LangGraph 状态图",
           "objectives": [
-            "能够实现并演示LangGraph StateGraph与TypedDict state",
-            "能够为节点与条件边场景编写compile/checkpointer验证并解释递归上限取舍"
+            "定义 TypedDict state 和 StateGraph 条件边，验证每个节点返回显式状态更新",
+            "编译图并设置递归上限，通过测试覆盖正常分支和未知路由"
           ],
           "highFrequency": [
             "LangGraph StateGraph；TypedDict state",
@@ -1639,8 +1639,8 @@
           "nodeOrder": 2,
           "title": "LangGraph 记忆与检查点",
           "objectives": [
-            "能够实现并演示checkpointer thread_id与短期消息记忆",
-            "能够为长期 store namespace场景编写摘要压缩验证并解释会话隔离取舍"
+            "用 thread_id 隔离 checkpointer 会话，验证两个用户的消息不会串线",
+            "实现历史摘要压缩和长期 store namespace，并从检查点恢复中断对话"
           ],
           "highFrequency": [
             "checkpointer thread_id；短期消息记忆",
@@ -1681,8 +1681,8 @@
           "nodeOrder": 3,
           "title": "模型工具调用",
           "objectives": [
-            "能够实现并演示tool schema与参数 JSON Schema",
-            "能够为并行 tool_calls场景编写结果回传 tool_call_id验证并解释超时与错误封装取舍"
+            "声明严格 tool schema 并校验模型参数，拒绝未知字段与越权值",
+            "执行并行 tool_calls，将结果按 tool_call_id 回传并覆盖超时失败"
           ],
           "highFrequency": [
             "tool schema；参数 JSON Schema",
@@ -1723,8 +1723,8 @@
           "nodeOrder": 4,
           "title": "Human-in-the-loop 审批",
           "objectives": [
-            "能够实现并演示LangGraph interrupt与Command resume",
-            "能够为审批状态持久化场景编写超时拒绝验证并解释审批内容防篡改取舍"
+            "在副作用之前调用 LangGraph interrupt，持久化待审批参数快照",
+            "使用 Command resume 处理批准、拒绝和超时，并校验审批人及参数未被篡改"
           ],
           "highFrequency": [
             "LangGraph interrupt；Command resume",
@@ -1765,8 +1765,8 @@
           "nodeOrder": 5,
           "title": "Model Context Protocol",
           "objectives": [
-            "能够实现并演示MCP tools/resources/prompts与stdio 与 Streamable HTTP",
-            "能够为capabilities 握手场景编写JSON-RPC 错误验证并解释客户端权限边界取舍"
+            "完成 MCP initialize 与 capabilities 握手，再通过 stdio 调用一个工具",
+            "为 resources 与 tools 设置客户端权限，验证未授权请求收到 JSON-RPC 错误"
           ],
           "highFrequency": [
             "MCP tools/resources/prompts；stdio 与 Streamable HTTP",
@@ -1807,8 +1807,8 @@
           "nodeOrder": 6,
           "title": "Spring AI 工具集成（选修）",
           "objectives": [
-            "能够实现并演示Spring AI ChatClient与ToolCallback",
-            "能够为Advisor 链场景编写ChatMemory验证并解释模型 Provider 配置取舍"
+            "用 Spring AI ChatClient 调用模型，并通过 ToolCallback 暴露受校验工具",
+            "组合 Advisor 与 ChatMemory，测试不同用户会话没有共享可变状态"
           ],
           "highFrequency": [
             "Spring AI ChatClient；ToolCallback",
@@ -1858,8 +1858,8 @@
           "nodeOrder": 1,
           "title": "文档解析与分块",
           "objectives": [
-            "能够实现并演示PDF/DOCX 解析与标题层级切分",
-            "能够为滑动窗口 overlap场景编写表格与页码元数据验证并解释扫描件 OCR取舍"
+            "解析 PDF 与 DOCX，按标题层级切分并保留页码、表格元数据",
+            "对扫描页执行 OCR，再验证 overlap 不会截断代码块和关键句"
           ],
           "highFrequency": [
             "PDF/DOCX 解析；标题层级切分",
@@ -1900,8 +1900,8 @@
           "nodeOrder": 2,
           "title": "向量嵌入与 Qdrant",
           "objectives": [
-            "能够实现并演示embedding 维度与Qdrant collection",
-            "能够为payload filter场景编写HNSW 参数验证并解释upsert 与删除同步取舍"
+            "按 embedding 维度创建 Qdrant collection，批量 upsert 带来源 payload 的向量",
+            "使用 payload filter 和 HNSW 参数执行检索，并验证重建会删除过期 chunk"
           ],
           "highFrequency": [
             "embedding 维度；Qdrant collection",
@@ -1942,8 +1942,8 @@
           "nodeOrder": 3,
           "title": "混合检索与重排",
           "objectives": [
-            "能够实现并演示BM25 与向量召回与RRF 融合",
-            "能够为cross-encoder rerank场景编写top-k 与阈值验证并解释检索评测 Recall@k取舍"
+            "并行执行 BM25 与向量召回，使用 RRF 合并不同量纲的排名",
+            "加入 cross-encoder 重排，通过 Recall@k 评测选择 top-k 与阈值"
           ],
           "highFrequency": [
             "BM25 与向量召回；RRF 融合",
@@ -1984,8 +1984,8 @@
           "nodeOrder": 4,
           "title": "Tavily 联网搜索",
           "objectives": [
-            "能够实现并演示Tavily Search API与search_depth",
-            "能够为域名 include/exclude场景编写时间过滤验证并解释来源去重取舍"
+            "调用 Tavily Search API 配置 search_depth、域名和时间过滤",
+            "对搜索结果去重并保留来源时间，验证超时和旧内容不会污染回答"
           ],
           "highFrequency": [
             "Tavily Search API；search_depth",
@@ -2026,8 +2026,8 @@
           "nodeOrder": 5,
           "title": "基于证据的回答与引用",
           "objectives": [
-            "能够实现并演示引用 chunk_id与claim-evidence 对齐",
-            "能够为无证据拒答场景编写引用覆盖率验证并解释来源冲突处理取舍"
+            "让每个回答断言引用可定位的 chunk_id，计算 claim-evidence 覆盖率",
+            "构造来源冲突与证据不足样例，验证系统明确拒答而不补写事实"
           ],
           "highFrequency": [
             "引用 chunk_id；claim-evidence 对齐",
@@ -2069,8 +2069,8 @@
           "nodeOrder": 6,
           "title": "自适应学习评估",
           "objectives": [
-            "能够实现并演示IRT 难度思想与掌握度状态",
-            "能够为题目标签场景编写错因反馈验证并解释间隔复习取舍"
+            "按知识点掌握度和题目难度选择下一题，记录每次作答状态变化",
+            "将错因标签写入反馈并更新间隔复习时间，避免重复题造成记忆偏差"
           ],
           "highFrequency": [
             "IRT 难度思想；掌握度状态",
@@ -2120,8 +2120,8 @@
           "nodeOrder": 1,
           "title": "业务工具契约设计",
           "objectives": [
-            "能够实现并演示命令/查询分离与工具输入 JSON Schema",
-            "能够为业务错误码场景编写dry-run 预览验证并解释副作用声明取舍"
+            "为命令工具定义 JSON Schema、业务错误码和副作用声明",
+            "实现 dry-run 预览与查询工具，验证模型看不到数据库内部字段"
           ],
           "highFrequency": [
             "命令/查询分离；工具输入 JSON Schema",
@@ -2163,8 +2163,8 @@
           "nodeOrder": 2,
           "title": "意图识别与执行预览",
           "objectives": [
-            "能够实现并演示意图分类置信度与结构化执行计划",
-            "能够为参数差异预览场景编写风险等级验证并解释用户确认快照取舍"
+            "输出含置信度、风险等级和参数差异的结构化执行预览",
+            "冻结用户确认快照，证明确认后重新解析文本不能改变执行参数"
           ],
           "highFrequency": [
             "意图分类置信度；结构化执行计划",
@@ -2205,8 +2205,8 @@
           "nodeOrder": 3,
           "title": "Agent 授权与治理",
           "objectives": [
-            "能够实现并演示最小权限 scope与策略决策点 PDP",
-            "能够为资源级授权场景编写审批审计验证并解释权限撤销取舍"
+            "在策略决策点同时校验 tool scope 与资源归属，返回明确拒绝原因",
+            "撤销权限后重放旧 token，验证操作被拒绝且审批审计完整"
           ],
           "highFrequency": [
             "最小权限 scope；策略决策点 PDP",
@@ -2248,8 +2248,8 @@
           "nodeOrder": 4,
           "title": "Agent 幂等执行",
           "objectives": [
-            "能够实现并演示幂等键与请求指纹",
-            "能够为执行状态机场景编写结果重放验证并解释失败补偿取舍"
+            "将幂等键绑定请求指纹，并发提交时只允许一个执行状态机前进",
+            "模拟调用超时后重试，验证结果重放且不同参数不能复用同一幂等键"
           ],
           "highFrequency": [
             "幂等键；请求指纹",
@@ -2290,8 +2290,8 @@
           "nodeOrder": 5,
           "title": "业务 Agent 端到端实现",
           "objectives": [
-            "能够实现并演示意图到工具闭环与审批与授权",
-            "能够为事务边界场景编写失败补偿验证并解释端到端追踪取舍"
+            "串联意图、预览、审批、授权和工具执行，完成一条可追踪业务闭环",
+            "注入提交失败与补偿失败，验证事务回滚并转入人工处理队列"
           ],
           "highFrequency": [
             "意图到工具闭环；审批与授权",
@@ -2341,8 +2341,8 @@
           "nodeOrder": 1,
           "title": "代码仓库读取与搜索",
           "objectives": [
-            "能够实现并演示ripgrep 搜索与git ls-files 范围",
-            "能够为符号与引用定位场景编写编码与二进制过滤验证并解释最小上下文读取取舍"
+            "使用 git ls-files 限定仓库范围，再用 ripgrep 定位符号及调用点",
+            "过滤二进制与构建产物，验证超长搜索结果按上下文预算截断"
           ],
           "highFrequency": [
             "ripgrep 搜索；git ls-files 范围",
@@ -2383,8 +2383,8 @@
           "nodeOrder": 2,
           "title": "补丁生成与 Diff 审查",
           "objectives": [
-            "能够实现并演示unified diff与apply_patch 上下文",
-            "能够为路径规范化场景编写冲突检测验证并解释最小变更审查取舍"
+            "生成带足够上下文的 unified diff，并用 apply_patch 修改唯一目标",
+            "拒绝含 ../ 的逃逸路径和上下文冲突，保证失败补丁不留下半修改文件"
           ],
           "highFrequency": [
             "unified diff；apply_patch 上下文",
@@ -2425,8 +2425,8 @@
           "nodeOrder": 3,
           "title": "测试与构建工具调用",
           "objectives": [
-            "能够实现并演示测试选择器与构建超时",
-            "能够为stdout/stderr 截断场景编写退出码传播验证并解释失败报告解析取舍"
+            "执行指定测试选择器，完整传播退出码并解析失败报告",
+            "限制构建时间与 stdout 大小，超时后终止进程树并保留诊断摘要"
           ],
           "highFrequency": [
             "测试选择器；构建超时",
@@ -2467,8 +2467,8 @@
           "nodeOrder": 4,
           "title": "Git 工具与分支工作流",
           "objectives": [
-            "能够实现并演示status/diff 安全读取与分支 allowlist",
-            "能够为提交身份场景编写非交互 rebase验证并解释受保护分支取舍"
+            "读取 status 与 diff 后只暂存显式文件，验证密钥文件不会进入提交",
+            "限制可操作分支并拒绝 force push，演示一次非交互 rebase 冲突处理"
           ],
           "highFrequency": [
             "status/diff 安全读取；分支 allowlist",
@@ -2509,8 +2509,8 @@
           "nodeOrder": 5,
           "title": "Playwright 与 DOM 自动化",
           "objectives": [
-            "能够实现并演示role/label locator与auto-wait",
-            "能够为network interception场景编写storageState验证并解释trace viewer取舍"
+            "使用 role 与 label locator 完成表单流程，避免依赖易变 CSS 层级",
+            "通过 network interception 等待业务请求，并用 trace viewer 定位竞态失败"
           ],
           "highFrequency": [
             "role/label locator；auto-wait",
@@ -2552,8 +2552,8 @@
           "nodeOrder": 6,
           "title": "无障碍与桌面自动化（选修）",
           "objectives": [
-            "能够实现并演示ARIA 可访问名称与键盘焦点顺序",
-            "能够为WCAG 对比度场景编写屏幕坐标缩放验证并解释桌面权限提示取舍"
+            "仅用键盘完成核心流程，并通过 ARIA 名称与焦点顺序检查",
+            "运行 WCAG 对比度扫描，在不同 DPI 下验证桌面坐标换算"
           ],
           "highFrequency": [
             "ARIA 可访问名称；键盘焦点顺序",
@@ -2603,8 +2603,8 @@
           "nodeOrder": 1,
           "title": "执行器沙箱隔离",
           "objectives": [
-            "能够实现并演示realpath 路径校验与进程用户隔离",
-            "能够为CPU/内存/时间配额场景编写临时工作目录验证并解释子进程终止取舍"
+            "对工作路径执行 realpath 校验，证明符号链接不能逃逸沙箱根目录",
+            "设置 CPU、内存和时间配额，超时后终止父进程及全部子进程"
           ],
           "highFrequency": [
             "realpath 路径校验；进程用户隔离",
@@ -2646,8 +2646,8 @@
           "nodeOrder": 2,
           "title": "密钥检测与脱敏",
           "objectives": [
-            "能够实现并演示密钥模式识别与熵检测",
-            "能够为流式日志脱敏场景编写环境变量 allowlist验证并解释Git 历史扫描取舍"
+            "组合密钥模式与熵检测，对跨日志分片的 token 持续脱敏",
+            "限制子进程环境变量并扫描 Git 历史，验证异常对象不泄露原始请求头"
           ],
           "highFrequency": [
             "密钥模式识别；熵检测",
@@ -2688,8 +2688,8 @@
           "nodeOrder": 3,
           "title": "网络访问控制与防火墙",
           "objectives": [
-            "能够实现并演示loopback 与私网 CIDR与DNS rebinding",
-            "能够为域名 allowlist场景编写重定向复检验证并解释代理环境变量取舍"
+            "解析域名后阻断 loopback 与私网 CIDR，覆盖 localhost 别名和 DNS rebinding",
+            "每次重定向重新校验目标 IP，并忽略未经授权的代理环境变量"
           ],
           "highFrequency": [
             "loopback 与私网 CIDR；DNS rebinding",
@@ -2731,8 +2731,8 @@
           "nodeOrder": 4,
           "title": "Agent 可观测性与故障恢复",
           "objectives": [
-            "能够实现并演示run_id 全链路与结构化事件",
-            "能够为checkpoint 恢复场景编写重试预算验证并解释人工接管取舍"
+            "用 run_id 串联结构化事件、日志与 span，重建一次 Agent 执行时间线",
+            "从 checkpoint 恢复中断流程，验证已完成副作用不会再次执行"
           ],
           "highFrequency": [
             "run_id 全链路；结构化事件",
@@ -2774,8 +2774,8 @@
           "nodeOrder": 5,
           "title": "安全发布端到端验收",
           "objectives": [
-            "能够实现并演示供应链 SBOM与镜像签名",
-            "能够为灰度发布场景编写安全回归验证并解释回滚演练取舍"
+            "生成 SBOM 并验证镜像签名，在灰度环境运行安全回归用例",
+            "监控发布指标触发回滚，演练应用与数据库兼容版本一起恢复"
           ],
           "highFrequency": [
             "供应链 SBOM；镜像签名",
