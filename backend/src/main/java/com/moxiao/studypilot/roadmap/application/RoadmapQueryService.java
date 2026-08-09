@@ -9,6 +9,7 @@ import com.moxiao.studypilot.roadmap.domain.CheckInStatus;
 import com.moxiao.studypilot.roadmap.domain.CompletionStatus;
 import com.moxiao.studypilot.roadmap.domain.LearningStatus;
 import com.moxiao.studypilot.roadmap.domain.QuizStatus;
+import com.moxiao.studypilot.roadmap.domain.RoadmapDisplayStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
@@ -78,18 +79,46 @@ public class RoadmapQueryService {
     }
 
     public RoadmapStageResponse currentStage(String ownerId, String stageId) {
-        return loadCurrentMap(ownerId).stages().stream()
-                .filter(stage -> stage.id().equals(stageId))
-                .findFirst()
+        UserRoadmapEntity enrollment = currentEnrollment(ownerId);
+        RoadmapStageEntity stage = stageRepository
+                .findByIdAndTemplateId(stageId, enrollment.getTemplateId())
                 .orElseThrow(() -> new ResourceNotFoundException("路线阶段不存在"));
+        List<RoadmapNodeEntity> nodes = nodeRepository
+                .findAllByStageIdAndTemplateIdOrderByNodeOrderAsc(
+                        stageId, enrollment.getTemplateId());
+        List<String> nodeIds = nodes.stream().map(RoadmapNodeEntity::getId).toList();
+        Map<String, UserRoadmapNodeEntity> stateByNodeId = uniqueIndex(
+                userNodeRepository.findAllByUserRoadmapIdAndNodeIdIn(enrollment.getId(), nodeIds),
+                UserRoadmapNodeEntity::getNodeId,
+                "用户路线节点状态重复");
+        List<RoadmapNodePrerequisiteEntity> edges = prerequisiteRepository
+                .findAllByTemplateIdAndNodeIdIn(enrollment.getTemplateId(), nodeIds);
+        Map<String, RoadmapNodeEntity> referencedNodes = referencedNodes(
+                enrollment.getTemplateId(), nodes, edges);
+        return toStageResponse(
+                stage,
+                nodes,
+                stateByNodeId,
+                prerequisiteCodes(edges, referencedNodes));
     }
 
     public RoadmapNodeResponse currentNode(String ownerId, String nodeId) {
-        return loadCurrentMap(ownerId).stages().stream()
-                .flatMap(stage -> stage.nodes().stream())
-                .filter(node -> node.id().equals(nodeId))
-                .findFirst()
+        UserRoadmapEntity enrollment = currentEnrollment(ownerId);
+        RoadmapNodeEntity node = nodeRepository
+                .findByIdAndTemplateId(nodeId, enrollment.getTemplateId())
                 .orElseThrow(() -> new ResourceNotFoundException("路线节点不存在"));
+        UserRoadmapNodeEntity state = userNodeRepository
+                .findByUserRoadmapIdAndNodeId(enrollment.getId(), nodeId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "用户路线节点状态不存在: " + nodeId));
+        List<RoadmapNodePrerequisiteEntity> edges = prerequisiteRepository
+                .findAllByTemplateIdAndNodeId(enrollment.getTemplateId(), nodeId);
+        Map<String, RoadmapNodeEntity> referencedNodes = referencedNodes(
+                enrollment.getTemplateId(), List.of(node), edges);
+        return toNodeResponse(
+                node,
+                state,
+                prerequisiteCodes(edges, referencedNodes).getOrDefault(nodeId, List.of()));
     }
 
     private RoadmapMapResponse loadCurrentMap(String ownerId) {
@@ -107,7 +136,8 @@ public class RoadmapQueryService {
                 userStates, UserRoadmapNodeEntity::getNodeId, "用户路线节点状态重复");
         Map<String, RoadmapNodeEntity> nodeById = uniqueIndex(
                 nodes, RoadmapNodeEntity::getId, "路线节点重复");
-        Map<String, List<String>> prerequisiteCodes = prerequisiteCodes(prerequisites, nodeById, nodes);
+        Map<String, List<String>> prerequisiteCodes = prerequisiteCodes(
+                prerequisites, nodeById, nodes);
         Map<String, List<RoadmapNodeEntity>> nodesByStageId = nodes.stream()
                 .collect(Collectors.groupingBy(
                         RoadmapNodeEntity::getStageId,
@@ -154,6 +184,20 @@ public class RoadmapQueryService {
 
     private Map<String, List<String>> prerequisiteCodes(
             List<RoadmapNodePrerequisiteEntity> prerequisites,
+            Map<String, RoadmapNodeEntity> nodeById
+    ) {
+        Map<String, List<RoadmapNodePrerequisiteEntity>> byNode = prerequisites.stream()
+                .collect(Collectors.groupingBy(RoadmapNodePrerequisiteEntity::getNodeId));
+        Map<String, List<String>> result = new HashMap<>();
+        byNode.forEach((nodeId, edges) -> result.put(nodeId, edges.stream()
+                .map(edge -> requiredNode(nodeById, edge.getPrerequisiteNodeId()).getNodeCode())
+                .sorted()
+                .toList()));
+        return result;
+    }
+
+    private Map<String, List<String>> prerequisiteCodes(
+            List<RoadmapNodePrerequisiteEntity> prerequisites,
             Map<String, RoadmapNodeEntity> nodeById,
             List<RoadmapNodeEntity> orderedNodes
     ) {
@@ -170,6 +214,28 @@ public class RoadmapQueryService {
                 .map(edge -> requiredNode(nodeById, edge.getPrerequisiteNodeId()).getNodeCode())
                 .toList()));
         return result;
+    }
+
+    private Map<String, RoadmapNodeEntity> referencedNodes(
+            String templateId,
+            List<RoadmapNodeEntity> requestedNodes,
+            List<RoadmapNodePrerequisiteEntity> edges
+    ) {
+        Map<String, RoadmapNodeEntity> nodes = new HashMap<>(uniqueIndex(
+                requestedNodes, RoadmapNodeEntity::getId, "路线节点重复"));
+        List<String> missingIds = edges.stream()
+                .map(RoadmapNodePrerequisiteEntity::getPrerequisiteNodeId)
+                .filter(id -> !nodes.containsKey(id))
+                .distinct()
+                .toList();
+        if (!missingIds.isEmpty()) {
+            Map<String, RoadmapNodeEntity> prerequisites = uniqueIndex(
+                    nodeRepository.findAllByTemplateIdAndIdIn(templateId, missingIds),
+                    RoadmapNodeEntity::getId,
+                    "路线前置节点重复");
+            nodes.putAll(prerequisites);
+        }
+        return nodes;
     }
 
     private RoadmapStageResponse toStageResponse(
@@ -227,7 +293,7 @@ public class RoadmapQueryService {
                 state.getQuizStatus().name(),
                 state.getArtifactStatus().name(),
                 state.getCompletionStatus().name(),
-                displayStatus(state),
+                displayStatus(state).name(),
                 state.getRowVersion());
     }
 
@@ -253,26 +319,28 @@ public class RoadmapQueryService {
         }
     }
 
-    private String displayStatus(UserRoadmapNodeEntity state) {
+    private RoadmapDisplayStatus displayStatus(UserRoadmapNodeEntity state) {
         if (state.getCompletionStatus() == CompletionStatus.COMPLETED) {
-            return "COMPLETED";
+            return RoadmapDisplayStatus.COMPLETED;
         }
         if (state.getAvailabilityStatus() == AvailabilityStatus.LOCKED) {
-            return "LOCKED";
+            return RoadmapDisplayStatus.LOCKED;
         }
         if (state.getQuizStatus() == QuizStatus.FAILED
                 || state.getQuizStatus() == QuizStatus.PARTIALLY_GRADED) {
-            return "REVIEW_REQUIRED";
+            return RoadmapDisplayStatus.REVIEW_REQUIRED;
         }
         if (state.getCheckInStatus() == CheckInStatus.SUBMITTED
                 && (state.getQuizStatus() == QuizStatus.NOT_GENERATED
                 || state.getQuizStatus() == QuizStatus.GENERATING
                 || state.getQuizStatus() == QuizStatus.EVALUATING)) {
-            return "QUIZ_PENDING";
+            return RoadmapDisplayStatus.QUIZ_PENDING;
         }
-        return state.getLearningStatus() == LearningStatus.NOT_STARTED
-                ? "AVAILABLE"
-                : state.getLearningStatus().name();
+        return switch (state.getLearningStatus()) {
+            case NOT_STARTED -> RoadmapDisplayStatus.AVAILABLE;
+            case SCHEDULED -> RoadmapDisplayStatus.SCHEDULED;
+            case IN_PROGRESS -> RoadmapDisplayStatus.IN_PROGRESS;
+        };
     }
 
     private UserRoadmapEntity currentEnrollment(String ownerId) {

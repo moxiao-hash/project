@@ -192,6 +192,9 @@ class RoadmapWorkflowTest {
         updateState(enrollmentId, nodeId, "AVAILABLE", "IN_PROGRESS", "MISSING", "NOT_GENERATED", "INCOMPLETE");
         assertDisplayStatus(token, nodeId, "IN_PROGRESS");
 
+        updateState(enrollmentId, nodeId, "AVAILABLE", "SCHEDULED", "MISSING", "NOT_GENERATED", "INCOMPLETE");
+        assertDisplayStatus(token, nodeId, "SCHEDULED");
+
         updateState(enrollmentId, nodeId, "AVAILABLE", "NOT_STARTED", "MISSING", "NOT_GENERATED", "INCOMPLETE");
         assertDisplayStatus(token, nodeId, "AVAILABLE");
     }
@@ -240,6 +243,54 @@ class RoadmapWorkflowTest {
         verify(prerequisites).findAllByTemplateId("template");
         verify(states).findAllByUserRoadmapId("enrollment");
         verifyNoMoreInteractions(userRoadmaps, templates, stages, nodes, prerequisites, states);
+    }
+
+    @Test
+    void nodeDetailIgnoresMissingStateForAnUnrelatedNode() throws Exception {
+        String token = register("node-isolation");
+        JsonNode enrollment = enroll(token);
+        RoadmapNodeEntity requested = nodeRepository.findAll().stream()
+                .filter(node -> node.getNodeCode().equals("java-syntax-oop"))
+                .findFirst().orElseThrow();
+        RoadmapNodeEntity unrelated = nodeRepository.findAll().stream()
+                .filter(node -> node.getNodeCode().equals("release-e2e"))
+                .findFirst().orElseThrow();
+        jdbcTemplate.update("""
+                DELETE FROM user_roadmap_nodes
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollment.get("id").asText(), unrelated.getId());
+
+        mockMvc.perform(get("/api/roadmaps/current/nodes/{nodeId}", requested.getId())
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("java-syntax-oop"));
+    }
+
+    @Test
+    void stageDetailIgnoresMalformedMetadataInAnotherStage() throws Exception {
+        String token = register("stage-isolation");
+        enroll(token);
+        RoadmapStageEntity requested = stageRepository.findAll().stream()
+                .filter(stage -> stage.getStageCode().equals("java-core"))
+                .findFirst().orElseThrow();
+        RoadmapNodeEntity unrelated = nodeRepository.findAll().stream()
+                .filter(node -> node.getNodeCode().equals("release-e2e"))
+                .findFirst().orElseThrow();
+        try {
+            jdbcTemplate.update(
+                    "UPDATE roadmap_nodes SET objectives_json = ? WHERE id = ?",
+                    "{not-json", unrelated.getId());
+
+            mockMvc.perform(get("/api/roadmaps/current/stages/{stageId}", requested.getId())
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.code").value("java-core"))
+                    .andExpect(jsonPath("$.nodes.length()").value(5));
+        } finally {
+            jdbcTemplate.update(
+                    "UPDATE roadmap_nodes SET objectives_json = ? WHERE id = ?",
+                    unrelated.getObjectivesJson(), unrelated.getId());
+        }
     }
 
     private void updateState(
