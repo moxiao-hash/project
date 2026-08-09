@@ -1,6 +1,9 @@
 package com.moxiao.studypilot.roadmap.application;
 
+import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
@@ -25,6 +28,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
@@ -40,6 +44,8 @@ public class RoadmapCatalogImporter {
     private final RoadmapStageJpaRepository stageRepository;
     private final RoadmapNodeJpaRepository nodeRepository;
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    private final LessonJpaRepository lessonRepository;
+    private final LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
     private final ObjectMapper objectMapper;
     private final RoadmapCatalogValidator graphValidator = new RoadmapCatalogValidator();
     private final TransactionTemplate transactionTemplate;
@@ -52,10 +58,13 @@ public class RoadmapCatalogImporter {
             RoadmapStageJpaRepository stageRepository,
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            LessonJpaRepository lessonRepository,
+            LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
     ) {
         this(templateRepository, stageRepository, nodeRepository, prerequisiteRepository,
+                lessonRepository, legacyMappingRepository,
                 objectMapper, transactionManager, () -> { }, UnaryOperator.identity());
     }
 
@@ -64,6 +73,8 @@ public class RoadmapCatalogImporter {
             RoadmapStageJpaRepository stageRepository,
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            LessonJpaRepository lessonRepository,
+            LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
             Runnable beforeInsert,
@@ -73,6 +84,8 @@ public class RoadmapCatalogImporter {
         this.stageRepository = stageRepository;
         this.nodeRepository = nodeRepository;
         this.prerequisiteRepository = prerequisiteRepository;
+        this.lessonRepository = lessonRepository;
+        this.legacyMappingRepository = legacyMappingRepository;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -96,6 +109,7 @@ public class RoadmapCatalogImporter {
                 parsed.catalog().roadmapCode(), parsed.catalog().version());
         if (existing.isPresent()) {
             verifyChecksum(existing.get(), parsed.checksum());
+            persistLegacyMappings(parsed.catalog(), existing.get().getId());
             return;
         }
 
@@ -107,6 +121,7 @@ public class RoadmapCatalogImporter {
             throw new ConcurrentTemplateInsertException(exception);
         }
         persistChildren(parsed.catalog());
+        persistLegacyMappings(parsed.catalog(), templateId(parsed.catalog()));
     }
 
     private void recoverConcurrentInsert(ParsedCatalog parsed, ConcurrentTemplateInsertException collision) {
@@ -114,6 +129,7 @@ public class RoadmapCatalogImporter {
                 .findByRoadmapCodeAndTemplateVersion(parsed.catalog().roadmapCode(), parsed.catalog().version())
                 .map(existing -> {
                     verifyChecksum(existing, parsed.checksum());
+                    persistLegacyMappings(parsed.catalog(), existing.getId());
                     return true;
                 })
                 .orElse(false));
@@ -219,7 +235,7 @@ public class RoadmapCatalogImporter {
     }
 
     private void persistTemplate(Catalog catalog, String checksum) {
-        String templateId = catalog.roadmapCode() + "-v" + catalog.version();
+        String templateId = templateId(catalog);
         Instant now = Instant.now();
         templateRepository.save(new RoadmapTemplateEntity(
                 templateId,
@@ -234,7 +250,7 @@ public class RoadmapCatalogImporter {
     }
 
     private void persistChildren(Catalog catalog) {
-        String templateId = catalog.roadmapCode() + "-v" + catalog.version();
+        String templateId = templateId(catalog);
         for (Stage stage : catalog.stages()) {
             String stageId = templateId + "-" + stage.stageCode();
             stageRepository.save(new RoadmapStageEntity(
@@ -266,6 +282,39 @@ public class RoadmapCatalogImporter {
                 }
             }
         }
+    }
+
+    private void persistLegacyMappings(Catalog catalog, String templateId) {
+        Set<String> lessonIds = catalog.legacyLessonMappings().stream()
+                .map(LegacyLessonMapping::lessonId)
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> existingLessonIds = lessonRepository.findAllById(lessonIds).stream()
+                .map(com.moxiao.studypilot.course.infrastructure.LessonEntity::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        for (LegacyLessonMapping mapping : catalog.legacyLessonMappings()) {
+            if (!existingLessonIds.contains(mapping.lessonId())) {
+                throw new IllegalStateException("旧课时不存在: " + mapping.lessonId());
+            }
+        }
+
+        Map<String, RoadmapNodeEntity> nodesByCode = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(templateId).stream()
+                .collect(java.util.stream.Collectors.toMap(RoadmapNodeEntity::getNodeCode, node -> node));
+        List<LegacyLessonRoadmapMappingEntity> mappings = new ArrayList<>();
+        for (LegacyLessonMapping mapping : catalog.legacyLessonMappings()) {
+            RoadmapNodeEntity node = nodesByCode.get(mapping.nodeCode());
+            if (node == null) {
+                throw new IllegalStateException("路线节点不存在: " + mapping.nodeCode());
+            }
+            mappings.add(new LegacyLessonRoadmapMappingEntity(
+                    mapping.lessonId(), templateId, node.getId()));
+        }
+        legacyMappingRepository.saveAll(mappings);
+        legacyMappingRepository.flush();
+    }
+
+    private static String templateId(Catalog catalog) {
+        return catalog.roadmapCode() + "-v" + catalog.version();
     }
 
     private String writeJson(Object value) {

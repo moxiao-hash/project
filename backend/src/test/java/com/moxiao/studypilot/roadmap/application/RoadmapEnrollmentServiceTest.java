@@ -3,6 +3,7 @@ package com.moxiao.studypilot.roadmap.application;
 import com.moxiao.studypilot.auth.infrastructure.UserAccountEntity;
 import com.moxiao.studypilot.auth.infrastructure.UserAccountJpaRepository;
 import com.moxiao.studypilot.auth.infrastructure.UserSessionJpaRepository;
+import com.moxiao.studypilot.course.application.CourseCatalogImporter;
 import com.moxiao.studypilot.roadmap.api.CreateRoadmapEnrollmentRequest;
 import com.moxiao.studypilot.roadmap.api.RoadmapEnrollmentResponse;
 import com.moxiao.studypilot.roadmap.domain.ArtifactStatus;
@@ -90,6 +91,7 @@ class RoadmapEnrollmentServiceTest {
     @Autowired RoadmapEnrollmentService enrollmentService;
     @Autowired RoadmapNodeMutationService nodeMutationService;
     @Autowired RoadmapCatalogImporter importer;
+    @Autowired CourseCatalogImporter courseCatalogImporter;
     @Autowired RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
@@ -122,6 +124,7 @@ class RoadmapEnrollmentServiceTest {
         nodeRepository.deleteAll();
         stageRepository.deleteAll();
         templateRepository.deleteAll();
+        courseCatalogImporter.importCatalog();
         importer.importCatalog();
     }
 

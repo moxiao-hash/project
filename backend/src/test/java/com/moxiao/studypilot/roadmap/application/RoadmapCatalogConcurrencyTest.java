@@ -1,5 +1,8 @@
 package com.moxiao.studypilot.roadmap.application;
 
+import com.moxiao.studypilot.course.application.CourseCatalogImporter;
+import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
@@ -34,6 +37,9 @@ class RoadmapCatalogConcurrencyTest {
     @Autowired RoadmapStageJpaRepository stageRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
     @Autowired RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    @Autowired LessonJpaRepository lessonRepository;
+    @Autowired LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
+    @Autowired CourseCatalogImporter courseCatalogImporter;
     @Autowired ObjectMapper objectMapper;
     @Autowired PlatformTransactionManager transactionManager;
 
@@ -41,10 +47,12 @@ class RoadmapCatalogConcurrencyTest {
 
     @BeforeEach
     void cleanCatalog() {
+        legacyMappingRepository.deleteAll();
         prerequisiteRepository.deleteAll();
         nodeRepository.deleteAll();
         stageRepository.deleteAll();
         templateRepository.deleteAll();
+        courseCatalogImporter.importCatalog();
     }
 
     @Test
@@ -118,6 +126,8 @@ class RoadmapCatalogConcurrencyTest {
                 stageRepository,
                 nodeRepository,
                 prerequisiteRepository,
+                lessonRepository,
+                legacyMappingRepository,
                 objectMapper,
                 transactionManager,
                 () -> await(afterMissingQuery),
@@ -130,6 +140,7 @@ class RoadmapCatalogConcurrencyTest {
         assertThat(stageRepository.count()).isEqualTo(12);
         assertThat(nodeRepository.count()).isEqualTo(64);
         assertThat(prerequisiteRepository.count()).isEqualTo(79);
+        assertThat(legacyMappingRepository.count()).isEqualTo(1);
     }
 
     private static void await(CountDownLatch latch) {

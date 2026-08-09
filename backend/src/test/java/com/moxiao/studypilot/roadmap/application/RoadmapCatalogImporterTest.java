@@ -1,6 +1,8 @@
 package com.moxiao.studypilot.roadmap.application;
 
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
+import com.moxiao.studypilot.course.application.CourseCatalogImporter;
+import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
@@ -21,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class RoadmapCatalogImporterTest {
 
     @Autowired RoadmapCatalogImporter importer;
+    @Autowired CourseCatalogImporter courseCatalogImporter;
+    @Autowired LessonJpaRepository lessonRepository;
     @Autowired RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
@@ -29,10 +33,12 @@ class RoadmapCatalogImporterTest {
 
     @BeforeEach
     void cleanCatalog() {
+        legacyMappingRepository.deleteAll();
         prerequisiteRepository.deleteAll();
         nodeRepository.deleteAll();
         stageRepository.deleteAll();
         templateRepository.deleteAll();
+        courseCatalogImporter.importCatalog();
     }
 
     @Test
@@ -50,13 +56,48 @@ class RoadmapCatalogImporterTest {
         assertThat(stageRepository.count()).isEqualTo(stagesAfterFirstImport).isEqualTo(12);
         assertThat(nodeRepository.count()).isEqualTo(nodesAfterFirstImport).isEqualTo(64);
         assertThat(prerequisiteRepository.count()).isEqualTo(prerequisitesAfterFirstImport).isEqualTo(79);
-        assertThat(legacyMappingRepository.count()).isZero();
+        assertThat(legacyMappingRepository.count()).isEqualTo(1);
+        assertThat(legacyMappingRepository.findByLessonIdAndTemplateId(
+                "lesson-rest-controller", "studypilot-java-ai-v1"))
+                .get().satisfies(mapping -> assertThat(mapping.getNodeId())
+                        .isEqualTo("studypilot-java-ai-v1-spring-mvc-rest"));
 
         RoadmapTemplateEntity template = templateRepository
                 .findByRoadmapCodeAndTemplateVersion("studypilot-java-ai", 1)
                 .orElseThrow();
         assertThat(template.getPublicationStatus()).isEqualTo(RoadmapPublicationStatus.PUBLISHED);
         assertThat(template.getTitle()).isEqualTo("StudyPilot Java + AI 学习路线");
+    }
+
+    @Test
+    void rejectsMissingLegacyLessonWithoutChangingPublishedTemplate() {
+        courseCatalogImporter.importCatalog();
+        lessonRepository.deleteById("lesson-rest-controller");
+
+        assertThatThrownBy(() -> importer.importCatalog())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("旧课时不存在: lesson-rest-controller");
+
+        assertThat(templateRepository.count()).isZero();
+        assertThat(legacyMappingRepository.count()).isZero();
+    }
+
+    @Test
+    void rejectsMissingMappedNodeWithoutMutatingImmutableTemplate() {
+        importer.importCatalog();
+        RoadmapTemplateEntity before = templateRepository.findById("studypilot-java-ai-v1").orElseThrow();
+        String checksum = before.getContentChecksum();
+        legacyMappingRepository.deleteAll();
+        nodeRepository.deleteById("studypilot-java-ai-v1-spring-mvc-rest");
+
+        assertThatThrownBy(() -> importer.importCatalog())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("路线节点不存在: spring-mvc-rest");
+
+        RoadmapTemplateEntity after = templateRepository.findById("studypilot-java-ai-v1").orElseThrow();
+        assertThat(after.getContentChecksum()).isEqualTo(checksum);
+        assertThat(after.getTitle()).isEqualTo(before.getTitle());
+        assertThat(legacyMappingRepository.count()).isZero();
     }
 
     @Test

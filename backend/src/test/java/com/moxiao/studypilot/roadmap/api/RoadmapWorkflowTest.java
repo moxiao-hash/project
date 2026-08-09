@@ -1,5 +1,6 @@
 package com.moxiao.studypilot.roadmap.api;
 
+import com.moxiao.studypilot.course.application.CourseCatalogImporter;
 import com.moxiao.studypilot.roadmap.application.RoadmapCatalogImporter;
 import com.moxiao.studypilot.roadmap.application.RoadmapQueryService;
 import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
@@ -48,6 +49,7 @@ class RoadmapWorkflowTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired RoadmapCatalogImporter importer;
+    @Autowired CourseCatalogImporter courseCatalogImporter;
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
@@ -63,6 +65,7 @@ class RoadmapWorkflowTest {
                 ALTER TABLE user_roadmaps ADD CONSTRAINT IF NOT EXISTS uk_user_roadmap_active_slot
                 UNIQUE (owner_id, active_slot)
                 """);
+        courseCatalogImporter.importCatalog();
         importer.importCatalog();
     }
 
