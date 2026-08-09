@@ -33,7 +33,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import { roadmapApi } from '@/services/roadmap'
@@ -46,12 +46,14 @@ const loading = ref(false)
 const error = ref(false)
 const notFound = ref(false)
 let requestSequence = 0
+let active = true
 
 function isNotFound(value: unknown) {
   return (value as { response?: { status?: number } })?.response?.status === 404
 }
 
 async function loadStage() {
+  if (!active) return
   const id = String(route.params.id ?? '')
   const sequence = ++requestSequence
   loading.value = true
@@ -60,17 +62,21 @@ async function loadStage() {
   stage.value = null
   try {
     const result = await roadmapApi.getStage(id)
-    if (sequence === requestSequence) stage.value = result
+    if (active && sequence === requestSequence) stage.value = result
   } catch (cause) {
-    if (sequence !== requestSequence) return
+    if (!active || sequence !== requestSequence) return
     if (isNotFound(cause)) notFound.value = true
     else error.value = true
   } finally {
-    if (sequence === requestSequence) loading.value = false
+    if (active && sequence === requestSequence) loading.value = false
   }
 }
 
 watch(() => route.params.id, loadStage, { immediate: true })
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+})
 </script>
 
 <style scoped>

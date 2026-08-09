@@ -211,6 +211,24 @@ describe('roadmap read views', () => {
     expect(wrapper.find('[data-testid="roadmap-enroll"]').exists()).toBe(true)
   })
 
+  it('does not reload the roadmap when enrollment finishes after unmount', async () => {
+    const pendingEnrollment = deferred<Awaited<ReturnType<typeof roadmapApi.enroll>>>()
+    vi.mocked(roadmapApi.getCurrentMap).mockRejectedValue({ response: { status: 404 } })
+    vi.mocked(roadmapApi.enroll).mockReturnValue(pendingEnrollment.promise)
+    const { wrapper } = await mountAt(RoadmapView)
+    await flushPromises()
+    await wrapper.get('[data-testid="roadmap-enroll"]').trigger('click')
+    wrapper.unmount()
+
+    pendingEnrollment.resolve({
+      id: 'enrollment-1', roadmapCode: 'studypilot-java-ai', templateVersion: 1,
+      title: 'StudyPilot Java + AI 学习路线', status: 'ACTIVE', enrolledAt: '2026-08-09T10:00:00Z',
+    })
+    await flushPromises()
+
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(1)
+  })
+
   it('loads a stage by route id and exposes its learning contract', async () => {
     vi.mocked(roadmapApi.getStage).mockResolvedValue(stage())
     const { wrapper } = await mountAt(StageView, '/roadmap/stages/stage-java')
@@ -283,6 +301,45 @@ describe('roadmap read views', () => {
     expect(wrapper.text()).toContain('Java 语法、面向对象与代码规范')
     expect(wrapper.get('[data-testid="node-prerequisites"]').find('a').exists()).toBe(false)
     expect(wrapper.text()).toContain('前置节点链接暂时无法解析')
+  })
+
+  it('renders primary node content without waiting for optional prerequisite resolution', async () => {
+    const pendingMap = deferred<RoadmapMap>()
+    vi.mocked(roadmapApi.getNode).mockResolvedValue(node({ prerequisiteCodes: ['java-basics'] }))
+    vi.mocked(roadmapApi.getCurrentMap).mockReturnValue(pendingMap.promise)
+    const { wrapper } = await mountAt(NodeView, '/roadmap/nodes/node-java')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Java 语法、面向对象与代码规范')
+    expect(wrapper.text()).not.toContain('正在加载学习节点')
+    expect(wrapper.text()).toContain('前置节点链接暂时无法解析')
+  })
+
+  it('does not fetch the roadmap map when a node has no prerequisites', async () => {
+    vi.mocked(roadmapApi.getNode).mockResolvedValue(node({ prerequisiteCodes: [] }))
+    const { wrapper } = await mountAt(NodeView, '/roadmap/nodes/node-java')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('无，可直接开始')
+    expect(roadmapApi.getCurrentMap).not.toHaveBeenCalled()
+  })
+
+  it('does not apply prerequisite links resolved for a previous route', async () => {
+    const oldMap = deferred<RoadmapMap>()
+    vi.mocked(roadmapApi.getNode)
+      .mockResolvedValueOnce(node({ id: 'node-old', prerequisiteCodes: ['java-syntax-oop'] }))
+      .mockResolvedValueOnce(node({ id: 'node-new', title: '新节点', prerequisiteCodes: [] }))
+    vi.mocked(roadmapApi.getCurrentMap).mockReturnValue(oldMap.promise)
+    const { wrapper, router } = await mountAt(NodeView, '/roadmap/nodes/node-old')
+    await flushPromises()
+    await router.push('/roadmap/nodes/node-new')
+    await flushPromises()
+    oldMap.resolve(fixtureRoadmap())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('新节点')
+    expect(wrapper.get('[data-testid="node-prerequisites"]').find('a').exists()).toBe(false)
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(1)
   })
 
   it('renders stable not-found states for missing stage and node', async () => {

@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import { roadmapApi } from '@/services/roadmap'
 import type { RoadmapMap } from '@/types/roadmap'
@@ -89,6 +89,8 @@ const notEnrolled = ref(false)
 const error = ref(false)
 const enrollmentError = ref(false)
 const viewMode = ref<'graph' | 'list'>('graph')
+let active = true
+let requestSequence = 0
 
 const progressPercent = computed(() => {
   if (!roadmap.value?.totalRequiredNodes) return 0
@@ -100,37 +102,47 @@ function isNotFound(value: unknown) {
 }
 
 async function load() {
-  if (loading.value) return
+  if (!active || loading.value) return
+  const sequence = ++requestSequence
   loading.value = true
   error.value = false
   notEnrolled.value = false
   try {
-    roadmap.value = await roadmapApi.getCurrentMap()
+    const result = await roadmapApi.getCurrentMap()
+    if (!active || sequence !== requestSequence) return
+    roadmap.value = result
   } catch (cause) {
+    if (!active || sequence !== requestSequence) return
     roadmap.value = null
     if (isNotFound(cause)) notEnrolled.value = true
     else error.value = true
   } finally {
-    loading.value = false
+    if (active && sequence === requestSequence) loading.value = false
   }
 }
 
 async function enroll() {
-  if (enrolling.value || loading.value) return
+  if (!active || enrolling.value || loading.value) return
   enrolling.value = true
   enrollmentError.value = false
   try {
     await roadmapApi.enroll()
+    if (!active) return
     await load()
   } catch {
+    if (!active) return
     notEnrolled.value = true
     enrollmentError.value = true
   } finally {
-    enrolling.value = false
+    if (active) enrolling.value = false
   }
 }
 
 onMounted(load)
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+})
 </script>
 
 <style scoped>

@@ -72,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import { roadmapApi } from '@/services/roadmap'
@@ -86,6 +86,7 @@ const notFound = ref(false)
 const prerequisiteIds = ref<Record<string, string>>({})
 const prerequisiteResolution = ref<'resolved' | 'unavailable'>('unavailable')
 let requestSequence = 0
+let active = true
 
 const labels: Record<RoadmapNode['displayStatus'], string> = {
   LOCKED: '已锁定', AVAILABLE: '可开始', SCHEDULED: '已排期', IN_PROGRESS: '学习中',
@@ -98,6 +99,7 @@ function isNotFound(value: unknown) {
 }
 
 async function loadNode() {
+  if (!active) return
   const id = String(route.params.id ?? '')
   const sequence = ++requestSequence
   loading.value = true
@@ -107,27 +109,31 @@ async function loadNode() {
   prerequisiteIds.value = {}
   prerequisiteResolution.value = 'unavailable'
 
-  const [nodeResult, mapResult] = await Promise.allSettled([
-    roadmapApi.getNode(id),
-    roadmapApi.getCurrentMap(),
-  ])
-  if (sequence !== requestSequence) return
-
-  if (nodeResult.status === 'rejected') {
-    if (isNotFound(nodeResult.reason)) notFound.value = true
+  try {
+    const result = await roadmapApi.getNode(id)
+    if (!active || sequence !== requestSequence) return
+    node.value = result
+    loading.value = false
+    if (result.prerequisiteCodes.length > 0) void resolvePrerequisites(sequence)
+  } catch (cause) {
+    if (!active || sequence !== requestSequence) return
+    if (isNotFound(cause)) notFound.value = true
     else error.value = true
     loading.value = false
-    return
   }
+}
 
-  node.value = nodeResult.value
-  if (mapResult.status === 'fulfilled' && isRoadmapMap(mapResult.value)) {
+async function resolvePrerequisites(sequence: number) {
+  try {
+    const map = await roadmapApi.getCurrentMap()
+    if (!active || sequence !== requestSequence || !isRoadmapMap(map)) return
     prerequisiteIds.value = Object.fromEntries(
-      mapResult.value.stages.flatMap((stage) => stage.nodes.map((item) => [item.code, item.id])),
+      map.stages.flatMap((stage) => stage.nodes.map((item) => [item.code, item.id])),
     )
     prerequisiteResolution.value = 'resolved'
+  } catch {
+    // Prerequisite links are an optional enhancement; the primary node remains readable.
   }
-  loading.value = false
 }
 
 function isRoadmapMap(value: unknown): value is RoadmapMap {
@@ -135,6 +141,10 @@ function isRoadmapMap(value: unknown): value is RoadmapMap {
 }
 
 watch(() => route.params.id, loadNode, { immediate: true })
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+})
 </script>
 
 <style scoped>
