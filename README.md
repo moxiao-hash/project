@@ -73,6 +73,9 @@ npm run build
 
 ## 文档入口
 
+- [Roadmap 驱动学习与项目 Agent 设计](docs/superpowers/specs/2026-08-09-roadmap-driven-self-learning-and-project-agent-design.md)
+- [Roadmap Domain Foundation 实施计划](docs/superpowers/plans/2026-08-09-roadmap-domain-foundation.md)
+- [Roadmap Foundation 端到端联调](docs/roadmap-foundation-e2e.http)
 - [系统架构](docs/architecture.md)
 - [部署与演示指南](docs/部署与演示指南.md)
 - [阶段 8 公共 API 联调](docs/stage8-release-e2e.http)

@@ -1,0 +1,117 @@
+### StudyPilot Roadmap Foundation 端到端联调
+###
+### 前置条件：
+### 1. MySQL 与 Spring Boot 已启动，Java API 地址写入 baseUrl。
+### 2. 在 IntelliJ HTTP Client 的 http-client.private.env.json 中配置：
+###      baseUrl=http://127.0.0.1:8080
+###      email=<本地测试账号>
+###      password=<本地测试密码>
+### 3. 私有环境文件不得提交 Git。本流程不接受客户端注入用户身份，也不需要内部服务令牌或模型 Key。
+###
+### 从上到下逐条执行。每个响应处理器都会验证关键契约并保存下一步所需变量。
+
+### 1. 登录并保存短期访问令牌
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+> {%
+  client.test("登录成功", function () {
+    client.assert(response.status === 200, "登录应返回 200");
+    client.assert(Boolean(response.body.accessToken), "响应应包含 accessToken");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+%}
+
+### 2. 绑定 Java + AI Roadmap v1
+POST {{baseUrl}}/api/roadmap-enrollments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "roadmapCode": "studypilot-java-ai",
+  "templateVersion": 1
+}
+
+> {%
+  client.test("路线绑定成功", function () {
+    client.assert(response.status === 201, "绑定应返回 201");
+    client.assert(response.body.roadmapCode === "studypilot-java-ai", "路线编码应匹配");
+    client.assert(response.body.templateVersion === 1, "模板版本应为 1");
+    client.assert(Boolean(response.body.id), "响应应包含 enrollmentId");
+  });
+  client.global.set("enrollmentId", response.body.id);
+%}
+
+### 3. 读取完整路线图，并保存首个阶段与节点 ID
+GET {{baseUrl}}/api/roadmaps/current/map
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("完整路线图符合 v1 目录", function () {
+    client.assert(response.status === 200, "路线图查询应返回 200");
+    client.assert(response.body.enrollmentId === client.global.get("enrollmentId"),
+      "路线图应属于刚绑定的 enrollment");
+    client.assert(response.body.stages.length === 12, "v1 应包含 12 个阶段");
+    const nodeCount = response.body.stages.reduce((sum, stage) => sum + stage.nodes.length, 0);
+    client.assert(nodeCount === 64, "v1 应包含 64 个节点");
+    client.assert(response.body.stages[0].nodes.length > 0, "首阶段应至少包含一个节点");
+  });
+  client.global.set("stageId", response.body.stages[0].id);
+  client.global.set("nodeId", response.body.stages[0].nodes[0].id);
+%}
+
+### 4. 读取首个阶段
+GET {{baseUrl}}/api/roadmaps/current/stages/{{stageId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("阶段详情属于当前路线", function () {
+    client.assert(response.status === 200, "阶段查询应返回 200");
+    client.assert(response.body.id === client.global.get("stageId"), "阶段 ID 应匹配");
+    client.assert(response.body.nodes.some(node => node.id === client.global.get("nodeId")),
+      "阶段应包含已保存的首个节点");
+  });
+%}
+
+### 5. 读取一个节点
+GET {{baseUrl}}/api/roadmaps/current/nodes/{{nodeId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("节点详情包含学习与完成状态", function () {
+    client.assert(response.status === 200, "节点查询应返回 200");
+    client.assert(response.body.id === client.global.get("nodeId"), "节点 ID 应匹配");
+    client.assert(Boolean(response.body.availabilityStatus), "应返回可用性状态");
+    client.assert(Boolean(response.body.completionStatus), "应返回完成状态");
+    client.assert(Boolean(response.body.displayStatus), "应返回展示状态");
+  });
+%}
+
+### 6. 重复绑定同一版本，验证幂等且不创建第二条当前路线
+POST {{baseUrl}}/api/roadmap-enrollments
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "roadmapCode": "studypilot-java-ai",
+  "templateVersion": 1
+}
+
+> {%
+  client.test("重复绑定返回同一 enrollment", function () {
+    client.assert(response.status === 201, "幂等绑定仍按创建契约返回 201");
+    client.assert(response.body.id === client.global.get("enrollmentId"),
+      "重复绑定必须返回相同 enrollmentId");
+  });
+%}
+
+### 手动验收补充
+### - 第 3 步应通过自动断言：12 个阶段、64 个节点。
+### - 第 6 步应通过自动断言：两次绑定的 enrollmentId 完全相同。
+### - 打开 http://localhost:5173/roadmap，确认图形与列表展示同一条路线；锁定节点应说明前置依赖。
+### - 浏览器 Network 面板只能出现 Java /api/** 请求，不能出现 FastAPI /internal/** 请求。
