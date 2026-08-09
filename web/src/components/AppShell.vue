@@ -14,16 +14,22 @@
             :to="item.to"
             class="nav-item"
             :class="{ active: isActive(item) }"
+            :aria-label="item.label"
           >
-            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-icon" aria-hidden="true">{{ item.icon }}</span>
             <span>{{ item.label }}</span>
             <span v-if="item.mock && gatewayMode === 'mock'" class="nav-mock">Mock</span>
           </RouterLink>
         </template>
       </nav>
       <div class="sidebar-footer">
-        <RouterLink to="/settings" class="nav-item" :class="{ active: route.path.startsWith('/settings') }">
-          <span class="nav-icon">⚙️</span>
+        <RouterLink
+          to="/settings"
+          class="nav-item"
+          :class="{ active: route.path.startsWith('/settings') }"
+          aria-label="设置"
+        >
+          <span class="nav-icon" aria-hidden="true">⚙️</span>
           <span>设置</span>
         </RouterLink>
       </div>

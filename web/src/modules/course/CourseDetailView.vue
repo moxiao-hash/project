@@ -7,6 +7,7 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import { courseApi } from '@/services/course'
 import { describeError } from '@/services/http'
 import type { CourseDetail } from '@/types/course'
+import LegacyRoadmapBanner from './components/LegacyRoadmapBanner.vue'
 
 const route = useRoute()
 const course = ref<CourseDetail | null>(null)
@@ -30,13 +31,7 @@ onMounted(load)
 
 <template>
   <div class="page">
-    <aside class="legacy-roadmap-banner" role="status">
-      <div>
-        <strong>旧版课程入口</strong>
-        <span>现有课程与学习记录仍可使用；新的主学习流程已迁移到路线图。</span>
-      </div>
-      <RouterLink to="/roadmap">前往 Java + AI 学习路线 →</RouterLink>
-    </aside>
+    <LegacyRoadmapBanner />
     <LoadingBlock v-if="loading" />
     <ErrorState v-else-if="error" :message="error" @retry="load" />
     <template v-else-if="course">
@@ -87,35 +82,6 @@ onMounted(load)
 </template>
 
 <style scoped>
-.legacy-roadmap-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 20px;
-  padding: 14px 16px;
-  border: 1px solid #c7d2fe;
-  border-radius: 12px;
-  background: #eef2ff;
-}
-
-.legacy-roadmap-banner div,
-.legacy-roadmap-banner span {
-  display: grid;
-  gap: 3px;
-}
-
-.legacy-roadmap-banner span {
-  color: var(--color-text-secondary);
-  font-size: 12px;
-}
-
-.legacy-roadmap-banner a {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 700;
-}
-
 .back-link {
   display: inline-block;
   margin-bottom: 12px;
@@ -194,7 +160,4 @@ onMounted(load)
   color: var(--color-text-secondary);
 }
 
-@media (max-width: 720px) {
-  .legacy-roadmap-banner { align-items: flex-start; flex-direction: column; }
-}
 </style>

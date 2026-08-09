@@ -13,6 +13,7 @@ import NodeView from '@/modules/roadmap/NodeView.vue'
 import CourseCatalogView from '@/modules/course/CourseCatalogView.vue'
 import CourseDetailView from '@/modules/course/CourseDetailView.vue'
 import LessonView from '@/modules/course/LessonView.vue'
+import LegacyRoadmapBanner from '@/modules/course/components/LegacyRoadmapBanner.vue'
 import appShellSource from '@/components/AppShell.vue?raw'
 import courseCatalogSource from '@/modules/course/CourseCatalogView.vue?raw'
 import courseDetailSource from '@/modules/course/CourseDetailView.vue?raw'
@@ -212,6 +213,11 @@ describe('roadmap-first navigation', () => {
     expect(wrapper.findAll('a[href="/today"]')).toHaveLength(1)
     expect(wrapper.find('a[href="/courses"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/roadmap"]').classes()).toContain('active')
+    wrapper.findAll('.sidebar a.nav-item').forEach((link) => {
+      const visibleLabel = link.find('span:not(.nav-icon):not(.nav-mock)').text()
+      expect(link.attributes('aria-label')).toBe(visibleLabel)
+      expect(link.get('.nav-icon').attributes('aria-hidden')).toBe('true')
+    })
   })
 
   it('keeps the navigation declaration free of hidden course and duplicate today entries', () => {
@@ -227,12 +233,11 @@ describe('legacy course entry guidance', () => {
     vi.restoreAllMocks()
   })
 
-  it('uses one identical status banner in all three legacy views without removing their APIs', () => {
-    const banner = /<aside class="legacy-roadmap-banner" role="status">[\s\S]*?<\/aside>/
-    const banners = legacySources.map((source) => source.match(banner)?.[0].replace(/\s+/g, ' '))
-
-    expect(new Set(banners).size).toBe(1)
-    expect(banners[0]).toContain('to="/roadmap"')
+  it('reuses the legacy roadmap banner in all three views without removing their APIs', () => {
+    legacySources.forEach((source) => {
+      expect(source).toContain('<LegacyRoadmapBanner />')
+      expect(source).not.toContain('.legacy-roadmap-banner')
+    })
     expect(courseCatalogSource).toContain('courseApi.listCourses()')
     expect(courseDetailSource).toContain('courseApi.getCourse(')
     expect(lessonSource).toContain('courseApi.updateProgress(')
@@ -240,16 +245,35 @@ describe('legacy course entry guidance', () => {
     expect(lessonSource).toContain('courseApi.generateLessonQuiz(')
   })
 
+  it('exposes one visible status message linking to the current roadmap', async () => {
+    const bannerRouter = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/roadmap', component: { template: '<div />' } }],
+    })
+    await bannerRouter.push('/roadmap')
+    await bannerRouter.isReady()
+
+    const wrapper = mount(LegacyRoadmapBanner, {
+      global: { plugins: [bannerRouter] },
+    })
+
+    expect(wrapper.get('[role="status"]').isVisible()).toBe(true)
+    expect(wrapper.text()).toContain('旧版课程入口')
+    expect(wrapper.text()).toContain('现有课程与学习记录仍可使用')
+    expect(wrapper.get('a').text()).toBe('前往 Java + AI 学习路线 →')
+    expect(wrapper.get('a').attributes('href')).toBe('/roadmap')
+  })
+
   it.each([
-    ['/courses', CourseCatalogView, 'listCourses'],
-    ['/courses/java-ai', CourseDetailView, 'getCourse'],
-    ['/lessons/lesson-1', LessonView, 'getLesson'],
-  ] as const)('shows the roadmap status banner on %s', async (path, view, apiMethod) => {
+    ['/courses', '/courses', CourseCatalogView, 'listCourses', undefined],
+    ['/courses/:slug', '/courses/java-ai', CourseDetailView, 'getCourse', 'java-ai'],
+    ['/lessons/:lessonId', '/lessons/lesson-1', LessonView, 'getLesson', 'lesson-1'],
+  ] as const)('shows the roadmap status banner on %s', async (routePath, path, view, apiMethod, id) => {
     vi.spyOn(courseApi, apiMethod).mockReturnValue(new Promise(() => undefined) as never)
     const legacyRouter = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path, component: view },
+        { path: routePath, component: view },
         { path: '/roadmap', component: { template: '<div />' } },
       ],
     })
@@ -264,10 +288,8 @@ describe('legacy course entry guidance', () => {
     })
     await flushPromises()
 
-    const banner = wrapper.find('[role="status"]')
-    expect(banner.isVisible()).toBe(true)
-    expect(banner.text()).toContain('Java + AI 学习路线')
-    expect(banner.find('a').attributes('href')).toBe('/roadmap')
-    expect(courseApi[apiMethod]).toHaveBeenCalledOnce()
+    expect(wrapper.findComponent(LegacyRoadmapBanner).exists()).toBe(true)
+    if (id) expect(courseApi[apiMethod]).toHaveBeenCalledExactlyOnceWith(id)
+    else expect(courseApi[apiMethod]).toHaveBeenCalledExactlyOnceWith()
   })
 })
