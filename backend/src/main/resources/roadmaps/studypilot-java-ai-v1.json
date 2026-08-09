@@ -17,34 +17,34 @@
           "nodeOrder": 1,
           "title": "Java 语法、面向对象与代码规范",
           "objectives": [
-            "解释Java 语法、面向对象与代码规范的关键机制与适用边界",
-            "运用Java 语法、面向对象与代码规范完成可验证的工程实现"
+            "能够实现并演示record 与 sealed class与封装继承多态",
+            "能够为equals/hashCode 契约场景编写Stream 与 Optional验证并解释Checkstyle 代码规范取舍"
           ],
           "highFrequency": [
-            "Java 语法、面向对象与代码规范常用配置与核心 API",
-            "Java 语法、面向对象与代码规范在生产项目中的典型设计"
+            "record 与 sealed class；封装继承多态",
+            "equals/hashCode 契约；Stream 与 Optional；Checkstyle 代码规范"
           ],
           "commonMistakes": [
-            "Java 语法、面向对象与代码规范边界条件处理不完整",
-            "Java 语法、面向对象与代码规范错误配置导致行为与预期不一致"
+            "用 == 比较字符串导致内容相同却判断失败",
+            "重写 equals 却漏掉 hashCode 破坏 HashSet 去重"
           ],
           "searchKeywords": [
-            "java-syntax-oop",
-            "Java 语法、面向对象与代码规范",
-            "Java 语法、面向对象与代码规范 实战",
-            "Java 语法、面向对象与代码规范 排障"
+            "record 与 sealed class",
+            "封装继承多态",
+            "equals/hashCode 契约",
+            "Java 语法、面向对象与代码规范 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Java 语法、面向对象与代码规范实现、测试与简短设计说明"
+            "description": "带 record DTO、继承层次和静态检查配置的 Java 小程序"
           },
           "quizBlueprint": [
-            "Java 语法、面向对象与代码规范核心机制",
-            "Java 语法、面向对象与代码规范常用 API 与配置",
-            "Java 语法、面向对象与代码规范边界与异常处理",
-            "Java 语法、面向对象与代码规范性能及安全考量",
-            "Java 语法、面向对象与代码规范实战排障"
+            "record 与 sealed class",
+            "封装继承多态",
+            "equals/hashCode 契约",
+            "Stream 与 Optional",
+            "Checkstyle 代码规范"
           ],
           "estimatedMinutes": 60,
           "practiceMinutes": 45,
@@ -57,34 +57,34 @@
           "nodeOrder": 2,
           "title": "集合框架与泛型",
           "objectives": [
-            "解释集合框架与泛型的关键机制与适用边界",
-            "运用集合框架与泛型完成可验证的工程实现"
+            "能够实现并演示HashMap 扩容与冲突与泛型上下界 <? extends/super>",
+            "能够为ArrayList 与 LinkedList 选型场景编写Comparator 稳定排序验证并解释ConcurrentModificationException取舍"
           ],
           "highFrequency": [
-            "集合框架与泛型常用配置与核心 API",
-            "集合框架与泛型在生产项目中的典型设计"
+            "HashMap 扩容与冲突；泛型上下界 <? extends/super>",
+            "ArrayList 与 LinkedList 选型；Comparator 稳定排序；ConcurrentModificationException"
           ],
           "commonMistakes": [
-            "集合框架与泛型边界条件处理不完整",
-            "集合框架与泛型错误配置导致行为与预期不一致"
+            "把可变对象作为 HashMap key 导致查找失效",
+            "在遍历集合时直接 remove 触发 ConcurrentModificationException"
           ],
           "searchKeywords": [
-            "java-collections-generics",
-            "集合框架与泛型",
-            "集合框架与泛型 实战",
-            "集合框架与泛型 排障"
+            "HashMap 扩容与冲突",
+            "泛型上下界 <? extends/super>",
+            "ArrayList 与 LinkedList 选型",
+            "集合框架与泛型 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的集合框架与泛型实现、测试与简短设计说明"
+            "description": "包含泛型仓库、HashMap 聚合和边界测试的集合练习"
           },
           "quizBlueprint": [
-            "集合框架与泛型核心机制",
-            "集合框架与泛型常用 API 与配置",
-            "集合框架与泛型边界与异常处理",
-            "集合框架与泛型性能及安全考量",
-            "集合框架与泛型实战排障"
+            "HashMap 扩容与冲突",
+            "泛型上下界 <? extends/super>",
+            "ArrayList 与 LinkedList 选型",
+            "Comparator 稳定排序",
+            "ConcurrentModificationException"
           ],
           "estimatedMinutes": 60,
           "practiceMinutes": 45,
@@ -99,34 +99,34 @@
           "nodeOrder": 3,
           "title": "异常处理与 Java I/O",
           "objectives": [
-            "解释异常处理与 Java I/O的关键机制与适用边界",
-            "运用异常处理与 Java I/O完成可验证的工程实现"
+            "能够实现并演示try-with-resources与受检异常与异常链",
+            "能够为Files/Path NIO.2场景编写字符集 UTF-8验证并解释缓冲流与大文件取舍"
           ],
           "highFrequency": [
-            "异常处理与 Java I/O常用配置与核心 API",
-            "异常处理与 Java I/O在生产项目中的典型设计"
+            "try-with-resources；受检异常与异常链",
+            "Files/Path NIO.2；字符集 UTF-8；缓冲流与大文件"
           ],
           "commonMistakes": [
-            "异常处理与 Java I/O边界条件处理不完整",
-            "异常处理与 Java I/O错误配置导致行为与预期不一致"
+            "捕获 Exception 后吞掉根因和上下文",
+            "未显式指定字符集造成跨环境乱码"
           ],
           "searchKeywords": [
-            "java-exceptions-io",
-            "异常处理与 Java I/O",
-            "异常处理与 Java I/O 实战",
-            "异常处理与 Java I/O 排障"
+            "try-with-resources",
+            "受检异常与异常链",
+            "Files/Path NIO.2",
+            "异常处理与 Java I/O 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的异常处理与 Java I/O实现、测试与简短设计说明"
+            "description": "使用 Files API 流式处理文件并验证资源关闭的程序"
           },
           "quizBlueprint": [
-            "异常处理与 Java I/O核心机制",
-            "异常处理与 Java I/O常用 API 与配置",
-            "异常处理与 Java I/O边界与异常处理",
-            "异常处理与 Java I/O性能及安全考量",
-            "异常处理与 Java I/O实战排障"
+            "try-with-resources",
+            "受检异常与异常链",
+            "Files/Path NIO.2",
+            "字符集 UTF-8",
+            "缓冲流与大文件"
           ],
           "estimatedMinutes": 60,
           "practiceMinutes": 45,
@@ -141,34 +141,34 @@
           "nodeOrder": 4,
           "title": "Java 并发与 JVM 基础",
           "objectives": [
-            "解释Java 并发与 JVM 基础的关键机制与适用边界",
-            "运用Java 并发与 JVM 基础完成可验证的工程实现"
+            "能够实现并演示ExecutorService 线程池与CompletableFuture 组合",
+            "能够为synchronized 与 ReentrantLock场景编写volatile 可见性验证并解释JVM 堆栈与 GC取舍"
           ],
           "highFrequency": [
-            "Java 并发与 JVM 基础常用配置与核心 API",
-            "Java 并发与 JVM 基础在生产项目中的典型设计"
+            "ExecutorService 线程池；CompletableFuture 组合",
+            "synchronized 与 ReentrantLock；volatile 可见性；JVM 堆栈与 GC"
           ],
           "commonMistakes": [
-            "Java 并发与 JVM 基础边界条件处理不完整",
-            "Java 并发与 JVM 基础错误配置导致行为与预期不一致"
+            "无界线程池导致任务堆积和 OOM",
+            "误把 volatile 当作复合操作原子性保证"
           ],
           "searchKeywords": [
-            "java-concurrency-jvm",
-            "Java 并发与 JVM 基础",
-            "Java 并发与 JVM 基础 实战",
-            "Java 并发与 JVM 基础 排障"
+            "ExecutorService 线程池",
+            "CompletableFuture 组合",
+            "synchronized 与 ReentrantLock",
+            "Java 并发与 JVM 基础 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Java 并发与 JVM 基础实现、测试与简短设计说明"
+            "description": "带受控线程池、超时和并发正确性测试的任务处理器"
           },
           "quizBlueprint": [
-            "Java 并发与 JVM 基础核心机制",
-            "Java 并发与 JVM 基础常用 API 与配置",
-            "Java 并发与 JVM 基础边界与异常处理",
-            "Java 并发与 JVM 基础性能及安全考量",
-            "Java 并发与 JVM 基础实战排障"
+            "ExecutorService 线程池",
+            "CompletableFuture 组合",
+            "synchronized 与 ReentrantLock",
+            "volatile 可见性",
+            "JVM 堆栈与 GC"
           ],
           "estimatedMinutes": 60,
           "practiceMinutes": 45,
@@ -183,34 +183,34 @@
           "nodeOrder": 5,
           "title": "Maven 构建与自动化测试",
           "objectives": [
-            "解释Maven 构建与自动化测试的关键机制与适用边界",
-            "运用Maven 构建与自动化测试完成可验证的工程实现"
+            "能够实现并演示Maven 生命周期与 scope与JUnit 5 参数化测试",
+            "能够为AssertJ 断言场景编写Mockito 测试替身验证并解释Surefire 与 JaCoCo取舍"
           ],
           "highFrequency": [
-            "Maven 构建与自动化测试常用配置与核心 API",
-            "Maven 构建与自动化测试在生产项目中的典型设计"
+            "Maven 生命周期与 scope；JUnit 5 参数化测试",
+            "AssertJ 断言；Mockito 测试替身；Surefire 与 JaCoCo"
           ],
           "commonMistakes": [
-            "Maven 构建与自动化测试边界条件处理不完整",
-            "Maven 构建与自动化测试错误配置导致行为与预期不一致"
+            "把测试依赖放进 compile scope 污染产物",
+            "只验证 mock 调用次数而未验证业务结果"
           ],
           "searchKeywords": [
-            "java-maven-testing",
-            "Maven 构建与自动化测试",
-            "Maven 构建与自动化测试 实战",
-            "Maven 构建与自动化测试 排障"
+            "Maven 生命周期与 scope",
+            "JUnit 5 参数化测试",
+            "AssertJ 断言",
+            "Maven 构建与自动化测试 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Maven 构建与自动化测试实现、测试与简短设计说明"
+            "description": "可由 Maven 一键构建并含单元测试与覆盖率报告的模块"
           },
           "quizBlueprint": [
-            "Maven 构建与自动化测试核心机制",
-            "Maven 构建与自动化测试常用 API 与配置",
-            "Maven 构建与自动化测试边界与异常处理",
-            "Maven 构建与自动化测试性能及安全考量",
-            "Maven 构建与自动化测试实战排障"
+            "Maven 生命周期与 scope",
+            "JUnit 5 参数化测试",
+            "AssertJ 断言",
+            "Mockito 测试替身",
+            "Surefire 与 JaCoCo"
           ],
           "estimatedMinutes": 60,
           "practiceMinutes": 45,
@@ -234,34 +234,34 @@
           "nodeOrder": 1,
           "title": "Spring IoC 与依赖注入",
           "objectives": [
-            "解释Spring IoC 与依赖注入的关键机制与适用边界",
-            "运用Spring IoC 与依赖注入完成可验证的工程实现"
+            "能够实现并演示构造器注入与Bean scope 与生命周期",
+            "能够为@Configuration/@Bean场景编写条件装配验证并解释循环依赖诊断取舍"
           ],
           "highFrequency": [
-            "Spring IoC 与依赖注入常用配置与核心 API",
-            "Spring IoC 与依赖注入在生产项目中的典型设计"
+            "构造器注入；Bean scope 与生命周期",
+            "@Configuration/@Bean；条件装配；循环依赖诊断"
           ],
           "commonMistakes": [
-            "Spring IoC 与依赖注入边界条件处理不完整",
-            "Spring IoC 与依赖注入错误配置导致行为与预期不一致"
+            "使用字段注入导致依赖不可见且难以测试",
+            "在 @Configuration 外直接调用 @Bean 方法产生非容器对象"
           ],
           "searchKeywords": [
-            "spring-ioc-di",
-            "Spring IoC 与依赖注入",
-            "Spring IoC 与依赖注入 实战",
-            "Spring IoC 与依赖注入 排障"
+            "构造器注入",
+            "Bean scope 与生命周期",
+            "@Configuration/@Bean",
+            "Spring IoC 与依赖注入 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Spring IoC 与依赖注入实现、测试与简短设计说明"
+            "description": "展示构造器注入、条件 Bean 与生命周期日志的 Spring 模块"
           },
           "quizBlueprint": [
-            "Spring IoC 与依赖注入核心机制",
-            "Spring IoC 与依赖注入常用 API 与配置",
-            "Spring IoC 与依赖注入边界与异常处理",
-            "Spring IoC 与依赖注入性能及安全考量",
-            "Spring IoC 与依赖注入实战排障"
+            "构造器注入",
+            "Bean scope 与生命周期",
+            "@Configuration/@Bean",
+            "条件装配",
+            "循环依赖诊断"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -276,34 +276,34 @@
           "nodeOrder": 2,
           "title": "Spring MVC 与 REST API",
           "objectives": [
-            "解释Spring MVC 与 REST API的关键机制与适用边界",
-            "运用Spring MVC 与 REST API完成可验证的工程实现"
+            "能够实现并演示@RestController 与 @RequestMapping与HTTP 状态码与 ResponseEntity",
+            "能够为请求 DTO 与 Jackson场景编写REST 资源命名验证并解释MockMvc 接口测试取舍"
           ],
           "highFrequency": [
-            "Spring MVC 与 REST API常用配置与核心 API",
-            "Spring MVC 与 REST API在生产项目中的典型设计"
+            "@RestController 与 @RequestMapping；HTTP 状态码与 ResponseEntity",
+            "请求 DTO 与 Jackson；REST 资源命名；MockMvc 接口测试"
           ],
           "commonMistakes": [
-            "Spring MVC 与 REST API边界条件处理不完整",
-            "Spring MVC 与 REST API错误配置导致行为与预期不一致"
+            "把领域实体直接暴露为请求响应模型",
+            "所有异常都返回 200 导致客户端无法判断失败"
           ],
           "searchKeywords": [
-            "spring-mvc-rest",
-            "Spring MVC 与 REST API",
-            "Spring MVC 与 REST API 实战",
-            "Spring MVC 与 REST API 排障"
+            "@RestController 与 @RequestMapping",
+            "HTTP 状态码与 ResponseEntity",
+            "请求 DTO 与 Jackson",
+            "Spring MVC 与 REST API 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Spring MVC 与 REST API实现、测试与简短设计说明"
+            "description": "含 @RestController、DTO、状态码和 MockMvc 测试的 REST API"
           },
           "quizBlueprint": [
-            "Spring MVC 与 REST API核心机制",
-            "Spring MVC 与 REST API常用 API 与配置",
-            "Spring MVC 与 REST API边界与异常处理",
-            "Spring MVC 与 REST API性能及安全考量",
-            "Spring MVC 与 REST API实战排障"
+            "@RestController 与 @RequestMapping",
+            "HTTP 状态码与 ResponseEntity",
+            "请求 DTO 与 Jackson",
+            "REST 资源命名",
+            "MockMvc 接口测试"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -318,34 +318,34 @@
           "nodeOrder": 3,
           "title": "参数校验与统一异常处理",
           "objectives": [
-            "解释参数校验与统一异常处理的关键机制与适用边界",
-            "运用参数校验与统一异常处理完成可验证的工程实现"
+            "能够实现并演示Bean Validation DTO 约束与@Valid 与分组校验",
+            "能够为@RestControllerAdvice场景编写ProblemDetail 错误契约验证并解释MethodArgumentNotValidException取舍"
           ],
           "highFrequency": [
-            "参数校验与统一异常处理常用配置与核心 API",
-            "参数校验与统一异常处理在生产项目中的典型设计"
+            "Bean Validation DTO 约束；@Valid 与分组校验",
+            "@RestControllerAdvice；ProblemDetail 错误契约；MethodArgumentNotValidException"
           ],
           "commonMistakes": [
-            "参数校验与统一异常处理边界条件处理不完整",
-            "参数校验与统一异常处理错误配置导致行为与预期不一致"
+            "漏加 @Valid 导致 DTO 注解完全不生效",
+            "不同异常返回不同字段使前端无法统一处理"
           ],
           "searchKeywords": [
-            "spring-validation-errors",
-            "参数校验与统一异常处理",
-            "参数校验与统一异常处理 实战",
-            "参数校验与统一异常处理 排障"
+            "Bean Validation DTO 约束",
+            "@Valid 与分组校验",
+            "@RestControllerAdvice",
+            "参数校验与统一异常处理 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的参数校验与统一异常处理实现、测试与简短设计说明"
+            "description": "实现 DTO 约束、全局异常响应契约及失败用例测试"
           },
           "quizBlueprint": [
-            "参数校验与统一异常处理核心机制",
-            "参数校验与统一异常处理常用 API 与配置",
-            "参数校验与统一异常处理边界与异常处理",
-            "参数校验与统一异常处理性能及安全考量",
-            "参数校验与统一异常处理实战排障"
+            "Bean Validation DTO 约束",
+            "@Valid 与分组校验",
+            "@RestControllerAdvice",
+            "ProblemDetail 错误契约",
+            "MethodArgumentNotValidException"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -360,34 +360,34 @@
           "nodeOrder": 4,
           "title": "Spring 配置管理与日志",
           "objectives": [
-            "解释Spring 配置管理与日志的关键机制与适用边界",
-            "运用Spring 配置管理与日志完成可验证的工程实现"
+            "能够实现并演示@ConfigurationProperties与profile 配置覆盖",
+            "能够为Logback MDC场景编写结构化 JSON 日志验证并解释敏感字段脱敏取舍"
           ],
           "highFrequency": [
-            "Spring 配置管理与日志常用配置与核心 API",
-            "Spring 配置管理与日志在生产项目中的典型设计"
+            "@ConfigurationProperties；profile 配置覆盖",
+            "Logback MDC；结构化 JSON 日志；敏感字段脱敏"
           ],
           "commonMistakes": [
-            "Spring 配置管理与日志边界条件处理不完整",
-            "Spring 配置管理与日志错误配置导致行为与预期不一致"
+            "在日志中输出 token 或数据库密码",
+            "用字符串拼接日志导致无效参数仍被计算"
           ],
           "searchKeywords": [
-            "spring-config-logging",
-            "Spring 配置管理与日志",
-            "Spring 配置管理与日志 实战",
-            "Spring 配置管理与日志 排障"
+            "@ConfigurationProperties",
+            "profile 配置覆盖",
+            "Logback MDC",
+            "Spring 配置管理与日志 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Spring 配置管理与日志实现、测试与简短设计说明"
+            "description": "含类型安全配置、requestId MDC 和脱敏测试的服务"
           },
           "quizBlueprint": [
-            "Spring 配置管理与日志核心机制",
-            "Spring 配置管理与日志常用 API 与配置",
-            "Spring 配置管理与日志边界与异常处理",
-            "Spring 配置管理与日志性能及安全考量",
-            "Spring 配置管理与日志实战排障"
+            "@ConfigurationProperties",
+            "profile 配置覆盖",
+            "Logback MDC",
+            "结构化 JSON 日志",
+            "敏感字段脱敏"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -402,34 +402,34 @@
           "nodeOrder": 5,
           "title": "文件处理与定时任务",
           "objectives": [
-            "解释文件处理与定时任务的关键机制与适用边界",
-            "运用文件处理与定时任务完成可验证的工程实现"
+            "能够实现并演示MultipartFile 上传限制与Path normalize 防穿越",
+            "能够为@Scheduled cron场景编写任务锁与幂等验证并解释流式下载响应取舍"
           ],
           "highFrequency": [
-            "文件处理与定时任务常用配置与核心 API",
-            "文件处理与定时任务在生产项目中的典型设计"
+            "MultipartFile 上传限制；Path normalize 防穿越",
+            "@Scheduled cron；任务锁与幂等；流式下载响应"
           ],
           "commonMistakes": [
-            "文件处理与定时任务边界条件处理不完整",
-            "文件处理与定时任务错误配置导致行为与预期不一致"
+            "直接拼接用户文件名造成目录穿越",
+            "多实例部署下定时任务被重复执行"
           ],
           "searchKeywords": [
-            "spring-files-scheduling",
-            "文件处理与定时任务",
-            "文件处理与定时任务 实战",
-            "文件处理与定时任务 排障"
+            "MultipartFile 上传限制",
+            "Path normalize 防穿越",
+            "@Scheduled cron",
+            "文件处理与定时任务 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的文件处理与定时任务实现、测试与简短设计说明"
+            "description": "带安全上传下载、定时清理和重复执行保护的文件服务"
           },
           "quizBlueprint": [
-            "文件处理与定时任务核心机制",
-            "文件处理与定时任务常用 API 与配置",
-            "文件处理与定时任务边界与异常处理",
-            "文件处理与定时任务性能及安全考量",
-            "文件处理与定时任务实战排障"
+            "MultipartFile 上传限制",
+            "Path normalize 防穿越",
+            "@Scheduled cron",
+            "任务锁与幂等",
+            "流式下载响应"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -453,34 +453,34 @@
           "nodeOrder": 1,
           "title": "MySQL SQL 与数据建模",
           "objectives": [
-            "解释MySQL SQL 与数据建模的关键机制与适用边界",
-            "运用MySQL SQL 与数据建模完成可验证的工程实现"
+            "能够实现并演示主键与外键约束与一对多表设计",
+            "能够为JOIN 与聚合场景编写窗口函数验证并解释EXPLAIN 执行计划取舍"
           ],
           "highFrequency": [
-            "MySQL SQL 与数据建模常用配置与核心 API",
-            "MySQL SQL 与数据建模在生产项目中的典型设计"
+            "主键与外键约束；一对多表设计",
+            "JOIN 与聚合；窗口函数；EXPLAIN 执行计划"
           ],
           "commonMistakes": [
-            "MySQL SQL 与数据建模边界条件处理不完整",
-            "MySQL SQL 与数据建模错误配置导致行为与预期不一致"
+            "用逗号字符串保存多值关系导致查询困难",
+            "SELECT * 让接口依赖无关列且增加 I/O"
           ],
           "searchKeywords": [
-            "mysql-sql-modeling",
-            "MySQL SQL 与数据建模",
-            "MySQL SQL 与数据建模 实战",
-            "MySQL SQL 与数据建模 排障"
+            "主键与外键约束",
+            "一对多表设计",
+            "JOIN 与聚合",
+            "MySQL SQL 与数据建模 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的MySQL SQL 与数据建模实现、测试与简短设计说明"
+            "description": "提供建表 DDL、典型查询及 EXPLAIN 分析的业务模型"
           },
           "quizBlueprint": [
-            "MySQL SQL 与数据建模核心机制",
-            "MySQL SQL 与数据建模常用 API 与配置",
-            "MySQL SQL 与数据建模边界与异常处理",
-            "MySQL SQL 与数据建模性能及安全考量",
-            "MySQL SQL 与数据建模实战排障"
+            "主键与外键约束",
+            "一对多表设计",
+            "JOIN 与聚合",
+            "窗口函数",
+            "EXPLAIN 执行计划"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -495,34 +495,34 @@
           "nodeOrder": 2,
           "title": "MySQL 索引与事务",
           "objectives": [
-            "解释MySQL 索引与事务的关键机制与适用边界",
-            "运用MySQL 索引与事务完成可验证的工程实现"
+            "能够实现并演示B+Tree 联合索引与最左前缀",
+            "能够为MVCC 隔离级别场景编写死锁分析验证并解释慢查询日志取舍"
           ],
           "highFrequency": [
-            "MySQL 索引与事务常用配置与核心 API",
-            "MySQL 索引与事务在生产项目中的典型设计"
+            "B+Tree 联合索引；最左前缀",
+            "MVCC 隔离级别；死锁分析；慢查询日志"
           ],
           "commonMistakes": [
-            "MySQL 索引与事务边界条件处理不完整",
-            "MySQL 索引与事务错误配置导致行为与预期不一致"
+            "联合索引列顺序与查询条件不匹配",
+            "长事务持锁造成阻塞并拖慢 purge"
           ],
           "searchKeywords": [
-            "mysql-index-transaction",
-            "MySQL 索引与事务",
-            "MySQL 索引与事务 实战",
-            "MySQL 索引与事务 排障"
+            "B+Tree 联合索引",
+            "最左前缀",
+            "MVCC 隔离级别",
+            "MySQL 索引与事务 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的MySQL 索引与事务实现、测试与简短设计说明"
+            "description": "含索引前后执行计划、并发事务和死锁复现实验"
           },
           "quizBlueprint": [
-            "MySQL 索引与事务核心机制",
-            "MySQL 索引与事务常用 API 与配置",
-            "MySQL 索引与事务边界与异常处理",
-            "MySQL 索引与事务性能及安全考量",
-            "MySQL 索引与事务实战排障"
+            "B+Tree 联合索引",
+            "最左前缀",
+            "MVCC 隔离级别",
+            "死锁分析",
+            "慢查询日志"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -537,34 +537,34 @@
           "nodeOrder": 3,
           "title": "MyBatis 核心映射",
           "objectives": [
-            "解释MyBatis 核心映射的关键机制与适用边界",
-            "运用MyBatis 核心映射完成可验证的工程实现"
+            "能够实现并演示resultMap 关联映射与动态 SQL if/foreach",
+            "能够为#{ } 参数绑定场景编写一级二级缓存验证并解释Mapper XML 测试取舍"
           ],
           "highFrequency": [
-            "MyBatis 核心映射常用配置与核心 API",
-            "MyBatis 核心映射在生产项目中的典型设计"
+            "resultMap 关联映射；动态 SQL if/foreach",
+            "#{ } 参数绑定；一级二级缓存；Mapper XML 测试"
           ],
           "commonMistakes": [
-            "MyBatis 核心映射边界条件处理不完整",
-            "MyBatis 核心映射错误配置导致行为与预期不一致"
+            "使用 ${} 拼接用户输入引入 SQL 注入",
+            "resultMap 列名配置错误产生静默空字段"
           ],
           "searchKeywords": [
-            "mybatis-core",
-            "MyBatis 核心映射",
-            "MyBatis 核心映射 实战",
-            "MyBatis 核心映射 排障"
+            "resultMap 关联映射",
+            "动态 SQL if/foreach",
+            "#{ } 参数绑定",
+            "MyBatis 核心映射 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的MyBatis 核心映射实现、测试与简短设计说明"
+            "description": "实现 resultMap、动态 SQL 和参数安全测试的 Mapper 模块"
           },
           "quizBlueprint": [
-            "MyBatis 核心映射核心机制",
-            "MyBatis 核心映射常用 API 与配置",
-            "MyBatis 核心映射边界与异常处理",
-            "MyBatis 核心映射性能及安全考量",
-            "MyBatis 核心映射实战排障"
+            "resultMap 关联映射",
+            "动态 SQL if/foreach",
+            "#{ } 参数绑定",
+            "一级二级缓存",
+            "Mapper XML 测试"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -579,34 +579,34 @@
           "nodeOrder": 4,
           "title": "MyBatis-Plus 工程实践",
           "objectives": [
-            "解释MyBatis-Plus 工程实践的关键机制与适用边界",
-            "运用MyBatis-Plus 工程实践完成可验证的工程实现"
+            "能够实现并演示BaseMapper 与 IService与LambdaQueryWrapper",
+            "能够为分页插件场景编写逻辑删除验证并解释自动填充 MetaObjectHandler取舍"
           ],
           "highFrequency": [
-            "MyBatis-Plus 工程实践常用配置与核心 API",
-            "MyBatis-Plus 工程实践在生产项目中的典型设计"
+            "BaseMapper 与 IService；LambdaQueryWrapper",
+            "分页插件；逻辑删除；自动填充 MetaObjectHandler"
           ],
           "commonMistakes": [
-            "MyBatis-Plus 工程实践边界条件处理不完整",
-            "MyBatis-Plus 工程实践错误配置导致行为与预期不一致"
+            "把复杂联表查询强塞进 QueryWrapper 难以维护",
+            "未配置分页插件却误以为 Page 会限制 SQL"
           ],
           "searchKeywords": [
-            "mybatis-plus",
-            "MyBatis-Plus 工程实践",
-            "MyBatis-Plus 工程实践 实战",
-            "MyBatis-Plus 工程实践 排障"
+            "BaseMapper 与 IService",
+            "LambdaQueryWrapper",
+            "分页插件",
+            "MyBatis-Plus 工程实践 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的MyBatis-Plus 工程实践实现、测试与简短设计说明"
+            "description": "带分页、逻辑删除、自动填充和 SQL 日志验证的 CRUD 服务"
           },
           "quizBlueprint": [
-            "MyBatis-Plus 工程实践核心机制",
-            "MyBatis-Plus 工程实践常用 API 与配置",
-            "MyBatis-Plus 工程实践边界与异常处理",
-            "MyBatis-Plus 工程实践性能及安全考量",
-            "MyBatis-Plus 工程实践实战排障"
+            "BaseMapper 与 IService",
+            "LambdaQueryWrapper",
+            "分页插件",
+            "逻辑删除",
+            "自动填充 MetaObjectHandler"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -621,34 +621,34 @@
           "nodeOrder": 5,
           "title": "Spring Data JPA 核心",
           "objectives": [
-            "解释Spring Data JPA 核心的关键机制与适用边界",
-            "运用Spring Data JPA 核心完成可验证的工程实现"
+            "能够实现并演示实体状态与持久化上下文与Repository 派生查询",
+            "能够为fetch join 与 EntityGraph场景编写乐观锁 @Version验证并解释事务脏检查取舍"
           ],
           "highFrequency": [
-            "Spring Data JPA 核心常用配置与核心 API",
-            "Spring Data JPA 核心在生产项目中的典型设计"
+            "实体状态与持久化上下文；Repository 派生查询",
+            "fetch join 与 EntityGraph；乐观锁 @Version；事务脏检查"
           ],
           "commonMistakes": [
-            "Spring Data JPA 核心边界条件处理不完整",
-            "Spring Data JPA 核心错误配置导致行为与预期不一致"
+            "双向关联维护不一致导致外键未更新",
+            "懒加载在事务外访问触发 LazyInitializationException"
           ],
           "searchKeywords": [
-            "jpa-core",
-            "Spring Data JPA 核心",
-            "Spring Data JPA 核心 实战",
-            "Spring Data JPA 核心 排障"
+            "实体状态与持久化上下文",
+            "Repository 派生查询",
+            "fetch join 与 EntityGraph",
+            "Spring Data JPA 核心 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Spring Data JPA 核心实现、测试与简短设计说明"
+            "description": "实现聚合保存、fetch join 和乐观锁冲突测试的 JPA 模块"
           },
           "quizBlueprint": [
-            "Spring Data JPA 核心核心机制",
-            "Spring Data JPA 核心常用 API 与配置",
-            "Spring Data JPA 核心边界与异常处理",
-            "Spring Data JPA 核心性能及安全考量",
-            "Spring Data JPA 核心实战排障"
+            "实体状态与持久化上下文",
+            "Repository 派生查询",
+            "fetch join 与 EntityGraph",
+            "乐观锁 @Version",
+            "事务脏检查"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -663,34 +663,34 @@
           "nodeOrder": 6,
           "title": "数据访问方案选型与对比",
           "objectives": [
-            "解释数据访问方案选型与对比的关键机制与适用边界",
-            "运用数据访问方案选型与对比完成可验证的工程实现"
+            "能够实现并演示MyBatis 显式 SQL与JPA 聚合建模",
+            "能够为N+1 查询检测场景编写批量写入策略验证并解释迁移成本评估取舍"
           ],
           "highFrequency": [
-            "数据访问方案选型与对比常用配置与核心 API",
-            "数据访问方案选型与对比在生产项目中的典型设计"
+            "MyBatis 显式 SQL；JPA 聚合建模",
+            "N+1 查询检测；批量写入策略；迁移成本评估"
           ],
           "commonMistakes": [
-            "数据访问方案选型与对比边界条件处理不完整",
-            "数据访问方案选型与对比错误配置导致行为与预期不一致"
+            "仅按代码行数选 ORM 而忽略查询复杂度",
+            "混用两套事务边界造成一致性难题"
           ],
           "searchKeywords": [
-            "data-access-comparison",
-            "数据访问方案选型与对比",
-            "数据访问方案选型与对比 实战",
-            "数据访问方案选型与对比 排障"
+            "MyBatis 显式 SQL",
+            "JPA 聚合建模",
+            "N+1 查询检测",
+            "数据访问方案选型与对比 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的数据访问方案选型与对比实现、测试与简短设计说明"
+            "description": "对同一查询分别实现 MyBatis/JPA 并提交性能与维护性对比"
           },
           "quizBlueprint": [
-            "数据访问方案选型与对比核心机制",
-            "数据访问方案选型与对比常用 API 与配置",
-            "数据访问方案选型与对比边界与异常处理",
-            "数据访问方案选型与对比性能及安全考量",
-            "数据访问方案选型与对比实战排障"
+            "MyBatis 显式 SQL",
+            "JPA 聚合建模",
+            "N+1 查询检测",
+            "批量写入策略",
+            "迁移成本评估"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -715,34 +715,34 @@
           "nodeOrder": 1,
           "title": "Redis 缓存设计",
           "objectives": [
-            "解释Redis 缓存设计的关键机制与适用边界",
-            "运用Redis 缓存设计完成可验证的工程实现"
+            "能够实现并演示缓存穿透与空值缓存与缓存击穿与互斥锁",
+            "能够为TTL 抖动场景编写Cache Aside 一致性验证并解释RedisTemplate 序列化取舍"
           ],
           "highFrequency": [
-            "Redis 缓存设计常用配置与核心 API",
-            "Redis 缓存设计在生产项目中的典型设计"
+            "缓存穿透与空值缓存；缓存击穿与互斥锁",
+            "TTL 抖动；Cache Aside 一致性；RedisTemplate 序列化"
           ],
           "commonMistakes": [
-            "Redis 缓存设计边界条件处理不完整",
-            "Redis 缓存设计错误配置导致行为与预期不一致"
+            "固定 TTL 导致大量 key 同时失效",
+            "先删缓存再写数据库产生旧值回填窗口"
           ],
           "searchKeywords": [
-            "redis-cache",
-            "Redis 缓存设计",
-            "Redis 缓存设计 实战",
-            "Redis 缓存设计 排障"
+            "缓存穿透与空值缓存",
+            "缓存击穿与互斥锁",
+            "TTL 抖动",
+            "Redis 缓存设计 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Redis 缓存设计实现、测试与简短设计说明"
+            "description": "实现防穿透、随机 TTL 和并发回源测试的缓存组件"
           },
           "quizBlueprint": [
-            "Redis 缓存设计核心机制",
-            "Redis 缓存设计常用 API 与配置",
-            "Redis 缓存设计边界与异常处理",
-            "Redis 缓存设计性能及安全考量",
-            "Redis 缓存设计实战排障"
+            "缓存穿透与空值缓存",
+            "缓存击穿与互斥锁",
+            "TTL 抖动",
+            "Cache Aside 一致性",
+            "RedisTemplate 序列化"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -757,34 +757,34 @@
           "nodeOrder": 2,
           "title": "JWT 认证与 Spring Security",
           "objectives": [
-            "解释JWT 认证与 Spring Security的关键机制与适用边界",
-            "运用JWT 认证与 Spring Security完成可验证的工程实现"
+            "能够实现并演示SecurityFilterChain与JWT 签名与过期",
+            "能够为OncePerRequestFilter场景编写BCrypt 密码散列验证并解释RBAC 方法授权取舍"
           ],
           "highFrequency": [
-            "JWT 认证与 Spring Security常用配置与核心 API",
-            "JWT 认证与 Spring Security在生产项目中的典型设计"
+            "SecurityFilterChain；JWT 签名与过期",
+            "OncePerRequestFilter；BCrypt 密码散列；RBAC 方法授权"
           ],
           "commonMistakes": [
-            "JWT 认证与 Spring Security边界条件处理不完整",
-            "JWT 认证与 Spring Security错误配置导致行为与预期不一致"
+            "把角色信息放入未验签 JWT 后直接信任",
+            "将 401 认证失败错误返回为 403"
           ],
           "searchKeywords": [
-            "auth-jwt-security",
-            "JWT 认证与 Spring Security",
-            "JWT 认证与 Spring Security 实战",
-            "JWT 认证与 Spring Security 排障"
+            "SecurityFilterChain",
+            "JWT 签名与过期",
+            "OncePerRequestFilter",
+            "JWT 认证与 Spring Security 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的JWT 认证与 Spring Security实现、测试与简短设计说明"
+            "description": "含登录签发、JWT 过滤器、RBAC 和越权测试的安全 API"
           },
           "quizBlueprint": [
-            "JWT 认证与 Spring Security核心机制",
-            "JWT 认证与 Spring Security常用 API 与配置",
-            "JWT 认证与 Spring Security边界与异常处理",
-            "JWT 认证与 Spring Security性能及安全考量",
-            "JWT 认证与 Spring Security实战排障"
+            "SecurityFilterChain",
+            "JWT 签名与过期",
+            "OncePerRequestFilter",
+            "BCrypt 密码散列",
+            "RBAC 方法授权"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -799,34 +799,34 @@
           "nodeOrder": 3,
           "title": "API 文档与集成测试",
           "objectives": [
-            "解释API 文档与集成测试的关键机制与适用边界",
-            "运用API 文档与集成测试完成可验证的工程实现"
+            "能够实现并演示OpenAPI 3 注解与springdoc 接口文档",
+            "能够为MockMvc 集成测试场景编写Testcontainers 数据库验证并解释契约示例校验取舍"
           ],
           "highFrequency": [
-            "API 文档与集成测试常用配置与核心 API",
-            "API 文档与集成测试在生产项目中的典型设计"
+            "OpenAPI 3 注解；springdoc 接口文档",
+            "MockMvc 集成测试；Testcontainers 数据库；契约示例校验"
           ],
           "commonMistakes": [
-            "API 文档与集成测试边界条件处理不完整",
-            "API 文档与集成测试错误配置导致行为与预期不一致"
+            "文档示例与真实 DTO 字段长期漂移",
+            "集成测试依赖开发机现存数据库导致不稳定"
           ],
           "searchKeywords": [
-            "api-docs-integration-test",
-            "API 文档与集成测试",
-            "API 文档与集成测试 实战",
-            "API 文档与集成测试 排障"
+            "OpenAPI 3 注解",
+            "springdoc 接口文档",
+            "MockMvc 集成测试",
+            "API 文档与集成测试 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的API 文档与集成测试实现、测试与简短设计说明"
+            "description": "生成 OpenAPI 并用隔离数据库验证关键接口契约"
           },
           "quizBlueprint": [
-            "API 文档与集成测试核心机制",
-            "API 文档与集成测试常用 API 与配置",
-            "API 文档与集成测试边界与异常处理",
-            "API 文档与集成测试性能及安全考量",
-            "API 文档与集成测试实战排障"
+            "OpenAPI 3 注解",
+            "springdoc 接口文档",
+            "MockMvc 集成测试",
+            "Testcontainers 数据库",
+            "契约示例校验"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -841,34 +841,34 @@
           "nodeOrder": 4,
           "title": "幂等、并发控制与审计",
           "objectives": [
-            "解释幂等、并发控制与审计的关键机制与适用边界",
-            "运用幂等、并发控制与审计完成可验证的工程实现"
+            "能够实现并演示Idempotency-Key与数据库唯一约束",
+            "能够为乐观锁与悲观锁场景编写审计日志 actor/action验证并解释重复请求状态机取舍"
           ],
           "highFrequency": [
-            "幂等、并发控制与审计常用配置与核心 API",
-            "幂等、并发控制与审计在生产项目中的典型设计"
+            "Idempotency-Key；数据库唯一约束",
+            "乐观锁与悲观锁；审计日志 actor/action；重复请求状态机"
           ],
           "commonMistakes": [
-            "幂等、并发控制与审计边界条件处理不完整",
-            "幂等、并发控制与审计错误配置导致行为与预期不一致"
+            "只在内存中记录幂等键导致多实例重复执行",
+            "先执行业务再写审计记录造成失败操作不可追踪"
           ],
           "searchKeywords": [
-            "idempotency-concurrency-audit",
-            "幂等、并发控制与审计",
-            "幂等、并发控制与审计 实战",
-            "幂等、并发控制与审计 排障"
+            "Idempotency-Key",
+            "数据库唯一约束",
+            "乐观锁与悲观锁",
+            "幂等、并发控制与审计 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的幂等、并发控制与审计实现、测试与简短设计说明"
+            "description": "实现幂等键、并发扣减和不可变审计记录的命令接口"
           },
           "quizBlueprint": [
-            "幂等、并发控制与审计核心机制",
-            "幂等、并发控制与审计常用 API 与配置",
-            "幂等、并发控制与审计边界与异常处理",
-            "幂等、并发控制与审计性能及安全考量",
-            "幂等、并发控制与审计实战排障"
+            "Idempotency-Key",
+            "数据库唯一约束",
+            "乐观锁与悲观锁",
+            "审计日志 actor/action",
+            "重复请求状态机"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -884,34 +884,34 @@
           "nodeOrder": 5,
           "title": "监控、日志与可观测性",
           "objectives": [
-            "解释监控、日志与可观测性的关键机制与适用边界",
-            "运用监控、日志与可观测性完成可验证的工程实现"
+            "能够实现并演示Micrometer 指标与Actuator health",
+            "能够为OpenTelemetry trace场景编写SLI/SLO 告警验证并解释日志 traceId 关联取舍"
           ],
           "highFrequency": [
-            "监控、日志与可观测性常用配置与核心 API",
-            "监控、日志与可观测性在生产项目中的典型设计"
+            "Micrometer 指标；Actuator health",
+            "OpenTelemetry trace；SLI/SLO 告警；日志 traceId 关联"
           ],
           "commonMistakes": [
-            "监控、日志与可观测性边界条件处理不完整",
-            "监控、日志与可观测性错误配置导致行为与预期不一致"
+            "把高基数字段作为 metric tag 撑爆时序库",
+            "健康检查只返回进程存活却忽略关键依赖"
           ],
           "searchKeywords": [
-            "monitoring-observability",
-            "监控、日志与可观测性",
-            "监控、日志与可观测性 实战",
-            "监控、日志与可观测性 排障"
+            "Micrometer 指标",
+            "Actuator health",
+            "OpenTelemetry trace",
+            "监控、日志与可观测性 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的监控、日志与可观测性实现、测试与简短设计说明"
+            "description": "提供指标、健康探针、trace 与可触发告警的服务仪表盘"
           },
           "quizBlueprint": [
-            "监控、日志与可观测性核心机制",
-            "监控、日志与可观测性常用 API 与配置",
-            "监控、日志与可观测性边界与异常处理",
-            "监控、日志与可观测性性能及安全考量",
-            "监控、日志与可观测性实战排障"
+            "Micrometer 指标",
+            "Actuator health",
+            "OpenTelemetry trace",
+            "SLI/SLO 告警",
+            "日志 traceId 关联"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -935,34 +935,34 @@
           "nodeOrder": 1,
           "title": "Vue 3 与 TypeScript 基础",
           "objectives": [
-            "解释Vue 3 与 TypeScript 基础的关键机制与适用边界",
-            "运用Vue 3 与 TypeScript 基础完成可验证的工程实现"
+            "能够实现并演示Composition API setup与ref/reactive 响应式",
+            "能够为TypeScript Props 类型场景编写computed/watch验证并解释Vitest 组件测试取舍"
           ],
           "highFrequency": [
-            "Vue 3 与 TypeScript 基础常用配置与核心 API",
-            "Vue 3 与 TypeScript 基础在生产项目中的典型设计"
+            "Composition API setup；ref/reactive 响应式",
+            "TypeScript Props 类型；computed/watch；Vitest 组件测试"
           ],
           "commonMistakes": [
-            "Vue 3 与 TypeScript 基础边界条件处理不完整",
-            "Vue 3 与 TypeScript 基础错误配置导致行为与预期不一致"
+            "直接解构 reactive 对象导致响应性丢失",
+            "用 any 绕过接口类型造成运行时字段错误"
           ],
           "searchKeywords": [
-            "vue-ts-basics",
-            "Vue 3 与 TypeScript 基础",
-            "Vue 3 与 TypeScript 基础 实战",
-            "Vue 3 与 TypeScript 基础 排障"
+            "Composition API setup",
+            "ref/reactive 响应式",
+            "TypeScript Props 类型",
+            "Vue 3 与 TypeScript 基础 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Vue 3 与 TypeScript 基础实现、测试与简短设计说明"
+            "description": "实现类型安全表单、组合式函数和 Vitest 测试的 Vue 页面"
           },
           "quizBlueprint": [
-            "Vue 3 与 TypeScript 基础核心机制",
-            "Vue 3 与 TypeScript 基础常用 API 与配置",
-            "Vue 3 与 TypeScript 基础边界与异常处理",
-            "Vue 3 与 TypeScript 基础性能及安全考量",
-            "Vue 3 与 TypeScript 基础实战排障"
+            "Composition API setup",
+            "ref/reactive 响应式",
+            "TypeScript Props 类型",
+            "computed/watch",
+            "Vitest 组件测试"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -977,34 +977,34 @@
           "nodeOrder": 2,
           "title": "Vue Router 与 Pinia 状态管理",
           "objectives": [
-            "解释Vue Router 与 Pinia 状态管理的关键机制与适用边界",
-            "运用Vue Router 与 Pinia 状态管理完成可验证的工程实现"
+            "能够实现并演示Pinia defineStore与Vue Router 导航守卫",
+            "能够为持久化状态场景编写动态路由权限验证并解释storeToRefs取舍"
           ],
           "highFrequency": [
-            "Vue Router 与 Pinia 状态管理常用配置与核心 API",
-            "Vue Router 与 Pinia 状态管理在生产项目中的典型设计"
+            "Pinia defineStore；Vue Router 导航守卫",
+            "持久化状态；动态路由权限；storeToRefs"
           ],
           "commonMistakes": [
-            "Vue Router 与 Pinia 状态管理边界条件处理不完整",
-            "Vue Router 与 Pinia 状态管理错误配置导致行为与预期不一致"
+            "直接解构 store 导致响应式引用丢失",
+            "导航守卫异步分支未结束造成重复跳转"
           ],
           "searchKeywords": [
-            "vue-router-pinia",
-            "Vue Router 与 Pinia 状态管理",
-            "Vue Router 与 Pinia 状态管理 实战",
-            "Vue Router 与 Pinia 状态管理 排障"
+            "Pinia defineStore",
+            "Vue Router 导航守卫",
+            "持久化状态",
+            "Vue Router 与 Pinia 状态管理 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Vue Router 与 Pinia 状态管理实现、测试与简短设计说明"
+            "description": "含 Pinia 会话状态、受保护路由和刷新恢复测试的前端模块"
           },
           "quizBlueprint": [
-            "Vue Router 与 Pinia 状态管理核心机制",
-            "Vue Router 与 Pinia 状态管理常用 API 与配置",
-            "Vue Router 与 Pinia 状态管理边界与异常处理",
-            "Vue Router 与 Pinia 状态管理性能及安全考量",
-            "Vue Router 与 Pinia 状态管理实战排障"
+            "Pinia defineStore",
+            "Vue Router 导航守卫",
+            "持久化状态",
+            "动态路由权限",
+            "storeToRefs"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1019,34 +1019,34 @@
           "nodeOrder": 3,
           "title": "前后端 API 集成与认证",
           "objectives": [
-            "解释前后端 API 集成与认证的关键机制与适用边界",
-            "运用前后端 API 集成与认证完成可验证的工程实现"
+            "能够实现并演示Axios 拦截器与Bearer token 刷新",
+            "能够为CORS 预检场景编写统一错误码验证并解释请求取消与竞态取舍"
           ],
           "highFrequency": [
-            "前后端 API 集成与认证常用配置与核心 API",
-            "前后端 API 集成与认证在生产项目中的典型设计"
+            "Axios 拦截器；Bearer token 刷新",
+            "CORS 预检；统一错误码；请求取消与竞态"
           ],
           "commonMistakes": [
-            "前后端 API 集成与认证边界条件处理不完整",
-            "前后端 API 集成与认证错误配置导致行为与预期不一致"
+            "多个并发 401 各自刷新 token 形成刷新风暴",
+            "忽略 OPTIONS 预检导致浏览器请求被 CORS 拦截"
           ],
           "searchKeywords": [
-            "frontend-api-integration",
-            "前后端 API 集成与认证",
-            "前后端 API 集成与认证 实战",
-            "前后端 API 集成与认证 排障"
+            "Axios 拦截器",
+            "Bearer token 刷新",
+            "CORS 预检",
+            "前后端 API 集成与认证 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的前后端 API 集成与认证实现、测试与简短设计说明"
+            "description": "实现登录、单飞刷新、错误提示和 API 契约测试的联调页面"
           },
           "quizBlueprint": [
-            "前后端 API 集成与认证核心机制",
-            "前后端 API 集成与认证常用 API 与配置",
-            "前后端 API 集成与认证边界与异常处理",
-            "前后端 API 集成与认证性能及安全考量",
-            "前后端 API 集成与认证实战排障"
+            "Axios 拦截器",
+            "Bearer token 刷新",
+            "CORS 预检",
+            "统一错误码",
+            "请求取消与竞态"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1062,34 +1062,34 @@
           "nodeOrder": 4,
           "title": "Git、Linux 与 Nginx",
           "objectives": [
-            "解释Git、Linux 与 Nginx的关键机制与适用边界",
-            "运用Git、Linux 与 Nginx完成可验证的工程实现"
+            "能够实现并演示Git rebase 与冲突与Linux 权限与 systemd",
+            "能够为Nginx reverse_proxy场景编写静态资源缓存头验证并解释TLS 终止取舍"
           ],
           "highFrequency": [
-            "Git、Linux 与 Nginx常用配置与核心 API",
-            "Git、Linux 与 Nginx在生产项目中的典型设计"
+            "Git rebase 与冲突；Linux 权限与 systemd",
+            "Nginx reverse_proxy；静态资源缓存头；TLS 终止"
           ],
           "commonMistakes": [
-            "Git、Linux 与 Nginx边界条件处理不完整",
-            "Git、Linux 与 Nginx错误配置导致行为与预期不一致"
+            "强推共享分支覆盖他人提交",
+            "Nginx location 优先级错误让 API 落到 SPA fallback"
           ],
           "searchKeywords": [
-            "git-linux-nginx",
-            "Git、Linux 与 Nginx",
-            "Git、Linux 与 Nginx 实战",
-            "Git、Linux 与 Nginx 排障"
+            "Git rebase 与冲突",
+            "Linux 权限与 systemd",
+            "Nginx reverse_proxy",
+            "Git、Linux 与 Nginx 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Git、Linux 与 Nginx实现、测试与简短设计说明"
+            "description": "提交可复现的分支操作记录、systemd 服务和 Nginx 配置"
           },
           "quizBlueprint": [
-            "Git、Linux 与 Nginx核心机制",
-            "Git、Linux 与 Nginx常用 API 与配置",
-            "Git、Linux 与 Nginx边界与异常处理",
-            "Git、Linux 与 Nginx性能及安全考量",
-            "Git、Linux 与 Nginx实战排障"
+            "Git rebase 与冲突",
+            "Linux 权限与 systemd",
+            "Nginx reverse_proxy",
+            "静态资源缓存头",
+            "TLS 终止"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1104,34 +1104,34 @@
           "nodeOrder": 5,
           "title": "Docker 容器化交付",
           "objectives": [
-            "解释Docker 容器化交付的关键机制与适用边界",
-            "运用Docker 容器化交付完成可验证的工程实现"
+            "能够实现并演示多阶段 Dockerfile与Compose healthcheck",
+            "能够为镜像层缓存场景编写非 root 用户验证并解释滚动发布与回滚取舍"
           ],
           "highFrequency": [
-            "Docker 容器化交付常用配置与核心 API",
-            "Docker 容器化交付在生产项目中的典型设计"
+            "多阶段 Dockerfile；Compose healthcheck",
+            "镜像层缓存；非 root 用户；滚动发布与回滚"
           ],
           "commonMistakes": [
-            "Docker 容器化交付边界条件处理不完整",
-            "Docker 容器化交付错误配置导致行为与预期不一致"
+            "把密钥 COPY 进镜像层无法真正删除",
+            "只用 depends_on 不等服务达到可用状态"
           ],
           "searchKeywords": [
-            "docker-delivery",
-            "Docker 容器化交付",
-            "Docker 容器化交付 实战",
-            "Docker 容器化交付 排障"
+            "多阶段 Dockerfile",
+            "Compose healthcheck",
+            "镜像层缓存",
+            "Docker 容器化交付 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Docker 容器化交付实现、测试与简短设计说明"
+            "description": "构建非 root 最小镜像并用 Compose 健康检查完成全栈启动"
           },
           "quizBlueprint": [
-            "Docker 容器化交付核心机制",
-            "Docker 容器化交付常用 API 与配置",
-            "Docker 容器化交付边界与异常处理",
-            "Docker 容器化交付性能及安全考量",
-            "Docker 容器化交付实战排障"
+            "多阶段 Dockerfile",
+            "Compose healthcheck",
+            "镜像层缓存",
+            "非 root 用户",
+            "滚动发布与回滚"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1156,34 +1156,34 @@
           "nodeOrder": 1,
           "title": "Python 工程基础",
           "objectives": [
-            "解释Python 工程基础的关键机制与适用边界",
-            "运用Python 工程基础完成可验证的工程实现"
+            "能够实现并演示venv 与 pyproject.toml与类型提示与 mypy",
+            "能够为pytest fixture场景编写ruff 格式检查验证并解释包结构与依赖锁定取舍"
           ],
           "highFrequency": [
-            "Python 工程基础常用配置与核心 API",
-            "Python 工程基础在生产项目中的典型设计"
+            "venv 与 pyproject.toml；类型提示与 mypy",
+            "pytest fixture；ruff 格式检查；包结构与依赖锁定"
           ],
           "commonMistakes": [
-            "Python 工程基础边界条件处理不完整",
-            "Python 工程基础错误配置导致行为与预期不一致"
+            "在全局 Python 环境安装依赖造成不可复现",
+            "循环导入源于模块职责和包边界混乱"
           ],
           "searchKeywords": [
-            "python-engineering",
-            "Python 工程基础",
-            "Python 工程基础 实战",
-            "Python 工程基础 排障"
+            "venv 与 pyproject.toml",
+            "类型提示与 mypy",
+            "pytest fixture",
+            "Python 工程基础 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Python 工程基础实现、测试与简短设计说明"
+            "description": "提供锁定依赖、类型检查、ruff 和 pytest 全绿的 Python 包"
           },
           "quizBlueprint": [
-            "Python 工程基础核心机制",
-            "Python 工程基础常用 API 与配置",
-            "Python 工程基础边界与异常处理",
-            "Python 工程基础性能及安全考量",
-            "Python 工程基础实战排障"
+            "venv 与 pyproject.toml",
+            "类型提示与 mypy",
+            "pytest fixture",
+            "ruff 格式检查",
+            "包结构与依赖锁定"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1198,34 +1198,34 @@
           "nodeOrder": 2,
           "title": "Pydantic 数据建模与校验",
           "objectives": [
-            "解释Pydantic 数据建模与校验的关键机制与适用边界",
-            "运用Pydantic 数据建模与校验完成可验证的工程实现"
+            "能够实现并演示BaseModel 字段约束与field_validator",
+            "能够为model_validator场景编写model_dump验证并解释SettingsConfigDict取舍"
           ],
           "highFrequency": [
-            "Pydantic 数据建模与校验常用配置与核心 API",
-            "Pydantic 数据建模与校验在生产项目中的典型设计"
+            "BaseModel 字段约束；field_validator",
+            "model_validator；model_dump；SettingsConfigDict"
           ],
           "commonMistakes": [
-            "Pydantic 数据建模与校验边界条件处理不完整",
-            "Pydantic 数据建模与校验错误配置导致行为与预期不一致"
+            "把可变 list 作为共享默认值",
+            "把业务副作用放进 validator 导致解析不可预测"
           ],
           "searchKeywords": [
-            "pydantic",
-            "Pydantic 数据建模与校验",
-            "Pydantic 数据建模与校验 实战",
-            "Pydantic 数据建模与校验 排障"
+            "BaseModel 字段约束",
+            "field_validator",
+            "model_validator",
+            "Pydantic 数据建模与校验 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Pydantic 数据建模与校验实现、测试与简短设计说明"
+            "description": "实现嵌套 DTO、跨字段校验和序列化快照测试的模型包"
           },
           "quizBlueprint": [
-            "Pydantic 数据建模与校验核心机制",
-            "Pydantic 数据建模与校验常用 API 与配置",
-            "Pydantic 数据建模与校验边界与异常处理",
-            "Pydantic 数据建模与校验性能及安全考量",
-            "Pydantic 数据建模与校验实战排障"
+            "BaseModel 字段约束",
+            "field_validator",
+            "model_validator",
+            "model_dump",
+            "SettingsConfigDict"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1240,34 +1240,34 @@
           "nodeOrder": 3,
           "title": "FastAPI REST 服务",
           "objectives": [
-            "解释FastAPI REST 服务的关键机制与适用边界",
-            "运用FastAPI REST 服务完成可验证的工程实现"
+            "能够实现并演示FastAPI Depends与Pydantic 请求响应模型",
+            "能够为APIRouter场景编写HTTPException验证并解释TestClient/OpenAPI取舍"
           ],
           "highFrequency": [
-            "FastAPI REST 服务常用配置与核心 API",
-            "FastAPI REST 服务在生产项目中的典型设计"
+            "FastAPI Depends；Pydantic 请求响应模型",
+            "APIRouter；HTTPException；TestClient/OpenAPI"
           ],
           "commonMistakes": [
-            "FastAPI REST 服务边界条件处理不完整",
-            "FastAPI REST 服务错误配置导致行为与预期不一致"
+            "在 async 路由中调用阻塞 I/O 卡住事件循环",
+            "省略 response_model 导致内部字段意外泄露"
           ],
           "searchKeywords": [
-            "fastapi-rest",
-            "FastAPI REST 服务",
-            "FastAPI REST 服务 实战",
-            "FastAPI REST 服务 排障"
+            "FastAPI Depends",
+            "Pydantic 请求响应模型",
+            "APIRouter",
+            "FastAPI REST 服务 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的FastAPI REST 服务实现、测试与简短设计说明"
+            "description": "含 Pydantic 校验、依赖注入、错误响应和 OpenAPI 测试的 FastAPI 服务"
           },
           "quizBlueprint": [
-            "FastAPI REST 服务核心机制",
-            "FastAPI REST 服务常用 API 与配置",
-            "FastAPI REST 服务边界与异常处理",
-            "FastAPI REST 服务性能及安全考量",
-            "FastAPI REST 服务实战排障"
+            "FastAPI Depends",
+            "Pydantic 请求响应模型",
+            "APIRouter",
+            "HTTPException",
+            "TestClient/OpenAPI"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1282,34 +1282,34 @@
           "nodeOrder": 4,
           "title": "Python 异步编程与 HTTP 客户端",
           "objectives": [
-            "解释Python 异步编程与 HTTP 客户端的关键机制与适用边界",
-            "运用Python 异步编程与 HTTP 客户端完成可验证的工程实现"
+            "能够实现并演示asyncio TaskGroup与httpx.AsyncClient",
+            "能够为连接池与超时场景编写指数退避重试验证并解释取消传播取舍"
           ],
           "highFrequency": [
-            "Python 异步编程与 HTTP 客户端常用配置与核心 API",
-            "Python 异步编程与 HTTP 客户端在生产项目中的典型设计"
+            "asyncio TaskGroup；httpx.AsyncClient",
+            "连接池与超时；指数退避重试；取消传播"
           ],
           "commonMistakes": [
-            "Python 异步编程与 HTTP 客户端边界条件处理不完整",
-            "Python 异步编程与 HTTP 客户端错误配置导致行为与预期不一致"
+            "每次请求创建 AsyncClient 丢失连接复用",
+            "捕获 CancelledError 后不再抛出导致任务无法取消"
           ],
           "searchKeywords": [
-            "python-async-http",
-            "Python 异步编程与 HTTP 客户端",
-            "Python 异步编程与 HTTP 客户端 实战",
-            "Python 异步编程与 HTTP 客户端 排障"
+            "asyncio TaskGroup",
+            "httpx.AsyncClient",
+            "连接池与超时",
+            "Python 异步编程与 HTTP 客户端 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Python 异步编程与 HTTP 客户端实现、测试与简短设计说明"
+            "description": "实现并发限流、分阶段超时、重试和取消测试的 HTTP 客户端"
           },
           "quizBlueprint": [
-            "Python 异步编程与 HTTP 客户端核心机制",
-            "Python 异步编程与 HTTP 客户端常用 API 与配置",
-            "Python 异步编程与 HTTP 客户端边界与异常处理",
-            "Python 异步编程与 HTTP 客户端性能及安全考量",
-            "Python 异步编程与 HTTP 客户端实战排障"
+            "asyncio TaskGroup",
+            "httpx.AsyncClient",
+            "连接池与超时",
+            "指数退避重试",
+            "取消传播"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1324,34 +1324,34 @@
           "nodeOrder": 5,
           "title": "Java-Python 接口契约",
           "objectives": [
-            "解释Java-Python 接口契约的关键机制与适用边界",
-            "运用Java-Python 接口契约完成可验证的工程实现"
+            "能够实现并演示OpenAPI 契约与JSON 字段命名",
+            "能够为时区与 ISO-8601场景编写错误码映射验证并解释契约测试取舍"
           ],
           "highFrequency": [
-            "Java-Python 接口契约常用配置与核心 API",
-            "Java-Python 接口契约在生产项目中的典型设计"
+            "OpenAPI 契约；JSON 字段命名",
+            "时区与 ISO-8601；错误码映射；契约测试"
           ],
           "commonMistakes": [
-            "Java-Python 接口契约边界条件处理不完整",
-            "Java-Python 接口契约错误配置导致行为与预期不一致"
+            "Java long 与 Python 数值边界未经约定",
+            "一端用 snake_case 另一端用 camelCase 导致字段丢失"
           ],
           "searchKeywords": [
-            "java-python-contract",
-            "Java-Python 接口契约",
-            "Java-Python 接口契约 实战",
-            "Java-Python 接口契约 排障"
+            "OpenAPI 契约",
+            "JSON 字段命名",
+            "时区与 ISO-8601",
+            "Java-Python 接口契约 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Java-Python 接口契约实现、测试与简短设计说明"
+            "description": "用同一 OpenAPI 生成双端模型并验证成功与错误响应兼容性"
           },
           "quizBlueprint": [
-            "Java-Python 接口契约核心机制",
-            "Java-Python 接口契约常用 API 与配置",
-            "Java-Python 接口契约边界与异常处理",
-            "Java-Python 接口契约性能及安全考量",
-            "Java-Python 接口契约实战排障"
+            "OpenAPI 契约",
+            "JSON 字段命名",
+            "时区与 ISO-8601",
+            "错误码映射",
+            "契约测试"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1376,34 +1376,34 @@
           "nodeOrder": 1,
           "title": "大模型 API 调用基础",
           "objectives": [
-            "解释大模型 API 调用基础的关键机制与适用边界",
-            "运用大模型 API 调用基础完成可验证的工程实现"
+            "能够实现并演示DeepSeek Chat API与messages role",
+            "能够为temperature/max_tokens场景编写流式 SSE验证并解释usage token 统计取舍"
           ],
           "highFrequency": [
-            "大模型 API 调用基础常用配置与核心 API",
-            "大模型 API 调用基础在生产项目中的典型设计"
+            "DeepSeek Chat API；messages role",
+            "temperature/max_tokens；流式 SSE；usage token 统计"
           ],
           "commonMistakes": [
-            "大模型 API 调用基础边界条件处理不完整",
-            "大模型 API 调用基础错误配置导致行为与预期不一致"
+            "把 API key 写入前端或日志",
+            "流式响应未处理半个 UTF-8 字符导致乱码"
           ],
           "searchKeywords": [
-            "llm-api-basics",
-            "大模型 API 调用基础",
-            "大模型 API 调用基础 实战",
-            "大模型 API 调用基础 排障"
+            "DeepSeek Chat API",
+            "messages role",
+            "temperature/max_tokens",
+            "大模型 API 调用基础 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的大模型 API 调用基础实现、测试与简短设计说明"
+            "description": "封装支持流式、超时、usage 统计和错误分类的模型客户端"
           },
           "quizBlueprint": [
-            "大模型 API 调用基础核心机制",
-            "大模型 API 调用基础常用 API 与配置",
-            "大模型 API 调用基础边界与异常处理",
-            "大模型 API 调用基础性能及安全考量",
-            "大模型 API 调用基础实战排障"
+            "DeepSeek Chat API",
+            "messages role",
+            "temperature/max_tokens",
+            "流式 SSE",
+            "usage token 统计"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1418,34 +1418,34 @@
           "nodeOrder": 2,
           "title": "提示词工程",
           "objectives": [
-            "解释提示词工程的关键机制与适用边界",
-            "运用提示词工程完成可验证的工程实现"
+            "能够实现并演示system/user 消息分层与few-shot 示例",
+            "能够为提示词变量模板场景编写上下文窗口预算验证并解释提示注入防护取舍"
           ],
           "highFrequency": [
-            "提示词工程常用配置与核心 API",
-            "提示词工程在生产项目中的典型设计"
+            "system/user 消息分层；few-shot 示例",
+            "提示词变量模板；上下文窗口预算；提示注入防护"
           ],
           "commonMistakes": [
-            "提示词工程边界条件处理不完整",
-            "提示词工程错误配置导致行为与预期不一致"
+            "把不可信文档直接拼进 system 指令",
+            "示例输出格式和实际解析 schema 不一致"
           ],
           "searchKeywords": [
-            "prompt-engineering",
-            "提示词工程",
-            "提示词工程 实战",
-            "提示词工程 排障"
+            "system/user 消息分层",
+            "few-shot 示例",
+            "提示词变量模板",
+            "提示词工程 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的提示词工程实现、测试与简短设计说明"
+            "description": "提交版本化 prompt、对抗样例和可重复评测结果"
           },
           "quizBlueprint": [
-            "提示词工程核心机制",
-            "提示词工程常用 API 与配置",
-            "提示词工程边界与异常处理",
-            "提示词工程性能及安全考量",
-            "提示词工程实战排障"
+            "system/user 消息分层",
+            "few-shot 示例",
+            "提示词变量模板",
+            "上下文窗口预算",
+            "提示注入防护"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1460,34 +1460,34 @@
           "nodeOrder": 3,
           "title": "大模型结构化输出",
           "objectives": [
-            "解释大模型结构化输出的关键机制与适用边界",
-            "运用大模型结构化输出完成可验证的工程实现"
+            "能够实现并演示DeepSeek structured output与JSON Schema",
+            "能够为Pydantic model_validate_json场景编写拒绝与截断处理验证并解释schema 版本兼容取舍"
           ],
           "highFrequency": [
-            "大模型结构化输出常用配置与核心 API",
-            "大模型结构化输出在生产项目中的典型设计"
+            "DeepSeek structured output；JSON Schema",
+            "Pydantic model_validate_json；拒绝与截断处理；schema 版本兼容"
           ],
           "commonMistakes": [
-            "大模型结构化输出边界条件处理不完整",
-            "大模型结构化输出错误配置导致行为与预期不一致"
+            "只截取首尾大括号修复非法 JSON",
+            "schema 要求与提示词示例互相冲突"
           ],
           "searchKeywords": [
-            "structured-output",
-            "大模型结构化输出",
-            "大模型结构化输出 实战",
-            "大模型结构化输出 排障"
+            "DeepSeek structured output",
+            "JSON Schema",
+            "Pydantic model_validate_json",
+            "大模型结构化输出 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的大模型结构化输出实现、测试与简短设计说明"
+            "description": "实现 structured output 解析器，覆盖合法、拒绝、截断和字段缺失用例"
           },
           "quizBlueprint": [
-            "大模型结构化输出核心机制",
-            "大模型结构化输出常用 API 与配置",
-            "大模型结构化输出边界与异常处理",
-            "大模型结构化输出性能及安全考量",
-            "大模型结构化输出实战排障"
+            "DeepSeek structured output",
+            "JSON Schema",
+            "Pydantic model_validate_json",
+            "拒绝与截断处理",
+            "schema 版本兼容"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1503,34 +1503,34 @@
           "nodeOrder": 4,
           "title": "模型成本控制、限流与重试",
           "objectives": [
-            "解释模型成本控制、限流与重试的关键机制与适用边界",
-            "运用模型成本控制、限流与重试完成可验证的工程实现"
+            "能够实现并演示token 预算与429 Retry-After",
+            "能够为指数退避加 jitter场景编写熔断与降级验证并解释模型路由成本取舍"
           ],
           "highFrequency": [
-            "模型成本控制、限流与重试常用配置与核心 API",
-            "模型成本控制、限流与重试在生产项目中的典型设计"
+            "token 预算；429 Retry-After",
+            "指数退避加 jitter；熔断与降级；模型路由成本"
           ],
           "commonMistakes": [
-            "模型成本控制、限流与重试边界条件处理不完整",
-            "模型成本控制、限流与重试错误配置导致行为与预期不一致"
+            "对所有 4xx 无差别重试放大费用",
+            "重试时重复发送不可幂等工具调用"
           ],
           "searchKeywords": [
-            "model-cost-retry",
-            "模型成本控制、限流与重试",
-            "模型成本控制、限流与重试 实战",
-            "模型成本控制、限流与重试 排障"
+            "token 预算",
+            "429 Retry-After",
+            "指数退避加 jitter",
+            "模型成本控制、限流与重试 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的模型成本控制、限流与重试实现、测试与简短设计说明"
+            "description": "提供预算上限、分类重试、熔断和成本报表的模型网关"
           },
           "quizBlueprint": [
-            "模型成本控制、限流与重试核心机制",
-            "模型成本控制、限流与重试常用 API 与配置",
-            "模型成本控制、限流与重试边界与异常处理",
-            "模型成本控制、限流与重试性能及安全考量",
-            "模型成本控制、限流与重试实战排障"
+            "token 预算",
+            "429 Retry-After",
+            "指数退避加 jitter",
+            "熔断与降级",
+            "模型路由成本"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1545,34 +1545,34 @@
           "nodeOrder": 5,
           "title": "大模型输入输出安全",
           "objectives": [
-            "解释大模型输入输出安全的关键机制与适用边界",
-            "运用大模型输入输出安全完成可验证的工程实现"
+            "能够实现并演示prompt injection与输出内容过滤",
+            "能够为工具参数 allowlist场景编写PII 脱敏验证并解释模型越权防护取舍"
           ],
           "highFrequency": [
-            "大模型输入输出安全常用配置与核心 API",
-            "大模型输入输出安全在生产项目中的典型设计"
+            "prompt injection；输出内容过滤",
+            "工具参数 allowlist；PII 脱敏；模型越权防护"
           ],
           "commonMistakes": [
-            "大模型输入输出安全边界条件处理不完整",
-            "大模型输入输出安全错误配置导致行为与预期不一致"
+            "让模型文本直接决定高权限工具名",
+            "只过滤输入却原样展示危险输出"
           ],
           "searchKeywords": [
-            "llm-security",
-            "大模型输入输出安全",
-            "大模型输入输出安全 实战",
-            "大模型输入输出安全 排障"
+            "prompt injection",
+            "输出内容过滤",
+            "工具参数 allowlist",
+            "大模型输入输出安全 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的大模型输入输出安全实现、测试与简短设计说明"
+            "description": "用恶意提示集验证指令隔离、参数校验和敏感信息脱敏"
           },
           "quizBlueprint": [
-            "大模型输入输出安全核心机制",
-            "大模型输入输出安全常用 API 与配置",
-            "大模型输入输出安全边界与异常处理",
-            "大模型输入输出安全性能及安全考量",
-            "大模型输入输出安全实战排障"
+            "prompt injection",
+            "输出内容过滤",
+            "工具参数 allowlist",
+            "PII 脱敏",
+            "模型越权防护"
           ],
           "estimatedMinutes": 75,
           "practiceMinutes": 60,
@@ -1597,34 +1597,34 @@
           "nodeOrder": 1,
           "title": "LangGraph 状态图",
           "objectives": [
-            "解释LangGraph 状态图的关键机制与适用边界",
-            "运用LangGraph 状态图完成可验证的工程实现"
+            "能够实现并演示LangGraph StateGraph与TypedDict state",
+            "能够为节点与条件边场景编写compile/checkpointer验证并解释递归上限取舍"
           ],
           "highFrequency": [
-            "LangGraph 状态图常用配置与核心 API",
-            "LangGraph 状态图在生产项目中的典型设计"
+            "LangGraph StateGraph；TypedDict state",
+            "节点与条件边；compile/checkpointer；递归上限"
           ],
           "commonMistakes": [
-            "LangGraph 状态图边界条件处理不完整",
-            "LangGraph 状态图错误配置导致行为与预期不一致"
+            "在节点中原地修改共享 state 造成更新不可追踪",
+            "条件边返回未注册路由导致运行时失败"
           ],
           "searchKeywords": [
-            "langgraph-state",
-            "LangGraph 状态图",
-            "LangGraph 状态图 实战",
-            "LangGraph 状态图 排障"
+            "LangGraph StateGraph",
+            "TypedDict state",
+            "节点与条件边",
+            "LangGraph 状态图 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的LangGraph 状态图实现、测试与简短设计说明"
+            "description": "实现带条件分支、状态归并和图结构测试的 StateGraph"
           },
           "quizBlueprint": [
-            "LangGraph 状态图核心机制",
-            "LangGraph 状态图常用 API 与配置",
-            "LangGraph 状态图边界与异常处理",
-            "LangGraph 状态图性能及安全考量",
-            "LangGraph 状态图实战排障"
+            "LangGraph StateGraph",
+            "TypedDict state",
+            "节点与条件边",
+            "compile/checkpointer",
+            "递归上限"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -1639,34 +1639,34 @@
           "nodeOrder": 2,
           "title": "LangGraph 记忆与检查点",
           "objectives": [
-            "解释LangGraph 记忆与检查点的关键机制与适用边界",
-            "运用LangGraph 记忆与检查点完成可验证的工程实现"
+            "能够实现并演示checkpointer thread_id与短期消息记忆",
+            "能够为长期 store namespace场景编写摘要压缩验证并解释会话隔离取舍"
           ],
           "highFrequency": [
-            "LangGraph 记忆与检查点常用配置与核心 API",
-            "LangGraph 记忆与检查点在生产项目中的典型设计"
+            "checkpointer thread_id；短期消息记忆",
+            "长期 store namespace；摘要压缩；会话隔离"
           ],
           "commonMistakes": [
-            "LangGraph 记忆与检查点边界条件处理不完整",
-            "LangGraph 记忆与检查点错误配置导致行为与预期不一致"
+            "多个用户复用 thread_id 导致记忆串线",
+            "无限累积消息直到超出上下文窗口"
           ],
           "searchKeywords": [
-            "langgraph-memory",
-            "LangGraph 记忆与检查点",
-            "LangGraph 记忆与检查点 实战",
-            "LangGraph 记忆与检查点 排障"
+            "checkpointer thread_id",
+            "短期消息记忆",
+            "长期 store namespace",
+            "LangGraph 记忆与检查点 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的LangGraph 记忆与检查点实现、测试与简短设计说明"
+            "description": "实现按用户隔离、可恢复检查点和摘要压缩的对话图"
           },
           "quizBlueprint": [
-            "LangGraph 记忆与检查点核心机制",
-            "LangGraph 记忆与检查点常用 API 与配置",
-            "LangGraph 记忆与检查点边界与异常处理",
-            "LangGraph 记忆与检查点性能及安全考量",
-            "LangGraph 记忆与检查点实战排障"
+            "checkpointer thread_id",
+            "短期消息记忆",
+            "长期 store namespace",
+            "摘要压缩",
+            "会话隔离"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -1681,34 +1681,34 @@
           "nodeOrder": 3,
           "title": "模型工具调用",
           "objectives": [
-            "解释模型工具调用的关键机制与适用边界",
-            "运用模型工具调用完成可验证的工程实现"
+            "能够实现并演示tool schema与参数 JSON Schema",
+            "能够为并行 tool_calls场景编写结果回传 tool_call_id验证并解释超时与错误封装取舍"
           ],
           "highFrequency": [
-            "模型工具调用常用配置与核心 API",
-            "模型工具调用在生产项目中的典型设计"
+            "tool schema；参数 JSON Schema",
+            "并行 tool_calls；结果回传 tool_call_id；超时与错误封装"
           ],
           "commonMistakes": [
-            "模型工具调用边界条件处理不完整",
-            "模型工具调用错误配置导致行为与预期不一致"
+            "信任模型参数而跳过服务端校验",
+            "工具结果漏带 tool_call_id 破坏消息链"
           ],
           "searchKeywords": [
-            "tool-calling",
-            "模型工具调用",
-            "模型工具调用 实战",
-            "模型工具调用 排障"
+            "tool schema",
+            "参数 JSON Schema",
+            "并行 tool_calls",
+            "模型工具调用 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的模型工具调用实现、测试与简短设计说明"
+            "description": "实现两个受校验工具、并行调用及失败回传的 Agent"
           },
           "quizBlueprint": [
-            "模型工具调用核心机制",
-            "模型工具调用常用 API 与配置",
-            "模型工具调用边界与异常处理",
-            "模型工具调用性能及安全考量",
-            "模型工具调用实战排障"
+            "tool schema",
+            "参数 JSON Schema",
+            "并行 tool_calls",
+            "结果回传 tool_call_id",
+            "超时与错误封装"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -1723,34 +1723,34 @@
           "nodeOrder": 4,
           "title": "Human-in-the-loop 审批",
           "objectives": [
-            "解释Human-in-the-loop 审批的关键机制与适用边界",
-            "运用Human-in-the-loop 审批完成可验证的工程实现"
+            "能够实现并演示LangGraph interrupt与Command resume",
+            "能够为审批状态持久化场景编写超时拒绝验证并解释审批内容防篡改取舍"
           ],
           "highFrequency": [
-            "Human-in-the-loop 审批常用配置与核心 API",
-            "Human-in-the-loop 审批在生产项目中的典型设计"
+            "LangGraph interrupt；Command resume",
+            "审批状态持久化；超时拒绝；审批内容防篡改"
           ],
           "commonMistakes": [
-            "Human-in-the-loop 审批边界条件处理不完整",
-            "Human-in-the-loop 审批错误配置导致行为与预期不一致"
+            "在副作用之后才 interrupt 失去审批意义",
+            "resume 时未校验审批人与原始参数"
           ],
           "searchKeywords": [
-            "human-in-loop",
-            "Human-in-the-loop 审批",
-            "Human-in-the-loop 审批 实战",
-            "Human-in-the-loop 审批 排障"
+            "LangGraph interrupt",
+            "Command resume",
+            "审批状态持久化",
+            "Human-in-the-loop 审批 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Human-in-the-loop 审批实现、测试与简短设计说明"
+            "description": "实现 interrupt 预览、持久化审批、拒绝和 resume 流程"
           },
           "quizBlueprint": [
-            "Human-in-the-loop 审批核心机制",
-            "Human-in-the-loop 审批常用 API 与配置",
-            "Human-in-the-loop 审批边界与异常处理",
-            "Human-in-the-loop 审批性能及安全考量",
-            "Human-in-the-loop 审批实战排障"
+            "LangGraph interrupt",
+            "Command resume",
+            "审批状态持久化",
+            "超时拒绝",
+            "审批内容防篡改"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -1765,34 +1765,34 @@
           "nodeOrder": 5,
           "title": "Model Context Protocol",
           "objectives": [
-            "解释Model Context Protocol的关键机制与适用边界",
-            "运用Model Context Protocol完成可验证的工程实现"
+            "能够实现并演示MCP tools/resources/prompts与stdio 与 Streamable HTTP",
+            "能够为capabilities 握手场景编写JSON-RPC 错误验证并解释客户端权限边界取舍"
           ],
           "highFrequency": [
-            "Model Context Protocol常用配置与核心 API",
-            "Model Context Protocol在生产项目中的典型设计"
+            "MCP tools/resources/prompts；stdio 与 Streamable HTTP",
+            "capabilities 握手；JSON-RPC 错误；客户端权限边界"
           ],
           "commonMistakes": [
-            "Model Context Protocol边界条件处理不完整",
-            "Model Context Protocol错误配置导致行为与预期不一致"
+            "把 MCP server 当普通 REST 跳过 initialize 握手",
+            "向未授权客户端暴露全部文件资源"
           ],
           "searchKeywords": [
-            "mcp",
-            "Model Context Protocol",
-            "Model Context Protocol 实战",
-            "Model Context Protocol 排障"
+            "MCP tools/resources/prompts",
+            "stdio 与 Streamable HTTP",
+            "capabilities 握手",
+            "Model Context Protocol 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Model Context Protocol实现、测试与简短设计说明"
+            "description": "实现最小 MCP server/client，并验证握手、工具和资源权限"
           },
           "quizBlueprint": [
-            "Model Context Protocol核心机制",
-            "Model Context Protocol常用 API 与配置",
-            "Model Context Protocol边界与异常处理",
-            "Model Context Protocol性能及安全考量",
-            "Model Context Protocol实战排障"
+            "MCP tools/resources/prompts",
+            "stdio 与 Streamable HTTP",
+            "capabilities 握手",
+            "JSON-RPC 错误",
+            "客户端权限边界"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -1807,34 +1807,34 @@
           "nodeOrder": 6,
           "title": "Spring AI 工具集成（选修）",
           "objectives": [
-            "解释Spring AI 工具集成（选修）的关键机制与适用边界",
-            "运用Spring AI 工具集成（选修）完成可验证的工程实现"
+            "能够实现并演示Spring AI ChatClient与ToolCallback",
+            "能够为Advisor 链场景编写ChatMemory验证并解释模型 Provider 配置取舍"
           ],
           "highFrequency": [
-            "Spring AI 工具集成（选修）常用配置与核心 API",
-            "Spring AI 工具集成（选修）在生产项目中的典型设计"
+            "Spring AI ChatClient；ToolCallback",
+            "Advisor 链；ChatMemory；模型 Provider 配置"
           ],
           "commonMistakes": [
-            "Spring AI 工具集成（选修）边界条件处理不完整",
-            "Spring AI 工具集成（选修）错误配置导致行为与预期不一致"
+            "在单例 Advisor 保存用户可变状态导致串会话",
+            "工具返回类型与模型 schema 不一致"
           ],
           "searchKeywords": [
-            "spring-ai-elective",
-            "Spring AI 工具集成（选修）",
-            "Spring AI 工具集成（选修） 实战",
-            "Spring AI 工具集成（选修） 排障"
+            "Spring AI ChatClient",
+            "ToolCallback",
+            "Advisor 链",
+            "Spring AI 工具集成（选修） 官方文档"
           ],
           "artifactRequirement": {
             "required": false,
             "evaluationMode": "PRESENCE",
-            "description": "提交一份Spring AI 工具集成（选修）实验记录或示例代码"
+            "description": "提交使用 ChatClient、Advisor 和 ToolCallback 的可运行选修示例"
           },
           "quizBlueprint": [
-            "Spring AI 工具集成（选修）核心机制",
-            "Spring AI 工具集成（选修）常用 API 与配置",
-            "Spring AI 工具集成（选修）边界与异常处理",
-            "Spring AI 工具集成（选修）性能及安全考量",
-            "Spring AI 工具集成（选修）实战排障"
+            "Spring AI ChatClient",
+            "ToolCallback",
+            "Advisor 链",
+            "ChatMemory",
+            "模型 Provider 配置"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 75,
@@ -1858,34 +1858,34 @@
           "nodeOrder": 1,
           "title": "文档解析与分块",
           "objectives": [
-            "解释文档解析与分块的关键机制与适用边界",
-            "运用文档解析与分块完成可验证的工程实现"
+            "能够实现并演示PDF/DOCX 解析与标题层级切分",
+            "能够为滑动窗口 overlap场景编写表格与页码元数据验证并解释扫描件 OCR取舍"
           ],
           "highFrequency": [
-            "文档解析与分块常用配置与核心 API",
-            "文档解析与分块在生产项目中的典型设计"
+            "PDF/DOCX 解析；标题层级切分",
+            "滑动窗口 overlap；表格与页码元数据；扫描件 OCR"
           ],
           "commonMistakes": [
-            "文档解析与分块边界条件处理不完整",
-            "文档解析与分块错误配置导致行为与预期不一致"
+            "按固定字符数切断代码块和表格语义",
+            "丢弃页码使最终引用无法回溯原文"
           ],
           "searchKeywords": [
-            "document-parsing",
-            "文档解析与分块",
-            "文档解析与分块 实战",
-            "文档解析与分块 排障"
+            "PDF/DOCX 解析",
+            "标题层级切分",
+            "滑动窗口 overlap",
+            "文档解析与分块 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的文档解析与分块实现、测试与简短设计说明"
+            "description": "构建保留标题、页码和表格元数据的解析分块流水线"
           },
           "quizBlueprint": [
-            "文档解析与分块核心机制",
-            "文档解析与分块常用 API 与配置",
-            "文档解析与分块边界与异常处理",
-            "文档解析与分块性能及安全考量",
-            "文档解析与分块实战排障"
+            "PDF/DOCX 解析",
+            "标题层级切分",
+            "滑动窗口 overlap",
+            "表格与页码元数据",
+            "扫描件 OCR"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1900,34 +1900,34 @@
           "nodeOrder": 2,
           "title": "向量嵌入与 Qdrant",
           "objectives": [
-            "解释向量嵌入与 Qdrant的关键机制与适用边界",
-            "运用向量嵌入与 Qdrant完成可验证的工程实现"
+            "能够实现并演示embedding 维度与Qdrant collection",
+            "能够为payload filter场景编写HNSW 参数验证并解释upsert 与删除同步取舍"
           ],
           "highFrequency": [
-            "向量嵌入与 Qdrant常用配置与核心 API",
-            "向量嵌入与 Qdrant在生产项目中的典型设计"
+            "embedding 维度；Qdrant collection",
+            "payload filter；HNSW 参数；upsert 与删除同步"
           ],
           "commonMistakes": [
-            "向量嵌入与 Qdrant边界条件处理不完整",
-            "向量嵌入与 Qdrant错误配置导致行为与预期不一致"
+            "更换 embedding 模型却复用旧维度 collection",
+            "只新增向量不删除过期 chunk 产生幽灵结果"
           ],
           "searchKeywords": [
-            "embedding-qdrant",
-            "向量嵌入与 Qdrant",
-            "向量嵌入与 Qdrant 实战",
-            "向量嵌入与 Qdrant 排障"
+            "embedding 维度",
+            "Qdrant collection",
+            "payload filter",
+            "向量嵌入与 Qdrant 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的向量嵌入与 Qdrant实现、测试与简短设计说明"
+            "description": "创建 Qdrant collection，完成批量 upsert、过滤检索和重建脚本"
           },
           "quizBlueprint": [
-            "向量嵌入与 Qdrant核心机制",
-            "向量嵌入与 Qdrant常用 API 与配置",
-            "向量嵌入与 Qdrant边界与异常处理",
-            "向量嵌入与 Qdrant性能及安全考量",
-            "向量嵌入与 Qdrant实战排障"
+            "embedding 维度",
+            "Qdrant collection",
+            "payload filter",
+            "HNSW 参数",
+            "upsert 与删除同步"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1942,34 +1942,34 @@
           "nodeOrder": 3,
           "title": "混合检索与重排",
           "objectives": [
-            "解释混合检索与重排的关键机制与适用边界",
-            "运用混合检索与重排完成可验证的工程实现"
+            "能够实现并演示BM25 与向量召回与RRF 融合",
+            "能够为cross-encoder rerank场景编写top-k 与阈值验证并解释检索评测 Recall@k取舍"
           ],
           "highFrequency": [
-            "混合检索与重排常用配置与核心 API",
-            "混合检索与重排在生产项目中的典型设计"
+            "BM25 与向量召回；RRF 融合",
+            "cross-encoder rerank；top-k 与阈值；检索评测 Recall@k"
           ],
           "commonMistakes": [
-            "混合检索与重排边界条件处理不完整",
-            "混合检索与重排错误配置导致行为与预期不一致"
+            "直接相加不同量纲分数导致排序失真",
+            "只用单个示例调 top-k 造成过拟合"
           ],
           "searchKeywords": [
-            "hybrid-retrieval",
-            "混合检索与重排",
-            "混合检索与重排 实战",
-            "混合检索与重排 排障"
+            "BM25 与向量召回",
+            "RRF 融合",
+            "cross-encoder rerank",
+            "混合检索与重排 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的混合检索与重排实现、测试与简短设计说明"
+            "description": "实现 BM25/向量双路召回、RRF、重排及离线评测"
           },
           "quizBlueprint": [
-            "混合检索与重排核心机制",
-            "混合检索与重排常用 API 与配置",
-            "混合检索与重排边界与异常处理",
-            "混合检索与重排性能及安全考量",
-            "混合检索与重排实战排障"
+            "BM25 与向量召回",
+            "RRF 融合",
+            "cross-encoder rerank",
+            "top-k 与阈值",
+            "检索评测 Recall@k"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -1984,34 +1984,34 @@
           "nodeOrder": 4,
           "title": "Tavily 联网搜索",
           "objectives": [
-            "解释Tavily 联网搜索的关键机制与适用边界",
-            "运用Tavily 联网搜索完成可验证的工程实现"
+            "能够实现并演示Tavily Search API与search_depth",
+            "能够为域名 include/exclude场景编写时间过滤验证并解释来源去重取舍"
           ],
           "highFrequency": [
-            "Tavily 联网搜索常用配置与核心 API",
-            "Tavily 联网搜索在生产项目中的典型设计"
+            "Tavily Search API；search_depth",
+            "域名 include/exclude；时间过滤；来源去重"
           ],
           "commonMistakes": [
-            "Tavily 联网搜索边界条件处理不完整",
-            "Tavily 联网搜索错误配置导致行为与预期不一致"
+            "把搜索摘要当作已核验事实",
+            "不限制域名和时间导致旧内容污染回答"
           ],
           "searchKeywords": [
-            "tavily-search",
-            "Tavily 联网搜索",
-            "Tavily 联网搜索 实战",
-            "Tavily 联网搜索 排障"
+            "Tavily Search API",
+            "search_depth",
+            "域名 include/exclude",
+            "Tavily 联网搜索 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Tavily 联网搜索实现、测试与简短设计说明"
+            "description": "实现带域名策略、超时、去重和引用元数据的联网搜索适配器"
           },
           "quizBlueprint": [
-            "Tavily 联网搜索核心机制",
-            "Tavily 联网搜索常用 API 与配置",
-            "Tavily 联网搜索边界与异常处理",
-            "Tavily 联网搜索性能及安全考量",
-            "Tavily 联网搜索实战排障"
+            "Tavily Search API",
+            "search_depth",
+            "域名 include/exclude",
+            "时间过滤",
+            "来源去重"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -2026,34 +2026,34 @@
           "nodeOrder": 5,
           "title": "基于证据的回答与引用",
           "objectives": [
-            "解释基于证据的回答与引用的关键机制与适用边界",
-            "运用基于证据的回答与引用完成可验证的工程实现"
+            "能够实现并演示引用 chunk_id与claim-evidence 对齐",
+            "能够为无证据拒答场景编写引用覆盖率验证并解释来源冲突处理取舍"
           ],
           "highFrequency": [
-            "基于证据的回答与引用常用配置与核心 API",
-            "基于证据的回答与引用在生产项目中的典型设计"
+            "引用 chunk_id；claim-evidence 对齐",
+            "无证据拒答；引用覆盖率；来源冲突处理"
           ],
           "commonMistakes": [
-            "基于证据的回答与引用边界条件处理不完整",
-            "基于证据的回答与引用错误配置导致行为与预期不一致"
+            "生成了链接却无法定位支持该结论的片段",
+            "证据不足时仍补全看似合理的答案"
           ],
           "searchKeywords": [
-            "grounded-answer",
-            "基于证据的回答与引用",
-            "基于证据的回答与引用 实战",
-            "基于证据的回答与引用 排障"
+            "引用 chunk_id",
+            "claim-evidence 对齐",
+            "无证据拒答",
+            "基于证据的回答与引用 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的基于证据的回答与引用实现、测试与简短设计说明"
+            "description": "输出逐句引用、证据不足拒答及引用覆盖率评测报告"
           },
           "quizBlueprint": [
-            "基于证据的回答与引用核心机制",
-            "基于证据的回答与引用常用 API 与配置",
-            "基于证据的回答与引用边界与异常处理",
-            "基于证据的回答与引用性能及安全考量",
-            "基于证据的回答与引用实战排障"
+            "引用 chunk_id",
+            "claim-evidence 对齐",
+            "无证据拒答",
+            "引用覆盖率",
+            "来源冲突处理"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -2069,34 +2069,34 @@
           "nodeOrder": 6,
           "title": "自适应学习评估",
           "objectives": [
-            "解释自适应学习评估的关键机制与适用边界",
-            "运用自适应学习评估完成可验证的工程实现"
+            "能够实现并演示IRT 难度思想与掌握度状态",
+            "能够为题目标签场景编写错因反馈验证并解释间隔复习取舍"
           ],
           "highFrequency": [
-            "自适应学习评估常用配置与核心 API",
-            "自适应学习评估在生产项目中的典型设计"
+            "IRT 难度思想；掌握度状态",
+            "题目标签；错因反馈；间隔复习"
           ],
           "commonMistakes": [
-            "自适应学习评估边界条件处理不完整",
-            "自适应学习评估错误配置导致行为与预期不一致"
+            "只按总分推荐题目忽略知识点分布",
+            "使用同一道题反复测量导致记忆效应"
           ],
           "searchKeywords": [
-            "adaptive-assessment",
-            "自适应学习评估",
-            "自适应学习评估 实战",
-            "自适应学习评估 排障"
+            "IRT 难度思想",
+            "掌握度状态",
+            "题目标签",
+            "自适应学习评估 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的自适应学习评估实现、测试与简短设计说明"
+            "description": "实现按掌握度选题、错因反馈和复习间隔更新的评估器"
           },
           "quizBlueprint": [
-            "自适应学习评估核心机制",
-            "自适应学习评估常用 API 与配置",
-            "自适应学习评估边界与异常处理",
-            "自适应学习评估性能及安全考量",
-            "自适应学习评估实战排障"
+            "IRT 难度思想",
+            "掌握度状态",
+            "题目标签",
+            "错因反馈",
+            "间隔复习"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 90,
@@ -2120,34 +2120,34 @@
           "nodeOrder": 1,
           "title": "业务工具契约设计",
           "objectives": [
-            "解释业务工具契约设计的关键机制与适用边界",
-            "运用业务工具契约设计完成可验证的工程实现"
+            "能够实现并演示命令/查询分离与工具输入 JSON Schema",
+            "能够为业务错误码场景编写dry-run 预览验证并解释副作用声明取舍"
           ],
           "highFrequency": [
-            "业务工具契约设计常用配置与核心 API",
-            "业务工具契约设计在生产项目中的典型设计"
+            "命令/查询分离；工具输入 JSON Schema",
+            "业务错误码；dry-run 预览；副作用声明"
           ],
           "commonMistakes": [
-            "业务工具契约设计边界条件处理不完整",
-            "业务工具契约设计错误配置导致行为与预期不一致"
+            "把数据库实体字段全部暴露给模型",
+            "工具描述未说明副作用导致误调用"
           ],
           "searchKeywords": [
-            "business-tool-contracts",
-            "业务工具契约设计",
-            "业务工具契约设计 实战",
-            "业务工具契约设计 排障"
+            "命令/查询分离",
+            "工具输入 JSON Schema",
+            "业务错误码",
+            "业务工具契约设计 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的业务工具契约设计实现、测试与简短设计说明"
+            "description": "定义带 schema、权限、幂等和 dry-run 语义的业务工具契约"
           },
           "quizBlueprint": [
-            "业务工具契约设计核心机制",
-            "业务工具契约设计常用 API 与配置",
-            "业务工具契约设计边界与异常处理",
-            "业务工具契约设计性能及安全考量",
-            "业务工具契约设计实战排障"
+            "命令/查询分离",
+            "工具输入 JSON Schema",
+            "业务错误码",
+            "dry-run 预览",
+            "副作用声明"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2163,34 +2163,34 @@
           "nodeOrder": 2,
           "title": "意图识别与执行预览",
           "objectives": [
-            "解释意图识别与执行预览的关键机制与适用边界",
-            "运用意图识别与执行预览完成可验证的工程实现"
+            "能够实现并演示意图分类置信度与结构化执行计划",
+            "能够为参数差异预览场景编写风险等级验证并解释用户确认快照取舍"
           ],
           "highFrequency": [
-            "意图识别与执行预览常用配置与核心 API",
-            "意图识别与执行预览在生产项目中的典型设计"
+            "意图分类置信度；结构化执行计划",
+            "参数差异预览；风险等级；用户确认快照"
           ],
           "commonMistakes": [
-            "意图识别与执行预览边界条件处理不完整",
-            "意图识别与执行预览错误配置导致行为与预期不一致"
+            "低置信度意图仍自动执行高风险操作",
+            "确认后重新解析自然语言导致执行内容变化"
           ],
           "searchKeywords": [
-            "intent-preview",
-            "意图识别与执行预览",
-            "意图识别与执行预览 实战",
-            "意图识别与执行预览 排障"
+            "意图分类置信度",
+            "结构化执行计划",
+            "参数差异预览",
+            "意图识别与执行预览 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的意图识别与执行预览实现、测试与简短设计说明"
+            "description": "实现意图识别、不可变参数预览和确认快照校验"
           },
           "quizBlueprint": [
-            "意图识别与执行预览核心机制",
-            "意图识别与执行预览常用 API 与配置",
-            "意图识别与执行预览边界与异常处理",
-            "意图识别与执行预览性能及安全考量",
-            "意图识别与执行预览实战排障"
+            "意图分类置信度",
+            "结构化执行计划",
+            "参数差异预览",
+            "风险等级",
+            "用户确认快照"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2205,34 +2205,34 @@
           "nodeOrder": 3,
           "title": "Agent 授权与治理",
           "objectives": [
-            "解释Agent 授权与治理的关键机制与适用边界",
-            "运用Agent 授权与治理完成可验证的工程实现"
+            "能够实现并演示最小权限 scope与策略决策点 PDP",
+            "能够为资源级授权场景编写审批审计验证并解释权限撤销取舍"
           ],
           "highFrequency": [
-            "Agent 授权与治理常用配置与核心 API",
-            "Agent 授权与治理在生产项目中的典型设计"
+            "最小权限 scope；策略决策点 PDP",
+            "资源级授权；审批审计；权限撤销"
           ],
           "commonMistakes": [
-            "Agent 授权与治理边界条件处理不完整",
-            "Agent 授权与治理错误配置导致行为与预期不一致"
+            "只校验工具名未校验目标资源归属",
+            "长期 token 在权限撤销后仍可继续执行"
           ],
           "searchKeywords": [
-            "authorization-governance",
-            "Agent 授权与治理",
-            "Agent 授权与治理 实战",
-            "Agent 授权与治理 排障"
+            "最小权限 scope",
+            "策略决策点 PDP",
+            "资源级授权",
+            "Agent 授权与治理 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Agent 授权与治理实现、测试与简短设计说明"
+            "description": "提供工具/资源双层策略、拒绝原因和完整授权审计"
           },
           "quizBlueprint": [
-            "Agent 授权与治理核心机制",
-            "Agent 授权与治理常用 API 与配置",
-            "Agent 授权与治理边界与异常处理",
-            "Agent 授权与治理性能及安全考量",
-            "Agent 授权与治理实战排障"
+            "最小权限 scope",
+            "策略决策点 PDP",
+            "资源级授权",
+            "审批审计",
+            "权限撤销"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2248,34 +2248,34 @@
           "nodeOrder": 4,
           "title": "Agent 幂等执行",
           "objectives": [
-            "解释Agent 幂等执行的关键机制与适用边界",
-            "运用Agent 幂等执行完成可验证的工程实现"
+            "能够实现并演示幂等键与请求指纹",
+            "能够为执行状态机场景编写结果重放验证并解释失败补偿取舍"
           ],
           "highFrequency": [
-            "Agent 幂等执行常用配置与核心 API",
-            "Agent 幂等执行在生产项目中的典型设计"
+            "幂等键；请求指纹",
+            "执行状态机；结果重放；失败补偿"
           ],
           "commonMistakes": [
-            "Agent 幂等执行边界条件处理不完整",
-            "Agent 幂等执行错误配置导致行为与预期不一致"
+            "同一幂等键绑定不同参数却返回旧结果",
+            "超时后盲目重试造成副作用执行两次"
           ],
           "searchKeywords": [
-            "idempotent-execution",
-            "Agent 幂等执行",
-            "Agent 幂等执行 实战",
-            "Agent 幂等执行 排障"
+            "幂等键",
+            "请求指纹",
+            "执行状态机",
+            "Agent 幂等执行 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Agent 幂等执行实现、测试与简短设计说明"
+            "description": "实现幂等键与请求指纹校验、并发去重及结果重放"
           },
           "quizBlueprint": [
-            "Agent 幂等执行核心机制",
-            "Agent 幂等执行常用 API 与配置",
-            "Agent 幂等执行边界与异常处理",
-            "Agent 幂等执行性能及安全考量",
-            "Agent 幂等执行实战排障"
+            "幂等键",
+            "请求指纹",
+            "执行状态机",
+            "结果重放",
+            "失败补偿"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2290,34 +2290,34 @@
           "nodeOrder": 5,
           "title": "业务 Agent 端到端实现",
           "objectives": [
-            "解释业务 Agent 端到端实现的关键机制与适用边界",
-            "运用业务 Agent 端到端实现完成可验证的工程实现"
+            "能够实现并演示意图到工具闭环与审批与授权",
+            "能够为事务边界场景编写失败补偿验证并解释端到端追踪取舍"
           ],
           "highFrequency": [
-            "业务 Agent 端到端实现常用配置与核心 API",
-            "业务 Agent 端到端实现在生产项目中的典型设计"
+            "意图到工具闭环；审批与授权",
+            "事务边界；失败补偿；端到端追踪"
           ],
           "commonMistakes": [
-            "业务 Agent 端到端实现边界条件处理不完整",
-            "业务 Agent 端到端实现错误配置导致行为与预期不一致"
+            "成功回复在数据库事务提交前发送给用户",
+            "补偿失败没有进入人工处理队列"
           ],
           "searchKeywords": [
-            "business-agent-e2e",
-            "业务 Agent 端到端实现",
-            "业务 Agent 端到端实现 实战",
-            "业务 Agent 端到端实现 排障"
+            "意图到工具闭环",
+            "审批与授权",
+            "事务边界",
+            "业务 Agent 端到端实现 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的业务 Agent 端到端实现实现、测试与简短设计说明"
+            "description": "交付从自然语言到审批执行、补偿、审计和 E2E 测试的 Agent"
           },
           "quizBlueprint": [
-            "业务 Agent 端到端实现核心机制",
-            "业务 Agent 端到端实现常用 API 与配置",
-            "业务 Agent 端到端实现边界与异常处理",
-            "业务 Agent 端到端实现性能及安全考量",
-            "业务 Agent 端到端实现实战排障"
+            "意图到工具闭环",
+            "审批与授权",
+            "事务边界",
+            "失败补偿",
+            "端到端追踪"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2341,34 +2341,34 @@
           "nodeOrder": 1,
           "title": "代码仓库读取与搜索",
           "objectives": [
-            "解释代码仓库读取与搜索的关键机制与适用边界",
-            "运用代码仓库读取与搜索完成可验证的工程实现"
+            "能够实现并演示ripgrep 搜索与git ls-files 范围",
+            "能够为符号与引用定位场景编写编码与二进制过滤验证并解释最小上下文读取取舍"
           ],
           "highFrequency": [
-            "代码仓库读取与搜索常用配置与核心 API",
-            "代码仓库读取与搜索在生产项目中的典型设计"
+            "ripgrep 搜索；git ls-files 范围",
+            "符号与引用定位；编码与二进制过滤；最小上下文读取"
           ],
           "commonMistakes": [
-            "代码仓库读取与搜索边界条件处理不完整",
-            "代码仓库读取与搜索错误配置导致行为与预期不一致"
+            "递归读取 .git 和构建产物浪费上下文",
+            "只按文件名猜实现而未检索调用点"
           ],
           "searchKeywords": [
-            "repo-read-search",
-            "代码仓库读取与搜索",
-            "代码仓库读取与搜索 实战",
-            "代码仓库读取与搜索 排障"
+            "ripgrep 搜索",
+            "git ls-files 范围",
+            "符号与引用定位",
+            "代码仓库读取与搜索 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的代码仓库读取与搜索实现、测试与简短设计说明"
+            "description": "实现受仓库边界约束的读取、ripgrep 搜索和结果截断工具"
           },
           "quizBlueprint": [
-            "代码仓库读取与搜索核心机制",
-            "代码仓库读取与搜索常用 API 与配置",
-            "代码仓库读取与搜索边界与异常处理",
-            "代码仓库读取与搜索性能及安全考量",
-            "代码仓库读取与搜索实战排障"
+            "ripgrep 搜索",
+            "git ls-files 范围",
+            "符号与引用定位",
+            "编码与二进制过滤",
+            "最小上下文读取"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2383,34 +2383,34 @@
           "nodeOrder": 2,
           "title": "补丁生成与 Diff 审查",
           "objectives": [
-            "解释补丁生成与 Diff 审查的关键机制与适用边界",
-            "运用补丁生成与 Diff 审查完成可验证的工程实现"
+            "能够实现并演示unified diff与apply_patch 上下文",
+            "能够为路径规范化场景编写冲突检测验证并解释最小变更审查取舍"
           ],
           "highFrequency": [
-            "补丁生成与 Diff 审查常用配置与核心 API",
-            "补丁生成与 Diff 审查在生产项目中的典型设计"
+            "unified diff；apply_patch 上下文",
+            "路径规范化；冲突检测；最小变更审查"
           ],
           "commonMistakes": [
-            "补丁生成与 Diff 审查边界条件处理不完整",
-            "补丁生成与 Diff 审查错误配置导致行为与预期不一致"
+            "补丁允许 ../ 路径逃逸工作区",
+            "上下文过少让补丁误应用到重复代码段"
           ],
           "searchKeywords": [
-            "patch-diff",
-            "补丁生成与 Diff 审查",
-            "补丁生成与 Diff 审查 实战",
-            "补丁生成与 Diff 审查 排障"
+            "unified diff",
+            "apply_patch 上下文",
+            "路径规范化",
+            "补丁生成与 Diff 审查 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的补丁生成与 Diff 审查实现、测试与简短设计说明"
+            "description": "生成并应用最小 unified diff，覆盖路径逃逸与冲突测试"
           },
           "quizBlueprint": [
-            "补丁生成与 Diff 审查核心机制",
-            "补丁生成与 Diff 审查常用 API 与配置",
-            "补丁生成与 Diff 审查边界与异常处理",
-            "补丁生成与 Diff 审查性能及安全考量",
-            "补丁生成与 Diff 审查实战排障"
+            "unified diff",
+            "apply_patch 上下文",
+            "路径规范化",
+            "冲突检测",
+            "最小变更审查"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2425,34 +2425,34 @@
           "nodeOrder": 3,
           "title": "测试与构建工具调用",
           "objectives": [
-            "解释测试与构建工具调用的关键机制与适用边界",
-            "运用测试与构建工具调用完成可验证的工程实现"
+            "能够实现并演示测试选择器与构建超时",
+            "能够为stdout/stderr 截断场景编写退出码传播验证并解释失败报告解析取舍"
           ],
           "highFrequency": [
-            "测试与构建工具调用常用配置与核心 API",
-            "测试与构建工具调用在生产项目中的典型设计"
+            "测试选择器；构建超时",
+            "stdout/stderr 截断；退出码传播；失败报告解析"
           ],
           "commonMistakes": [
-            "测试与构建工具调用边界条件处理不完整",
-            "测试与构建工具调用错误配置导致行为与预期不一致"
+            "只看日志关键字而忽略非零退出码",
+            "无限制保存构建输出耗尽内存"
           ],
           "searchKeywords": [
-            "test-build-tools",
-            "测试与构建工具调用",
-            "测试与构建工具调用 实战",
-            "测试与构建工具调用 排障"
+            "测试选择器",
+            "构建超时",
+            "stdout/stderr 截断",
+            "测试与构建工具调用 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的测试与构建工具调用实现、测试与简短设计说明"
+            "description": "实现带超时、输出上限、退出码和测试摘要的构建工具"
           },
           "quizBlueprint": [
-            "测试与构建工具调用核心机制",
-            "测试与构建工具调用常用 API 与配置",
-            "测试与构建工具调用边界与异常处理",
-            "测试与构建工具调用性能及安全考量",
-            "测试与构建工具调用实战排障"
+            "测试选择器",
+            "构建超时",
+            "stdout/stderr 截断",
+            "退出码传播",
+            "失败报告解析"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2467,34 +2467,34 @@
           "nodeOrder": 4,
           "title": "Git 工具与分支工作流",
           "objectives": [
-            "解释Git 工具与分支工作流的关键机制与适用边界",
-            "运用Git 工具与分支工作流完成可验证的工程实现"
+            "能够实现并演示status/diff 安全读取与分支 allowlist",
+            "能够为提交身份场景编写非交互 rebase验证并解释受保护分支取舍"
           ],
           "highFrequency": [
-            "Git 工具与分支工作流常用配置与核心 API",
-            "Git 工具与分支工作流在生产项目中的典型设计"
+            "status/diff 安全读取；分支 allowlist",
+            "提交身份；非交互 rebase；受保护分支"
           ],
           "commonMistakes": [
-            "Git 工具与分支工作流边界条件处理不完整",
-            "Git 工具与分支工作流错误配置导致行为与预期不一致"
+            "用 git add . 意外暂存密钥和用户文件",
+            "允许 force push 受保护分支破坏历史"
           ],
           "searchKeywords": [
-            "git-tools",
-            "Git 工具与分支工作流",
-            "Git 工具与分支工作流 实战",
-            "Git 工具与分支工作流 排障"
+            "status/diff 安全读取",
+            "分支 allowlist",
+            "提交身份",
+            "Git 工具与分支工作流 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Git 工具与分支工作流实现、测试与简短设计说明"
+            "description": "实现仅允许白名单分支和显式文件暂存的 Git 工具"
           },
           "quizBlueprint": [
-            "Git 工具与分支工作流核心机制",
-            "Git 工具与分支工作流常用 API 与配置",
-            "Git 工具与分支工作流边界与异常处理",
-            "Git 工具与分支工作流性能及安全考量",
-            "Git 工具与分支工作流实战排障"
+            "status/diff 安全读取",
+            "分支 allowlist",
+            "提交身份",
+            "非交互 rebase",
+            "受保护分支"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2509,34 +2509,34 @@
           "nodeOrder": 5,
           "title": "Playwright 与 DOM 自动化",
           "objectives": [
-            "解释Playwright 与 DOM 自动化的关键机制与适用边界",
-            "运用Playwright 与 DOM 自动化完成可验证的工程实现"
+            "能够实现并演示role/label locator与auto-wait",
+            "能够为network interception场景编写storageState验证并解释trace viewer取舍"
           ],
           "highFrequency": [
-            "Playwright 与 DOM 自动化常用配置与核心 API",
-            "Playwright 与 DOM 自动化在生产项目中的典型设计"
+            "role/label locator；auto-wait",
+            "network interception；storageState；trace viewer"
           ],
           "commonMistakes": [
-            "Playwright 与 DOM 自动化边界条件处理不完整",
-            "Playwright 与 DOM 自动化错误配置导致行为与预期不一致"
+            "依赖易变 CSS 层级选择器造成脆弱测试",
+            "用固定 sleep 掩盖真正的竞态条件"
           ],
           "searchKeywords": [
-            "playwright-dom",
-            "Playwright 与 DOM 自动化",
-            "Playwright 与 DOM 自动化 实战",
-            "Playwright 与 DOM 自动化 排障"
+            "role/label locator",
+            "auto-wait",
+            "network interception",
+            "Playwright 与 DOM 自动化 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Playwright 与 DOM 自动化实现、测试与简短设计说明"
+            "description": "完成基于语义 locator、网络等待和 trace 的关键页面 E2E"
           },
           "quizBlueprint": [
-            "Playwright 与 DOM 自动化核心机制",
-            "Playwright 与 DOM 自动化常用 API 与配置",
-            "Playwright 与 DOM 自动化边界与异常处理",
-            "Playwright 与 DOM 自动化性能及安全考量",
-            "Playwright 与 DOM 自动化实战排障"
+            "role/label locator",
+            "auto-wait",
+            "network interception",
+            "storageState",
+            "trace viewer"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2552,34 +2552,34 @@
           "nodeOrder": 6,
           "title": "无障碍与桌面自动化（选修）",
           "objectives": [
-            "解释无障碍与桌面自动化（选修）的关键机制与适用边界",
-            "运用无障碍与桌面自动化（选修）完成可验证的工程实现"
+            "能够实现并演示ARIA 可访问名称与键盘焦点顺序",
+            "能够为WCAG 对比度场景编写屏幕坐标缩放验证并解释桌面权限提示取舍"
           ],
           "highFrequency": [
-            "无障碍与桌面自动化（选修）常用配置与核心 API",
-            "无障碍与桌面自动化（选修）在生产项目中的典型设计"
+            "ARIA 可访问名称；键盘焦点顺序",
+            "WCAG 对比度；屏幕坐标缩放；桌面权限提示"
           ],
           "commonMistakes": [
-            "无障碍与桌面自动化（选修）边界条件处理不完整",
-            "无障碍与桌面自动化（选修）错误配置导致行为与预期不一致"
+            "只监听鼠标点击导致键盘用户无法操作",
+            "用固定像素坐标忽略 DPI 与窗口移动"
           ],
           "searchKeywords": [
-            "accessibility-desktop",
-            "无障碍与桌面自动化（选修）",
-            "无障碍与桌面自动化（选修） 实战",
-            "无障碍与桌面自动化（选修） 排障"
+            "ARIA 可访问名称",
+            "键盘焦点顺序",
+            "WCAG 对比度",
+            "无障碍与桌面自动化（选修） 官方文档"
           ],
           "artifactRequirement": {
             "required": false,
             "evaluationMode": "PRESENCE",
-            "description": "提交一份无障碍与桌面自动化（选修）实验记录或示例代码"
+            "description": "提交键盘全流程、axe 扫描和多缩放比例桌面操作记录"
           },
           "quizBlueprint": [
-            "无障碍与桌面自动化（选修）核心机制",
-            "无障碍与桌面自动化（选修）常用 API 与配置",
-            "无障碍与桌面自动化（选修）边界与异常处理",
-            "无障碍与桌面自动化（选修）性能及安全考量",
-            "无障碍与桌面自动化（选修）实战排障"
+            "ARIA 可访问名称",
+            "键盘焦点顺序",
+            "WCAG 对比度",
+            "屏幕坐标缩放",
+            "桌面权限提示"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2603,34 +2603,34 @@
           "nodeOrder": 1,
           "title": "执行器沙箱隔离",
           "objectives": [
-            "解释执行器沙箱隔离的关键机制与适用边界",
-            "运用执行器沙箱隔离完成可验证的工程实现"
+            "能够实现并演示realpath 路径校验与进程用户隔离",
+            "能够为CPU/内存/时间配额场景编写临时工作目录验证并解释子进程终止取舍"
           ],
           "highFrequency": [
-            "执行器沙箱隔离常用配置与核心 API",
-            "执行器沙箱隔离在生产项目中的典型设计"
+            "realpath 路径校验；进程用户隔离",
+            "CPU/内存/时间配额；临时工作目录；子进程终止"
           ],
           "commonMistakes": [
-            "执行器沙箱隔离边界条件处理不完整",
-            "执行器沙箱隔离错误配置导致行为与预期不一致"
+            "仅检查路径字符串前缀可被符号链接绕过",
+            "超时只杀父进程留下失控子进程"
           ],
           "searchKeywords": [
-            "runner-sandbox",
-            "执行器沙箱隔离",
-            "执行器沙箱隔离 实战",
-            "执行器沙箱隔离 排障"
+            "realpath 路径校验",
+            "进程用户隔离",
+            "CPU/内存/时间配额",
+            "执行器沙箱隔离 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的执行器沙箱隔离实现、测试与简短设计说明"
+            "description": "实现 realpath 边界、资源限额、进程树终止和逃逸测试的 runner"
           },
           "quizBlueprint": [
-            "执行器沙箱隔离核心机制",
-            "执行器沙箱隔离常用 API 与配置",
-            "执行器沙箱隔离边界与异常处理",
-            "执行器沙箱隔离性能及安全考量",
-            "执行器沙箱隔离实战排障"
+            "realpath 路径校验",
+            "进程用户隔离",
+            "CPU/内存/时间配额",
+            "临时工作目录",
+            "子进程终止"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2646,34 +2646,34 @@
           "nodeOrder": 2,
           "title": "密钥检测与脱敏",
           "objectives": [
-            "解释密钥检测与脱敏的关键机制与适用边界",
-            "运用密钥检测与脱敏完成可验证的工程实现"
+            "能够实现并演示密钥模式识别与熵检测",
+            "能够为流式日志脱敏场景编写环境变量 allowlist验证并解释Git 历史扫描取舍"
           ],
           "highFrequency": [
-            "密钥检测与脱敏常用配置与核心 API",
-            "密钥检测与脱敏在生产项目中的典型设计"
+            "密钥模式识别；熵检测",
+            "流式日志脱敏；环境变量 allowlist；Git 历史扫描"
           ],
           "commonMistakes": [
-            "密钥检测与脱敏边界条件处理不完整",
-            "密钥检测与脱敏错误配置导致行为与预期不一致"
+            "只替换完整 token 导致分块日志泄露片段",
+            "脱敏后异常对象仍携带原始请求头"
           ],
           "searchKeywords": [
-            "secret-redaction",
-            "密钥检测与脱敏",
-            "密钥检测与脱敏 实战",
-            "密钥检测与脱敏 排障"
+            "密钥模式识别",
+            "熵检测",
+            "流式日志脱敏",
+            "密钥检测与脱敏 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的密钥检测与脱敏实现、测试与简短设计说明"
+            "description": "实现跨分块 redaction、环境过滤和已知密钥回归语料测试"
           },
           "quizBlueprint": [
-            "密钥检测与脱敏核心机制",
-            "密钥检测与脱敏常用 API 与配置",
-            "密钥检测与脱敏边界与异常处理",
-            "密钥检测与脱敏性能及安全考量",
-            "密钥检测与脱敏实战排障"
+            "密钥模式识别",
+            "熵检测",
+            "流式日志脱敏",
+            "环境变量 allowlist",
+            "Git 历史扫描"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2688,34 +2688,34 @@
           "nodeOrder": 3,
           "title": "网络访问控制与防火墙",
           "objectives": [
-            "解释网络访问控制与防火墙的关键机制与适用边界",
-            "运用网络访问控制与防火墙完成可验证的工程实现"
+            "能够实现并演示loopback 与私网 CIDR与DNS rebinding",
+            "能够为域名 allowlist场景编写重定向复检验证并解释代理环境变量取舍"
           ],
           "highFrequency": [
-            "网络访问控制与防火墙常用配置与核心 API",
-            "网络访问控制与防火墙在生产项目中的典型设计"
+            "loopback 与私网 CIDR；DNS rebinding",
+            "域名 allowlist；重定向复检；代理环境变量"
           ],
           "commonMistakes": [
-            "网络访问控制与防火墙边界条件处理不完整",
-            "网络访问控制与防火墙错误配置导致行为与预期不一致"
+            "只校验初始 URL 却跟随重定向访问内网",
+            "允许 localhost 别名绕过 loopback 禁止规则"
           ],
           "searchKeywords": [
-            "network-firewall",
-            "网络访问控制与防火墙",
-            "网络访问控制与防火墙 实战",
-            "网络访问控制与防火墙 排障"
+            "loopback 与私网 CIDR",
+            "DNS rebinding",
+            "域名 allowlist",
+            "网络访问控制与防火墙 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的网络访问控制与防火墙实现、测试与简短设计说明"
+            "description": "实现 DNS 解析后 IP 校验、重定向复检和 loopback/私网阻断"
           },
           "quizBlueprint": [
-            "网络访问控制与防火墙核心机制",
-            "网络访问控制与防火墙常用 API 与配置",
-            "网络访问控制与防火墙边界与异常处理",
-            "网络访问控制与防火墙性能及安全考量",
-            "网络访问控制与防火墙实战排障"
+            "loopback 与私网 CIDR",
+            "DNS rebinding",
+            "域名 allowlist",
+            "重定向复检",
+            "代理环境变量"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2731,34 +2731,34 @@
           "nodeOrder": 4,
           "title": "Agent 可观测性与故障恢复",
           "objectives": [
-            "解释Agent 可观测性与故障恢复的关键机制与适用边界",
-            "运用Agent 可观测性与故障恢复完成可验证的工程实现"
+            "能够实现并演示run_id 全链路与结构化事件",
+            "能够为checkpoint 恢复场景编写重试预算验证并解释人工接管取舍"
           ],
           "highFrequency": [
-            "Agent 可观测性与故障恢复常用配置与核心 API",
-            "Agent 可观测性与故障恢复在生产项目中的典型设计"
+            "run_id 全链路；结构化事件",
+            "checkpoint 恢复；重试预算；人工接管"
           ],
           "commonMistakes": [
-            "Agent 可观测性与故障恢复边界条件处理不完整",
-            "Agent 可观测性与故障恢复错误配置导致行为与预期不一致"
+            "重试后复用旧 span 导致链路因果混乱",
+            "恢复时重复执行已完成副作用步骤"
           ],
           "searchKeywords": [
-            "observability-recovery",
-            "Agent 可观测性与故障恢复",
-            "Agent 可观测性与故障恢复 实战",
-            "Agent 可观测性与故障恢复 排障"
+            "run_id 全链路",
+            "结构化事件",
+            "checkpoint 恢复",
+            "Agent 可观测性与故障恢复 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的Agent 可观测性与故障恢复实现、测试与简短设计说明"
+            "description": "提供事件时间线、checkpoint 恢复、去重和人工接管演练"
           },
           "quizBlueprint": [
-            "Agent 可观测性与故障恢复核心机制",
-            "Agent 可观测性与故障恢复常用 API 与配置",
-            "Agent 可观测性与故障恢复边界与异常处理",
-            "Agent 可观测性与故障恢复性能及安全考量",
-            "Agent 可观测性与故障恢复实战排障"
+            "run_id 全链路",
+            "结构化事件",
+            "checkpoint 恢复",
+            "重试预算",
+            "人工接管"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
@@ -2774,34 +2774,34 @@
           "nodeOrder": 5,
           "title": "安全发布端到端验收",
           "objectives": [
-            "解释安全发布端到端验收的关键机制与适用边界",
-            "运用安全发布端到端验收完成可验证的工程实现"
+            "能够实现并演示供应链 SBOM与镜像签名",
+            "能够为灰度发布场景编写安全回归验证并解释回滚演练取舍"
           ],
           "highFrequency": [
-            "安全发布端到端验收常用配置与核心 API",
-            "安全发布端到端验收在生产项目中的典型设计"
+            "供应链 SBOM；镜像签名",
+            "灰度发布；安全回归；回滚演练"
           ],
           "commonMistakes": [
-            "安全发布端到端验收边界条件处理不完整",
-            "安全发布端到端验收错误配置导致行为与预期不一致"
+            "只验证 happy path 未测试策略拒绝和恢复",
+            "回滚应用却未回滚不兼容数据库迁移"
           ],
           "searchKeywords": [
-            "release-e2e",
-            "安全发布端到端验收",
-            "安全发布端到端验收 实战",
-            "安全发布端到端验收 排障"
+            "供应链 SBOM",
+            "镜像签名",
+            "灰度发布",
+            "安全发布端到端验收 官方文档"
           ],
           "artifactRequirement": {
             "required": true,
             "evaluationMode": "AI_RUBRIC",
-            "description": "提交可运行的安全发布端到端验收实现、测试与简短设计说明"
+            "description": "交付含 SBOM、签名验证、灰度指标、安全 E2E 与回滚记录的发布包"
           },
           "quizBlueprint": [
-            "安全发布端到端验收核心机制",
-            "安全发布端到端验收常用 API 与配置",
-            "安全发布端到端验收边界与异常处理",
-            "安全发布端到端验收性能及安全考量",
-            "安全发布端到端验收实战排障"
+            "供应链 SBOM",
+            "镜像签名",
+            "灰度发布",
+            "安全回归",
+            "回滚演练"
           ],
           "estimatedMinutes": 90,
           "practiceMinutes": 120,
