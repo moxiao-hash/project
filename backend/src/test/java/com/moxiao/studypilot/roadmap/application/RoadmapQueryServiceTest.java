@@ -35,26 +35,34 @@ class RoadmapQueryServiceTest {
     void nodeDetailUsesOnlyTargetScopedRepositoryCalls() {
         Fixture fixture = new Fixture();
         RoadmapNodeEntity requested = fixture.node("node", "stage", "node-code", "[]");
-        RoadmapNodeEntity prerequisite = fixture.node("prerequisite", "earlier", "prerequisite-code", "[]");
+        RoadmapNodeEntity firstPrerequisite = fixture.node(
+                "prerequisite-first", "earlier", "z-first-in-roadmap", "[]", 1);
+        RoadmapNodeEntity secondPrerequisite = fixture.node(
+                "prerequisite-second", "earlier", "a-second-in-roadmap", "[]", 2);
         UserRoadmapNodeEntity state = fixture.state("node");
         when(fixture.nodes.findByIdAndTemplateId("node", "template"))
                 .thenReturn(Optional.of(requested));
         when(fixture.states.findByUserRoadmapIdAndNodeId("enrollment", "node"))
                 .thenReturn(Optional.of(state));
         when(fixture.prerequisites.findAllByTemplateIdAndNodeId("template", "node"))
-                .thenReturn(List.of(new RoadmapNodePrerequisiteEntity(
-                        "edge", "template", "node", "prerequisite")));
-        when(fixture.nodes.findAllByTemplateIdAndIdIn("template", List.of("prerequisite")))
-                .thenReturn(List.of(prerequisite));
+                .thenReturn(List.of(
+                        new RoadmapNodePrerequisiteEntity(
+                                "edge-second", "template", "node", "prerequisite-second"),
+                        new RoadmapNodePrerequisiteEntity(
+                                "edge-first", "template", "node", "prerequisite-first")));
+        when(fixture.nodes.findAllByTemplateIdAndIdInRoadmapOrder(
+                "template", List.of("prerequisite-second", "prerequisite-first")))
+                .thenReturn(List.of(firstPrerequisite, secondPrerequisite));
 
         assertThat(fixture.service.currentNode("owner", "node").prerequisiteCodes())
-                .containsExactly("prerequisite-code");
+                .containsExactly("z-first-in-roadmap", "a-second-in-roadmap");
 
         fixture.verifyCurrentEnrollment();
         verify(fixture.nodes).findByIdAndTemplateId("node", "template");
         verify(fixture.states).findByUserRoadmapIdAndNodeId("enrollment", "node");
         verify(fixture.prerequisites).findAllByTemplateIdAndNodeId("template", "node");
-        verify(fixture.nodes).findAllByTemplateIdAndIdIn("template", List.of("prerequisite"));
+        verify(fixture.nodes).findAllByTemplateIdAndIdInRoadmapOrder(
+                "template", List.of("prerequisite-second", "prerequisite-first"));
         verify(fixture.nodes, never())
                 .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc("template");
         verify(fixture.prerequisites, never()).findAllByTemplateId("template");
@@ -127,7 +135,7 @@ class RoadmapQueryServiceTest {
         when(fixture.prerequisites.findAllByTemplateIdAndNodeId("template", "node"))
                 .thenReturn(List.of(new RoadmapNodePrerequisiteEntity(
                         "edge", "template", "node", "missing")));
-        when(fixture.nodes.findAllByTemplateIdAndIdIn("template", List.of("missing")))
+        when(fixture.nodes.findAllByTemplateIdAndIdInRoadmapOrder("template", List.of("missing")))
                 .thenReturn(List.of());
 
         assertThatThrownBy(() -> fixture.service.currentNode("owner", "node"))
@@ -166,8 +174,18 @@ class RoadmapQueryServiceTest {
                 String code,
                 String objectives
         ) {
+            return node(id, stageId, code, objectives, 1);
+        }
+
+        private RoadmapNodeEntity node(
+                String id,
+                String stageId,
+                String code,
+                String objectives,
+                int nodeOrder
+        ) {
             return new RoadmapNodeEntity(
-                    id, "template", stageId, code, 1, "节点", objectives,
+                    id, "template", stageId, code, nodeOrder, "节点", objectives,
                     "[]", "[]", "[]", "{\"required\":false}", "[]",
                     30, 15, "EASY", true);
         }

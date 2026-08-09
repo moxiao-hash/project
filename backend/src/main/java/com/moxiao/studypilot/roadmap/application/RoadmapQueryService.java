@@ -93,13 +93,15 @@ public class RoadmapQueryService {
                 "用户路线节点状态重复");
         List<RoadmapNodePrerequisiteEntity> edges = prerequisiteRepository
                 .findAllByTemplateIdAndNodeIdIn(enrollment.getTemplateId(), nodeIds);
-        Map<String, RoadmapNodeEntity> referencedNodes = referencedNodes(
-                enrollment.getTemplateId(), nodes, edges);
+        List<RoadmapNodeEntity> orderedPrerequisites = orderedPrerequisiteNodes(
+                enrollment.getTemplateId(), edges);
+        Map<String, RoadmapNodeEntity> prerequisitesById = uniqueIndex(
+                orderedPrerequisites, RoadmapNodeEntity::getId, "路线前置节点重复");
         return toStageResponse(
                 stage,
                 nodes,
                 stateByNodeId,
-                prerequisiteCodes(edges, referencedNodes));
+                prerequisiteCodes(edges, prerequisitesById, orderedPrerequisites));
     }
 
     public RoadmapNodeResponse currentNode(String ownerId, String nodeId) {
@@ -113,12 +115,15 @@ public class RoadmapQueryService {
                         "用户路线节点状态不存在: " + nodeId));
         List<RoadmapNodePrerequisiteEntity> edges = prerequisiteRepository
                 .findAllByTemplateIdAndNodeId(enrollment.getTemplateId(), nodeId);
-        Map<String, RoadmapNodeEntity> referencedNodes = referencedNodes(
-                enrollment.getTemplateId(), List.of(node), edges);
+        List<RoadmapNodeEntity> orderedPrerequisites = orderedPrerequisiteNodes(
+                enrollment.getTemplateId(), edges);
+        Map<String, RoadmapNodeEntity> prerequisitesById = uniqueIndex(
+                orderedPrerequisites, RoadmapNodeEntity::getId, "路线前置节点重复");
         return toNodeResponse(
                 node,
                 state,
-                prerequisiteCodes(edges, referencedNodes).getOrDefault(nodeId, List.of()));
+                prerequisiteCodes(edges, prerequisitesById, orderedPrerequisites)
+                        .getOrDefault(nodeId, List.of()));
     }
 
     private RoadmapMapResponse loadCurrentMap(String ownerId) {
@@ -184,20 +189,6 @@ public class RoadmapQueryService {
 
     private Map<String, List<String>> prerequisiteCodes(
             List<RoadmapNodePrerequisiteEntity> prerequisites,
-            Map<String, RoadmapNodeEntity> nodeById
-    ) {
-        Map<String, List<RoadmapNodePrerequisiteEntity>> byNode = prerequisites.stream()
-                .collect(Collectors.groupingBy(RoadmapNodePrerequisiteEntity::getNodeId));
-        Map<String, List<String>> result = new HashMap<>();
-        byNode.forEach((nodeId, edges) -> result.put(nodeId, edges.stream()
-                .map(edge -> requiredNode(nodeById, edge.getPrerequisiteNodeId()).getNodeCode())
-                .sorted()
-                .toList()));
-        return result;
-    }
-
-    private Map<String, List<String>> prerequisiteCodes(
-            List<RoadmapNodePrerequisiteEntity> prerequisites,
             Map<String, RoadmapNodeEntity> nodeById,
             List<RoadmapNodeEntity> orderedNodes
     ) {
@@ -216,26 +207,19 @@ public class RoadmapQueryService {
         return result;
     }
 
-    private Map<String, RoadmapNodeEntity> referencedNodes(
+    private List<RoadmapNodeEntity> orderedPrerequisiteNodes(
             String templateId,
-            List<RoadmapNodeEntity> requestedNodes,
             List<RoadmapNodePrerequisiteEntity> edges
     ) {
-        Map<String, RoadmapNodeEntity> nodes = new HashMap<>(uniqueIndex(
-                requestedNodes, RoadmapNodeEntity::getId, "路线节点重复"));
-        List<String> missingIds = edges.stream()
+        List<String> prerequisiteIds = edges.stream()
                 .map(RoadmapNodePrerequisiteEntity::getPrerequisiteNodeId)
-                .filter(id -> !nodes.containsKey(id))
                 .distinct()
                 .toList();
-        if (!missingIds.isEmpty()) {
-            Map<String, RoadmapNodeEntity> prerequisites = uniqueIndex(
-                    nodeRepository.findAllByTemplateIdAndIdIn(templateId, missingIds),
-                    RoadmapNodeEntity::getId,
-                    "路线前置节点重复");
-            nodes.putAll(prerequisites);
+        if (prerequisiteIds.isEmpty()) {
+            return List.of();
         }
-        return nodes;
+        return nodeRepository.findAllByTemplateIdAndIdInRoadmapOrder(
+                templateId, prerequisiteIds);
     }
 
     private RoadmapStageResponse toStageResponse(

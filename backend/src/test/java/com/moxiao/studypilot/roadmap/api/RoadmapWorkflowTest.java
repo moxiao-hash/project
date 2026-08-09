@@ -293,6 +293,39 @@ class RoadmapWorkflowTest {
         }
     }
 
+    @Test
+    void preservesCatalogPrerequisiteOrderAcrossMapStageAndNodeDetails() throws Exception {
+        String token = register("prerequisite-order");
+        enroll(token);
+
+        MvcResult mapResult = mockMvc.perform(get("/api/roadmaps/current/map")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stages[2].nodes[5].code")
+                        .value("data-access-comparison"))
+                .andExpect(jsonPath("$.stages[2].nodes[5].prerequisiteCodes[0]")
+                        .value("mybatis-plus"))
+                .andExpect(jsonPath("$.stages[2].nodes[5].prerequisiteCodes[1]")
+                        .value("jpa-core"))
+                .andReturn();
+        JsonNode map = objectMapper.readTree(mapResult.getResponse().getContentAsString());
+        String stageId = map.get("stages").get(2).get("id").asText();
+        String nodeId = map.get("stages").get(2).get("nodes").get(5).get("id").asText();
+
+        mockMvc.perform(get("/api/roadmaps/current/stages/{stageId}", stageId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodes[5].prerequisiteCodes[0]")
+                        .value("mybatis-plus"))
+                .andExpect(jsonPath("$.nodes[5].prerequisiteCodes[1]")
+                        .value("jpa-core"));
+        mockMvc.perform(get("/api/roadmaps/current/nodes/{nodeId}", nodeId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.prerequisiteCodes[0]").value("mybatis-plus"))
+                .andExpect(jsonPath("$.prerequisiteCodes[1]").value("jpa-core"));
+    }
+
     private void updateState(
             String enrollmentId,
             String nodeId,

@@ -1,6 +1,8 @@
 package com.moxiao.studypilot.roadmap.infrastructure;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -18,8 +20,18 @@ public interface RoadmapNodeJpaRepository extends JpaRepository<RoadmapNodeEntit
             String templateId
     );
 
-    List<RoadmapNodeEntity> findAllByTemplateIdAndIdIn(
-            String templateId,
-            Collection<String> ids
+    @Query("""
+            SELECT node
+            FROM RoadmapNodeEntity node
+            JOIN RoadmapStageEntity stage
+              ON stage.id = node.stageId
+             AND stage.templateId = node.templateId
+            WHERE node.templateId = :templateId
+              AND node.id IN :ids
+            ORDER BY stage.stageOrder ASC, node.nodeOrder ASC
+            """)
+    List<RoadmapNodeEntity> findAllByTemplateIdAndIdInRoadmapOrder(
+            @Param("templateId") String templateId,
+            @Param("ids") Collection<String> ids
     );
 }
