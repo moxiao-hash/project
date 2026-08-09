@@ -22,6 +22,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -57,7 +58,7 @@ public class RoadmapEnrollmentService {
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     private final UserRoadmapNodeJpaRepository userNodeRepository;
     private final ObjectMapper objectMapper;
-    private final TransactionTemplate transactionTemplate;
+    private final TransactionTemplate enrollmentTransactionTemplate;
     private final Runnable beforeInsert;
 
     @Autowired
@@ -90,25 +91,23 @@ public class RoadmapEnrollmentService {
         this.prerequisiteRepository = prerequisiteRepository;
         this.userNodeRepository = userNodeRepository;
         this.objectMapper = objectMapper;
-        this.transactionTemplate = new TransactionTemplate(transactionManager);
-        this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        this.enrollmentTransactionTemplate = new TransactionTemplate(transactionManager);
+        this.enrollmentTransactionTemplate.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.beforeInsert = beforeInsert;
     }
 
     public RoadmapEnrollmentResponse enroll(String ownerId, String roadmapCode, int templateVersion) {
         try {
-            return transactionTemplate.execute(status -> enrollInTransaction(ownerId, roadmapCode, templateVersion));
+            return enrollmentTransactionTemplate.execute(
+                    status -> enrollInTransaction(ownerId, roadmapCode, templateVersion));
         } catch (ConcurrentEnrollmentInsertException collision) {
             return recoverConcurrentEnrollment(ownerId, roadmapCode, templateVersion, collision);
         }
     }
 
+    @Transactional
     public void recalculateAvailability(String enrollmentId) {
-        transactionTemplate.executeWithoutResult(status ->
-                recalculateAvailabilityInTransaction(enrollmentId));
-    }
-
-    private void recalculateAvailabilityInTransaction(String enrollmentId) {
         UserRoadmapEntity enrollment = userRoadmapRepository.findById(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习路线绑定不存在"));
         List<UserRoadmapNodeEntity> states = userNodeRepository
@@ -217,7 +216,7 @@ public class RoadmapEnrollmentService {
             int templateVersion,
             ConcurrentEnrollmentInsertException collision
     ) {
-        RoadmapEnrollmentResponse recovered = transactionTemplate.execute(status -> {
+        RoadmapEnrollmentResponse recovered = enrollmentTransactionTemplate.execute(status -> {
             RoadmapTemplateEntity template = publishedTemplate(roadmapCode, templateVersion);
             UserRoadmapEntity current = userRoadmapRepository
                     .findByOwnerIdAndActiveSlot(ownerId, CURRENT)

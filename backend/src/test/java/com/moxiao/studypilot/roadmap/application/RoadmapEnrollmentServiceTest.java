@@ -41,6 +41,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -563,6 +564,33 @@ class RoadmapEnrollmentServiceTest {
                     assertThat(state.getRowVersion()).isEqualTo(versionsBefore.get(state.getId()));
                     assertThat(state.getUpdatedAt()).isEqualTo(timestampsBefore.get(state.getId()));
                 });
+    }
+
+    @Test
+    void recalculationParticipatesInOuterCompletionTransactionAndRollsBackAtomically() {
+        String ownerId = createUser("transaction-composition");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        List<RoadmapNodePrerequisiteEntity> edges = multiPrerequisiteEdges();
+        String dependentNodeId = edges.get(0).getNodeId();
+        TransactionTemplate outerTransaction = new TransactionTemplate(transactionManager);
+
+        outerTransaction.executeWithoutResult(status -> {
+            edges.forEach(edge -> completeNode(
+                    enrollment.id(), edge.getPrerequisiteNodeId()));
+
+            enrollmentService.recalculateAvailability(enrollment.id());
+
+            assertThat(userNode(enrollment.id(), dependentNodeId).getAvailabilityStatus())
+                    .isEqualTo(AvailabilityStatus.AVAILABLE);
+            status.setRollbackOnly();
+        });
+
+        assertThat(userNode(enrollment.id(), dependentNodeId).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.LOCKED);
+        assertThat(edges).allSatisfy(edge ->
+                assertThat(userNode(enrollment.id(), edge.getPrerequisiteNodeId())
+                        .getCompletionStatus()).isEqualTo(CompletionStatus.INCOMPLETE));
     }
 
     @Test
