@@ -11,6 +11,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import javax.sql.DataSource;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -127,6 +128,18 @@ class RoadmapMigrationIntegrityTest {
                 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 """, "evidence-1", "owner-2", "user-node-1", "lesson-1", "COMPLETED", "{}", 1))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void legacyEvidenceIdempotencyConstraintKeepsItsPortableNameAndColumnOrder() {
+        assertThat(jdbc.queryForList("""
+                SELECT column_name
+                FROM information_schema.key_column_usage
+                WHERE table_name = 'legacy_learning_evidence'
+                  AND constraint_name = 'uk_legacy_evidence_migration'
+                ORDER BY ordinal_position
+                """, String.class))
+                .containsExactly("owner_id", "lesson_id", "migration_version");
     }
 
     private void insertUser(String id) {

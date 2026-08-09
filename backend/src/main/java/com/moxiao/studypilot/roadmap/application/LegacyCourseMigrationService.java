@@ -10,6 +10,7 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
+import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,8 +36,15 @@ import java.util.regex.Pattern;
 public class LegacyCourseMigrationService {
 
     private static final String UNIQUE_CONSTRAINT = "uk_legacy_evidence_migration";
+    private static final int MAX_DUPLICATE_RETRIES = 3;
     private static final Pattern UNIQUE_CONSTRAINT_IN_MESSAGE = Pattern.compile(
             "(?i)(?<![a-z0-9_])(?:[a-z0-9_]+\\.)?" + UNIQUE_CONSTRAINT + "(?![a-z0-9_])");
+    private static final Pattern EVIDENCE_TABLE_IN_MESSAGE = Pattern.compile(
+            "(?i)(?<![a-z0-9_])legacy_learning_evidence(?![a-z0-9_])");
+    private static final Pattern EVIDENCE_PRIMARY_IN_MESSAGE = Pattern.compile(
+            "(?i)(?:primary_key_[a-z0-9_]+[^\\r\\n]*legacy_learning_evidence\\s*\\(\\s*id\\s*\\)"
+                    + "|legacy_learning_evidence\\.primary(?![a-z0-9_])"
+                    + "|for key\\s+['\"`]?(?:[a-z0-9_]+\\.)?primary['\"`]?(?![a-z0-9_]))");
 
     private final UserRoadmapJpaRepository userRoadmapRepository;
     private final LegacyLessonRoadmapMappingJpaRepository mappingRepository;
@@ -88,39 +96,56 @@ public class LegacyCourseMigrationService {
         }
         try {
             transactionTemplate.executeWithoutResult(
-                    ignored -> migrateInTransaction(userRoadmapId, migrationVersion));
+                    ignored -> migrateInTransaction(userRoadmapId, migrationVersion, true, null));
         } catch (ConcurrentEvidenceInsertException collision) {
-            recoverExactDuplicate(userRoadmapId, migrationVersion, collision);
+            retryMissingEvidence(userRoadmapId, migrationVersion, collision);
         }
     }
 
-    private void migrateInTransaction(String userRoadmapId, int migrationVersion) {
+    private void migrateInTransaction(
+            String userRoadmapId,
+            int migrationVersion,
+            boolean invokeBeforeInsert,
+            List<EvidenceExpectation> requiredExpectations
+    ) {
         MigrationBatch batch = loadBatch(userRoadmapId);
-        if (batch.progressByLessonId().isEmpty()) {
+        List<EvidenceExpectation> expectations = expectations(batch, migrationVersion);
+        if (requiredExpectations != null && !sameExpectations(requiredExpectations, expectations)) {
+            throw new ConflictException("旧课程学习证据迁移期间来源数据发生变化");
+        }
+        if (expectations.isEmpty()) {
             return;
         }
-        Set<String> existingLessonIds = evidenceRepository
+        Map<String, LegacyLearningEvidenceEntity> existingByLessonId = new HashMap<>();
+        evidenceRepository
                 .findAllByOwnerIdAndMigrationVersionAndLessonIdIn(
                         batch.enrollment().getOwnerId(), migrationVersion,
                         batch.progressByLessonId().keySet())
-                .stream().map(LegacyLearningEvidenceEntity::getLessonId)
-                .collect(java.util.stream.Collectors.toSet());
-        List<LegacyLearningEvidenceEntity> additions = batch.progressByLessonId().values().stream()
-                .filter(progress -> !existingLessonIds.contains(progress.getLessonId()))
-                .map(progress -> toEvidence(batch, progress, migrationVersion))
+                .forEach(evidence -> existingByLessonId.put(evidence.getLessonId(), evidence));
+        for (EvidenceExpectation expectation : expectations) {
+            LegacyLearningEvidenceEntity existing = existingByLessonId.get(expectation.lessonId());
+            if (existing != null && !expectation.matches(existing)) {
+                throw new ConflictException("旧课程学习证据与当前路线映射冲突");
+            }
+        }
+        List<LegacyLearningEvidenceEntity> additions = expectations.stream()
+                .filter(expectation -> !existingByLessonId.containsKey(expectation.lessonId()))
+                .map(EvidenceExpectation::newEntity)
                 .toList();
         if (additions.isEmpty()) {
             return;
         }
 
-        beforeInsert.run();
+        if (invokeBeforeInsert) {
+            beforeInsert.run();
+        }
         try {
             evidenceRepository.saveAllAndFlush(additions);
         } catch (DataIntegrityViolationException exception) {
-            if (!isUniqueViolation(exception)) {
+            if (!isExactDuplicateViolation(exception)) {
                 throw exception;
             }
-            throw new ConcurrentEvidenceInsertException(exception);
+            throw new ConcurrentEvidenceInsertException(exception, expectations);
         }
     }
 
@@ -160,22 +185,26 @@ public class LegacyCourseMigrationService {
         return new MigrationBatch(enrollment, mappingByLessonId, progressByLessonId, stateByNodeId);
     }
 
-    private LegacyLearningEvidenceEntity toEvidence(
+    private List<EvidenceExpectation> expectations(
             MigrationBatch batch,
-            LessonProgressEntity progress,
             int migrationVersion
     ) {
-        String nodeId = batch.mappingByLessonId().get(progress.getLessonId()).getNodeId();
-        UserRoadmapNodeEntity state = batch.stateByNodeId().get(nodeId);
-        return new LegacyLearningEvidenceEntity(
-                stableEvidenceId(batch.enrollment().getOwnerId(), progress.getLessonId(), migrationVersion),
-                batch.enrollment().getOwnerId(),
-                state.getId(),
-                progress.getLessonId(),
-                progress.getStatus().name(),
-                evidenceJson(progress),
-                migrationVersion,
-                Instant.now());
+        return batch.progressByLessonId().values().stream()
+                .map(progress -> {
+                    String nodeId = batch.mappingByLessonId().get(progress.getLessonId()).getNodeId();
+                    UserRoadmapNodeEntity state = batch.stateByNodeId().get(nodeId);
+                    return new EvidenceExpectation(
+                            stableEvidenceId(batch.enrollment().getOwnerId(), progress.getLessonId(),
+                                    migrationVersion),
+                            batch.enrollment().getOwnerId(),
+                            state.getId(),
+                            progress.getLessonId(),
+                            progress.getStatus().name(),
+                            evidenceJson(progress),
+                            migrationVersion);
+                })
+                .sorted(java.util.Comparator.comparing(EvidenceExpectation::lessonId))
+                .toList();
     }
 
     private String evidenceJson(LessonProgressEntity progress) {
@@ -197,49 +226,77 @@ public class LegacyCourseMigrationService {
         }
     }
 
-    private void recoverExactDuplicate(
+    private void retryMissingEvidence(
             String userRoadmapId,
             int migrationVersion,
-            ConcurrentEvidenceInsertException collision
+            ConcurrentEvidenceInsertException initialCollision
     ) {
-        Boolean recovered = transactionTemplate.execute(ignored -> {
-            MigrationBatch batch = loadBatch(userRoadmapId);
-            if (batch.progressByLessonId().isEmpty()) {
-                return true;
+        ConcurrentEvidenceInsertException latestCollision = initialCollision;
+        for (int attempt = 1; attempt <= MAX_DUPLICATE_RETRIES; attempt++) {
+            try {
+                ConcurrentEvidenceInsertException expectedCollision = latestCollision;
+                transactionTemplate.executeWithoutResult(ignored -> migrateInTransaction(
+                        userRoadmapId,
+                        migrationVersion,
+                        false,
+                        expectedCollision.expectations()));
+                return;
+            } catch (ConcurrentEvidenceInsertException collision) {
+                latestCollision = collision;
             }
-            Set<String> persisted = evidenceRepository
-                    .findAllByOwnerIdAndMigrationVersionAndLessonIdIn(
-                            batch.enrollment().getOwnerId(), migrationVersion,
-                            batch.progressByLessonId().keySet())
-                    .stream().map(LegacyLearningEvidenceEntity::getLessonId)
-                    .collect(java.util.stream.Collectors.toSet());
-            return persisted.containsAll(batch.progressByLessonId().keySet());
-        });
-        if (!Boolean.TRUE.equals(recovered)) {
-            throw collision.integrityViolation();
         }
+        throw latestCollision.integrityViolation();
     }
 
-    private static boolean isUniqueViolation(DataIntegrityViolationException exception) {
+    private static boolean sameExpectations(
+            List<EvidenceExpectation> first,
+            List<EvidenceExpectation> second
+    ) {
+        return first.equals(second);
+    }
+
+    /**
+     * Recognizes the two portable duplicate shapes this table can produce: the explicitly named
+     * three-column key and the deterministic evidence primary key. MySQL 1062 shapes are covered
+     * without requiring Docker; a real-MySQL concurrency run remains an environment-level check.
+     */
+    static boolean isExactDuplicateViolation(DataIntegrityViolationException exception) {
         boolean uniqueViolation = false;
+        boolean exactNamedConstraint = false;
+        StringBuilder messages = new StringBuilder();
         Set<Throwable> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         Throwable current = exception;
         while (current != null && visited.add(current)) {
             if (current instanceof ConstraintViolationException constraintViolation) {
                 uniqueViolation |= constraintViolation.getKind()
                         == ConstraintViolationException.ConstraintKind.UNIQUE;
+                exactNamedConstraint |= isExpectedConstraintName(constraintViolation.getConstraintName());
             }
             if (current instanceof SQLException sqlException) {
                 uniqueViolation |= "23505".equals(sqlException.getSQLState())
                         || sqlException.getErrorCode() == 1062;
             }
             String message = current.getMessage();
-            if (message != null && UNIQUE_CONSTRAINT_IN_MESSAGE.matcher(message).find()) {
-                uniqueViolation = true;
+            if (message != null) {
+                messages.append(message).append('\n');
+                exactNamedConstraint |= UNIQUE_CONSTRAINT_IN_MESSAGE.matcher(message).find();
             }
             current = current.getCause();
         }
-        return uniqueViolation;
+        String combined = messages.toString();
+        boolean exactPrimary = EVIDENCE_TABLE_IN_MESSAGE.matcher(combined).find()
+                && EVIDENCE_PRIMARY_IN_MESSAGE.matcher(combined).find();
+        return uniqueViolation && (exactNamedConstraint || exactPrimary);
+    }
+
+    private static boolean isExpectedConstraintName(String constraintName) {
+        if (constraintName == null) {
+            return false;
+        }
+        String normalized = constraintName.replace("`", "").replace("\"", "")
+                .toLowerCase(java.util.Locale.ROOT);
+        return normalized.equals(UNIQUE_CONSTRAINT)
+                || normalized.endsWith("." + UNIQUE_CONSTRAINT);
     }
 
     private static String stableEvidenceId(String ownerId, String lessonId, int migrationVersion) {
@@ -255,16 +312,51 @@ public class LegacyCourseMigrationService {
     ) {
     }
 
+    private record EvidenceExpectation(
+            String id,
+            String ownerId,
+            String userRoadmapNodeId,
+            String lessonId,
+            String originalStatus,
+            String evidenceJson,
+            int migrationVersion
+    ) {
+        private boolean matches(LegacyLearningEvidenceEntity existing) {
+            return id.equals(existing.getId())
+                    && ownerId.equals(existing.getOwnerId())
+                    && userRoadmapNodeId.equals(existing.getUserRoadmapNodeId())
+                    && lessonId.equals(existing.getLessonId())
+                    && originalStatus.equals(existing.getOriginalStatus())
+                    && evidenceJson.equals(existing.getEvidenceJson())
+                    && migrationVersion == existing.getMigrationVersion();
+        }
+
+        private LegacyLearningEvidenceEntity newEntity() {
+            return new LegacyLearningEvidenceEntity(
+                    id, ownerId, userRoadmapNodeId, lessonId, originalStatus,
+                    evidenceJson, migrationVersion, Instant.now());
+        }
+    }
+
     private static final class ConcurrentEvidenceInsertException extends RuntimeException {
         private final DataIntegrityViolationException integrityViolation;
+        private final List<EvidenceExpectation> expectations;
 
-        private ConcurrentEvidenceInsertException(DataIntegrityViolationException integrityViolation) {
+        private ConcurrentEvidenceInsertException(
+                DataIntegrityViolationException integrityViolation,
+                List<EvidenceExpectation> expectations
+        ) {
             super(integrityViolation);
             this.integrityViolation = integrityViolation;
+            this.expectations = List.copyOf(expectations);
         }
 
         private DataIntegrityViolationException integrityViolation() {
             return integrityViolation;
+        }
+
+        private List<EvidenceExpectation> expectations() {
+            return expectations;
         }
     }
 }

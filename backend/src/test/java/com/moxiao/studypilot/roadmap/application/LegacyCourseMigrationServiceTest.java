@@ -8,19 +8,27 @@ import com.moxiao.studypilot.course.application.CourseLearningService;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressEntity;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressJpaRepository;
 import com.moxiao.studypilot.roadmap.domain.ArtifactStatus;
+import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
 import com.moxiao.studypilot.roadmap.domain.CheckInStatus;
 import com.moxiao.studypilot.roadmap.domain.CompletionStatus;
 import com.moxiao.studypilot.roadmap.domain.QuizStatus;
+import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLearningEvidenceEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLearningEvidenceJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
+import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -33,12 +41,14 @@ import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -49,14 +59,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class LegacyCourseMigrationServiceTest {
 
     private static final String MAPPED_LESSON = "lesson-rest-controller";
+    private static final String SECOND_LESSON = "lesson-java-foundation-roadmap";
     private static final String TEMPLATE_ID = "studypilot-java-ai-v1";
     private static final String MAPPED_NODE_ID = TEMPLATE_ID + "-spring-mvc-rest";
 
@@ -257,6 +271,203 @@ class LegacyCourseMigrationServiceTest {
     }
 
     @Test
+    void overlappingSmallAndLargeBatchesRetryOnlyTheMissingEvidence() throws Exception {
+        String ownerId = createOwner("overlap");
+        String roadmapId = enroll(ownerId);
+        completeLesson(ownerId, MAPPED_LESSON, Instant.parse("2026-08-09T05:00:00Z"));
+        CountDownLatch smallReady = new CountDownLatch(1);
+        CountDownLatch releaseSmall = new CountDownLatch(1);
+        CountDownLatch largeReady = new CountDownLatch(1);
+        CountDownLatch releaseLargeStart = new CountDownLatch(1);
+        CountDownLatch largeMerged = new CountDownLatch(1);
+        CountDownLatch releaseLargeFlush = new CountDownLatch(1);
+        LegacyCourseMigrationService small = migrationService(() -> {
+            smallReady.countDown();
+            await(releaseSmall);
+        });
+        LegacyLearningEvidenceJpaRepository delayedRepository = mock(
+                LegacyLearningEvidenceJpaRepository.class, delegatesTo(evidenceRepository));
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<LegacyLearningEvidenceEntity> additions = invocation.getArgument(0, List.class);
+            evidenceRepository.saveAll(additions);
+            largeMerged.countDown();
+            await(releaseLargeFlush);
+            evidenceRepository.flush();
+            return additions;
+        }).when(delayedRepository).saveAllAndFlush(any());
+        LegacyCourseMigrationService large = migrationService(delayedRepository, () -> {
+            largeReady.countDown();
+            await(releaseLargeStart);
+        });
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+
+        try {
+            Future<?> smallFuture = executor.submit(() -> small.migrateOwner(roadmapId, 9));
+            await(smallReady);
+            mappingRepository.saveAndFlush(new LegacyLessonRoadmapMappingEntity(
+                    SECOND_LESSON, TEMPLATE_ID, TEMPLATE_ID + "-java-syntax-oop"));
+            completeLesson(ownerId, SECOND_LESSON, Instant.parse("2026-08-09T05:30:00Z"));
+            Future<?> largeFuture = executor.submit(() -> large.migrateOwner(roadmapId, 9));
+            await(largeReady);
+
+            releaseLargeStart.countDown();
+            await(largeMerged);
+            releaseSmall.countDown();
+            getWithinDeadline(smallFuture);
+            releaseLargeFlush.countDown();
+            getWithinDeadline(largeFuture);
+
+            var evidenceByLesson = evidenceRepository.findAllByOwnerId(ownerId).stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            LegacyLearningEvidenceEntity::getLessonId,
+                            evidence -> evidence));
+            assertThat(evidenceByLesson).containsOnlyKeys(MAPPED_LESSON, SECOND_LESSON);
+            assertThat(evidenceByLesson.values()).allSatisfy(evidence ->
+                    assertThat(evidence.getMigrationVersion()).isEqualTo(9));
+            assertThat(evidenceByLesson.get(MAPPED_LESSON).getUserRoadmapNodeId())
+                    .isEqualTo(mappedNode(roadmapId).getId());
+            assertThat(evidenceByLesson.get(SECOND_LESSON).getUserRoadmapNodeId())
+                    .isEqualTo(userNodeRepository.findByUserRoadmapIdAndNodeId(
+                            roadmapId, TEMPLATE_ID + "-java-syntax-oop").orElseThrow().getId());
+            verify(delayedRepository, times(2)).saveAllAndFlush(any());
+        } finally {
+            releaseSmall.countDown();
+            releaseLargeStart.countDown();
+            releaseLargeFlush.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void sameMigrationKeyForDifferentEnrollmentNodeFailsClosed() {
+        String ownerId = createOwner("different-enrollment");
+        String firstRoadmapId = enroll(ownerId);
+        completeLesson(ownerId, MAPPED_LESSON, Instant.parse("2026-08-09T05:00:00Z"));
+        service.migrateOwner(firstRoadmapId, 11);
+
+        UserRoadmapEntity first = userRoadmapRepository.findById(firstRoadmapId).orElseThrow();
+        first.supersede(Instant.now());
+        userRoadmapRepository.saveAndFlush(first);
+        String secondRoadmapId = createAlternateEnrollment(ownerId);
+
+        assertThatThrownBy(() -> service.migrateOwner(secondRoadmapId, 11))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("旧课程学习证据与当前路线映射冲突");
+        assertThat(evidenceRepository.findAllByOwnerId(ownerId)).singleElement()
+                .satisfies(saved -> assertThat(saved.getUserRoadmapNodeId())
+                        .isEqualTo(mappedNode(firstRoadmapId).getId()));
+    }
+
+    @Test
+    void retryFailsClosedWhenTheMappedProgressSetChangesAfterCollision() throws Exception {
+        String ownerId = createOwner("changed-source-set");
+        String roadmapId = enroll(ownerId);
+        completeLesson(ownerId, MAPPED_LESSON, Instant.parse("2026-08-09T05:00:00Z"));
+        mappingRepository.saveAndFlush(new LegacyLessonRoadmapMappingEntity(
+                SECOND_LESSON, TEMPLATE_ID, TEMPLATE_ID + "-java-syntax-oop"));
+        completeLesson(ownerId, SECOND_LESSON, Instant.parse("2026-08-09T05:30:00Z"));
+        CountDownLatch merged = new CountDownLatch(1);
+        CountDownLatch releaseFlush = new CountDownLatch(1);
+        LegacyLearningEvidenceJpaRepository delayedRepository = mock(
+                LegacyLearningEvidenceJpaRepository.class, delegatesTo(evidenceRepository));
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            List<LegacyLearningEvidenceEntity> additions = invocation.getArgument(0, List.class);
+            evidenceRepository.saveAll(additions);
+            merged.countDown();
+            await(releaseFlush);
+            evidenceRepository.flush();
+            return additions;
+        }).when(delayedRepository).saveAllAndFlush(any());
+        LegacyCourseMigrationService delayed = migrationService(delayedRepository, () -> { });
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+
+        try {
+            Future<?> delayedFuture = executor.submit(() -> delayed.migrateOwner(roadmapId, 12));
+            await(merged);
+            service.migrateOwner(roadmapId, 12);
+            mappingRepository.deleteById(new LegacyLessonRoadmapMappingEntity.Key(
+                    SECOND_LESSON, TEMPLATE_ID));
+            releaseFlush.countDown();
+
+            assertThatThrownBy(() -> getWithinDeadline(delayedFuture))
+                    .isInstanceOf(ExecutionException.class)
+                    .cause().isInstanceOf(ConflictException.class)
+                    .hasMessage("旧课程学习证据迁移期间来源数据发生变化");
+        } finally {
+            releaseFlush.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void recognizesOnlyPortableExactDuplicateCauseShapes() {
+        SQLException namedMySql = new SQLException(
+                "Duplicate entry 'owner-lesson-1' for key 'uk_legacy_evidence_migration'",
+                "23000", 1062);
+        SQLException primaryMySql = new SQLException(
+                "Duplicate entry 'uuid' for key 'PRIMARY'",
+                "23000", 1062);
+        SQLException otherUnique = new SQLException(
+                "Duplicate entry 'x' for key 'unrelated_unique'", "23000", 1062);
+        SQLException foreignKey = new SQLException(
+                "Cannot add or update a child row", "23000", 1452);
+
+        assertThat(LegacyCourseMigrationService.isExactDuplicateViolation(
+                new DataIntegrityViolationException("insert into legacy_learning_evidence", namedMySql)))
+                .isTrue();
+        assertThat(LegacyCourseMigrationService.isExactDuplicateViolation(
+                new DataIntegrityViolationException("insert into legacy_learning_evidence", primaryMySql)))
+                .isTrue();
+        assertThat(LegacyCourseMigrationService.isExactDuplicateViolation(
+                new DataIntegrityViolationException("insert into legacy_learning_evidence", otherUnique)))
+                .isFalse();
+        assertThat(LegacyCourseMigrationService.isExactDuplicateViolation(
+                new DataIntegrityViolationException("insert into legacy_learning_evidence", foreignKey)))
+                .isFalse();
+    }
+
+    @Test
+    void duplicateRecoveryIsBoundedWhenEveryFreshAttemptCollides() {
+        String ownerId = createOwner("bounded-retry");
+        String roadmapId = enroll(ownerId);
+        completeLesson(ownerId, MAPPED_LESSON, Instant.parse("2026-08-09T05:00:00Z"));
+        LegacyLearningEvidenceJpaRepository alwaysColliding = mock(
+                LegacyLearningEvidenceJpaRepository.class, delegatesTo(evidenceRepository));
+        DataIntegrityViolationException exactDuplicate = new DataIntegrityViolationException(
+                "insert into legacy_learning_evidence",
+                new SQLException(
+                        "Duplicate entry for key 'uk_legacy_evidence_migration'",
+                        "23000",
+                        1062));
+        doThrow(exactDuplicate).when(alwaysColliding).saveAllAndFlush(any());
+        LegacyCourseMigrationService bounded = migrationService(alwaysColliding, () -> { });
+
+        assertThatThrownBy(() -> bounded.migrateOwner(roadmapId, 13)).isSameAs(exactDuplicate);
+        verify(alwaysColliding, times(4)).saveAllAndFlush(any());
+        assertThat(evidenceRepository.findAllByOwnerId(ownerId)).isEmpty();
+    }
+
+    @Test
+    void repeatedMigrationRejectsChangedPayloadForTheSameVersion() {
+        String ownerId = createOwner("changed-payload");
+        String roadmapId = enroll(ownerId);
+        completeLesson(ownerId, MAPPED_LESSON, Instant.parse("2026-08-09T05:00:00Z"));
+        service.migrateOwner(roadmapId, 14);
+        jdbcTemplate.update(
+                "UPDATE legacy_learning_evidence SET evidence_json = ? WHERE owner_id = ?",
+                "{}",
+                ownerId);
+
+        assertThatThrownBy(() -> service.migrateOwner(roadmapId, 14))
+                .isInstanceOf(ConflictException.class)
+                .hasMessage("旧课程学习证据与当前路线映射冲突");
+    }
+
+    @Test
     void unrelatedIntegrityViolationIsNotTreatedAsAnIdempotentRace() {
         String ownerId = createOwner("fail-closed");
         String roadmapId = enroll(ownerId);
@@ -286,6 +497,45 @@ class LegacyCourseMigrationServiceTest {
 
     private UserRoadmapNodeEntity mappedNode(String roadmapId) {
         return userNodeRepository.findByUserRoadmapIdAndNodeId(roadmapId, MAPPED_NODE_ID).orElseThrow();
+    }
+
+    private LegacyCourseMigrationService migrationService(Runnable beforeInsert) {
+        return migrationService(evidenceRepository, beforeInsert);
+    }
+
+    private LegacyCourseMigrationService migrationService(
+            LegacyLearningEvidenceJpaRepository targetEvidenceRepository,
+            Runnable beforeInsert
+    ) {
+        return new LegacyCourseMigrationService(
+                userRoadmapRepository, mappingRepository, progressRepository, userNodeRepository,
+                targetEvidenceRepository, objectMapper, transactionManager, beforeInsert);
+    }
+
+    private String createAlternateEnrollment(String ownerId) {
+        String templateId = "alternate-template-v1";
+        String stageId = templateId + "-stage";
+        String nodeId = templateId + "-node";
+        String roadmapId = UUID.randomUUID().toString();
+        String userNodeId = UUID.randomUUID().toString();
+        Instant now = Instant.now();
+        templateRepository.save(new RoadmapTemplateEntity(
+                templateId, "alternate-roadmap", 1, "替代路线", "替代路线",
+                RoadmapPublicationStatus.PUBLISHED, "a".repeat(64), now));
+        stageRepository.save(new RoadmapStageEntity(
+                stageId, templateId, "stage", 1, "阶段", "阶段", "项目"));
+        nodeRepository.save(new RoadmapNodeEntity(
+                nodeId, templateId, stageId, "alternate-node", 1, "节点",
+                "[]", "[]", "[]", "[]",
+                "{\"required\":false}", "[]", 60, 30, "EASY", true));
+        mappingRepository.save(new LegacyLessonRoadmapMappingEntity(
+                MAPPED_LESSON, templateId, nodeId));
+        userRoadmapRepository.save(new UserRoadmapEntity(roadmapId, ownerId, templateId, now));
+        userNodeRepository.save(new UserRoadmapNodeEntity(
+                userNodeId, roadmapId, nodeId, ownerId, templateId,
+                AvailabilityStatus.AVAILABLE, false, now));
+        userNodeRepository.flush();
+        return roadmapId;
     }
 
     private static List<Object> nodeStateSnapshot(UserRoadmapNodeEntity node) {
