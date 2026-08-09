@@ -134,22 +134,34 @@ describe('roadmapApi', () => {
 
 describe('production roadmap routes', () => {
   const cases = [
-    ['/roadmap', 'roadmap', '学习路线', RoadmapView],
-    ['/roadmap/stages/stage%2F1', 'roadmap-stage', '路线阶段', StageView],
-    ['/roadmap/nodes/node%2F1', 'roadmap-node', '学习节点', NodeView],
+    ['/roadmap', 'roadmap', 'Java + AI 学习路线', RoadmapView, undefined],
+    ['/roadmap/stages/stage-1', 'roadmap-stage', '路线阶段', StageView, 'stage-1'],
+    ['/roadmap/nodes/node-1', 'roadmap-node', '知识节点', NodeView, 'node-1'],
   ] as const
 
-  it.each(cases)('resolves %s to the intended lazy page', async (path, name, title, view) => {
+  it.each(cases)('resolves %s to the intended lazy page', async (path, name, title, view, id) => {
     const resolved = router.resolve(path)
     const record = resolved.matched.at(-1)
     const loader = record?.components?.default
 
     expect(resolved.name).toBe(name)
     expect(resolved.meta.title).toBe(title)
+    if (id) expect(resolved.params.id).toBe(id)
     expect(typeof loader).toBe('function')
     await expect((loader as () => Promise<{ default: unknown }>)()).resolves.toMatchObject({
       default: view,
     })
+  })
+
+  it.each([
+    ['roadmap-stage', 'stage-1', '/roadmap/stages/stage-1'],
+    ['roadmap-node', 'node-1', '/roadmap/nodes/node-1'],
+  ] as const)('generates %s links from the shared id parameter', (name, id, href) => {
+    expect(() => router.resolve({ name, params: { id } })).not.toThrow()
+    const resolved = router.resolve({ name, params: { id } })
+
+    expect(resolved.href).toBe(href)
+    expect(resolved.params).toEqual({ id })
   })
 
   it.each([

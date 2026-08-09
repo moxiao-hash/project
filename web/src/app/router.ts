@@ -30,19 +30,19 @@ const router = createRouter({
           path: 'roadmap',
           name: 'roadmap',
           component: () => import('@/modules/roadmap/RoadmapView.vue'),
-          meta: { title: '学习路线' },
+          meta: { title: 'Java + AI 学习路线' },
         },
         {
-          path: 'roadmap/stages/:stageId',
+          path: 'roadmap/stages/:id',
           name: 'roadmap-stage',
           component: () => import('@/modules/roadmap/StageView.vue'),
           meta: { title: '路线阶段' },
         },
         {
-          path: 'roadmap/nodes/:nodeId',
+          path: 'roadmap/nodes/:id',
           name: 'roadmap-node',
           component: () => import('@/modules/roadmap/NodeView.vue'),
-          meta: { title: '学习节点' },
+          meta: { title: '知识节点' },
         },
         {
           path: 'goals',
