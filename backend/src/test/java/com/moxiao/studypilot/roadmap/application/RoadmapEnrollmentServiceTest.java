@@ -44,7 +44,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -622,14 +621,9 @@ class RoadmapEnrollmentServiceTest {
         try {
             List<? extends Future<?>> futures = edges.stream().limit(2)
                     .map(edge -> executor.submit(() -> {
-                        TransactionTemplate repeatableRead = new TransactionTemplate(transactionManager);
-                        repeatableRead.setIsolationLevel(
-                                TransactionDefinition.ISOLATION_REPEATABLE_READ);
-                        repeatableRead.executeWithoutResult(status -> {
-                            await(bothWorkersReady);
-                            nodeMutationService.completeEligibleNode(
-                                    enrollment.id(), edge.getPrerequisiteNodeId());
-                        });
+                        await(bothWorkersReady);
+                        nodeMutationService.completeEligibleNode(
+                                enrollment.id(), edge.getPrerequisiteNodeId());
                     }))
                     .toList();
             for (Future<?> future : futures) {
@@ -661,6 +655,29 @@ class RoadmapEnrollmentServiceTest {
                 enrollment.id(), root.getNodeId()))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("路线节点尚未满足完成条件: " + root.getNodeId());
+        assertThat(userNode(enrollment.id(), root.getNodeId()).getCompletionStatus())
+                .isEqualTo(CompletionStatus.INCOMPLETE);
+    }
+
+    @Test
+    void productionMutationRefusesToJoinATransactionThatMayHaveReadNodesFirst() {
+        String ownerId = createUser("lock-order-protocol");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        UserRoadmapNodeEntity root = userNodeRepository
+                .findAllByUserRoadmapId(enrollment.id()).stream()
+                .filter(state -> state.getAvailabilityStatus() == AvailabilityStatus.AVAILABLE)
+                .findFirst().orElseThrow();
+        prepareNodeForCompletion(enrollment.id(), root.getNodeId());
+
+        assertThatThrownBy(() -> new TransactionTemplate(transactionManager)
+                .executeWithoutResult(status -> {
+                    userNode(enrollment.id(), root.getNodeId());
+                    nodeMutationService.completeEligibleNode(
+                            enrollment.id(), root.getNodeId());
+                }))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("路线节点变更必须由锁优先事务直接发起");
         assertThat(userNode(enrollment.id(), root.getNodeId()).getCompletionStatus())
                 .isEqualTo(CompletionStatus.INCOMPLETE);
     }

@@ -5,6 +5,7 @@ import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 import java.time.Instant;
 
@@ -36,6 +37,9 @@ public class RoadmapNodeMutationService {
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void completeEligibleNode(String enrollmentId, String nodeId) {
+        if (!TransactionAspectSupport.currentTransactionStatus().isNewTransaction()) {
+            throw new IllegalStateException("路线节点变更必须由锁优先事务直接发起");
+        }
         // This must remain the first database operation in the transaction.
         userRoadmapRepository.findByIdForUpdate(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习路线绑定不存在"));
