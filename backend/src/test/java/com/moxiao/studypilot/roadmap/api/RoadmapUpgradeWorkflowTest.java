@@ -19,6 +19,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
@@ -30,6 +32,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -52,6 +55,7 @@ class RoadmapUpgradeWorkflowTest {
     @Autowired UserRoadmapJpaRepository enrollmentRepository;
     @Autowired UserRoadmapNodeJpaRepository stateRepository;
     @Autowired RoadmapUpgradeService upgradeService;
+    @Autowired PlatformTransactionManager transactionManager;
 
     @Test
     void previewsOnlyTheLatestPublishedVersionAndRequiresManualReviewForContractChanges()
@@ -186,6 +190,216 @@ class RoadmapUpgradeWorkflowTest {
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void treatsObjectOrderAndNumericallyEquivalentContractValuesAsUnchanged() throws Exception {
+        Fixture fixture = fixture(false);
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes
+                SET artifact_requirement_json = ?, quiz_blueprint_json = ?
+                WHERE template_id = ? AND node_code = 'contract-node'
+                """, "{\"required\":false,\"minimum\":1}",
+                "[{\"type\":\"SINGLE_CHOICE\",\"weight\":1}]", fixture.v1TemplateId());
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes
+                SET artifact_requirement_json = ?, quiz_blueprint_json = ?
+                WHERE template_id = ? AND node_code = 'contract-node'
+                """, "{\"minimum\":1.0,\"required\":false}",
+                "[{\"weight\":1.00,\"type\":\"SINGLE_CHOICE\"}]", fixture.v2TemplateId());
+        String token = register("canonical-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+
+        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes.length()").value(0))
+                .andExpect(jsonPath("$[0].unchangedNodeCodes[2]").value("contract-node"));
+    }
+
+    @Test
+    void treatsQuizArrayOrderAsPartOfTheCompletionContract() throws Exception {
+        Fixture fixture = fixture(false);
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes SET quiz_blueprint_json = ?
+                WHERE template_id = ? AND node_code = 'contract-node'
+                """, "[{\"type\":\"A\"},{\"type\":\"B\"}]", fixture.v1TemplateId());
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes SET quiz_blueprint_json = ?
+                WHERE template_id = ? AND node_code = 'contract-node'
+                """, "[{\"type\":\"B\"},{\"type\":\"A\"}]", fixture.v2TemplateId());
+        String token = register("array-order-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+
+        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes[0]").value("contract-node"));
+    }
+
+    @Test
+    void rejectsAStalePreviewAfterANewerPublishedVersionAppears() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("newer-owner");
+        JsonNode oldEnrollment = enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        templateRepository.save(new RoadmapTemplateEntity(
+                "v3-" + UUID.randomUUID().toString().substring(0, 8), fixture.roadmapCode(), 3,
+                "v3", "v3", RoadmapPublicationStatus.PUBLISHED, "3".repeat(64), Instant.now()));
+
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isConflict());
+        assertThat(enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT"))
+                .get().extracting(enrollment -> enrollment.getId())
+                .isEqualTo(oldEnrollment.get("id").asText());
+        assertThat(upgradeRepository.findByOwnerIdAndId(ownerId, upgradeId))
+                .get().extracting(upgrade -> upgrade.getStatus().name()).isEqualTo("PREVIEW");
+    }
+
+    @Test
+    void rejectsATamperedTargetFromAnotherRoadmap() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("scope-owner");
+        JsonNode oldEnrollment = enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        String foreignTemplateId = "foreign-" + UUID.randomUUID().toString().substring(0, 8);
+        templateRepository.save(new RoadmapTemplateEntity(
+                foreignTemplateId, "foreign-" + UUID.randomUUID(), 99, "foreign", "foreign",
+                RoadmapPublicationStatus.PUBLISHED, "f".repeat(64), Instant.now()));
+        jdbcTemplate.update("UPDATE roadmap_upgrades SET target_template_id = ? WHERE id = ?",
+                foreignTemplateId, upgradeId);
+
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isConflict());
+        assertThat(enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT"))
+                .get().extracting(enrollment -> enrollment.getId())
+                .isEqualTo(oldEnrollment.get("id").asText());
+    }
+
+    @Test
+    void refusesUnpublishedTargetsForPreviewAndConfirmation() throws Exception {
+        Fixture previewFixture = fixture(false);
+        jdbcTemplate.update("UPDATE roadmap_templates SET publication_status = 'DRAFT' WHERE id = ?",
+                previewFixture.v2TemplateId());
+        String previewToken = register("unpublished-preview");
+        enroll(previewToken, previewFixture.roadmapCode(), 1);
+        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(previewToken)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+
+        Fixture confirmFixture = fixture(false);
+        String confirmToken = register("unpublished-confirm");
+        JsonNode oldEnrollment = enroll(confirmToken, confirmFixture.roadmapCode(), 1);
+        String ownerId = ownerId(confirmToken);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        jdbcTemplate.update("UPDATE roadmap_templates SET publication_status = 'DRAFT' WHERE id = ?",
+                confirmFixture.v2TemplateId());
+
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(confirmToken)))
+                .andExpect(status().isConflict());
+        assertThat(enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT"))
+                .get().extracting(enrollment -> enrollment.getId())
+                .isEqualTo(oldEnrollment.get("id").asText());
+    }
+
+    @Test
+    void rollsBackSupersedeAndPreviewCompletionWhenTargetInitializationFails() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("rollback-owner");
+        JsonNode oldEnrollment = enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes SET artifact_requirement_json = '{}'
+                WHERE template_id = ? AND node_code = 'added-node'
+                """, fixture.v2TemplateId());
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> upgradeService.confirm(ownerId, upgradeId)))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT"))
+                .get().extracting(enrollment -> enrollment.getId())
+                .isEqualTo(oldEnrollment.get("id").asText());
+        assertThat(enrollmentRepository.findAllByOwnerIdAndStatus(
+                ownerId, com.moxiao.studypilot.roadmap.domain.UserRoadmapStatus.ACTIVE)).hasSize(1);
+        assertThat(upgradeRepository.findByOwnerIdAndId(ownerId, upgradeId))
+                .get().extracting(upgrade -> upgrade.getStatus().name()).isEqualTo("PREVIEW");
+    }
+
+    @Test
+    void serializesConcurrentPreviewCreationWithOneStableIdempotencyRecord() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("preview-race-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            var futures = List.of(1, 2).stream().map(ignored -> executor.submit(() -> {
+                ready.countDown();
+                if (!start.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("preview start timed out");
+                }
+                return upgradeService.previews(ownerId).get(0);
+            })).toList();
+            assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+            String firstId = futures.get(0).get(10, TimeUnit.SECONDS).id();
+            assertThat(futures.get(1).get(10, TimeUnit.SECONDS).id()).isEqualTo(firstId);
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(upgradeRepository.countByOwnerId(ownerId)).isEqualTo(1);
+    }
+
+    @Test
+    void neverCreatesAStalePreviewWhileTheTargetPublicationWriteIsPending() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("publication-race-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        var executor = Executors.newFixedThreadPool(2);
+        CountDownLatch targetUpdated = new CountDownLatch(1);
+        CountDownLatch allowCommit = new CountDownLatch(1);
+        try {
+            var publisher = executor.submit(() -> new TransactionTemplate(transactionManager)
+                    .executeWithoutResult(status -> {
+                        jdbcTemplate.update("""
+                                UPDATE roadmap_templates SET publication_status = 'DRAFT'
+                                WHERE id = ?
+                                """, fixture.v2TemplateId());
+                        targetUpdated.countDown();
+                        try {
+                            if (!allowCommit.await(5, TimeUnit.SECONDS)) {
+                                throw new IllegalStateException("publication commit timed out");
+                            }
+                        } catch (InterruptedException exception) {
+                            Thread.currentThread().interrupt();
+                            throw new IllegalStateException("publication interrupted", exception);
+                        }
+                    }));
+            assertThat(targetUpdated.await(5, TimeUnit.SECONDS)).isTrue();
+            var preview = executor.submit(() -> upgradeService.previews(ownerId));
+            assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                    () -> preview.get(250, TimeUnit.MILLISECONDS)))
+                    .isInstanceOf(TimeoutException.class);
+            allowCommit.countDown();
+            publisher.get(5, TimeUnit.SECONDS);
+            assertThat(preview.get(10, TimeUnit.SECONDS)).isEmpty();
+            assertThat(upgradeRepository.countByOwnerId(ownerId)).isZero();
+        } finally {
+            allowCommit.countDown();
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
     }
 
     @Test
