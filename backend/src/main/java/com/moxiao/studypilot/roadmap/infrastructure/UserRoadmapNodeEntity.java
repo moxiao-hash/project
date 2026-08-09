@@ -30,6 +30,12 @@ public class UserRoadmapNodeEntity {
     @Column(name = "node_id", nullable = false, length = 100)
     private String nodeId;
 
+    @Column(name = "owner_id", nullable = false, length = 36)
+    private String ownerId;
+
+    @Column(name = "template_id", nullable = false, length = 36)
+    private String templateId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "availability_status", nullable = false, length = 20)
     private AvailabilityStatus availabilityStatus;
@@ -71,6 +77,8 @@ public class UserRoadmapNodeEntity {
             String id,
             String userRoadmapId,
             String nodeId,
+            String ownerId,
+            String templateId,
             AvailabilityStatus availabilityStatus,
             boolean artifactRequired,
             Instant now
@@ -78,6 +86,8 @@ public class UserRoadmapNodeEntity {
         this.id = id;
         this.userRoadmapId = userRoadmapId;
         this.nodeId = nodeId;
+        this.ownerId = ownerId;
+        this.templateId = templateId;
         this.availabilityStatus = availabilityStatus;
         this.learningStatus = LearningStatus.NOT_STARTED;
         this.checkInStatus = CheckInStatus.MISSING;
@@ -90,6 +100,8 @@ public class UserRoadmapNodeEntity {
     public String getId() { return id; }
     public String getUserRoadmapId() { return userRoadmapId; }
     public String getNodeId() { return nodeId; }
+    public String getOwnerId() { return ownerId; }
+    public String getTemplateId() { return templateId; }
     public AvailabilityStatus getAvailabilityStatus() { return availabilityStatus; }
     public LearningStatus getLearningStatus() { return learningStatus; }
     public CheckInStatus getCheckInStatus() { return checkInStatus; }

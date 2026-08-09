@@ -10,6 +10,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "user_roadmaps")
@@ -51,19 +52,22 @@ public class UserRoadmapEntity {
             String id,
             String ownerId,
             String templateId,
-            UserRoadmapStatus status,
             Instant now
     ) {
-        this.id = id;
-        this.ownerId = ownerId;
-        this.templateId = templateId;
-        this.status = status;
-        this.activeSlot = status == UserRoadmapStatus.ACTIVE ? CURRENT_ACTIVE_SLOT : null;
-        this.enrolledAt = now;
+        this.id = Objects.requireNonNull(id, "id must not be null");
+        this.ownerId = Objects.requireNonNull(ownerId, "ownerId must not be null");
+        this.templateId = Objects.requireNonNull(templateId, "templateId must not be null");
+        this.status = UserRoadmapStatus.ACTIVE;
+        this.activeSlot = CURRENT_ACTIVE_SLOT;
+        this.enrolledAt = Objects.requireNonNull(now, "now must not be null");
         this.updatedAt = now;
     }
 
     public void supersede(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (status != UserRoadmapStatus.ACTIVE) {
+            throw new IllegalStateException("Only an active roadmap can be superseded");
+        }
         this.status = UserRoadmapStatus.SUPERSEDED;
         this.activeSlot = null;
         this.updatedAt = now;
