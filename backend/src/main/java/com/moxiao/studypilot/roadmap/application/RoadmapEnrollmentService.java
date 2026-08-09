@@ -2,6 +2,7 @@ package com.moxiao.studypilot.roadmap.application;
 
 import com.moxiao.studypilot.roadmap.api.RoadmapEnrollmentResponse;
 import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
+import com.moxiao.studypilot.roadmap.domain.CompletionStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
 import com.moxiao.studypilot.roadmap.domain.UserRoadmapStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
@@ -28,7 +29,10 @@ import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -96,6 +100,62 @@ public class RoadmapEnrollmentService {
             return transactionTemplate.execute(status -> enrollInTransaction(ownerId, roadmapCode, templateVersion));
         } catch (ConcurrentEnrollmentInsertException collision) {
             return recoverConcurrentEnrollment(ownerId, roadmapCode, templateVersion, collision);
+        }
+    }
+
+    public void recalculateAvailability(String enrollmentId) {
+        transactionTemplate.executeWithoutResult(status ->
+                recalculateAvailabilityInTransaction(enrollmentId));
+    }
+
+    private void recalculateAvailabilityInTransaction(String enrollmentId) {
+        UserRoadmapEntity enrollment = userRoadmapRepository.findById(enrollmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("学习路线绑定不存在"));
+        List<UserRoadmapNodeEntity> states = userNodeRepository
+                .findAllByUserRoadmapId(enrollmentId);
+        var prerequisites = prerequisiteRepository.findAllByTemplateId(enrollment.getTemplateId());
+
+        Map<String, UserRoadmapNodeEntity> statesByNodeId = states.stream()
+                .collect(Collectors.toMap(UserRoadmapNodeEntity::getNodeId, state -> state));
+        Map<String, List<String>> prerequisiteIdsByNodeId = new HashMap<>();
+        for (var prerequisite : prerequisites) {
+            requireState(enrollmentId, prerequisite.getNodeId(), prerequisite.getPrerequisiteNodeId(),
+                    statesByNodeId, prerequisite.getNodeId(), "目标");
+            requireState(enrollmentId, prerequisite.getNodeId(), prerequisite.getPrerequisiteNodeId(),
+                    statesByNodeId, prerequisite.getPrerequisiteNodeId(), "先修");
+            prerequisiteIdsByNodeId
+                    .computeIfAbsent(prerequisite.getNodeId(), ignored -> new ArrayList<>())
+                    .add(prerequisite.getPrerequisiteNodeId());
+        }
+
+        Instant now = Instant.now();
+        for (UserRoadmapNodeEntity state : states) {
+            if (state.getCompletionStatus() == CompletionStatus.COMPLETED) {
+                continue;
+            }
+            boolean allCompleted = prerequisiteIdsByNodeId
+                    .getOrDefault(state.getNodeId(), List.of()).stream()
+                    .allMatch(prerequisiteId -> statesByNodeId.get(prerequisiteId)
+                            .getCompletionStatus()
+                            == CompletionStatus.COMPLETED);
+            state.changeAvailability(
+                    allCompleted ? AvailabilityStatus.AVAILABLE : AvailabilityStatus.LOCKED,
+                    now);
+        }
+    }
+
+    private static void requireState(
+            String enrollmentId,
+            String nodeId,
+            String prerequisiteNodeId,
+            Map<String, UserRoadmapNodeEntity> statesByNodeId,
+            String requiredNodeId,
+            String role
+    ) {
+        if (!statesByNodeId.containsKey(requiredNodeId)) {
+            throw new IllegalStateException(
+                    "路线绑定 %s 的先修关系 %s -> %s 缺少%s节点状态: %s"
+                            .formatted(enrollmentId, prerequisiteNodeId, nodeId, role, requiredNodeId));
         }
     }
 

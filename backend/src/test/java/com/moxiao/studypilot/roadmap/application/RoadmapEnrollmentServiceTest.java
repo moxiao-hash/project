@@ -23,6 +23,7 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
@@ -435,6 +436,136 @@ class RoadmapEnrollmentServiceTest {
     }
 
     @Test
+    void keepsMultiPrerequisiteNodeLockedUntilEveryPrerequisiteIsCompleted() {
+        String ownerId = createUser("multi-prerequisite");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        List<RoadmapNodePrerequisiteEntity> edges = multiPrerequisiteEdges();
+
+        completeNode(enrollment.id(), edges.get(0).getPrerequisiteNodeId());
+        enrollmentService.recalculateAvailability(enrollment.id());
+
+        assertThat(userNode(enrollment.id(), edges.get(0).getNodeId()).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.LOCKED);
+
+        edges.forEach(edge -> completeNode(enrollment.id(), edge.getPrerequisiteNodeId()));
+        enrollmentService.recalculateAvailability(enrollment.id());
+
+        assertThat(userNode(enrollment.id(), edges.get(0).getNodeId()).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.AVAILABLE);
+    }
+
+    @Test
+    void neverRelocksCompletedNodeWhenItsPrerequisiteIsIncomplete() {
+        String ownerId = createUser("completed-preserved");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        RoadmapNodePrerequisiteEntity edge = prerequisiteRepository
+                .findAllByTemplateId("studypilot-java-ai-v1").get(0);
+        completeNode(enrollment.id(), edge.getNodeId());
+
+        enrollmentService.recalculateAvailability(enrollment.id());
+
+        var completed = userNode(enrollment.id(), edge.getNodeId());
+        assertThat(completed.getCompletionStatus()).isEqualTo(CompletionStatus.COMPLETED);
+        assertThat(completed.getAvailabilityStatus()).isEqualTo(AvailabilityStatus.AVAILABLE);
+    }
+
+    @Test
+    void makesRootNodesAvailableDuringDeterministicRecalculation() {
+        String ownerId = createUser("root-available");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        Set<String> dependentNodeIds = prerequisiteRepository
+                .findAllByTemplateId("studypilot-java-ai-v1").stream()
+                .map(RoadmapNodePrerequisiteEntity::getNodeId)
+                .collect(Collectors.toSet());
+        var root = userNodeRepository.findAllByUserRoadmapId(enrollment.id()).stream()
+                .filter(state -> !dependentNodeIds.contains(state.getNodeId()))
+                .findFirst().orElseThrow();
+        lockNode(enrollment.id(), root.getNodeId());
+
+        enrollmentService.recalculateAvailability(enrollment.id());
+
+        assertThat(userNode(enrollment.id(), root.getNodeId()).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.AVAILABLE);
+    }
+
+    @Test
+    void failsClosedWithContextWhenPrerequisiteStateIsMissing() {
+        String ownerId = createUser("missing-prerequisite-state");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        RoadmapNodePrerequisiteEntity edge = prerequisiteRepository
+                .findAllByTemplateId("studypilot-java-ai-v1").get(0);
+        UserRoadmapNodeEntity prerequisite = userNode(
+                enrollment.id(), edge.getPrerequisiteNodeId());
+        userNodeRepository.deleteById(prerequisite.getId());
+        userNodeRepository.flush();
+
+        assertThatThrownBy(() -> enrollmentService.recalculateAvailability(enrollment.id()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(enrollment.id())
+                .hasMessageContaining(edge.getNodeId())
+                .hasMessageContaining(edge.getPrerequisiteNodeId());
+    }
+
+    @Test
+    void relocksIncompleteNodeWhenAnyPrerequisiteBecomesIncomplete() {
+        String ownerId = createUser("relock");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        List<RoadmapNodePrerequisiteEntity> edges = multiPrerequisiteEdges();
+        edges.forEach(edge -> completeNode(enrollment.id(), edge.getPrerequisiteNodeId()));
+        enrollmentService.recalculateAvailability(enrollment.id());
+        assertThat(userNode(enrollment.id(), edges.get(0).getNodeId()).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.AVAILABLE);
+
+        makeNodeIncomplete(enrollment.id(), edges.get(0).getPrerequisiteNodeId());
+        enrollmentService.recalculateAvailability(enrollment.id());
+
+        assertThat(userNode(enrollment.id(), edges.get(0).getNodeId()).getAvailabilityStatus())
+                .isEqualTo(AvailabilityStatus.LOCKED);
+    }
+
+    @Test
+    void recalculationUsesThreeFixedRepositoryCallsAndDoesNotChurnUnchangedStates() {
+        String ownerId = createUser("bounded-recalculation");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        UserRoadmapJpaRepository countingEnrollments = mock(
+                UserRoadmapJpaRepository.class, delegatesTo(userRoadmapRepository));
+        UserRoadmapNodeJpaRepository countingStates = mock(
+                UserRoadmapNodeJpaRepository.class, delegatesTo(userNodeRepository));
+        RoadmapNodePrerequisiteJpaRepository countingPrerequisites = mock(
+                RoadmapNodePrerequisiteJpaRepository.class, delegatesTo(prerequisiteRepository));
+        RoadmapEnrollmentService countingService = new RoadmapEnrollmentService(
+                templateRepository, countingEnrollments, nodeRepository, countingPrerequisites,
+                countingStates, objectMapper, transactionManager, () -> { });
+        Map<String, Long> versionsBefore = userNodeRepository
+                .findAllByUserRoadmapId(enrollment.id()).stream()
+                .collect(Collectors.toMap(UserRoadmapNodeEntity::getId,
+                        UserRoadmapNodeEntity::getRowVersion));
+        Map<String, Instant> timestampsBefore = userNodeRepository
+                .findAllByUserRoadmapId(enrollment.id()).stream()
+                .collect(Collectors.toMap(UserRoadmapNodeEntity::getId,
+                        UserRoadmapNodeEntity::getUpdatedAt));
+
+        countingService.recalculateAvailability(enrollment.id());
+
+        verify(countingEnrollments, times(1)).findById(enrollment.id());
+        verify(countingStates, times(1)).findAllByUserRoadmapId(enrollment.id());
+        verify(countingPrerequisites, times(1))
+                .findAllByTemplateId("studypilot-java-ai-v1");
+        verify(countingStates, times(0)).findByUserRoadmapIdAndNodeId(any(), any());
+        assertThat(userNodeRepository.findAllByUserRoadmapId(enrollment.id()))
+                .allSatisfy(state -> {
+                    assertThat(state.getRowVersion()).isEqualTo(versionsBefore.get(state.getId()));
+                    assertThat(state.getUpdatedAt()).isEqualTo(timestampsBefore.get(state.getId()));
+                });
+    }
+
+    @Test
     void enrollmentEndpointRequiresAuthenticationAndIsIdempotentWithoutOwnerInPayload() throws Exception {
         String body = """
                 {"roadmapCode":"studypilot-java-ai","templateVersion":1}
@@ -498,6 +629,42 @@ class RoadmapEnrollmentServiceTest {
         userRepository.saveAndFlush(new UserAccountEntity(
                 id, suffix + "-" + id + "@example.com", "hash", suffix, Instant.now()));
         return id;
+    }
+
+    private List<RoadmapNodePrerequisiteEntity> multiPrerequisiteEdges() {
+        return prerequisiteRepository.findAllByTemplateId("studypilot-java-ai-v1").stream()
+                .collect(Collectors.groupingBy(RoadmapNodePrerequisiteEntity::getNodeId))
+                .values().stream()
+                .filter(edges -> edges.size() > 1)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("测试目录必须包含多先修节点"));
+    }
+
+    private UserRoadmapNodeEntity userNode(String enrollmentId, String nodeId) {
+        return userNodeRepository.findByUserRoadmapIdAndNodeId(enrollmentId, nodeId).orElseThrow();
+    }
+
+    private void completeNode(String enrollmentId, String nodeId) {
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET completion_status = 'COMPLETED', availability_status = 'AVAILABLE', completed_at = ?
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, Instant.now(), enrollmentId, nodeId);
+    }
+
+    private void makeNodeIncomplete(String enrollmentId, String nodeId) {
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET completion_status = 'INCOMPLETE', completed_at = NULL
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollmentId, nodeId);
+    }
+
+    private void lockNode(String enrollmentId, String nodeId) {
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes SET availability_status = 'LOCKED'
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollmentId, nodeId);
     }
 
     private RoadmapTemplateEntity cloneCatalogAsAlternateTemplate() {

@@ -15,6 +15,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "user_roadmap_nodes")
@@ -94,6 +95,16 @@ public class UserRoadmapNodeEntity {
         this.quizStatus = QuizStatus.NOT_GENERATED;
         this.artifactStatus = artifactRequired ? ArtifactStatus.MISSING : ArtifactStatus.NOT_REQUIRED;
         this.completionStatus = CompletionStatus.INCOMPLETE;
+        this.updatedAt = now;
+    }
+
+    public void changeAvailability(AvailabilityStatus availabilityStatus, Instant now) {
+        Objects.requireNonNull(availabilityStatus, "availabilityStatus must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        if (this.availabilityStatus == availabilityStatus) {
+            return;
+        }
+        this.availabilityStatus = availabilityStatus;
         this.updatedAt = now;
     }
 
