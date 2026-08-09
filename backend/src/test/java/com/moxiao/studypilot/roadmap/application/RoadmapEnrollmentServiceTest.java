@@ -13,8 +13,11 @@ import com.moxiao.studypilot.roadmap.domain.LearningStatus;
 import com.moxiao.studypilot.roadmap.domain.QuizStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
 import com.moxiao.studypilot.roadmap.domain.UserRoadmapStatus;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
@@ -23,27 +26,31 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
-import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.time.Instant;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -59,10 +66,10 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.AdditionalAnswers.delegatesTo;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -258,7 +265,62 @@ class RoadmapEnrollmentServiceTest {
     }
 
     @Test
-    void recognizesOnlyTheSameBindingUniqueConstraintAsRecoverable() {
+    void concurrentDifferentTemplatesLeaveOneWinnerAndOneConflict() throws Exception {
+        int workers = 2;
+        String ownerId = createUser("different-template-race");
+        RoadmapTemplateEntity alternate = cloneCatalogAsAlternateTemplate();
+        CountDownLatch start = new CountDownLatch(1);
+        CyclicBarrier collision = new CyclicBarrier(workers);
+        RoadmapEnrollmentService collidingService = new RoadmapEnrollmentService(
+                templateRepository, userRoadmapRepository, nodeRepository, prerequisiteRepository,
+                userNodeRepository, objectMapper, transactionManager, () -> await(collision));
+        ExecutorService executor = Executors.newFixedThreadPool(workers);
+
+        try {
+            List<Future<RoadmapEnrollmentResponse>> futures = List.of(
+                    executor.submit(() -> {
+                        await(start);
+                        return collidingService.enroll(ownerId, "studypilot-java-ai", 1);
+                    }),
+                    executor.submit(() -> {
+                        await(start);
+                        return collidingService.enroll(
+                                ownerId, alternate.getRoadmapCode(), alternate.getTemplateVersion());
+                    })
+            );
+            start.countDown();
+
+            List<RoadmapEnrollmentResponse> successes = new ArrayList<>();
+            List<Throwable> failures = new ArrayList<>();
+            for (Future<RoadmapEnrollmentResponse> future : futures) {
+                try {
+                    successes.add(getWithinDeadline(future));
+                } catch (ExecutionException exception) {
+                    failures.add(exception.getCause());
+                }
+            }
+
+            assertThat(successes).hasSize(1);
+            assertThat(failures).singleElement().satisfies(failure -> {
+                assertThat(failure).isInstanceOf(ConflictException.class);
+                assertThat(failure.getMessage()).isEqualTo("已有生效中的学习路线");
+            });
+            assertThat(userRoadmapRepository.findAll()).singleElement().satisfies(winner -> {
+                assertThat(winner.getId()).isEqualTo(successes.get(0).id());
+                assertThat(winner.getStatus()).isEqualTo(UserRoadmapStatus.ACTIVE);
+                assertThat(winner.getActiveSlot()).isEqualTo("CURRENT");
+            });
+            assertThat(userNodeRepository.findAll()).hasSize(64)
+                    .allSatisfy(state -> assertThat(state.getUserRoadmapId())
+                            .isEqualTo(successes.get(0).id()));
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void recognizesOnlyTheTwoEnrollmentUniqueConstraintsAsRecoverable() {
         SQLException h2Duplicate = new SQLException("duplicate", "23505", 23505);
         var sameBinding = new DataIntegrityViolationException("insert failed",
                 new ConstraintViolationException(
@@ -276,11 +338,37 @@ class RoadmapEnrollmentServiceTest {
         SQLException foreignKey = new SQLException(
                 "Referential integrity constraint violation: FK_USER_ROADMAPS_OWNER", "23506", 23506);
         var ownerForeignKey = new DataIntegrityViolationException("insert failed", foreignKey);
+        var activeSlot = new DataIntegrityViolationException("insert failed",
+                new ConstraintViolationException(
+                        "constraint failed", h2Duplicate,
+                        ConstraintViolationException.ConstraintKind.UNIQUE,
+                        "UK_USER_ROADMAP_ACTIVE_SLOT"));
+        var similarlyPrefixed = new DataIntegrityViolationException("insert failed",
+                new ConstraintViolationException(
+                        "constraint failed", h2Duplicate,
+                        ConstraintViolationException.ConstraintKind.UNIQUE,
+                        "UK_USER_ROADMAP_ACTIVE_SLOT_SHADOW"));
 
-        assertThat(RoadmapEnrollmentService.isSameBindingUniqueConflict(sameBinding)).isTrue();
-        assertThat(RoadmapEnrollmentService.isSameBindingUniqueConflict(mysqlSameBinding)).isTrue();
-        assertThat(RoadmapEnrollmentService.isSameBindingUniqueConflict(primaryKey)).isFalse();
-        assertThat(RoadmapEnrollmentService.isSameBindingUniqueConflict(ownerForeignKey)).isFalse();
+        assertThat(RoadmapEnrollmentService.isEnrollmentUniqueConflict(sameBinding)).isTrue();
+        assertThat(RoadmapEnrollmentService.isEnrollmentUniqueConflict(mysqlSameBinding)).isTrue();
+        assertThat(RoadmapEnrollmentService.isEnrollmentUniqueConflict(activeSlot)).isTrue();
+        assertThat(RoadmapEnrollmentService.isEnrollmentUniqueConflict(similarlyPrefixed)).isFalse();
+        assertThat(RoadmapEnrollmentService.isEnrollmentUniqueConflict(primaryKey)).isFalse();
+        assertThat(RoadmapEnrollmentService.isEnrollmentUniqueConflict(ownerForeignKey)).isFalse();
+    }
+
+    @Test
+    void migrationKeepsEnrollmentUniqueConstraintNamesAndColumnsStable() throws IOException {
+        String migration;
+        try (var input = new ClassPathResource(
+                "db/migration/V24__create_roadmap_foundation.sql").getInputStream()) {
+            migration = new String(input.readAllBytes(), StandardCharsets.UTF_8)
+                    .replaceAll("\\s+", " ");
+        }
+
+        assertThat(migration).contains(
+                "CONSTRAINT uk_user_roadmap_template UNIQUE (owner_id, template_id)",
+                "CONSTRAINT uk_user_roadmap_active_slot UNIQUE (owner_id, active_slot)");
     }
 
     @Test
@@ -410,6 +498,66 @@ class RoadmapEnrollmentServiceTest {
         userRepository.saveAndFlush(new UserAccountEntity(
                 id, suffix + "-" + id + "@example.com", "hash", suffix, Instant.now()));
         return id;
+    }
+
+    private RoadmapTemplateEntity cloneCatalogAsAlternateTemplate() {
+        String sourceTemplateId = "studypilot-java-ai-v1";
+        String targetTemplateId = "studypilot-java-ai-alt-v1";
+        RoadmapTemplateEntity alternate = templateRepository.saveAndFlush(new RoadmapTemplateEntity(
+                targetTemplateId,
+                "studypilot-java-ai-alt",
+                1,
+                "StudyPilot Java + AI 备选路线",
+                "用于并发绑定验证的完整备选路线",
+                RoadmapPublicationStatus.PUBLISHED,
+                "a".repeat(64),
+                Instant.now()
+        ));
+
+        Map<String, String> stageIds = new HashMap<>();
+        List<RoadmapStageEntity> stages = stageRepository.findAll().stream()
+                .filter(stage -> stage.getTemplateId().equals(sourceTemplateId))
+                .map(stage -> {
+                    String targetStageId = targetTemplateId + "-" + stage.getStageCode();
+                    stageIds.put(stage.getId(), targetStageId);
+                    return new RoadmapStageEntity(
+                            targetStageId, targetTemplateId, stage.getStageCode(), stage.getStageOrder(),
+                            stage.getTitle(), stage.getDescription(), stage.getGraduationProjectTitle());
+                })
+                .toList();
+        stageRepository.saveAllAndFlush(stages);
+
+        Map<String, String> nodeIds = new HashMap<>();
+        List<RoadmapNodeEntity> nodes = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(sourceTemplateId).stream()
+                .map(node -> {
+                    String targetNodeId = targetTemplateId + "-" + node.getNodeCode();
+                    nodeIds.put(node.getId(), targetNodeId);
+                    return new RoadmapNodeEntity(
+                            targetNodeId, targetTemplateId, stageIds.get(node.getStageId()),
+                            node.getNodeCode(), node.getNodeOrder(), node.getTitle(),
+                            node.getObjectivesJson(), node.getHighFrequencyJson(),
+                            node.getCommonMistakesJson(), node.getSearchKeywordsJson(),
+                            node.getArtifactRequirementJson(), node.getQuizBlueprintJson(),
+                            node.getEstimatedMinutes(), node.getPracticeMinutes(),
+                            node.getDifficulty(), node.isRequiredNode());
+                })
+                .toList();
+        nodeRepository.saveAllAndFlush(nodes);
+
+        List<RoadmapNodePrerequisiteEntity> prerequisites = prerequisiteRepository
+                .findAllByTemplateId(sourceTemplateId).stream()
+                .map(edge -> {
+                    String nodeId = nodeIds.get(edge.getNodeId());
+                    String prerequisiteId = nodeIds.get(edge.getPrerequisiteNodeId());
+                    String edgeId = UUID.nameUUIDFromBytes(
+                            (nodeId + ":" + prerequisiteId).getBytes(StandardCharsets.UTF_8)).toString();
+                    return new RoadmapNodePrerequisiteEntity(
+                            edgeId, targetTemplateId, nodeId, prerequisiteId);
+                })
+                .toList();
+        prerequisiteRepository.saveAllAndFlush(prerequisites);
+        return alternate;
     }
 
     private Registration registerUser() throws Exception {

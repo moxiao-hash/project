@@ -39,8 +39,13 @@ public class RoadmapEnrollmentService {
 
     private static final String CURRENT = "CURRENT";
     private static final String SAME_BINDING_CONSTRAINT = "uk_user_roadmap_template";
-    private static final Pattern SAME_BINDING_CONSTRAINT_IN_MESSAGE = Pattern.compile(
-            "(?i)(?<![a-z0-9_])(?:[a-z0-9_]+\\.)?" + SAME_BINDING_CONSTRAINT + "(?![a-z0-9_])");
+    private static final String ACTIVE_SLOT_CONSTRAINT = "uk_user_roadmap_active_slot";
+    private static final Set<String> ENROLLMENT_UNIQUE_CONSTRAINTS = Set.of(
+            SAME_BINDING_CONSTRAINT, ACTIVE_SLOT_CONSTRAINT);
+    private static final Pattern ENROLLMENT_UNIQUE_CONSTRAINT_IN_MESSAGE = Pattern.compile(
+            "(?i)(?<![a-z0-9_])(?:[a-z0-9_]+\\.)?(?:"
+                    + SAME_BINDING_CONSTRAINT + "|" + ACTIVE_SLOT_CONSTRAINT
+                    + ")(?![a-z0-9_])");
 
     private final RoadmapTemplateJpaRepository templateRepository;
     private final UserRoadmapJpaRepository userRoadmapRepository;
@@ -116,7 +121,7 @@ public class RoadmapEnrollmentService {
         try {
             userRoadmapRepository.saveAndFlush(enrollment);
         } catch (DataIntegrityViolationException exception) {
-            if (!isSameBindingUniqueConflict(exception)) {
+            if (!isEnrollmentUniqueConflict(exception)) {
                 throw exception;
             }
             throw new ConcurrentEnrollmentInsertException(exception);
@@ -154,19 +159,20 @@ public class RoadmapEnrollmentService {
     ) {
         RoadmapEnrollmentResponse recovered = transactionTemplate.execute(status -> {
             RoadmapTemplateEntity template = publishedTemplate(roadmapCode, templateVersion);
-            return userRoadmapRepository.findByOwnerIdAndTemplateId(ownerId, template.getId())
-                    .filter(enrollment -> enrollment.getStatus() == UserRoadmapStatus.ACTIVE)
-                    .map(enrollment -> RoadmapEnrollmentResponse.from(enrollment, template))
+            UserRoadmapEntity current = userRoadmapRepository
+                    .findByOwnerIdAndActiveSlot(ownerId, CURRENT)
                     .orElse(null);
+            if (current == null) {
+                return null;
+            }
+            if (current.getStatus() == UserRoadmapStatus.ACTIVE
+                    && current.getTemplateId().equals(template.getId())) {
+                return RoadmapEnrollmentResponse.from(current, template);
+            }
+            throw new ConflictException("已有生效中的学习路线");
         });
         if (recovered != null) {
             return recovered;
-        }
-
-        Boolean hasOtherActive = transactionTemplate.execute(status ->
-                userRoadmapRepository.findByOwnerIdAndActiveSlot(ownerId, CURRENT).isPresent());
-        if (Boolean.TRUE.equals(hasOtherActive)) {
-            throw new ConflictException("已有生效中的学习路线");
         }
         throw collision.integrityViolation();
     }
@@ -197,13 +203,13 @@ public class RoadmapEnrollmentService {
                 .toString();
     }
 
-    static boolean isSameBindingUniqueConflict(DataIntegrityViolationException exception) {
+    static boolean isEnrollmentUniqueConflict(DataIntegrityViolationException exception) {
         boolean uniqueViolation = false;
         boolean exactConstraint = false;
         Throwable current = exception;
         while (current != null) {
             if (current instanceof ConstraintViolationException constraintViolation) {
-                exactConstraint |= isSameBindingConstraintName(constraintViolation.getConstraintName());
+                exactConstraint |= isEnrollmentUniqueConstraintName(constraintViolation.getConstraintName());
                 uniqueViolation |= constraintViolation.getKind()
                         == ConstraintViolationException.ConstraintKind.UNIQUE;
             }
@@ -212,7 +218,7 @@ public class RoadmapEnrollmentService {
                         || sqlException.getErrorCode() == 1062;
             }
             if (current.getMessage() != null) {
-                exactConstraint |= SAME_BINDING_CONSTRAINT_IN_MESSAGE
+                exactConstraint |= ENROLLMENT_UNIQUE_CONSTRAINT_IN_MESSAGE
                         .matcher(current.getMessage()).find();
             }
             current = current.getCause();
@@ -220,7 +226,7 @@ public class RoadmapEnrollmentService {
         return uniqueViolation && exactConstraint;
     }
 
-    private static boolean isSameBindingConstraintName(String constraintName) {
+    private static boolean isEnrollmentUniqueConstraintName(String constraintName) {
         if (constraintName == null) {
             return false;
         }
@@ -228,8 +234,8 @@ public class RoadmapEnrollmentService {
                 .replace("`", "")
                 .replace("\"", "")
                 .toLowerCase(java.util.Locale.ROOT);
-        return normalized.equals(SAME_BINDING_CONSTRAINT)
-                || normalized.endsWith("." + SAME_BINDING_CONSTRAINT);
+        return ENROLLMENT_UNIQUE_CONSTRAINTS.stream().anyMatch(constraint ->
+                normalized.equals(constraint) || normalized.endsWith("." + constraint));
     }
 
     private static final class ConcurrentEnrollmentInsertException extends RuntimeException {
