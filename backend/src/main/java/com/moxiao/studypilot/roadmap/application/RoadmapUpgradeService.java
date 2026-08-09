@@ -75,6 +75,8 @@ public class RoadmapUpgradeService {
         this.enrollmentService = enrollmentService;
         this.objectMapper = objectMapper;
         this.upgradeTransaction = new TransactionTemplate(transactionManager);
+        this.upgradeTransaction.setPropagationBehavior(
+                TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.upgradeTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
 

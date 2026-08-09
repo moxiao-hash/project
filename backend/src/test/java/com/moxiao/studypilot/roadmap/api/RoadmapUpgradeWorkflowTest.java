@@ -13,28 +13,44 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapUpgradeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.PessimisticLockException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Instant;
-import java.util.UUID;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -47,7 +63,7 @@ class RoadmapUpgradeWorkflowTest {
     @Autowired MockMvc mockMvc;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
-    @Autowired RoadmapTemplateJpaRepository templateRepository;
+    @MockitoSpyBean RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
     @Autowired RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
@@ -56,6 +72,7 @@ class RoadmapUpgradeWorkflowTest {
     @Autowired UserRoadmapNodeJpaRepository stateRepository;
     @Autowired RoadmapUpgradeService upgradeService;
     @Autowired PlatformTransactionManager transactionManager;
+    @PersistenceContext EntityManager entityManager;
 
     @Test
     void previewsOnlyTheLatestPublishedVersionAndRequiresManualReviewForContractChanges()
@@ -369,6 +386,11 @@ class RoadmapUpgradeWorkflowTest {
         var executor = Executors.newFixedThreadPool(2);
         CountDownLatch targetUpdated = new CountDownLatch(1);
         CountDownLatch allowCommit = new CountDownLatch(1);
+        CountDownLatch lockingReadReached = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            lockingReadReached.countDown();
+            return lockingPublishedVersions(invocation.getArgument(0), invocation.getArgument(1));
+        }).when(templateRepository).findPublishedVersionsForUpgrade(any(), any());
         try {
             var publisher = executor.submit(() -> new TransactionTemplate(transactionManager)
                     .executeWithoutResult(status -> {
@@ -388,9 +410,8 @@ class RoadmapUpgradeWorkflowTest {
                     }));
             assertThat(targetUpdated.await(5, TimeUnit.SECONDS)).isTrue();
             var preview = executor.submit(() -> upgradeService.previews(ownerId));
-            assertThat(org.assertj.core.api.Assertions.catchThrowable(
-                    () -> preview.get(250, TimeUnit.MILLISECONDS)))
-                    .isInstanceOf(TimeoutException.class);
+            assertThat(lockingReadReached.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(preview.isDone()).isFalse();
             allowCommit.countDown();
             publisher.get(5, TimeUnit.SECONDS);
             assertThat(preview.get(10, TimeUnit.SECONDS)).isEmpty();
@@ -399,6 +420,82 @@ class RoadmapUpgradeWorkflowTest {
             allowCommit.countDown();
             executor.shutdownNow();
             assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    @Test
+    void retriesInANewTransactionWithoutMarkingTheOuterTransactionRollbackOnly() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("outer-transaction-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        String marker = "outer-committed-" + UUID.randomUUID();
+        AtomicInteger calls = new AtomicInteger();
+        Set<Object> attemptEntityManagers = Collections.newSetFromMap(new IdentityHashMap<>());
+        AtomicReference<Object> outerEntityManager = new AtomicReference<>();
+        clearInvocations(templateRepository);
+        doAnswer(invocation -> {
+            attemptEntityManagers.add(entityManager.getDelegate());
+            if (calls.incrementAndGet() == 1) {
+                throw new org.springframework.dao.CannotAcquireLockException("forced first attempt");
+            }
+            return lockingPublishedVersions(invocation.getArgument(0), invocation.getArgument(1));
+        }).when(templateRepository).findPublishedVersionsForUpgrade(any(), any());
+
+        TransactionTemplate outer = new TransactionTemplate(transactionManager);
+        outer.executeWithoutResult(status -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isTrue();
+            outerEntityManager.set(entityManager.getDelegate());
+            assertThat(upgradeService.previews(ownerId)).hasSize(1);
+            assertThat(status.isRollbackOnly()).isFalse();
+            assertThat(entityManager.getDelegate()).isSameAs(outerEntityManager.get());
+            jdbcTemplate.update("UPDATE app_users SET display_name = ? WHERE id = ?", marker, ownerId);
+        });
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT display_name FROM app_users WHERE id = ?", String.class, ownerId))
+                .isEqualTo(marker);
+        assertThat(calls).hasValue(2);
+        assertThat(attemptEntityManagers).hasSize(2).doesNotContain(outerEntityManager.get());
+        assertThat(upgradeRepository.countByOwnerId(ownerId)).isEqualTo(1);
+    }
+
+    @Test
+    void retriesOnlyLockAcquisitionFailuresAtMostThreeTimes() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("bounded-retry-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        clearInvocations(templateRepository);
+        doThrow(new org.springframework.dao.CannotAcquireLockException("always locked"))
+                .when(templateRepository).findPublishedVersionsForUpgrade(any(), any());
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(
+                () -> upgradeService.previews(ownerId)))
+                .isInstanceOf(org.springframework.dao.CannotAcquireLockException.class);
+        verify(templateRepository, times(3)).findPublishedVersionsForUpgrade(any(), any());
+        assertThat(upgradeRepository.countByOwnerId(ownerId)).isZero();
+    }
+
+    private List<RoadmapTemplateEntity> lockingPublishedVersions(
+            String roadmapCode,
+            RoadmapPublicationStatus publicationStatus
+    ) {
+        try {
+            return entityManager.createQuery("""
+                            select template from RoadmapTemplateEntity template
+                            where template.roadmapCode = :roadmapCode
+                              and template.publicationStatus = :publicationStatus
+                            order by template.templateVersion desc
+                            """, RoadmapTemplateEntity.class)
+                    .setParameter("roadmapCode", roadmapCode)
+                    .setParameter("publicationStatus", publicationStatus)
+                    .setLockMode(LockModeType.PESSIMISTIC_READ)
+                    .getResultList();
+        } catch (PessimisticLockException exception) {
+            // Match Spring Data's exception translation at the repository boundary.
+            throw new org.springframework.dao.CannotAcquireLockException(
+                    "test locking read failed", exception);
         }
     }
 
