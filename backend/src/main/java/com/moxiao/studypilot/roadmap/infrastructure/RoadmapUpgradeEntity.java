@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.Objects;
 
 @Entity
 @Table(name = "roadmap_upgrades")
@@ -77,4 +78,16 @@ public class RoadmapUpgradeEntity {
     public String getIdempotencyKey() { return idempotencyKey; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getCompletedAt() { return completedAt; }
+
+    public void complete(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (status == UpgradeStatus.COMPLETED) {
+            return;
+        }
+        if (status != UpgradeStatus.PREVIEW) {
+            throw new IllegalStateException("Only a preview can be completed");
+        }
+        this.status = UpgradeStatus.COMPLETED;
+        this.completedAt = now;
+    }
 }

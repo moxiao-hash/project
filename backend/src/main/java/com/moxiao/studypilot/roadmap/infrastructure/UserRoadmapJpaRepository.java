@@ -17,6 +17,13 @@ public interface UserRoadmapJpaRepository extends JpaRepository<UserRoadmapEntit
 
     Optional<UserRoadmapEntity> findByOwnerIdAndActiveSlot(String ownerId, String activeSlot);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select roadmap from UserRoadmapEntity roadmap where roadmap.ownerId = :ownerId and roadmap.activeSlot = :activeSlot")
+    Optional<UserRoadmapEntity> findByOwnerIdAndActiveSlotForUpdate(
+            @Param("ownerId") String ownerId,
+            @Param("activeSlot") String activeSlot
+    );
+
     List<UserRoadmapEntity> findAllByOwnerIdAndStatus(String ownerId, UserRoadmapStatus status);
 
     Optional<UserRoadmapEntity> findByOwnerIdAndTemplateId(String ownerId, String templateId);

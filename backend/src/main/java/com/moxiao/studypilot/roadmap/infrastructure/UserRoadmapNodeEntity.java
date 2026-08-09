@@ -125,6 +125,23 @@ public class UserRoadmapNodeEntity {
         this.updatedAt = now;
     }
 
+    /** Restores verified completion evidence while moving between equivalent immutable nodes. */
+    public void carryCompletedFromUpgrade(UserRoadmapNodeEntity source, Instant now) {
+        Objects.requireNonNull(source, "source must not be null");
+        Objects.requireNonNull(now, "now must not be null");
+        if (source.completionStatus != CompletionStatus.COMPLETED) {
+            throw new IllegalArgumentException("Only completed source state can be carried");
+        }
+        this.availabilityStatus = AvailabilityStatus.AVAILABLE;
+        this.learningStatus = source.learningStatus;
+        this.checkInStatus = source.checkInStatus;
+        this.quizStatus = source.quizStatus;
+        this.artifactStatus = source.artifactStatus;
+        this.completionStatus = CompletionStatus.COMPLETED;
+        this.completedAt = source.completedAt == null ? now : source.completedAt;
+        this.updatedAt = now;
+    }
+
     public String getId() { return id; }
     public String getUserRoadmapId() { return userRoadmapId; }
     public String getNodeId() { return nodeId; }
