@@ -15,6 +15,7 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -25,16 +26,21 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 
 @Service
 public class RoadmapEnrollmentService {
 
     private static final String CURRENT = "CURRENT";
+    private static final String SAME_BINDING_CONSTRAINT = "uk_user_roadmap_template";
+    private static final Pattern SAME_BINDING_CONSTRAINT_IN_MESSAGE = Pattern.compile(
+            "(?i)(?<![a-z0-9_])(?:[a-z0-9_]+\\.)?" + SAME_BINDING_CONSTRAINT + "(?![a-z0-9_])");
 
     private final RoadmapTemplateJpaRepository templateRepository;
     private final UserRoadmapJpaRepository userRoadmapRepository;
@@ -110,6 +116,9 @@ public class RoadmapEnrollmentService {
         try {
             userRoadmapRepository.saveAndFlush(enrollment);
         } catch (DataIntegrityViolationException exception) {
+            if (!isSameBindingUniqueConflict(exception)) {
+                throw exception;
+            }
             throw new ConcurrentEnrollmentInsertException(exception);
         }
 
@@ -186,6 +195,41 @@ public class RoadmapEnrollmentService {
     private static String stableNodeStateId(String enrollmentId, String nodeId) {
         return UUID.nameUUIDFromBytes((enrollmentId + ":" + nodeId).getBytes(StandardCharsets.UTF_8))
                 .toString();
+    }
+
+    static boolean isSameBindingUniqueConflict(DataIntegrityViolationException exception) {
+        boolean uniqueViolation = false;
+        boolean exactConstraint = false;
+        Throwable current = exception;
+        while (current != null) {
+            if (current instanceof ConstraintViolationException constraintViolation) {
+                exactConstraint |= isSameBindingConstraintName(constraintViolation.getConstraintName());
+                uniqueViolation |= constraintViolation.getKind()
+                        == ConstraintViolationException.ConstraintKind.UNIQUE;
+            }
+            if (current instanceof SQLException sqlException) {
+                uniqueViolation |= "23505".equals(sqlException.getSQLState())
+                        || sqlException.getErrorCode() == 1062;
+            }
+            if (current.getMessage() != null) {
+                exactConstraint |= SAME_BINDING_CONSTRAINT_IN_MESSAGE
+                        .matcher(current.getMessage()).find();
+            }
+            current = current.getCause();
+        }
+        return uniqueViolation && exactConstraint;
+    }
+
+    private static boolean isSameBindingConstraintName(String constraintName) {
+        if (constraintName == null) {
+            return false;
+        }
+        String normalized = constraintName
+                .replace("`", "")
+                .replace("\"", "")
+                .toLowerCase(java.util.Locale.ROOT);
+        return normalized.equals(SAME_BINDING_CONSTRAINT)
+                || normalized.endsWith("." + SAME_BINDING_CONSTRAINT);
     }
 
     private static final class ConcurrentEnrollmentInsertException extends RuntimeException {
