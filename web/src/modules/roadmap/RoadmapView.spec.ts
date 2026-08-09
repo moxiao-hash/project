@@ -111,7 +111,7 @@ function deferred<T>() {
 }
 
 describe('roadmap read views', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => vi.resetAllMocks())
 
   it('shows graph and semantic list views from the same model with an accessible toggle', async () => {
     vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue(fixtureRoadmap())
@@ -240,6 +240,10 @@ describe('roadmap read views', () => {
 
   it('loads a node by route id and shows all study guidance without mutation actions', async () => {
     vi.mocked(roadmapApi.getNode).mockResolvedValue(node({ prerequisiteCodes: ['java-basics'] }))
+    vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue({
+      ...fixtureRoadmap(),
+      stages: [stage({ nodes: [node({ id: 'node-basics', code: 'java-basics' })] })],
+    })
     const { wrapper } = await mountAt(NodeView, '/roadmap/nodes/node-java')
     await flushPromises()
 
@@ -249,9 +253,36 @@ describe('roadmap read views', () => {
     expect(wrapper.text()).toContain('把继承当作代码复用的默认方式')
     expect(wrapper.text()).toContain('黑马程序员 Java 面向对象')
     expect(wrapper.get('[data-testid="node-prerequisites"] a').attributes('href'))
-      .toBe('/roadmap/nodes/java-basics')
+      .toBe('/roadmap/nodes/node-basics')
     expect(wrapper.text()).toContain('打卡、测验和必交成果全部满足后才完成节点')
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  it('resolves prerequisite codes to current-roadmap node ids and never creates bogus links', async () => {
+    vi.mocked(roadmapApi.getNode).mockResolvedValue(node({
+      id: 'node-advanced',
+      prerequisiteCodes: ['java-syntax-oop', 'retired-node-code'],
+    }))
+    vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue(fixtureRoadmap())
+    const { wrapper } = await mountAt(NodeView, '/roadmap/nodes/node-advanced')
+    await flushPromises()
+
+    const prerequisites = wrapper.get('[data-testid="node-prerequisites"]')
+    expect(prerequisites.findAll('a')).toHaveLength(1)
+    expect(prerequisites.get('a').attributes('href')).toBe('/roadmap/nodes/node-java')
+    expect(prerequisites.text()).toContain('retired-node-code')
+    expect(prerequisites.text()).toContain('当前路线中未找到该前置节点')
+  })
+
+  it('keeps node details readable when prerequisite resolution is unavailable', async () => {
+    vi.mocked(roadmapApi.getNode).mockResolvedValue(node({ prerequisiteCodes: ['java-basics'] }))
+    vi.mocked(roadmapApi.getCurrentMap).mockRejectedValue(new Error('map unavailable'))
+    const { wrapper } = await mountAt(NodeView, '/roadmap/nodes/node-java')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Java 语法、面向对象与代码规范')
+    expect(wrapper.get('[data-testid="node-prerequisites"]').find('a').exists()).toBe(false)
+    expect(wrapper.text()).toContain('前置节点链接暂时无法解析')
   })
 
   it('renders stable not-found states for missing stage and node', async () => {

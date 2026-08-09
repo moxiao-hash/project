@@ -51,7 +51,18 @@
           <p v-if="node.prerequisiteCodes.length === 0" class="muted">无，可直接开始。</p>
           <ul v-else>
             <li v-for="code in node.prerequisiteCodes" :key="code">
-              <RouterLink :to="{ name: 'roadmap-node', params: { id: code } }">{{ code }}</RouterLink>
+              <RouterLink
+                v-if="prerequisiteIds[code]"
+                :to="{ name: 'roadmap-node', params: { id: prerequisiteIds[code] } }"
+              >{{ code }}</RouterLink>
+              <template v-else>
+                <span>{{ code }}</span>
+                <span class="prerequisite-note">
+                  — {{ prerequisiteResolution === 'unavailable'
+                    ? '前置节点链接暂时无法解析'
+                    : '当前路线中未找到该前置节点' }}
+                </span>
+              </template>
             </li>
           </ul>
         </section>
@@ -65,13 +76,15 @@ import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import { roadmapApi } from '@/services/roadmap'
-import type { RoadmapNode } from '@/types/roadmap'
+import type { RoadmapMap, RoadmapNode } from '@/types/roadmap'
 
 const route = useRoute()
 const node = ref<RoadmapNode | null>(null)
 const loading = ref(false)
 const error = ref(false)
 const notFound = ref(false)
+const prerequisiteIds = ref<Record<string, string>>({})
+const prerequisiteResolution = ref<'resolved' | 'unavailable'>('unavailable')
 let requestSequence = 0
 
 const labels: Record<RoadmapNode['displayStatus'], string> = {
@@ -91,16 +104,34 @@ async function loadNode() {
   error.value = false
   notFound.value = false
   node.value = null
-  try {
-    const result = await roadmapApi.getNode(id)
-    if (sequence === requestSequence) node.value = result
-  } catch (cause) {
-    if (sequence !== requestSequence) return
-    if (isNotFound(cause)) notFound.value = true
+  prerequisiteIds.value = {}
+  prerequisiteResolution.value = 'unavailable'
+
+  const [nodeResult, mapResult] = await Promise.allSettled([
+    roadmapApi.getNode(id),
+    roadmapApi.getCurrentMap(),
+  ])
+  if (sequence !== requestSequence) return
+
+  if (nodeResult.status === 'rejected') {
+    if (isNotFound(nodeResult.reason)) notFound.value = true
     else error.value = true
-  } finally {
-    if (sequence === requestSequence) loading.value = false
+    loading.value = false
+    return
   }
+
+  node.value = nodeResult.value
+  if (mapResult.status === 'fulfilled' && isRoadmapMap(mapResult.value)) {
+    prerequisiteIds.value = Object.fromEntries(
+      mapResult.value.stages.flatMap((stage) => stage.nodes.map((item) => [item.code, item.id])),
+    )
+    prerequisiteResolution.value = 'resolved'
+  }
+  loading.value = false
+}
+
+function isRoadmapMap(value: unknown): value is RoadmapMap {
+  return typeof value === 'object' && value !== null && Array.isArray((value as RoadmapMap).stages)
 }
 
 watch(() => route.params.id, loadNode, { immediate: true })
@@ -120,6 +151,7 @@ watch(() => route.params.id, loadNode, { immediate: true })
 .node-content h2 { font-size: 17px; }
 .node-content ul { margin: 12px 0 0; padding-left: 20px; }
 .node-content li + li { margin-top: 6px; }
+.prerequisite-note { margin-left: 5px; color: var(--color-text-secondary); font-size: 12px; }
 .node-keywords { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 !important; list-style: none; }
 .node-keywords li { margin: 0 !important; padding: 3px 9px; border-radius: 6px; background: #eef0f4; color: #4b5563; font-size: 12px; }
 .node-state { padding: 40px; }
