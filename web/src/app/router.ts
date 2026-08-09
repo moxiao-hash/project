@@ -27,6 +27,24 @@ const router = createRouter({
           meta: { title: '工作台' },
         },
         {
+          path: 'roadmap',
+          name: 'roadmap',
+          component: () => import('@/modules/roadmap/RoadmapView.vue'),
+          meta: { title: '学习路线' },
+        },
+        {
+          path: 'roadmap/stages/:stageId',
+          name: 'roadmap-stage',
+          component: () => import('@/modules/roadmap/StageView.vue'),
+          meta: { title: '路线阶段' },
+        },
+        {
+          path: 'roadmap/nodes/:nodeId',
+          name: 'roadmap-node',
+          component: () => import('@/modules/roadmap/NodeView.vue'),
+          meta: { title: '学习节点' },
+        },
+        {
           path: 'goals',
           name: 'goals',
           component: () => import('@/modules/learning/GoalsView.vue'),
@@ -36,19 +54,19 @@ const router = createRouter({
           path: 'courses',
           name: 'courses',
           component: () => import('@/modules/course/CourseCatalogView.vue'),
-          meta: { title: '课程学习' },
+          meta: { title: '课程学习', legacy: true },
         },
         {
           path: 'courses/:slug',
           name: 'course-detail',
           component: () => import('@/modules/course/CourseDetailView.vue'),
-          meta: { title: '课程路线' },
+          meta: { title: '课程路线', legacy: true },
         },
         {
           path: 'lessons/:lessonId',
           name: 'lesson',
           component: () => import('@/modules/course/LessonView.vue'),
-          meta: { title: '课时学习' },
+          meta: { title: '课时学习', legacy: true },
         },
         {
           path: 'plans',

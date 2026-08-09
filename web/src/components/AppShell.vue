@@ -70,16 +70,14 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
     title: '总览',
     items: [
       { to: '/', icon: '📊', label: '工作台', exact: true },
-      { to: '/today', icon: '✅', label: '今日任务' },
       { to: '/notifications', icon: '🔔', label: '通知' },
     ],
   },
   {
     title: '学习',
     items: [
-      { to: '/courses', icon: '🎓', label: '课程学习' },
-      { to: '/goals', icon: '🎯', label: '学习目标' },
-      { to: '/plans', icon: '🗓️', label: '学习计划' },
+      { to: '/roadmap', icon: '🧭', label: '学习路线' },
+      { to: '/today', icon: '✅', label: '今日任务' },
       { to: '/materials', icon: '📚', label: '学习资料' },
       { to: '/mastery', icon: '📈', label: '掌握度' },
     ],
