@@ -15,6 +15,7 @@ import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
 import com.moxiao.studypilot.roadmap.domain.UserRoadmapStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeMutationService;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
@@ -43,6 +44,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -87,6 +89,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RoadmapEnrollmentServiceTest {
 
     @Autowired RoadmapEnrollmentService enrollmentService;
+    @Autowired RoadmapNodeMutationService nodeMutationService;
     @Autowired RoadmapCatalogImporter importer;
     @Autowired RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
@@ -608,21 +611,24 @@ class RoadmapEnrollmentServiceTest {
                 ownerId, "studypilot-java-ai", 1);
         List<RoadmapNodePrerequisiteEntity> edges = multiPrerequisiteEdges();
         String dependentNodeId = edges.get(0).getNodeId();
-        edges.stream().skip(2).forEach(edge ->
-                completeNode(enrollment.id(), edge.getPrerequisiteNodeId()));
-        CyclicBarrier bothPrerequisitesUpdated = new CyclicBarrier(2);
-        CountDownLatch bothRecalculationsFinished = new CountDownLatch(2);
+        assertThat(edges).hasSize(2);
+        completeEveryNodeExcept(enrollment.id(), dependentNodeId,
+                edges.get(0).getPrerequisiteNodeId(), edges.get(1).getPrerequisiteNodeId());
+        edges.forEach(edge -> prepareNodeForCompletion(
+                enrollment.id(), edge.getPrerequisiteNodeId()));
+        CyclicBarrier bothWorkersReady = new CyclicBarrier(2);
         ExecutorService executor = Executors.newFixedThreadPool(2);
 
         try {
             List<? extends Future<?>> futures = edges.stream().limit(2)
                     .map(edge -> executor.submit(() -> {
-                        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-                            completeNode(enrollment.id(), edge.getPrerequisiteNodeId());
-                            await(bothPrerequisitesUpdated);
-                            enrollmentService.recalculateAvailability(enrollment.id());
-                            bothRecalculationsFinished.countDown();
-                            awaitBriefly(bothRecalculationsFinished);
+                        TransactionTemplate repeatableRead = new TransactionTemplate(transactionManager);
+                        repeatableRead.setIsolationLevel(
+                                TransactionDefinition.ISOLATION_REPEATABLE_READ);
+                        repeatableRead.executeWithoutResult(status -> {
+                            await(bothWorkersReady);
+                            nodeMutationService.completeEligibleNode(
+                                    enrollment.id(), edge.getPrerequisiteNodeId());
                         });
                     }))
                     .toList();
@@ -639,6 +645,24 @@ class RoadmapEnrollmentServiceTest {
                         .getCompletionStatus()).isEqualTo(CompletionStatus.COMPLETED));
         assertThat(userNode(enrollment.id(), dependentNodeId).getAvailabilityStatus())
                 .isEqualTo(AvailabilityStatus.AVAILABLE);
+    }
+
+    @Test
+    void productionMutationRefusesToCompleteNodeBeforeLearningGatesPass() {
+        String ownerId = createUser("completion-gates");
+        RoadmapEnrollmentResponse enrollment = enrollmentService.enroll(
+                ownerId, "studypilot-java-ai", 1);
+        UserRoadmapNodeEntity root = userNodeRepository
+                .findAllByUserRoadmapId(enrollment.id()).stream()
+                .filter(state -> state.getAvailabilityStatus() == AvailabilityStatus.AVAILABLE)
+                .findFirst().orElseThrow();
+
+        assertThatThrownBy(() -> nodeMutationService.completeEligibleNode(
+                enrollment.id(), root.getNodeId()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("路线节点尚未满足完成条件: " + root.getNodeId());
+        assertThat(userNode(enrollment.id(), root.getNodeId()).getCompletionStatus())
+                .isEqualTo(CompletionStatus.INCOMPLETE);
     }
 
     @Test
@@ -708,12 +732,15 @@ class RoadmapEnrollmentServiceTest {
     }
 
     private List<RoadmapNodePrerequisiteEntity> multiPrerequisiteEdges() {
-        return prerequisiteRepository.findAllByTemplateId("studypilot-java-ai-v1").stream()
-                .collect(Collectors.groupingBy(RoadmapNodePrerequisiteEntity::getNodeId))
-                .values().stream()
-                .filter(edges -> edges.size() > 1)
+        String targetNodeId = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc("studypilot-java-ai-v1")
+                .stream()
+                .filter(node -> node.getNodeCode().equals("data-access-comparison"))
+                .map(RoadmapNodeEntity::getId)
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("测试目录必须包含多先修节点"));
+                .orElseThrow(() -> new AssertionError("测试目录必须包含数据访问对比节点"));
+        return prerequisiteRepository
+                .findAllByTemplateIdAndNodeId("studypilot-java-ai-v1", targetNodeId);
     }
 
     private UserRoadmapNodeEntity userNode(String enrollmentId, String nodeId) {
@@ -726,6 +753,37 @@ class RoadmapEnrollmentServiceTest {
                 SET completion_status = 'COMPLETED', availability_status = 'AVAILABLE', completed_at = ?
                 WHERE user_roadmap_id = ? AND node_id = ?
                 """, Instant.now(), enrollmentId, nodeId);
+    }
+
+    private void prepareNodeForCompletion(String enrollmentId, String nodeId) {
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE',
+                    check_in_status = 'SUBMITTED',
+                    quiz_status = 'PASSED',
+                    artifact_status = CASE
+                        WHEN artifact_status = 'NOT_REQUIRED' THEN 'NOT_REQUIRED'
+                        ELSE 'ACCEPTED'
+                    END
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollmentId, nodeId);
+    }
+
+    private void completeEveryNodeExcept(
+            String enrollmentId,
+            String firstExcludedNodeId,
+            String secondExcludedNodeId,
+            String thirdExcludedNodeId
+    ) {
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET completion_status = 'COMPLETED',
+                    availability_status = 'AVAILABLE',
+                    completed_at = ?
+                WHERE user_roadmap_id = ?
+                  AND node_id NOT IN (?, ?, ?)
+                """, Instant.now(), enrollmentId, firstExcludedNodeId,
+                secondExcludedNodeId, thirdExcludedNodeId);
     }
 
     private void makeNodeIncomplete(String enrollmentId, String nodeId) {
@@ -835,15 +893,6 @@ class RoadmapEnrollmentServiceTest {
         } catch (TimeoutException exception) {
             throw new AssertionError("并发绑定线程未在 10 秒内抵达碰撞点", exception);
         } catch (Exception exception) {
-            throw new IllegalStateException(exception);
-        }
-    }
-
-    private static void awaitBriefly(CountDownLatch latch) {
-        try {
-            latch.await(1, TimeUnit.SECONDS);
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
             throw new IllegalStateException(exception);
         }
     }

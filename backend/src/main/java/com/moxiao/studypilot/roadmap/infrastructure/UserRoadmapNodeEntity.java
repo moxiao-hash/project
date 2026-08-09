@@ -108,6 +108,23 @@ public class UserRoadmapNodeEntity {
         this.updatedAt = now;
     }
 
+    void completeAfterRequirements(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (completionStatus == CompletionStatus.COMPLETED) {
+            return;
+        }
+        if (availabilityStatus != AvailabilityStatus.AVAILABLE
+                || checkInStatus != CheckInStatus.SUBMITTED
+                || quizStatus != QuizStatus.PASSED
+                || (artifactStatus != ArtifactStatus.NOT_REQUIRED
+                && artifactStatus != ArtifactStatus.ACCEPTED)) {
+            throw new IllegalStateException("路线节点尚未满足完成条件: " + nodeId);
+        }
+        this.completionStatus = CompletionStatus.COMPLETED;
+        this.completedAt = now;
+        this.updatedAt = now;
+    }
+
     public String getId() { return id; }
     public String getUserRoadmapId() { return userRoadmapId; }
     public String getNodeId() { return nodeId; }
