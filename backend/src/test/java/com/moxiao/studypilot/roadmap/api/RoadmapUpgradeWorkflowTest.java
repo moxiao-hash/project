@@ -14,10 +14,9 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapUpgradeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.LockModeType;
 import jakarta.persistence.PersistenceContext;
-import jakarta.persistence.PessimisticLockException;
 import org.junit.jupiter.api.Test;
+import org.mockito.invocation.InvocationOnMock;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -49,6 +48,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -386,10 +386,15 @@ class RoadmapUpgradeWorkflowTest {
         var executor = Executors.newFixedThreadPool(2);
         CountDownLatch targetUpdated = new CountDownLatch(1);
         CountDownLatch allowCommit = new CountDownLatch(1);
-        CountDownLatch lockingReadReached = new CountDownLatch(1);
+        CountDownLatch lockingQueryEntered = new CountDownLatch(1);
+        CountDownLatch lockingQueryReturned = new CountDownLatch(1);
         doAnswer(invocation -> {
-            lockingReadReached.countDown();
-            return lockingPublishedVersions(invocation.getArgument(0), invocation.getArgument(1));
+            lockingQueryEntered.countDown();
+            try {
+                return delegateToActualTemplateRepository(invocation);
+            } finally {
+                lockingQueryReturned.countDown();
+            }
         }).when(templateRepository).findPublishedVersionsForUpgrade(any(), any());
         try {
             var publisher = executor.submit(() -> new TransactionTemplate(transactionManager)
@@ -410,10 +415,11 @@ class RoadmapUpgradeWorkflowTest {
                     }));
             assertThat(targetUpdated.await(5, TimeUnit.SECONDS)).isTrue();
             var preview = executor.submit(() -> upgradeService.previews(ownerId));
-            assertThat(lockingReadReached.await(5, TimeUnit.SECONDS)).isTrue();
-            assertThat(preview.isDone()).isFalse();
+            assertThat(lockingQueryEntered.await(5, TimeUnit.SECONDS)).isTrue();
+            assertThat(lockingQueryReturned.await(300, TimeUnit.MILLISECONDS)).isFalse();
             allowCommit.countDown();
             publisher.get(5, TimeUnit.SECONDS);
+            assertThat(lockingQueryReturned.await(5, TimeUnit.SECONDS)).isTrue();
             assertThat(preview.get(10, TimeUnit.SECONDS)).isEmpty();
             assertThat(upgradeRepository.countByOwnerId(ownerId)).isZero();
         } finally {
@@ -439,7 +445,7 @@ class RoadmapUpgradeWorkflowTest {
             if (calls.incrementAndGet() == 1) {
                 throw new org.springframework.dao.CannotAcquireLockException("forced first attempt");
             }
-            return lockingPublishedVersions(invocation.getArgument(0), invocation.getArgument(1));
+            return delegateToActualTemplateRepository(invocation);
         }).when(templateRepository).findPublishedVersionsForUpgrade(any(), any());
 
         TransactionTemplate outer = new TransactionTemplate(transactionManager);
@@ -477,26 +483,13 @@ class RoadmapUpgradeWorkflowTest {
         assertThat(upgradeRepository.countByOwnerId(ownerId)).isZero();
     }
 
-    private List<RoadmapTemplateEntity> lockingPublishedVersions(
-            String roadmapCode,
-            RoadmapPublicationStatus publicationStatus
-    ) {
-        try {
-            return entityManager.createQuery("""
-                            select template from RoadmapTemplateEntity template
-                            where template.roadmapCode = :roadmapCode
-                              and template.publicationStatus = :publicationStatus
-                            order by template.templateVersion desc
-                            """, RoadmapTemplateEntity.class)
-                    .setParameter("roadmapCode", roadmapCode)
-                    .setParameter("publicationStatus", publicationStatus)
-                    .setLockMode(LockModeType.PESSIMISTIC_READ)
-                    .getResultList();
-        } catch (PessimisticLockException exception) {
-            // Match Spring Data's exception translation at the repository boundary.
-            throw new org.springframework.dao.CannotAcquireLockException(
-                    "test locking read failed", exception);
-        }
+    private Object delegateToActualTemplateRepository(InvocationOnMock invocation) throws Throwable {
+        // Spring wraps JDK repository proxies with Mockito's delegatesTo answer. Calling that answer
+        // reaches the original Spring Data proxy, so repository metadata such as @Lock is exercised.
+        return mockingDetails(templateRepository)
+                .getMockCreationSettings()
+                .getDefaultAnswer()
+                .answer(invocation);
     }
 
     @Test
