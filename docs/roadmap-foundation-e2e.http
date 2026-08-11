@@ -2,11 +2,18 @@
 ###
 ### 前置条件：
 ### 1. MySQL 与 Spring Boot 已启动，Java API 地址写入 baseUrl。
-### 2. 在 IntelliJ HTTP Client 的 http-client.private.env.json 中配置：
-###      baseUrl=http://127.0.0.1:8080
-###      email=<本地测试账号>
-###      password=<本地测试密码>
-### 3. 私有环境文件不得提交 Git。本流程不接受客户端注入用户身份，也不需要内部服务令牌或模型 Key。
+### 2. 在项目根目录创建 IntelliJ HTTP Client 私有环境文件 http-client.private.env.json：
+###      {
+###        "local": {
+###          "baseUrl": "http://127.0.0.1:8080",
+###          "email": "<未绑定过路线的本地联调账号>",
+###          "password": "<本地测试密码>"
+###        }
+###      }
+### 3. 在 IDEA HTTP 请求编辑器顶部选择 local 环境，再从上到下执行请求。
+### 4. 私有环境文件已被根目录 .gitignore 忽略。本流程不接受客户端注入用户身份，
+###    也不需要内部服务令牌或模型 Key。
+### 5. 第 5 步验证新绑定路线的初始状态；请使用尚未推进过 Roadmap 的专用联调账号。
 ###
 ### 从上到下逐条执行。每个响应处理器都会验证关键契约并保存下一步所需变量。
 
@@ -78,17 +85,38 @@ Authorization: Bearer {{accessToken}}
   });
 %}
 
-### 5. 读取一个节点
+### 5. 读取首个根节点并验证完整初始状态契约
 GET {{baseUrl}}/api/roadmaps/current/nodes/{{nodeId}}
 Authorization: Bearer {{accessToken}}
 
 > {%
-  client.test("节点详情包含学习与完成状态", function () {
+  client.test("根节点详情符合完整初始状态契约", function () {
     client.assert(response.status === 200, "节点查询应返回 200");
     client.assert(response.body.id === client.global.get("nodeId"), "节点 ID 应匹配");
-    client.assert(Boolean(response.body.availabilityStatus), "应返回可用性状态");
-    client.assert(Boolean(response.body.completionStatus), "应返回完成状态");
-    client.assert(Boolean(response.body.displayStatus), "应返回展示状态");
+    client.assert(["LOCKED", "AVAILABLE"].includes(response.body.availabilityStatus),
+      "availabilityStatus 必须是已定义枚举");
+    client.assert(["NOT_STARTED", "SCHEDULED", "IN_PROGRESS"].includes(response.body.learningStatus),
+      "learningStatus 必须是已定义枚举");
+    client.assert(["MISSING", "SUBMITTED"].includes(response.body.checkInStatus),
+      "checkInStatus 必须是已定义枚举");
+    client.assert(["NOT_GENERATED", "GENERATING", "READY", "EVALUATING", "PASSED", "FAILED",
+      "PARTIALLY_GRADED"].includes(response.body.quizStatus), "quizStatus 必须是已定义枚举");
+    client.assert(["NOT_REQUIRED", "MISSING", "SUBMITTED", "ACCEPTED", "REJECTED"]
+      .includes(response.body.artifactStatus), "artifactStatus 必须是已定义枚举");
+    client.assert(["INCOMPLETE", "COMPLETED"].includes(response.body.completionStatus),
+      "completionStatus 必须是已定义枚举");
+    client.assert(["COMPLETED", "LOCKED", "REVIEW_REQUIRED", "QUIZ_PENDING", "AVAILABLE",
+      "SCHEDULED", "IN_PROGRESS"].includes(response.body.displayStatus),
+      "displayStatus 必须是已定义枚举");
+
+    client.assert(response.body.code === "java-syntax-oop", "首节点编码应稳定");
+    client.assert(response.body.availabilityStatus === "AVAILABLE", "无前置依赖的首节点应可学习");
+    client.assert(response.body.learningStatus === "NOT_STARTED", "首节点初始时尚未开始");
+    client.assert(response.body.checkInStatus === "MISSING", "首节点初始时尚未打卡");
+    client.assert(response.body.quizStatus === "NOT_GENERATED", "首节点初始时尚未生成测验");
+    client.assert(response.body.artifactStatus === "MISSING", "首节点要求成果且初始时尚未提交");
+    client.assert(response.body.completionStatus === "INCOMPLETE", "首节点初始时尚未完成");
+    client.assert(response.body.displayStatus === "AVAILABLE", "首节点初始展示状态应为可学习");
   });
 %}
 
