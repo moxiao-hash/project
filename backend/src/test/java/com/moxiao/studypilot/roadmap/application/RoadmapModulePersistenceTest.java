@@ -9,6 +9,7 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,17 +46,19 @@ class RoadmapModulePersistenceTest {
     @Autowired
     private RoadmapModuleJpaRepository moduleRepository;
 
+    private SingleConnectionDataSource migratedDataSource;
     private JdbcTemplate migratedJdbc;
 
     @BeforeEach
     void createSchemaFromMigrations() {
-        DataSource dataSource = new SingleConnectionDataSource(
+        migratedDataSource = new SingleConnectionDataSource(
                 "jdbc:h2:mem:roadmap_modules_" + UUID.randomUUID()
-                        + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1",
+                        + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE",
                 "sa",
                 "",
                 true
         );
+        DataSource dataSource = migratedDataSource;
         migratedJdbc = new JdbcTemplate(dataSource);
         migratedJdbc.execute("CREATE TABLE app_users (id VARCHAR(36) PRIMARY KEY)");
         migratedJdbc.execute("CREATE TABLE lessons (id VARCHAR(80) PRIMARY KEY)");
@@ -69,6 +72,11 @@ class RoadmapModulePersistenceTest {
         insertStage("stage-v1", V1_TEMPLATE_ID, 1);
         insertStage("stage-v2-a", V2_TEMPLATE_ID, 1);
         insertStage("stage-v2-b", V2_TEMPLATE_ID, 2);
+    }
+
+    @AfterEach
+    void closeMigratedDataSource() {
+        migratedDataSource.destroy();
     }
 
     @Test
@@ -138,6 +146,15 @@ class RoadmapModulePersistenceTest {
 
         assertThatNullPointerException().isThrownBy(() -> v2Node(null));
         assertThat(v2Node("module-v2").getModuleId()).isEqualTo("module-v2");
+    }
+
+    @Test
+    void v2NodesCannotReferenceAModuleFromAnotherStage() {
+        insertModule("stage-a-module", V2_TEMPLATE_ID, "stage-v2-a", "basics", 1);
+
+        assertThatThrownBy(() -> insertNode(
+                "stage-b-node", V2_TEMPLATE_ID, "stage-v2-b", "stage-a-module"
+        )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test

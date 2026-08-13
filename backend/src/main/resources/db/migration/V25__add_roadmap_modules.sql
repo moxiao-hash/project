@@ -10,7 +10,7 @@ CREATE TABLE roadmap_modules (
         REFERENCES roadmap_templates (id),
     CONSTRAINT fk_roadmap_modules_stage_scope FOREIGN KEY (stage_id, template_id)
         REFERENCES roadmap_stages (id, template_id),
-    CONSTRAINT uk_roadmap_module_template_scope UNIQUE (id, template_id),
+    CONSTRAINT uk_roadmap_module_stage_scope UNIQUE (id, template_id, stage_id),
     CONSTRAINT uk_roadmap_module_code UNIQUE (template_id, module_code),
     CONSTRAINT uk_roadmap_module_order UNIQUE (stage_id, module_order)
 );
@@ -18,8 +18,8 @@ CREATE TABLE roadmap_modules (
 ALTER TABLE roadmap_nodes ADD COLUMN module_id VARCHAR(100);
 
 ALTER TABLE roadmap_nodes
-    ADD CONSTRAINT fk_roadmap_nodes_module_scope FOREIGN KEY (module_id, template_id)
-        REFERENCES roadmap_modules (id, template_id);
+    ADD CONSTRAINT fk_roadmap_nodes_module_scope FOREIGN KEY (module_id, template_id, stage_id)
+        REFERENCES roadmap_modules (id, template_id, stage_id);
 
 ALTER TABLE roadmap_nodes
     ADD CONSTRAINT ck_roadmap_nodes_v2_module_required CHECK (
