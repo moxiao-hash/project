@@ -144,12 +144,66 @@ class RoadmapV2CatalogContentTest {
                 Pattern.compile("解释.*的行为，并用.*验证关键边界"),
                 Pattern.compile("的核心机制"), Pattern.compile("的工程取舍"),
                 Pattern.compile("混淆.*的职责，导致实现偏离契约"),
-                Pattern.compile("忽略.*的边界条件"), Pattern.compile("辨析.*的适用场景"));
+                Pattern.compile("忽略.*的边界条件"), Pattern.compile("辨析.*的适用场景"),
+                Pattern.compile("语法、生命周期与典型调用链"),
+                Pattern.compile("故障定位、边界处理及测试策略"),
+                Pattern.compile("用于不匹配的场景"), Pattern.compile("只覆盖.*成功路径"),
+                Pattern.compile("official documentation|troubleshooting|example test"),
+                Pattern.compile("给定代码判断.*执行结果"), Pattern.compile("选择.*正确配置或 API"),
+                Pattern.compile("定位一段示例中的.*缺陷"), Pattern.compile("比较.*两种实现并选择方案"),
+                Pattern.compile("设计一个可判定通过或失败的测试"),
+                Pattern.compile("关键配置与数据流|失败信号与保护措施|完成最小闭环"),
+                Pattern.compile("故障日志根因|方案约束比较|边界用例设计|真实输入输出"));
         for (JsonNode node : nodes()) {
             String content = node.toString();
             forbidden.forEach(pattern -> assertThat(pattern.matcher(content).find())
                     .as("%s must not match %s", node.get("code").asString(), pattern).isFalse());
         }
+    }
+
+    @Test
+    void representativeGuidanceNamesConcreteBehaviorsAndFailureSymptomsAcrossEveryStage() {
+        assertTerms("variables-types-conversion", "溢出", "ClassCastException");
+        assertTerms("string-content-comparison", "==", "equals");
+        assertTerms("stream-optional", "惰性", "NoSuchElementException");
+        assertTerms("spring-boot-layering", "启动失败", "ConditionEvaluationReport");
+        assertTerms("spring-dto-validation", "漏加 @Valid", "400");
+        assertTerms("spring-files-upload", "目录穿越", "normalize");
+        assertTerms("mysql-schema-types", "DECIMAL", "隐式转换");
+        assertTerms("mysql-index-basics", "EXPLAIN", "type", "rows");
+        assertTerms("jpa-core", "N+1", "EntityGraph");
+        assertTerms("redis-data-structures", "TTL", "内存淘汰");
+        assertTerms("spring-security-authentication", "401", "403");
+        assertTerms("performance-profiling", "JFR", "火焰图");
+        assertTerms("vue-ts-basics", "ref", "reactive");
+        assertTerms("frontend-api-integration", "CORS", "拦截器");
+        assertTerms("docker-delivery", "HEALTHCHECK", "多阶段构建");
+        assertTerms("python-engineering", "venv", "pyproject.toml");
+        assertTerms("fastapi-routing-dependencies", "Depends", "dependency_overrides");
+        assertTerms("python-async-http", "event loop", "TimeoutException");
+        assertTerms("llm-api-basics", "temperature", "finish_reason");
+        assertTerms("structured-output", "JSON Schema", "解析失败");
+        assertTerms("model-cost-retry", "429", "Retry-After");
+        assertTerms("model-observability", "TTFT", "token");
+        assertTerms("llm-security", "提示注入", "数据泄露");
+        assertTerms("langgraph-state", "StateGraph", "reducer");
+        assertTerms("human-in-loop", "interrupt", "resume");
+        assertTerms("mcp", "tools/list", "tools/call");
+        assertTerms("document-parsing", "乱码", "页码");
+        assertTerms("embedding-qdrant", "collection", "payload filter");
+        assertTerms("retrieval-evaluation", "Recall@k", "MRR");
+        assertTerms("business-tool-contracts", "副作用", "幂等键");
+        assertTerms("authorization-governance", "RBAC", "ABAC");
+        assertTerms("business-agent-recovery", "补偿", "死信");
+        assertTerms("repo-read-search", "rg", ".gitignore");
+        assertTerms("patch-diff", "hunk", "上下文行");
+        assertTerms("playwright-dom", "locator", "strict mode");
+        assertTerms("runner-sandbox", "OOM", "超时");
+        assertTerms("secret-redaction", "熵", "误报");
+        assertTerms("network-firewall", "SSRF", "DNS rebinding");
+        assertTerms("release-strategy", "金丝雀", "错误率");
+        assertTerms("rollback-drill", "RTO", "RPO");
+        assertTerms("release-e2e", "回滚", "SLO");
     }
 
     @Test
