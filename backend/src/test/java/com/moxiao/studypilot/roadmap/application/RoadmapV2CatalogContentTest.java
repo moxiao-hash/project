@@ -153,11 +153,63 @@ class RoadmapV2CatalogContentTest {
                 Pattern.compile("定位一段示例中的.*缺陷"), Pattern.compile("比较.*两种实现并选择方案"),
                 Pattern.compile("设计一个可判定通过或失败的测试"),
                 Pattern.compile("关键配置与数据流|失败信号与保护措施|完成最小闭环"),
-                Pattern.compile("故障日志根因|方案约束比较|边界用例设计|真实输入输出"));
+                Pattern.compile("故障日志根因|方案约束比较|边界用例设计|真实输入输出"),
+                Pattern.compile("联用.*构成端到端示例"), Pattern.compile("根据日志复现问题"),
+                Pattern.compile("关键参数、执行顺序与数据变化"),
+                Pattern.compile("异常表现、恢复路径与观测点"), Pattern.compile("初始化或参数遗漏"),
+                Pattern.compile("没有验证.*生产环境重复失败"),
+                Pattern.compile("参数默认值对输出的影响|调用顺序与中间状态推演"),
+                Pattern.compile("异常日志与根因定位|不同方案的约束与代价|边界输入和预期断言"));
         for (JsonNode node : nodes()) {
             String content = node.toString();
             forbidden.forEach(pattern -> assertThat(pattern.matcher(content).find())
                     .as("%s must not match %s", node.get("code").asString(), pattern).isFalse());
+        }
+    }
+
+    @Test
+    void everyQuizEntryIsACompleteQuestionOrExecutableTask() {
+        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|列出");
+        for (JsonNode node : nodes()) {
+            for (JsonNode quiz : node.get("quizBlueprint")) {
+                assertThat(quiz.asString().length()).as(node.get("code").asString()).isGreaterThanOrEqualTo(12);
+                assertThat(action.matcher(quiz.asString()).find()).as(node.get("code").asString()).isTrue();
+            }
+        }
+    }
+
+    @Test
+    void everyPreviouslyTemplatedNodeContainsItsOwnSubjectMatter() {
+        Map<String, List<String>> terms = Map.ofEntries(
+                Map.entry("exceptions-custom", List.of("异常链", "cause")), Map.entry("files-nio-streams", List.of("Path", "UTF-8")),
+                Map.entry("record-sealed-maven-junit-checkstyle", List.of("sealed", "mvn verify")), Map.entry("spring-scheduling", List.of("cron", "幂等")),
+                Map.entry("spring-testing-slices", List.of("WebMvcTest", "DataJpaTest")), Map.entry("spring-module-project", List.of("MockMvc", "ProblemDetail")),
+                Map.entry("mysql-transactions-locks", List.of("MVCC", "死锁")), Map.entry("jdbc-transactions", List.of("PreparedStatement", "rollback")),
+                Map.entry("redis-data-structures", List.of("ZSET", "TTL")), Map.entry("spring-security-authentication", List.of("401", "403")),
+                Map.entry("cache-security-project", List.of("JWT", "Cache Aside")), Map.entry("performance-profiling", List.of("JFR", "火焰图")),
+                Map.entry("backend-quality-gate", List.of("JaCoCo", "SLO")), Map.entry("frontend-form-validation", List.of("aria-describedby", "重复提交")),
+                Map.entry("git-workflow", List.of("rebase", "冲突")), Map.entry("linux-nginx", List.of("systemd", "proxy_pass")),
+                Map.entry("frontend-delivery-project", List.of("Cypress", "docker compose")), Map.entry("python-data-structures", List.of("生成器", "StopIteration")),
+                Map.entry("python-errors-files", List.of("with", "pathlib")), Map.entry("fastapi-integration-project", List.of("OpenAPI", "correlationId")),
+                Map.entry("llm-foundations-project", List.of("JSON Schema", "finish_reason")), Map.entry("model-engineering-project", List.of("Retry-After", "TTFT")),
+                Map.entry("langgraph-agent-project", List.of("checkpoint", "interrupt")), Map.entry("tool-contract-validation", List.of("JSON Schema", "timeout")),
+                Map.entry("tool-permission-audit", List.of("allowlist", "审计")), Map.entry("mcp-governance-project", List.of("tools/list", "tools/call")),
+                Map.entry("chunking-metadata", List.of("overlap", "metadata")), Map.entry("rag-retrieval-project", List.of("Qdrant", "Recall@k")),
+                Map.entry("retrieval-evaluation", List.of("MRR", "nDCG")), Map.entry("search-assessment-project", List.of("citation", "拒答")),
+                Map.entry("business-tools-project", List.of("dry-run", "ABAC")), Map.entry("business-agent-planning", List.of("DAG", "预算")),
+                Map.entry("code-context-planning", List.of("调用链", "验收条件")), Map.entry("repository-agent-project", List.of("rg", "git diff --check")),
+                Map.entry("runner-policy-engine", List.of("AST", "allowlist")), Map.entry("runner-security-project", List.of("seccomp", "SSRF")),
+                Map.entry("string-content-comparison", List.of("==", "equals")));
+        assertThat(terms).hasSize(37);
+        terms.forEach((code, expected) -> assertTerms(code, expected.toArray(String[]::new)));
+    }
+
+    @Test
+    void teachingSentencesAreNeverSharedAcrossNodes() {
+        for (String field : List.of("objectives", "highFrequency", "commonMistakes", "quizBlueprint")) {
+            List<String> sentences = nodes().stream().flatMap(node -> stream(node.get(field)).stream())
+                    .map(JsonNode::asString).toList();
+            assertThat(sentences).as(field).doesNotHaveDuplicates();
         }
     }
 
