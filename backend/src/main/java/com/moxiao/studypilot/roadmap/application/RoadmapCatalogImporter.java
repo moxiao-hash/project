@@ -8,6 +8,8 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
@@ -36,14 +38,23 @@ import java.util.function.UnaryOperator;
 @Component
 public class RoadmapCatalogImporter {
 
-    private static final String CATALOG_PATH = "roadmaps/studypilot-java-ai-v1.json";
     private static final String ROADMAP_CODE = "studypilot-java-ai";
-    private static final int VERSION = 1;
+    private static final List<String> V2_MODULE_CODES = List.of(
+            "java-language-start", "java-oop-foundations", "java-core-collections", "java-modern-engineering",
+            "spring-business-backend", "mysql-foundations", "java-persistence", "cache-security",
+            "backend-quality", "frontend-delivery", "python-engineering", "fastapi-integration",
+            "llm-foundations", "model-engineering", "langgraph-agent", "tool-governance-mcp",
+            "rag-retrieval", "search-assessment", "business-tools", "business-agent-loop",
+            "repository-agent", "developer-automation", "runner-security", "release-recovery");
+    private static final List<CatalogDefinition> CATALOGS = List.of(
+            new CatalogDefinition("roadmaps/studypilot-java-ai-v1.json", 1, List.of(), 64, 79, 60, 120, 30, 120),
+            new CatalogDefinition("roadmaps/studypilot-java-ai-v2.json", 2, V2_MODULE_CODES, 125, 124, 30, 60, 15, 60));
 
     private final RoadmapTemplateJpaRepository templateRepository;
     private final RoadmapStageJpaRepository stageRepository;
     private final RoadmapNodeJpaRepository nodeRepository;
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    private final RoadmapModuleJpaRepository moduleRepository;
     private final LessonJpaRepository lessonRepository;
     private final LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
     private final ObjectMapper objectMapper;
@@ -58,14 +69,15 @@ public class RoadmapCatalogImporter {
             RoadmapStageJpaRepository stageRepository,
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            RoadmapModuleJpaRepository moduleRepository,
             LessonJpaRepository lessonRepository,
             LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
     ) {
-        this(templateRepository, stageRepository, nodeRepository, prerequisiteRepository,
+        this(templateRepository, stageRepository, nodeRepository, prerequisiteRepository, moduleRepository,
                 lessonRepository, legacyMappingRepository,
-                objectMapper, transactionManager, () -> { }, UnaryOperator.identity());
+                objectMapper, transactionManager, () -> { }, UnaryOperator.identity(), CATALOGS);
     }
 
     RoadmapCatalogImporter(
@@ -80,10 +92,30 @@ public class RoadmapCatalogImporter {
             Runnable beforeInsert,
             UnaryOperator<String> checksumTransform
     ) {
+        this(templateRepository, stageRepository, nodeRepository, prerequisiteRepository, null,
+                lessonRepository, legacyMappingRepository, objectMapper, transactionManager,
+                beforeInsert, checksumTransform, List.of(CATALOGS.get(0)));
+    }
+
+    RoadmapCatalogImporter(
+            RoadmapTemplateJpaRepository templateRepository,
+            RoadmapStageJpaRepository stageRepository,
+            RoadmapNodeJpaRepository nodeRepository,
+            RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            RoadmapModuleJpaRepository moduleRepository,
+            LessonJpaRepository lessonRepository,
+            LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager,
+            Runnable beforeInsert,
+            UnaryOperator<String> checksumTransform,
+            List<CatalogDefinition> definitions
+    ) {
         this.templateRepository = templateRepository;
         this.stageRepository = stageRepository;
         this.nodeRepository = nodeRepository;
         this.prerequisiteRepository = prerequisiteRepository;
+        this.moduleRepository = moduleRepository;
         this.lessonRepository = lessonRepository;
         this.legacyMappingRepository = legacyMappingRepository;
         this.objectMapper = objectMapper;
@@ -91,16 +123,20 @@ public class RoadmapCatalogImporter {
         this.transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.beforeInsert = beforeInsert;
         this.checksumTransform = checksumTransform;
+        this.definitions = List.copyOf(definitions);
     }
 
-    public void importCatalog() {
-        ParsedCatalog parsed = readCatalog();
-        validateCatalog(parsed.catalog());
+    private final List<CatalogDefinition> definitions;
 
-        try {
-            transactionTemplate.executeWithoutResult(status -> importInTransaction(parsed));
-        } catch (ConcurrentTemplateInsertException collision) {
-            recoverConcurrentInsert(parsed, collision);
+    public void importCatalog() {
+        for (CatalogDefinition definition : definitions) {
+            ParsedCatalog parsed = readCatalog(definition);
+            validateCatalog(parsed.catalog(), definition);
+            try {
+                transactionTemplate.executeWithoutResult(status -> importInTransaction(parsed));
+            } catch (ConcurrentTemplateInsertException collision) {
+                recoverConcurrentInsert(parsed, collision);
+            }
         }
     }
 
@@ -144,8 +180,8 @@ public class RoadmapCatalogImporter {
         }
     }
 
-    private ParsedCatalog readCatalog() {
-        try (var input = new ClassPathResource(CATALOG_PATH).getInputStream()) {
+    private ParsedCatalog readCatalog(CatalogDefinition definition) {
+        try (var input = new ClassPathResource(definition.path()).getInputStream()) {
             JsonNode root = objectMapper.readTree(input);
             Catalog catalog = objectMapper.treeToValue(root, Catalog.class);
             String checksum = RoadmapCatalogChecksum.sha256(objectMapper, root);
@@ -155,12 +191,12 @@ public class RoadmapCatalogImporter {
         }
     }
 
-    private void validateCatalog(Catalog catalog) {
+    private void validateCatalog(Catalog catalog, CatalogDefinition definition) {
         if (catalog == null) {
             throw new IllegalArgumentException("路线目录不能为空");
         }
         require(ROADMAP_CODE.equals(catalog.roadmapCode()), "roadmapCode 必须为 " + ROADMAP_CODE);
-        require(catalog.version() == VERSION, "version 必须为 1");
+        require(catalog.version() == definition.version(), "version 必须为 " + definition.version());
         require("StudyPilot Java + AI 学习路线".equals(catalog.title()), "路线标题不正确");
         require(catalog.publicationStatus() == RoadmapPublicationStatus.PUBLISHED, "路线必须为 PUBLISHED");
         requireText(catalog.description(), "description");
@@ -171,6 +207,8 @@ public class RoadmapCatalogImporter {
         Set<String> nodeCodes = new HashSet<>();
         List<RoadmapCatalogValidator.Node> graphNodes = new ArrayList<>();
         int edgeCount = 0;
+        int moduleCount = 0;
+        List<String> moduleCodes = new ArrayList<>();
 
         for (Stage stage : catalog.stages()) {
             require(stage != null, "stage 不能为空");
@@ -181,19 +219,27 @@ public class RoadmapCatalogImporter {
             requireText(stage.title(), "stage title");
             requireText(stage.description(), "stage description");
             requireText(stage.graduationProjectTitle(), "graduationProjectTitle");
-            require(stage.nodes() != null && !stage.nodes().isEmpty(), "stage nodes 不能为空: " + stage.stageCode());
+            List<Node> stageNodes = nodesOf(stage);
+            require(!stageNodes.isEmpty(), "stage nodes 不能为空: " + stage.stageCode());
+
+            if (!definition.moduleCodes().isEmpty()) validateModules(stage);
+            moduleCount += stage.modules() == null ? 0 : stage.modules().size();
+            if (stage.modules() != null) stage.modules().forEach(module -> moduleCodes.add(module.moduleCode()));
 
             Set<Integer> nodeOrders = new HashSet<>();
-            for (Node node : stage.nodes()) {
-                validateNode(node, nodeOrders);
+            for (Node node : stageNodes) {
+                validateNode(node, nodeOrders, definition);
                 require(nodeCodes.add(node.code()), "node code 重复: " + node.code());
                 graphNodes.add(new RoadmapCatalogValidator.Node(node.code(), node.prerequisites()));
                 edgeCount += node.prerequisites().size();
             }
         }
 
-        require(nodeCodes.size() == 64, "路线必须包含 64 个 node");
-        require(edgeCount == 79, "路线必须包含 79 条 prerequisite");
+        require(nodeCodes.size() == definition.nodeCount(), "路线必须包含 " + definition.nodeCount() + " 个 node");
+        require(moduleCount == definition.moduleCodes().size(),
+                "路线必须包含 " + definition.moduleCodes().size() + " 个 module");
+        require(moduleCodes.equals(definition.moduleCodes()), "module code 或顺序不正确");
+        require(edgeCount == definition.edgeCount(), "路线必须包含 " + definition.edgeCount() + " 条 prerequisite");
         graphValidator.validate(graphNodes);
 
         require(catalog.legacyLessonMappings() != null && !catalog.legacyLessonMappings().isEmpty(),
@@ -208,10 +254,10 @@ public class RoadmapCatalogImporter {
         }
     }
 
-    private void validateNode(Node node, Set<Integer> nodeOrders) {
+    private void validateNode(Node node, Set<Integer> nodeOrders, CatalogDefinition definition) {
         require(node != null, "node 不能为空");
         requireText(node.code(), "node code");
-        require(node.nodeOrder() > 0 && nodeOrders.add(node.nodeOrder()),
+        require(node.nodeOrder() > 0 && (nodeOrders == null || nodeOrders.add(node.nodeOrder())),
                 "node order 无效或重复: " + node.nodeOrder());
         requireText(node.title(), "node title");
         requireTextList(node.objectives(), "objectives", node.code());
@@ -225,9 +271,11 @@ public class RoadmapCatalogImporter {
         require(node.quizBlueprint() != null && node.quizBlueprint().size() == 5,
                 "quizBlueprint 必须精确包含 5 项: " + node.code());
         requireTextList(node.quizBlueprint(), "quizBlueprint", node.code());
-        require(node.estimatedMinutes() >= 60 && node.estimatedMinutes() <= 120,
+        require(node.estimatedMinutes() >= definition.minimumEstimatedMinutes()
+                        && node.estimatedMinutes() <= definition.maximumEstimatedMinutes(),
                 "estimatedMinutes 超出范围: " + node.code());
-        require(node.practiceMinutes() >= 30 && node.practiceMinutes() <= 120,
+        require(node.practiceMinutes() >= definition.minimumPracticeMinutes()
+                        && node.practiceMinutes() <= definition.maximumPracticeMinutes(),
                 "practiceMinutes 超出范围: " + node.code());
         require(Set.of("EASY", "MEDIUM", "HARD").contains(node.difficulty()),
                 "difficulty 无效: " + node.code());
@@ -260,18 +308,37 @@ public class RoadmapCatalogImporter {
 
         for (Stage stage : catalog.stages()) {
             String stageId = templateId + "-" + stage.stageCode();
-            for (Node node : stage.nodes()) {
-                nodeRepository.save(new RoadmapNodeEntity(
-                        nodeId(templateId, node.code()), templateId, stageId, node.code(), node.nodeOrder(),
-                        node.title(), writeJson(node.objectives()), writeJson(node.highFrequency()),
-                        writeJson(node.commonMistakes()), writeJson(node.searchKeywords()),
-                        writeJson(node.artifactRequirement()), writeJson(node.quizBlueprint()),
-                        node.estimatedMinutes(), node.practiceMinutes(), node.difficulty(), node.required()));
+            if (stage.modules() != null) {
+                for (Module module : stage.modules()) {
+                    moduleRepository.save(new RoadmapModuleEntity(
+                            moduleId(templateId, module.moduleCode()), templateId, stageId,
+                            module.moduleCode(), module.moduleOrder(), module.title(), module.description()));
+                }
             }
         }
 
         for (Stage stage : catalog.stages()) {
-            for (Node node : stage.nodes()) {
+            String stageId = templateId + "-" + stage.stageCode();
+            for (Node node : nodesOf(stage)) {
+                String moduleId = moduleForNode(templateId, stage, node);
+                RoadmapNodeEntity entity = moduleId == null ? new RoadmapNodeEntity(
+                        nodeId(templateId, node.code()), templateId, stageId, node.code(), node.nodeOrder(),
+                        node.title(), writeJson(node.objectives()), writeJson(node.highFrequency()),
+                        writeJson(node.commonMistakes()), writeJson(node.searchKeywords()),
+                        writeJson(node.artifactRequirement()), writeJson(node.quizBlueprint()),
+                        node.estimatedMinutes(), node.practiceMinutes(), node.difficulty(), node.required())
+                        : new RoadmapNodeEntity(
+                        nodeId(templateId, node.code()), templateId, stageId, moduleId, node.code(), node.nodeOrder(),
+                        node.title(), writeJson(node.objectives()), writeJson(node.highFrequency()),
+                        writeJson(node.commonMistakes()), writeJson(node.searchKeywords()),
+                        writeJson(node.artifactRequirement()), writeJson(node.quizBlueprint()),
+                        node.estimatedMinutes(), node.practiceMinutes(), node.difficulty(), node.required());
+                nodeRepository.save(entity);
+            }
+        }
+
+        for (Stage stage : catalog.stages()) {
+            for (Node node : nodesOf(stage)) {
                 String nodeId = nodeId(templateId, node.code());
                 for (String prerequisite : node.prerequisites()) {
                     String prerequisiteNodeId = nodeId(templateId, prerequisite);
@@ -329,6 +396,49 @@ public class RoadmapCatalogImporter {
         return templateId + "-" + nodeCode;
     }
 
+    private static String moduleId(String templateId, String moduleCode) {
+        return templateId + "-" + moduleCode;
+    }
+
+    private static List<Node> nodesOf(Stage stage) {
+        if (stage.modules() != null) {
+            return stage.modules().stream().flatMap(module -> module.nodes().stream()).toList();
+        }
+        return stage.nodes() == null ? List.of() : stage.nodes();
+    }
+
+    private static String moduleForNode(String templateId, Stage stage, Node node) {
+        if (stage.modules() == null) return null;
+        return stage.modules().stream().filter(module -> module.nodes().contains(node))
+                .map(module -> moduleId(templateId, module.moduleCode())).findFirst().orElseThrow();
+    }
+
+    private void validateModules(Stage stage) {
+        require(stage.nodes() == null, "V2 node 必须归属于 module: " + stage.stageCode());
+        require(stage.modules() != null && !stage.modules().isEmpty(), "stage modules 不能为空: " + stage.stageCode());
+        Set<String> moduleCodes = new HashSet<>();
+        Set<Integer> moduleOrders = new HashSet<>();
+        for (int index = 0; index < stage.modules().size(); index++) {
+            Module module = stage.modules().get(index);
+            requireText(module.moduleCode(), "moduleCode");
+            require(moduleCodes.add(module.moduleCode()), "moduleCode 重复: " + module.moduleCode());
+            require(module.moduleOrder() == index + 1 && moduleOrders.add(module.moduleOrder()),
+                    "module order 无效: " + module.moduleCode());
+            requireText(module.title(), "module title");
+            requireText(module.description(), "module description");
+            require(module.nodes() != null && !module.nodes().isEmpty(), "module nodes 不能为空: " + module.moduleCode());
+            for (int nodeIndex = 0; nodeIndex < module.nodes().size(); nodeIndex++) {
+                Node node = module.nodes().get(nodeIndex);
+                boolean milestone = nodeIndex == module.nodes().size() - 1;
+                require(node.artifactRequirement() != null
+                                && node.artifactRequirement().required() == milestone,
+                        "module 仅最后 node 可为 milestone: " + node.code());
+                require((milestone ? "AI_RUBRIC" : "PRESENCE").equals(node.artifactRequirement().evaluationMode()),
+                        "milestone evaluationMode 无效: " + node.code());
+            }
+        }
+    }
+
     private static void require(boolean condition, String message) {
         if (!condition) {
             throw new IllegalArgumentException(message);
@@ -365,9 +475,12 @@ public class RoadmapCatalogImporter {
             String title,
             String description,
             String graduationProjectTitle,
-            List<Node> nodes
+            List<Node> nodes,
+            List<Module> modules
     ) {
     }
+
+    private record Module(String moduleCode, int moduleOrder, String title, String description, List<Node> nodes) { }
 
     private record Node(
             String code,
@@ -392,6 +505,10 @@ public class RoadmapCatalogImporter {
 
     private record LegacyLessonMapping(String lessonId, String nodeCode) {
     }
+
+    record CatalogDefinition(String path, int version, List<String> moduleCodes, int nodeCount, int edgeCount,
+                             int minimumEstimatedMinutes, int maximumEstimatedMinutes,
+                             int minimumPracticeMinutes, int maximumPracticeMinutes) { }
 
     private static final class ConcurrentTemplateInsertException extends RuntimeException {
         private final DataIntegrityViolationException integrityViolation;

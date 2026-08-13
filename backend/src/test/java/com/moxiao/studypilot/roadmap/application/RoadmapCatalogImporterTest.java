@@ -6,6 +6,7 @@ import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
@@ -29,6 +30,7 @@ class RoadmapCatalogImporterTest {
     @Autowired RoadmapStageJpaRepository stageRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
     @Autowired RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    @Autowired RoadmapModuleJpaRepository moduleRepository;
     @Autowired LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
 
     @BeforeEach
@@ -36,6 +38,7 @@ class RoadmapCatalogImporterTest {
         legacyMappingRepository.deleteAll();
         prerequisiteRepository.deleteAll();
         nodeRepository.deleteAll();
+        moduleRepository.deleteAll();
         stageRepository.deleteAll();
         templateRepository.deleteAll();
         courseCatalogImporter.importCatalog();
@@ -52,11 +55,12 @@ class RoadmapCatalogImporterTest {
 
         importer.importCatalog();
 
-        assertThat(templateRepository.count()).isEqualTo(templatesAfterFirstImport).isEqualTo(1);
-        assertThat(stageRepository.count()).isEqualTo(stagesAfterFirstImport).isEqualTo(12);
-        assertThat(nodeRepository.count()).isEqualTo(nodesAfterFirstImport).isEqualTo(64);
-        assertThat(prerequisiteRepository.count()).isEqualTo(prerequisitesAfterFirstImport).isEqualTo(79);
-        assertThat(legacyMappingRepository.count()).isEqualTo(1);
+        assertThat(templateRepository.count()).isEqualTo(templatesAfterFirstImport).isEqualTo(2);
+        assertThat(stageRepository.count()).isEqualTo(stagesAfterFirstImport).isEqualTo(24);
+        assertThat(moduleRepository.count()).isEqualTo(24);
+        assertThat(nodeRepository.count()).isEqualTo(nodesAfterFirstImport).isEqualTo(189);
+        assertThat(prerequisiteRepository.count()).isEqualTo(prerequisitesAfterFirstImport).isGreaterThan(79);
+        assertThat(legacyMappingRepository.count()).isEqualTo(2);
         assertThat(legacyMappingRepository.findByLessonIdAndTemplateId(
                 "lesson-rest-controller", "studypilot-java-ai-v1"))
                 .get().satisfies(mapping -> assertThat(mapping.getNodeId())
@@ -67,6 +71,9 @@ class RoadmapCatalogImporterTest {
                 .orElseThrow();
         assertThat(template.getPublicationStatus()).isEqualTo(RoadmapPublicationStatus.PUBLISHED);
         assertThat(template.getTitle()).isEqualTo("StudyPilot Java + AI 学习路线");
+        assertThat(templateRepository.findByRoadmapCodeAndTemplateVersion("studypilot-java-ai", 2)).isPresent();
+        assertThat(nodeRepository.findAllByTemplateIdOrderByStageIdAscNodeOrderAsc("studypilot-java-ai-v2"))
+                .hasSize(125).allSatisfy(node -> assertThat(node.getModuleId()).isNotBlank());
     }
 
     @Test

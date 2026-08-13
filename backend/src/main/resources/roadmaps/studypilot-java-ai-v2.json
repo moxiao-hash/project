@@ -1,0 +1,5438 @@
+{
+  "roadmapCode": "studypilot-java-ai",
+  "version": 2,
+  "title": "StudyPilot Java + AI 学习路线",
+  "description": "面向 Java 全栈开发者的细粒度 AI 工程路线，从语言基础逐步推进到 RAG、业务 Agent、开发者 Agent 与安全发布。",
+  "publicationStatus": "PUBLISHED",
+  "stages": [
+    {
+      "stageCode": "java-core",
+      "stageOrder": 1,
+      "title": "Java 核心基础",
+      "description": "建立从语言语法到现代 Java 工程质量的细粒度基础",
+      "graduationProjectTitle": "Java 命令行任务管理器",
+      "modules": [
+        {
+          "moduleCode": "java-language-start",
+          "moduleOrder": 1,
+          "title": "Java 语言起步",
+          "description": "围绕Java 语言起步组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "java-environment-first-program",
+              "nodeOrder": 1,
+              "title": "JDK 环境与第一个程序",
+              "objectives": [
+                "运用JDK与javac完成“JDK 环境与第一个程序”的可运行练习",
+                "解释java 命令的行为，并用classpath验证关键边界"
+              ],
+              "highFrequency": [
+                "JDK与javac的核心机制",
+                "java 命令、classpath与main 方法的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆JDK和javac的职责，导致实现偏离契约",
+                "忽略classpath的边界条件，未用main 方法覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "JDK 环境与第一个程序 JDK",
+                "javac java 命令",
+                "classpath main 方法"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于JDK与javac的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析JDK的适用场景",
+                "解释javac的运行机制",
+                "诊断java 命令相关故障",
+                "比较classpath的实现取舍",
+                "设计包含main 方法的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": []
+            },
+            {
+              "code": "variables-types-conversion",
+              "nodeOrder": 2,
+              "title": "变量、类型与转换",
+              "objectives": [
+                "运用基本类型与引用类型完成“变量、类型与转换”的可运行练习",
+                "解释自动装箱的行为，并用显式类型转换验证关键边界"
+              ],
+              "highFrequency": [
+                "基本类型与引用类型的核心机制",
+                "自动装箱、显式类型转换与数值溢出的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆基本类型和引用类型的职责，导致实现偏离契约",
+                "忽略显式类型转换的边界条件，未用数值溢出覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "变量、类型与转换 基本类型",
+                "引用类型 自动装箱",
+                "显式类型转换 数值溢出"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于基本类型与引用类型的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析基本类型的适用场景",
+                "解释引用类型的运行机制",
+                "诊断自动装箱相关故障",
+                "比较显式类型转换的实现取舍",
+                "设计包含数值溢出的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "java-environment-first-program"
+              ]
+            },
+            {
+              "code": "operators-console-io",
+              "nodeOrder": 3,
+              "title": "运算符与控制台输入输出",
+              "objectives": [
+                "运用运算符优先级与短路求值完成“运算符与控制台输入输出”的可运行练习",
+                "解释Scanner的行为，并用System.out验证关键边界"
+              ],
+              "highFrequency": [
+                "运算符优先级与短路求值的核心机制",
+                "Scanner、System.out与格式化输出的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆运算符优先级和短路求值的职责，导致实现偏离契约",
+                "忽略System.out的边界条件，未用格式化输出覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "运算符与控制台输入输出 运算符优先级",
+                "短路求值 Scanner",
+                "System.out 格式化输出"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于运算符优先级与短路求值的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析运算符优先级的适用场景",
+                "解释短路求值的运行机制",
+                "诊断Scanner相关故障",
+                "比较System.out的实现取舍",
+                "设计包含格式化输出的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "variables-types-conversion"
+              ]
+            },
+            {
+              "code": "conditions-if-switch",
+              "nodeOrder": 4,
+              "title": "条件分支",
+              "objectives": [
+                "运用if/else与switch 表达式完成“条件分支”的可运行练习",
+                "解释case 穿透的行为，并用模式匹配验证关键边界"
+              ],
+              "highFrequency": [
+                "if/else与switch 表达式的核心机制",
+                "case 穿透、模式匹配与边界条件的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆if/else和switch 表达式的职责，导致实现偏离契约",
+                "忽略模式匹配的边界条件，未用边界条件覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "条件分支 if/else",
+                "switch 表达式 case 穿透",
+                "模式匹配 边界条件"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于if/else与switch 表达式的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析if/else的适用场景",
+                "解释switch 表达式的运行机制",
+                "诊断case 穿透相关故障",
+                "比较模式匹配的实现取舍",
+                "设计包含边界条件的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "operators-console-io"
+              ]
+            },
+            {
+              "code": "loops-control",
+              "nodeOrder": 5,
+              "title": "循环与流程控制",
+              "objectives": [
+                "运用for 循环与while 循环完成“循环与流程控制”的可运行练习",
+                "解释break的行为，并用continue验证关键边界"
+              ],
+              "highFrequency": [
+                "for 循环与while 循环的核心机制",
+                "break、continue与循环不变量的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆for 循环和while 循环的职责，导致实现偏离契约",
+                "忽略continue的边界条件，未用循环不变量覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "循环与流程控制 for 循环",
+                "while 循环 break",
+                "continue 循环不变量"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于for 循环与while 循环的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析for 循环的适用场景",
+                "解释while 循环的运行机制",
+                "诊断break相关故障",
+                "比较continue的实现取舍",
+                "设计包含循环不变量的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "conditions-if-switch"
+              ]
+            },
+            {
+              "code": "methods-parameters-return",
+              "nodeOrder": 6,
+              "title": "方法、参数与返回值",
+              "objectives": [
+                "运用方法签名与值传递完成“方法、参数与返回值”的可运行练习",
+                "解释方法重载的行为，并用可变参数验证关键边界"
+              ],
+              "highFrequency": [
+                "方法签名与值传递的核心机制",
+                "方法重载、可变参数与返回值的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆方法签名和值传递的职责，导致实现偏离契约",
+                "忽略可变参数的边界条件，未用返回值覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "方法、参数与返回值 方法签名",
+                "值传递 方法重载",
+                "可变参数 返回值"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于方法签名与值传递的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析方法签名的适用场景",
+                "解释值传递的运行机制",
+                "诊断方法重载相关故障",
+                "比较可变参数的实现取舍",
+                "设计包含返回值的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "loops-control"
+              ]
+            },
+            {
+              "code": "arrays-basic-traversal",
+              "nodeOrder": 7,
+              "title": "数组与基础遍历",
+              "objectives": [
+                "运用数组下标与增强 for完成“数组与基础遍历”的可运行练习",
+                "解释Arrays 工具类的行为，并用二维数组验证关键边界"
+              ],
+              "highFrequency": [
+                "数组下标与增强 for的核心机制",
+                "Arrays 工具类、二维数组与边界检查的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆数组下标和增强 for的职责，导致实现偏离契约",
+                "忽略二维数组的边界条件，未用边界检查覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "数组与基础遍历 数组下标",
+                "增强 for Arrays 工具类",
+                "二维数组 边界检查"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“Java 语言起步”模块成果，必须展示数组下标、Arrays 工具类和边界检查并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析数组下标的适用场景",
+                "解释增强 for的运行机制",
+                "诊断Arrays 工具类相关故障",
+                "比较二维数组的实现取舍",
+                "设计包含边界检查的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "methods-parameters-return"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "java-oop-foundations",
+          "moduleOrder": 2,
+          "title": "Java 面向对象基础",
+          "description": "围绕Java 面向对象基础组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "classes-objects",
+              "nodeOrder": 8,
+              "title": "类与对象",
+              "objectives": [
+                "运用class与对象实例完成“类与对象”的可运行练习",
+                "解释字段的行为，并用方法验证关键边界"
+              ],
+              "highFrequency": [
+                "class与对象实例的核心机制",
+                "字段、方法与对象引用的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆class和对象实例的职责，导致实现偏离契约",
+                "忽略方法的边界条件，未用对象引用覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "类与对象 class",
+                "对象实例 字段",
+                "方法 对象引用"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于class与对象实例的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析class的适用场景",
+                "解释对象实例的运行机制",
+                "诊断字段相关故障",
+                "比较方法的实现取舍",
+                "设计包含对象引用的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "arrays-basic-traversal"
+              ]
+            },
+            {
+              "code": "constructors-this",
+              "nodeOrder": 9,
+              "title": "构造器与 this",
+              "objectives": [
+                "运用构造器重载与this 引用完成“构造器与 this”的可运行练习",
+                "解释初始化顺序的行为，并用默认构造器验证关键边界"
+              ],
+              "highFrequency": [
+                "构造器重载与this 引用的核心机制",
+                "初始化顺序、默认构造器与构造器委托的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆构造器重载和this 引用的职责，导致实现偏离契约",
+                "忽略默认构造器的边界条件，未用构造器委托覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "构造器与 this 构造器重载",
+                "this 引用 初始化顺序",
+                "默认构造器 构造器委托"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于构造器重载与this 引用的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析构造器重载的适用场景",
+                "解释this 引用的运行机制",
+                "诊断初始化顺序相关故障",
+                "比较默认构造器的实现取舍",
+                "设计包含构造器委托的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "classes-objects"
+              ]
+            },
+            {
+              "code": "encapsulation-access",
+              "nodeOrder": 10,
+              "title": "封装与访问控制",
+              "objectives": [
+                "运用private与public完成“封装与访问控制”的可运行练习",
+                "解释protected的行为，并用包可见性验证关键边界"
+              ],
+              "highFrequency": [
+                "private与public的核心机制",
+                "protected、包可见性与getter/setter的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆private和public的职责，导致实现偏离契约",
+                "忽略包可见性的边界条件，未用getter/setter覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "封装与访问控制 private",
+                "public protected",
+                "包可见性 getter/setter"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于private与public的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析private的适用场景",
+                "解释public的运行机制",
+                "诊断protected相关故障",
+                "比较包可见性的实现取舍",
+                "设计包含getter/setter的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "constructors-this"
+              ]
+            },
+            {
+              "code": "static-constants-members",
+              "nodeOrder": 11,
+              "title": "静态成员与常量",
+              "objectives": [
+                "运用static与final完成“静态成员与常量”的可运行练习",
+                "解释类变量的行为，并用静态初始化块验证关键边界"
+              ],
+              "highFrequency": [
+                "static与final的核心机制",
+                "类变量、静态初始化块与常量命名的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆static和final的职责，导致实现偏离契约",
+                "忽略静态初始化块的边界条件，未用常量命名覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "静态成员与常量 static",
+                "final 类变量",
+                "静态初始化块 常量命名"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于static与final的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析static的适用场景",
+                "解释final的运行机制",
+                "诊断类变量相关故障",
+                "比较静态初始化块的实现取舍",
+                "设计包含常量命名的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "encapsulation-access"
+              ]
+            },
+            {
+              "code": "inheritance-overriding",
+              "nodeOrder": 12,
+              "title": "继承与方法重写",
+              "objectives": [
+                "运用extends与方法重写完成“继承与方法重写”的可运行练习",
+                "解释super的行为，并用final 方法验证关键边界"
+              ],
+              "highFrequency": [
+                "extends与方法重写的核心机制",
+                "super、final 方法与里氏替换的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆extends和方法重写的职责，导致实现偏离契约",
+                "忽略final 方法的边界条件，未用里氏替换覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "继承与方法重写 extends",
+                "方法重写 super",
+                "final 方法 里氏替换"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于extends与方法重写的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析extends的适用场景",
+                "解释方法重写的运行机制",
+                "诊断super相关故障",
+                "比较final 方法的实现取舍",
+                "设计包含里氏替换的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "static-constants-members"
+              ]
+            },
+            {
+              "code": "polymorphism",
+              "nodeOrder": 13,
+              "title": "多态",
+              "objectives": [
+                "运用动态绑定与向上转型完成“多态”的可运行练习",
+                "解释instanceof的行为，并用多态调用验证关键边界"
+              ],
+              "highFrequency": [
+                "动态绑定与向上转型的核心机制",
+                "instanceof、多态调用与组合优先的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆动态绑定和向上转型的职责，导致实现偏离契约",
+                "忽略多态调用的边界条件，未用组合优先覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "多态 动态绑定",
+                "向上转型 instanceof",
+                "多态调用 组合优先"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于动态绑定与向上转型的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析动态绑定的适用场景",
+                "解释向上转型的运行机制",
+                "诊断instanceof相关故障",
+                "比较多态调用的实现取舍",
+                "设计包含组合优先的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "inheritance-overriding"
+              ]
+            },
+            {
+              "code": "abstract-classes-interfaces",
+              "nodeOrder": 14,
+              "title": "抽象类与接口",
+              "objectives": [
+                "运用abstract class与interface完成“抽象类与接口”的可运行练习",
+                "解释default 方法的行为，并用依赖倒置验证关键边界"
+              ],
+              "highFrequency": [
+                "abstract class与interface的核心机制",
+                "default 方法、依赖倒置与接口隔离的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆abstract class和interface的职责，导致实现偏离契约",
+                "忽略依赖倒置的边界条件，未用接口隔离覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "抽象类与接口 abstract class",
+                "interface default 方法",
+                "依赖倒置 接口隔离"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“Java 面向对象基础”模块成果，必须展示abstract class、default 方法和接口隔离并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析abstract class的适用场景",
+                "解释interface的运行机制",
+                "诊断default 方法相关故障",
+                "比较依赖倒置的实现取舍",
+                "设计包含接口隔离的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "polymorphism"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "java-core-collections",
+          "moduleOrder": 3,
+          "title": "Java 核心类库与集合",
+          "description": "围绕Java 核心类库与集合组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "string-content-comparison",
+              "nodeOrder": 15,
+              "title": "字符串与内容比较",
+              "objectives": [
+                "运用String与equals完成“字符串与内容比较”的可运行练习",
+                "解释字符串常量池的行为，并用不可变性验证关键边界"
+              ],
+              "highFrequency": [
+                "String与equals的核心机制",
+                "字符串常量池、不可变性与StringBuilder的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆String和equals的职责，导致实现偏离契约",
+                "忽略不可变性的边界条件，未用StringBuilder覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "字符串与内容比较 String",
+                "equals 字符串常量池",
+                "不可变性 StringBuilder"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于String与equals的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析String的适用场景",
+                "解释equals的运行机制",
+                "诊断字符串常量池相关故障",
+                "比较不可变性的实现取舍",
+                "设计包含StringBuilder的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "abstract-classes-interfaces"
+              ]
+            },
+            {
+              "code": "wrappers-enums-datetime",
+              "nodeOrder": 16,
+              "title": "包装类型、枚举与日期时间",
+              "objectives": [
+                "运用Integer与enum完成“包装类型、枚举与日期时间”的可运行练习",
+                "解释LocalDateTime的行为，并用DateTimeFormatter验证关键边界"
+              ],
+              "highFrequency": [
+                "Integer与enum的核心机制",
+                "LocalDateTime、DateTimeFormatter与时区的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Integer和enum的职责，导致实现偏离契约",
+                "忽略DateTimeFormatter的边界条件，未用时区覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "包装类型、枚举与日期时间 Integer",
+                "enum LocalDateTime",
+                "DateTimeFormatter 时区"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Integer与enum的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Integer的适用场景",
+                "解释enum的运行机制",
+                "诊断LocalDateTime相关故障",
+                "比较DateTimeFormatter的实现取舍",
+                "设计包含时区的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "string-content-comparison"
+              ]
+            },
+            {
+              "code": "object-equals-hashcode-tostring",
+              "nodeOrder": 17,
+              "title": "Object 核心契约",
+              "objectives": [
+                "运用equals与hashCode完成“Object 核心契约”的可运行练习",
+                "解释toString的行为，并用对象相等性验证关键边界"
+              ],
+              "highFrequency": [
+                "equals与hashCode的核心机制",
+                "toString、对象相等性与HashSet 契约的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆equals和hashCode的职责，导致实现偏离契约",
+                "忽略对象相等性的边界条件，未用HashSet 契约覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Object 核心契约 equals",
+                "hashCode toString",
+                "对象相等性 HashSet 契约"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于equals与hashCode的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析equals的适用场景",
+                "解释hashCode的运行机制",
+                "诊断toString相关故障",
+                "比较对象相等性的实现取舍",
+                "设计包含HashSet 契约的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "wrappers-enums-datetime"
+              ]
+            },
+            {
+              "code": "list-iteration",
+              "nodeOrder": 18,
+              "title": "List 与迭代",
+              "objectives": [
+                "运用ArrayList与LinkedList完成“List 与迭代”的可运行练习",
+                "解释Iterator的行为，并用ConcurrentModificationException验证关键边界"
+              ],
+              "highFrequency": [
+                "ArrayList与LinkedList的核心机制",
+                "Iterator、ConcurrentModificationException与列表排序的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆ArrayList和LinkedList的职责，导致实现偏离契约",
+                "忽略ConcurrentModificationException的边界条件，未用列表排序覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "List 与迭代 ArrayList",
+                "LinkedList Iterator",
+                "ConcurrentModificationException 列表排序"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于ArrayList与LinkedList的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析ArrayList的适用场景",
+                "解释LinkedList的运行机制",
+                "诊断Iterator相关故障",
+                "比较ConcurrentModificationException的实现取舍",
+                "设计包含列表排序的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "object-equals-hashcode-tostring"
+              ]
+            },
+            {
+              "code": "set-map-deduplication",
+              "nodeOrder": 19,
+              "title": "Set、Map 与去重",
+              "objectives": [
+                "运用HashSet与HashMap完成“Set、Map 与去重”的可运行练习",
+                "解释键冲突的行为，并用去重验证关键边界"
+              ],
+              "highFrequency": [
+                "HashSet与HashMap的核心机制",
+                "键冲突、去重与computeIfAbsent的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆HashSet和HashMap的职责，导致实现偏离契约",
+                "忽略去重的边界条件，未用computeIfAbsent覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Set、Map 与去重 HashSet",
+                "HashMap 键冲突",
+                "去重 computeIfAbsent"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于HashSet与HashMap的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析HashSet的适用场景",
+                "解释HashMap的运行机制",
+                "诊断键冲突相关故障",
+                "比较去重的实现取舍",
+                "设计包含computeIfAbsent的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "list-iteration"
+              ]
+            },
+            {
+              "code": "generics-comparator-type-safety",
+              "nodeOrder": 20,
+              "title": "泛型、比较器与类型安全",
+              "objectives": [
+                "运用泛型边界与Comparator完成“泛型、比较器与类型安全”的可运行练习",
+                "解释Comparable的行为，并用类型擦除验证关键边界"
+              ],
+              "highFrequency": [
+                "泛型边界与Comparator的核心机制",
+                "Comparable、类型擦除与PECS的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆泛型边界和Comparator的职责，导致实现偏离契约",
+                "忽略类型擦除的边界条件，未用PECS覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "泛型、比较器与类型安全 泛型边界",
+                "Comparator Comparable",
+                "类型擦除 PECS"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“Java 核心类库与集合”模块成果，必须展示泛型边界、Comparable和PECS并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析泛型边界的适用场景",
+                "解释Comparator的运行机制",
+                "诊断Comparable相关故障",
+                "比较类型擦除的实现取舍",
+                "设计包含PECS的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "set-map-deduplication"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "java-modern-engineering",
+          "moduleOrder": 4,
+          "title": "现代 Java 与工程实践",
+          "description": "围绕现代 Java 与工程实践组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "exceptions-custom",
+              "nodeOrder": 21,
+              "title": "异常处理与自定义异常",
+              "objectives": [
+                "运用try/catch/finally与受检异常完成“异常处理与自定义异常”的可运行练习",
+                "解释异常链的行为，并用自定义异常验证关键边界"
+              ],
+              "highFrequency": [
+                "try/catch/finally与受检异常的核心机制",
+                "异常链、自定义异常与try-with-resources的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆try/catch/finally和受检异常的职责，导致实现偏离契约",
+                "忽略自定义异常的边界条件，未用try-with-resources覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "异常处理与自定义异常 try/catch/finally",
+                "受检异常 异常链",
+                "自定义异常 try-with-resources"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于try/catch/finally与受检异常的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析try/catch/finally的适用场景",
+                "解释受检异常的运行机制",
+                "诊断异常链相关故障",
+                "比较自定义异常的实现取舍",
+                "设计包含try-with-resources的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "generics-comparator-type-safety"
+              ]
+            },
+            {
+              "code": "files-nio-streams",
+              "nodeOrder": 22,
+              "title": "文件、NIO 与流",
+              "objectives": [
+                "运用Path与Files完成“文件、NIO 与流”的可运行练习",
+                "解释NIO的行为，并用UTF-8验证关键边界"
+              ],
+              "highFrequency": [
+                "Path与Files的核心机制",
+                "NIO、UTF-8与缓冲流的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Path和Files的职责，导致实现偏离契约",
+                "忽略UTF-8的边界条件，未用缓冲流覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "文件、NIO 与流 Path",
+                "Files NIO",
+                "UTF-8 缓冲流"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Path与Files的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Path的适用场景",
+                "解释Files的运行机制",
+                "诊断NIO相关故障",
+                "比较UTF-8的实现取舍",
+                "设计包含缓冲流的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "exceptions-custom"
+              ]
+            },
+            {
+              "code": "lambda-functional-interfaces",
+              "nodeOrder": 23,
+              "title": "Lambda 与函数式接口",
+              "objectives": [
+                "运用lambda与Function完成“Lambda 与函数式接口”的可运行练习",
+                "解释Predicate的行为，并用方法引用验证关键边界"
+              ],
+              "highFrequency": [
+                "lambda与Function的核心机制",
+                "Predicate、方法引用与闭包的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆lambda和Function的职责，导致实现偏离契约",
+                "忽略方法引用的边界条件，未用闭包覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Lambda 与函数式接口 lambda",
+                "Function Predicate",
+                "方法引用 闭包"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于lambda与Function的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析lambda的适用场景",
+                "解释Function的运行机制",
+                "诊断Predicate相关故障",
+                "比较方法引用的实现取舍",
+                "设计包含闭包的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "files-nio-streams"
+              ]
+            },
+            {
+              "code": "stream-optional",
+              "nodeOrder": 24,
+              "title": "Stream 与 Optional",
+              "objectives": [
+                "运用Stream与map/filter/reduce完成“Stream 与 Optional”的可运行练习",
+                "解释Optional的行为，并用惰性求值验证关键边界"
+              ],
+              "highFrequency": [
+                "Stream与map/filter/reduce的核心机制",
+                "Optional、惰性求值与副作用的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Stream和map/filter/reduce的职责，导致实现偏离契约",
+                "忽略惰性求值的边界条件，未用副作用覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Stream 与 Optional Stream",
+                "map/filter/reduce Optional",
+                "惰性求值 副作用"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Stream与map/filter/reduce的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Stream的适用场景",
+                "解释map/filter/reduce的运行机制",
+                "诊断Optional相关故障",
+                "比较惰性求值的实现取舍",
+                "设计包含副作用的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "lambda-functional-interfaces"
+              ]
+            },
+            {
+              "code": "record-sealed-maven-junit-checkstyle",
+              "nodeOrder": 25,
+              "title": "现代 Java 建模与工程质量实践",
+              "objectives": [
+                "运用record与sealed完成“现代 Java 建模与工程质量实践”的可运行练习",
+                "解释Maven的行为，并用JUnit 5验证关键边界"
+              ],
+              "highFrequency": [
+                "record与sealed的核心机制",
+                "Maven、JUnit 5与Checkstyle的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆record和sealed的职责，导致实现偏离契约",
+                "忽略JUnit 5的边界条件，未用Checkstyle覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "现代 Java 建模与工程质量实践 record",
+                "sealed Maven",
+                "JUnit 5 Checkstyle"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“现代 Java 与工程实践”模块成果，必须展示record、Maven和Checkstyle并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析record的适用场景",
+                "解释sealed的运行机制",
+                "诊断Maven相关故障",
+                "比较JUnit 5的实现取舍",
+                "设计包含Checkstyle的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "stream-optional"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "spring-backend",
+      "stageOrder": 2,
+      "title": "Spring 后端开发",
+      "description": "构建分层、可校验、可测试的 Spring 业务服务",
+      "graduationProjectTitle": "Spring Boot 文件处理服务",
+      "modules": [
+        {
+          "moduleCode": "spring-business-backend",
+          "moduleOrder": 1,
+          "title": "Spring 业务后端",
+          "description": "围绕Spring 业务后端组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "spring-boot-layering",
+              "nodeOrder": 1,
+              "title": "Spring Boot 启动与分层",
+              "objectives": [
+                "运用Spring Boot与自动配置完成“Spring Boot 启动与分层”的可运行练习",
+                "解释Controller-Service-Repository的行为，并用包扫描验证关键边界"
+              ],
+              "highFrequency": [
+                "Spring Boot与自动配置的核心机制",
+                "Controller-Service-Repository、包扫描与启动诊断的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Spring Boot和自动配置的职责，导致实现偏离契约",
+                "忽略包扫描的边界条件，未用启动诊断覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring Boot 启动与分层 Spring Boot",
+                "自动配置 Controller-Service-Repository",
+                "包扫描 启动诊断"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Spring Boot与自动配置的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Spring Boot的适用场景",
+                "解释自动配置的运行机制",
+                "诊断Controller-Service-Repository相关故障",
+                "比较包扫描的实现取舍",
+                "设计包含启动诊断的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "record-sealed-maven-junit-checkstyle"
+              ]
+            },
+            {
+              "code": "spring-ioc-di",
+              "nodeOrder": 2,
+              "title": "Spring IoC 与依赖注入",
+              "objectives": [
+                "运用IoC与构造器注入完成“Spring IoC 与依赖注入”的可运行练习",
+                "解释Bean 生命周期的行为，并用Configuration验证关键边界"
+              ],
+              "highFrequency": [
+                "IoC与构造器注入的核心机制",
+                "Bean 生命周期、Configuration与循环依赖的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆IoC和构造器注入的职责，导致实现偏离契约",
+                "忽略Configuration的边界条件，未用循环依赖覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring IoC 与依赖注入 IoC",
+                "构造器注入 Bean 生命周期",
+                "Configuration 循环依赖"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于IoC与构造器注入的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析IoC的适用场景",
+                "解释构造器注入的运行机制",
+                "诊断Bean 生命周期相关故障",
+                "比较Configuration的实现取舍",
+                "设计包含循环依赖的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-boot-layering"
+              ]
+            },
+            {
+              "code": "spring-mvc-rest",
+              "nodeOrder": 3,
+              "title": "Spring MVC 与 REST",
+              "objectives": [
+                "运用RestController与RequestMapping完成“Spring MVC 与 REST”的可运行练习",
+                "解释ResponseEntity的行为，并用HTTP 状态码验证关键边界"
+              ],
+              "highFrequency": [
+                "RestController与RequestMapping的核心机制",
+                "ResponseEntity、HTTP 状态码与MockMvc的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆RestController和RequestMapping的职责，导致实现偏离契约",
+                "忽略HTTP 状态码的边界条件，未用MockMvc覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring MVC 与 REST RestController",
+                "RequestMapping ResponseEntity",
+                "HTTP 状态码 MockMvc"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于RestController与RequestMapping的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析RestController的适用场景",
+                "解释RequestMapping的运行机制",
+                "诊断ResponseEntity相关故障",
+                "比较HTTP 状态码的实现取舍",
+                "设计包含MockMvc的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-ioc-di"
+              ]
+            },
+            {
+              "code": "spring-dto-validation",
+              "nodeOrder": 4,
+              "title": "DTO 与参数校验",
+              "objectives": [
+                "运用DTO与Bean Validation完成“DTO 与参数校验”的可运行练习",
+                "解释Valid的行为，并用字段约束验证关键边界"
+              ],
+              "highFrequency": [
+                "DTO与Bean Validation的核心机制",
+                "Valid、字段约束与校验分组的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆DTO和Bean Validation的职责，导致实现偏离契约",
+                "忽略字段约束的边界条件，未用校验分组覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "DTO 与参数校验 DTO",
+                "Bean Validation Valid",
+                "字段约束 校验分组"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于DTO与Bean Validation的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析DTO的适用场景",
+                "解释Bean Validation的运行机制",
+                "诊断Valid相关故障",
+                "比较字段约束的实现取舍",
+                "设计包含校验分组的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-mvc-rest"
+              ]
+            },
+            {
+              "code": "spring-validation-errors",
+              "nodeOrder": 5,
+              "title": "统一异常处理",
+              "objectives": [
+                "运用RestControllerAdvice与ProblemDetail完成“统一异常处理”的可运行练习",
+                "解释MethodArgumentNotValidException的行为，并用错误码验证关键边界"
+              ],
+              "highFrequency": [
+                "RestControllerAdvice与ProblemDetail的核心机制",
+                "MethodArgumentNotValidException、错误码与异常映射的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆RestControllerAdvice和ProblemDetail的职责，导致实现偏离契约",
+                "忽略错误码的边界条件，未用异常映射覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "统一异常处理 RestControllerAdvice",
+                "ProblemDetail MethodArgumentNotValidException",
+                "错误码 异常映射"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于RestControllerAdvice与ProblemDetail的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析RestControllerAdvice的适用场景",
+                "解释ProblemDetail的运行机制",
+                "诊断MethodArgumentNotValidException相关故障",
+                "比较错误码的实现取舍",
+                "设计包含异常映射的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-dto-validation"
+              ]
+            },
+            {
+              "code": "spring-config-logging",
+              "nodeOrder": 6,
+              "title": "配置、Profile 与日志",
+              "objectives": [
+                "运用ConfigurationProperties与Profile完成“配置、Profile 与日志”的可运行练习",
+                "解释Logback的行为，并用MDC验证关键边界"
+              ],
+              "highFrequency": [
+                "ConfigurationProperties与Profile的核心机制",
+                "Logback、MDC与敏感字段脱敏的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆ConfigurationProperties和Profile的职责，导致实现偏离契约",
+                "忽略MDC的边界条件，未用敏感字段脱敏覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "配置、Profile 与日志 ConfigurationProperties",
+                "Profile Logback",
+                "MDC 敏感字段脱敏"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于ConfigurationProperties与Profile的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析ConfigurationProperties的适用场景",
+                "解释Profile的运行机制",
+                "诊断Logback相关故障",
+                "比较MDC的实现取舍",
+                "设计包含敏感字段脱敏的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-validation-errors"
+              ]
+            },
+            {
+              "code": "spring-files-upload",
+              "nodeOrder": 7,
+              "title": "安全文件上传下载",
+              "objectives": [
+                "运用MultipartFile与Path normalize完成“安全文件上传下载”的可运行练习",
+                "解释目录穿越的行为，并用大小限制验证关键边界"
+              ],
+              "highFrequency": [
+                "MultipartFile与Path normalize的核心机制",
+                "目录穿越、大小限制与流式下载的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆MultipartFile和Path normalize的职责，导致实现偏离契约",
+                "忽略大小限制的边界条件，未用流式下载覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "安全文件上传下载 MultipartFile",
+                "Path normalize 目录穿越",
+                "大小限制 流式下载"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于MultipartFile与Path normalize的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析MultipartFile的适用场景",
+                "解释Path normalize的运行机制",
+                "诊断目录穿越相关故障",
+                "比较大小限制的实现取舍",
+                "设计包含流式下载的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-config-logging"
+              ]
+            },
+            {
+              "code": "spring-scheduling",
+              "nodeOrder": 8,
+              "title": "调度与后台任务",
+              "objectives": [
+                "运用Scheduled与cron完成“调度与后台任务”的可运行练习",
+                "解释任务锁的行为，并用幂等验证关键边界"
+              ],
+              "highFrequency": [
+                "Scheduled与cron的核心机制",
+                "任务锁、幂等与重试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Scheduled和cron的职责，导致实现偏离契约",
+                "忽略幂等的边界条件，未用重试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "调度与后台任务 Scheduled",
+                "cron 任务锁",
+                "幂等 重试"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Scheduled与cron的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Scheduled的适用场景",
+                "解释cron的运行机制",
+                "诊断任务锁相关故障",
+                "比较幂等的实现取舍",
+                "设计包含重试的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-files-upload"
+              ]
+            },
+            {
+              "code": "spring-testing-slices",
+              "nodeOrder": 9,
+              "title": "Spring 测试切片",
+              "objectives": [
+                "运用WebMvcTest与DataJpaTest完成“Spring 测试切片”的可运行练习",
+                "解释MockBean的行为，并用Testcontainers验证关键边界"
+              ],
+              "highFrequency": [
+                "WebMvcTest与DataJpaTest的核心机制",
+                "MockBean、Testcontainers与测试隔离的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆WebMvcTest和DataJpaTest的职责，导致实现偏离契约",
+                "忽略Testcontainers的边界条件，未用测试隔离覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring 测试切片 WebMvcTest",
+                "DataJpaTest MockBean",
+                "Testcontainers 测试隔离"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于WebMvcTest与DataJpaTest的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析WebMvcTest的适用场景",
+                "解释DataJpaTest的运行机制",
+                "诊断MockBean相关故障",
+                "比较Testcontainers的实现取舍",
+                "设计包含测试隔离的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-scheduling"
+              ]
+            },
+            {
+              "code": "spring-module-project",
+              "nodeOrder": 10,
+              "title": "Spring 业务模块项目",
+              "objectives": [
+                "运用分层架构与REST 契约完成“Spring 业务模块项目”的可运行练习",
+                "解释校验异常的行为，并用文件任务验证关键边界"
+              ],
+              "highFrequency": [
+                "分层架构与REST 契约的核心机制",
+                "校验异常、文件任务与集成测试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆分层架构和REST 契约的职责，导致实现偏离契约",
+                "忽略文件任务的边界条件，未用集成测试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring 业务模块项目 分层架构",
+                "REST 契约 校验异常",
+                "文件任务 集成测试"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“Spring 业务后端”模块成果，必须展示分层架构、校验异常和集成测试并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析分层架构的适用场景",
+                "解释REST 契约的运行机制",
+                "诊断校验异常相关故障",
+                "比较文件任务的实现取舍",
+                "设计包含集成测试的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-testing-slices"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "data-access",
+      "stageOrder": 3,
+      "title": "数据访问",
+      "description": "掌握 MySQL 与 Java 多种持久化方案",
+      "graduationProjectTitle": "多实现数据访问服务",
+      "modules": [
+        {
+          "moduleCode": "mysql-foundations",
+          "moduleOrder": 1,
+          "title": "MySQL 基础",
+          "description": "围绕MySQL 基础组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "mysql-schema-types",
+              "nodeOrder": 1,
+              "title": "MySQL 表结构与类型",
+              "objectives": [
+                "运用DDL与主键完成“MySQL 表结构与类型”的可运行练习",
+                "解释VARCHAR的行为，并用DECIMAL验证关键边界"
+              ],
+              "highFrequency": [
+                "DDL与主键的核心机制",
+                "VARCHAR、DECIMAL与时间类型的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆DDL和主键的职责，导致实现偏离契约",
+                "忽略DECIMAL的边界条件，未用时间类型覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "MySQL 表结构与类型 DDL",
+                "主键 VARCHAR",
+                "DECIMAL 时间类型"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于DDL与主键的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析DDL的适用场景",
+                "解释主键的运行机制",
+                "诊断VARCHAR相关故障",
+                "比较DECIMAL的实现取舍",
+                "设计包含时间类型的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "spring-module-project"
+              ]
+            },
+            {
+              "code": "mysql-sql-modeling",
+              "nodeOrder": 2,
+              "title": "SQL 与关系建模",
+              "objectives": [
+                "运用SELECT/JOIN与外键完成“SQL 与关系建模”的可运行练习",
+                "解释范式的行为，并用聚合查询验证关键边界"
+              ],
+              "highFrequency": [
+                "SELECT/JOIN与外键的核心机制",
+                "范式、聚合查询与分页的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆SELECT/JOIN和外键的职责，导致实现偏离契约",
+                "忽略聚合查询的边界条件，未用分页覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "SQL 与关系建模 SELECT/JOIN",
+                "外键 范式",
+                "聚合查询 分页"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于SELECT/JOIN与外键的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析SELECT/JOIN的适用场景",
+                "解释外键的运行机制",
+                "诊断范式相关故障",
+                "比较聚合查询的实现取舍",
+                "设计包含分页的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mysql-schema-types"
+              ]
+            },
+            {
+              "code": "mysql-index-basics",
+              "nodeOrder": 3,
+              "title": "索引与执行计划",
+              "objectives": [
+                "运用B+Tree与联合索引完成“索引与执行计划”的可运行练习",
+                "解释最左前缀的行为，并用EXPLAIN验证关键边界"
+              ],
+              "highFrequency": [
+                "B+Tree与联合索引的核心机制",
+                "最左前缀、EXPLAIN与回表的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆B+Tree和联合索引的职责，导致实现偏离契约",
+                "忽略EXPLAIN的边界条件，未用回表覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "索引与执行计划 B+Tree",
+                "联合索引 最左前缀",
+                "EXPLAIN 回表"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于B+Tree与联合索引的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析B+Tree的适用场景",
+                "解释联合索引的运行机制",
+                "诊断最左前缀相关故障",
+                "比较EXPLAIN的实现取舍",
+                "设计包含回表的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mysql-sql-modeling"
+              ]
+            },
+            {
+              "code": "mysql-transactions-locks",
+              "nodeOrder": 4,
+              "title": "事务与锁",
+              "objectives": [
+                "运用ACID与隔离级别完成“事务与锁”的可运行练习",
+                "解释MVCC的行为，并用行锁验证关键边界"
+              ],
+              "highFrequency": [
+                "ACID与隔离级别的核心机制",
+                "MVCC、行锁与死锁的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆ACID和隔离级别的职责，导致实现偏离契约",
+                "忽略行锁的边界条件，未用死锁覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "事务与锁 ACID",
+                "隔离级别 MVCC",
+                "行锁 死锁"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于ACID与隔离级别的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析ACID的适用场景",
+                "解释隔离级别的运行机制",
+                "诊断MVCC相关故障",
+                "比较行锁的实现取舍",
+                "设计包含死锁的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mysql-index-basics"
+              ]
+            },
+            {
+              "code": "mysql-index-transaction",
+              "nodeOrder": 5,
+              "title": "MySQL 数据建模里程碑",
+              "objectives": [
+                "运用索引与事务完成“MySQL 数据建模里程碑”的可运行练习",
+                "解释EXPLAIN ANALYZE的行为，并用锁等待验证关键边界"
+              ],
+              "highFrequency": [
+                "索引与事务的核心机制",
+                "EXPLAIN ANALYZE、锁等待与慢查询的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆索引和事务的职责，导致实现偏离契约",
+                "忽略锁等待的边界条件，未用慢查询覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "MySQL 数据建模里程碑 索引",
+                "事务 EXPLAIN ANALYZE",
+                "锁等待 慢查询"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“MySQL 基础”模块成果，必须展示索引、EXPLAIN ANALYZE和慢查询并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析索引的适用场景",
+                "解释事务的运行机制",
+                "诊断EXPLAIN ANALYZE相关故障",
+                "比较锁等待的实现取舍",
+                "设计包含慢查询的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mysql-transactions-locks"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "java-persistence",
+          "moduleOrder": 2,
+          "title": "Java 持久化",
+          "description": "围绕Java 持久化组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "jdbc-transactions",
+              "nodeOrder": 6,
+              "title": "JDBC 与事务边界",
+              "objectives": [
+                "运用DataSource与PreparedStatement完成“JDBC 与事务边界”的可运行练习",
+                "解释事务边界的行为，并用连接池验证关键边界"
+              ],
+              "highFrequency": [
+                "DataSource与PreparedStatement的核心机制",
+                "事务边界、连接池与SQL 注入的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆DataSource和PreparedStatement的职责，导致实现偏离契约",
+                "忽略连接池的边界条件，未用SQL 注入覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "JDBC 与事务边界 DataSource",
+                "PreparedStatement 事务边界",
+                "连接池 SQL 注入"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于DataSource与PreparedStatement的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析DataSource的适用场景",
+                "解释PreparedStatement的运行机制",
+                "诊断事务边界相关故障",
+                "比较连接池的实现取舍",
+                "设计包含SQL 注入的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mysql-index-transaction"
+              ]
+            },
+            {
+              "code": "mybatis-core",
+              "nodeOrder": 7,
+              "title": "MyBatis 核心映射",
+              "objectives": [
+                "运用MyBatis与Mapper完成“MyBatis 核心映射”的可运行练习",
+                "解释resultMap的行为，并用动态 SQL验证关键边界"
+              ],
+              "highFrequency": [
+                "MyBatis与Mapper的核心机制",
+                "resultMap、动态 SQL与一级缓存的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆MyBatis和Mapper的职责，导致实现偏离契约",
+                "忽略动态 SQL的边界条件，未用一级缓存覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "MyBatis 核心映射 MyBatis",
+                "Mapper resultMap",
+                "动态 SQL 一级缓存"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于MyBatis与Mapper的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析MyBatis的适用场景",
+                "解释Mapper的运行机制",
+                "诊断resultMap相关故障",
+                "比较动态 SQL的实现取舍",
+                "设计包含一级缓存的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "jdbc-transactions"
+              ]
+            },
+            {
+              "code": "mybatis-plus",
+              "nodeOrder": 8,
+              "title": "MyBatis-Plus 工程实践",
+              "objectives": [
+                "运用MyBatis-Plus与BaseMapper完成“MyBatis-Plus 工程实践”的可运行练习",
+                "解释条件构造器的行为，并用分页插件验证关键边界"
+              ],
+              "highFrequency": [
+                "MyBatis-Plus与BaseMapper的核心机制",
+                "条件构造器、分页插件与逻辑删除的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆MyBatis-Plus和BaseMapper的职责，导致实现偏离契约",
+                "忽略分页插件的边界条件，未用逻辑删除覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "MyBatis-Plus 工程实践 MyBatis-Plus",
+                "BaseMapper 条件构造器",
+                "分页插件 逻辑删除"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于MyBatis-Plus与BaseMapper的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析MyBatis-Plus的适用场景",
+                "解释BaseMapper的运行机制",
+                "诊断条件构造器相关故障",
+                "比较分页插件的实现取舍",
+                "设计包含逻辑删除的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mybatis-core"
+              ]
+            },
+            {
+              "code": "jpa-core",
+              "nodeOrder": 9,
+              "title": "Spring Data JPA 核心",
+              "objectives": [
+                "运用JPA与Entity完成“Spring Data JPA 核心”的可运行练习",
+                "解释Repository的行为，并用脏检查验证关键边界"
+              ],
+              "highFrequency": [
+                "JPA与Entity的核心机制",
+                "Repository、脏检查与N+1的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆JPA和Entity的职责，导致实现偏离契约",
+                "忽略脏检查的边界条件，未用N+1覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring Data JPA 核心 JPA",
+                "Entity Repository",
+                "脏检查 N+1"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于JPA与Entity的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析JPA的适用场景",
+                "解释Entity的运行机制",
+                "诊断Repository相关故障",
+                "比较脏检查的实现取舍",
+                "设计包含N+1的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "mybatis-plus"
+              ]
+            },
+            {
+              "code": "data-access-comparison",
+              "nodeOrder": 10,
+              "title": "数据访问方案对照实践",
+              "objectives": [
+                "运用MyBatis与MyBatis-Plus完成“数据访问方案对照实践”的可运行练习",
+                "解释JPA的行为，并用SQL 可控性验证关键边界"
+              ],
+              "highFrequency": [
+                "MyBatis与MyBatis-Plus的核心机制",
+                "JPA、SQL 可控性与对象映射的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆MyBatis和MyBatis-Plus的职责，导致实现偏离契约",
+                "忽略SQL 可控性的边界条件，未用对象映射覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "数据访问方案对照实践 MyBatis",
+                "MyBatis-Plus JPA",
+                "SQL 可控性 对象映射"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“Java 持久化”模块成果，必须展示MyBatis、JPA和对象映射并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析MyBatis的适用场景",
+                "解释MyBatis-Plus的运行机制",
+                "诊断JPA相关故障",
+                "比较SQL 可控性的实现取舍",
+                "设计包含对象映射的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "EASY",
+              "required": true,
+              "prerequisites": [
+                "jpa-core"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "backend-engineering",
+      "stageOrder": 4,
+      "title": "后端工程化",
+      "description": "强化缓存、安全、并发和可观测性",
+      "graduationProjectTitle": "可观测安全订单 API",
+      "modules": [
+        {
+          "moduleCode": "cache-security",
+          "moduleOrder": 1,
+          "title": "缓存与安全",
+          "description": "围绕缓存与安全组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "redis-data-structures",
+              "nodeOrder": 1,
+              "title": "Redis 数据结构",
+              "objectives": [
+                "运用String/Hash/ZSet与TTL完成“Redis 数据结构”的可运行练习",
+                "解释过期策略的行为，并用持久化验证关键边界"
+              ],
+              "highFrequency": [
+                "String/Hash/ZSet与TTL的核心机制",
+                "过期策略、持久化与内存淘汰的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆String/Hash/ZSet和TTL的职责，导致实现偏离契约",
+                "忽略持久化的边界条件，未用内存淘汰覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Redis 数据结构 String/Hash/ZSet",
+                "TTL 过期策略",
+                "持久化 内存淘汰"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于String/Hash/ZSet与TTL的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析String/Hash/ZSet的适用场景",
+                "解释TTL的运行机制",
+                "诊断过期策略相关故障",
+                "比较持久化的实现取舍",
+                "设计包含内存淘汰的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "data-access-comparison"
+              ]
+            },
+            {
+              "code": "redis-cache",
+              "nodeOrder": 2,
+              "title": "Redis 缓存设计",
+              "objectives": [
+                "运用Cache Aside与缓存穿透完成“Redis 缓存设计”的可运行练习",
+                "解释缓存击穿的行为，并用缓存雪崩验证关键边界"
+              ],
+              "highFrequency": [
+                "Cache Aside与缓存穿透的核心机制",
+                "缓存击穿、缓存雪崩与一致性的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Cache Aside和缓存穿透的职责，导致实现偏离契约",
+                "忽略缓存雪崩的边界条件，未用一致性覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Redis 缓存设计 Cache Aside",
+                "缓存穿透 缓存击穿",
+                "缓存雪崩 一致性"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Cache Aside与缓存穿透的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Cache Aside的适用场景",
+                "解释缓存穿透的运行机制",
+                "诊断缓存击穿相关故障",
+                "比较缓存雪崩的实现取舍",
+                "设计包含一致性的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "redis-data-structures"
+              ]
+            },
+            {
+              "code": "spring-security-authentication",
+              "nodeOrder": 3,
+              "title": "Spring Security 认证",
+              "objectives": [
+                "运用SecurityFilterChain与PasswordEncoder完成“Spring Security 认证”的可运行练习",
+                "解释认证上下文的行为，并用Session验证关键边界"
+              ],
+              "highFrequency": [
+                "SecurityFilterChain与PasswordEncoder的核心机制",
+                "认证上下文、Session与登录失败的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆SecurityFilterChain和PasswordEncoder的职责，导致实现偏离契约",
+                "忽略Session的边界条件，未用登录失败覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring Security 认证 SecurityFilterChain",
+                "PasswordEncoder 认证上下文",
+                "Session 登录失败"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于SecurityFilterChain与PasswordEncoder的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析SecurityFilterChain的适用场景",
+                "解释PasswordEncoder的运行机制",
+                "诊断认证上下文相关故障",
+                "比较Session的实现取舍",
+                "设计包含登录失败的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "redis-cache"
+              ]
+            },
+            {
+              "code": "auth-jwt-security",
+              "nodeOrder": 4,
+              "title": "JWT 授权",
+              "objectives": [
+                "运用JWT与Access Token完成“JWT 授权”的可运行练习",
+                "解释Refresh Token的行为，并用RBAC验证关键边界"
+              ],
+              "highFrequency": [
+                "JWT与Access Token的核心机制",
+                "Refresh Token、RBAC与授权的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆JWT和Access Token的职责，导致实现偏离契约",
+                "忽略RBAC的边界条件，未用授权覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "JWT 授权 JWT",
+                "Access Token Refresh Token",
+                "RBAC 授权"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于JWT与Access Token的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析JWT的适用场景",
+                "解释Access Token的运行机制",
+                "诊断Refresh Token相关故障",
+                "比较RBAC的实现取舍",
+                "设计包含授权的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "spring-security-authentication"
+              ]
+            },
+            {
+              "code": "cache-security-project",
+              "nodeOrder": 5,
+              "title": "缓存安全服务里程碑",
+              "objectives": [
+                "运用Redis与JWT完成“缓存安全服务里程碑”的可运行练习",
+                "解释Spring Security的行为，并用权限矩阵验证关键边界"
+              ],
+              "highFrequency": [
+                "Redis与JWT的核心机制",
+                "Spring Security、权限矩阵与缓存一致性的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Redis和JWT的职责，导致实现偏离契约",
+                "忽略权限矩阵的边界条件，未用缓存一致性覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "缓存安全服务里程碑 Redis",
+                "JWT Spring Security",
+                "权限矩阵 缓存一致性"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“缓存与安全”模块成果，必须展示Redis、Spring Security和缓存一致性并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析Redis的适用场景",
+                "解释JWT的运行机制",
+                "诊断Spring Security相关故障",
+                "比较权限矩阵的实现取舍",
+                "设计包含缓存一致性的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "auth-jwt-security"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "backend-quality",
+          "moduleOrder": 2,
+          "title": "后端质量",
+          "description": "围绕后端质量组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "api-docs-integration-test",
+              "nodeOrder": 6,
+              "title": "API 文档与集成测试",
+              "objectives": [
+                "运用OpenAPI与Swagger UI完成“API 文档与集成测试”的可运行练习",
+                "解释MockMvc的行为，并用契约测试验证关键边界"
+              ],
+              "highFrequency": [
+                "OpenAPI与Swagger UI的核心机制",
+                "MockMvc、契约测试与Testcontainers的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆OpenAPI和Swagger UI的职责，导致实现偏离契约",
+                "忽略契约测试的边界条件，未用Testcontainers覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "API 文档与集成测试 OpenAPI",
+                "Swagger UI MockMvc",
+                "契约测试 Testcontainers"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于OpenAPI与Swagger UI的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析OpenAPI的适用场景",
+                "解释Swagger UI的运行机制",
+                "诊断MockMvc相关故障",
+                "比较契约测试的实现取舍",
+                "设计包含Testcontainers的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "cache-security-project"
+              ]
+            },
+            {
+              "code": "idempotency-concurrency-audit",
+              "nodeOrder": 7,
+              "title": "幂等、并发控制与审计",
+              "objectives": [
+                "运用幂等键与乐观锁完成“幂等、并发控制与审计”的可运行练习",
+                "解释唯一约束的行为，并用审计日志验证关键边界"
+              ],
+              "highFrequency": [
+                "幂等键与乐观锁的核心机制",
+                "唯一约束、审计日志与并发冲突的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆幂等键和乐观锁的职责，导致实现偏离契约",
+                "忽略审计日志的边界条件，未用并发冲突覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "幂等、并发控制与审计 幂等键",
+                "乐观锁 唯一约束",
+                "审计日志 并发冲突"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于幂等键与乐观锁的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析幂等键的适用场景",
+                "解释乐观锁的运行机制",
+                "诊断唯一约束相关故障",
+                "比较审计日志的实现取舍",
+                "设计包含并发冲突的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "api-docs-integration-test"
+              ]
+            },
+            {
+              "code": "monitoring-observability",
+              "nodeOrder": 8,
+              "title": "监控、日志与可观测性",
+              "objectives": [
+                "运用Micrometer与Prometheus完成“监控、日志与可观测性”的可运行练习",
+                "解释traceId的行为，并用指标验证关键边界"
+              ],
+              "highFrequency": [
+                "Micrometer与Prometheus的核心机制",
+                "traceId、指标与告警的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Micrometer和Prometheus的职责，导致实现偏离契约",
+                "忽略指标的边界条件，未用告警覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "监控、日志与可观测性 Micrometer",
+                "Prometheus traceId",
+                "指标 告警"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Micrometer与Prometheus的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Micrometer的适用场景",
+                "解释Prometheus的运行机制",
+                "诊断traceId相关故障",
+                "比较指标的实现取舍",
+                "设计包含告警的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "idempotency-concurrency-audit"
+              ]
+            },
+            {
+              "code": "performance-profiling",
+              "nodeOrder": 9,
+              "title": "性能分析与容量",
+              "objectives": [
+                "运用JFR与火焰图完成“性能分析与容量”的可运行练习",
+                "解释连接池的行为，并用压测验证关键边界"
+              ],
+              "highFrequency": [
+                "JFR与火焰图的核心机制",
+                "连接池、压测与容量规划的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆JFR和火焰图的职责，导致实现偏离契约",
+                "忽略压测的边界条件，未用容量规划覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "性能分析与容量 JFR",
+                "火焰图 连接池",
+                "压测 容量规划"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于JFR与火焰图的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析JFR的适用场景",
+                "解释火焰图的运行机制",
+                "诊断连接池相关故障",
+                "比较压测的实现取舍",
+                "设计包含容量规划的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "monitoring-observability"
+              ]
+            },
+            {
+              "code": "backend-quality-gate",
+              "nodeOrder": 10,
+              "title": "后端质量门禁里程碑",
+              "objectives": [
+                "运用JaCoCo与静态检查完成“后端质量门禁里程碑”的可运行练习",
+                "解释集成测试的行为，并用SLO验证关键边界"
+              ],
+              "highFrequency": [
+                "JaCoCo与静态检查的核心机制",
+                "集成测试、SLO与发布门禁的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆JaCoCo和静态检查的职责，导致实现偏离契约",
+                "忽略SLO的边界条件，未用发布门禁覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "后端质量门禁里程碑 JaCoCo",
+                "静态检查 集成测试",
+                "SLO 发布门禁"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“后端质量”模块成果，必须展示JaCoCo、集成测试和发布门禁并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析JaCoCo的适用场景",
+                "解释静态检查的运行机制",
+                "诊断集成测试相关故障",
+                "比较SLO的实现取舍",
+                "设计包含发布门禁的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "performance-profiling"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "frontend-delivery",
+      "stageOrder": 5,
+      "title": "前端与交付",
+      "description": "打通 Vue 前端到容器发布链路",
+      "graduationProjectTitle": "全栈管理控制台",
+      "modules": [
+        {
+          "moduleCode": "frontend-delivery",
+          "moduleOrder": 1,
+          "title": "前端与交付",
+          "description": "围绕前端与交付组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "vue-ts-basics",
+              "nodeOrder": 1,
+              "title": "Vue 3 与 TypeScript",
+              "objectives": [
+                "运用Vue 3与Composition API完成“Vue 3 与 TypeScript”的可运行练习",
+                "解释TypeScript的行为，并用响应式验证关键边界"
+              ],
+              "highFrequency": [
+                "Vue 3与Composition API的核心机制",
+                "TypeScript、响应式与组件 props的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Vue 3和Composition API的职责，导致实现偏离契约",
+                "忽略响应式的边界条件，未用组件 props覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Vue 3 与 TypeScript Vue 3",
+                "Composition API TypeScript",
+                "响应式 组件 props"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Vue 3与Composition API的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Vue 3的适用场景",
+                "解释Composition API的运行机制",
+                "诊断TypeScript相关故障",
+                "比较响应式的实现取舍",
+                "设计包含组件 props的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "backend-quality-gate"
+              ]
+            },
+            {
+              "code": "vue-router-pinia",
+              "nodeOrder": 2,
+              "title": "路由与状态管理",
+              "objectives": [
+                "运用Vue Router与Pinia完成“路由与状态管理”的可运行练习",
+                "解释导航守卫的行为，并用状态持久化验证关键边界"
+              ],
+              "highFrequency": [
+                "Vue Router与Pinia的核心机制",
+                "导航守卫、状态持久化与组合式 store的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Vue Router和Pinia的职责，导致实现偏离契约",
+                "忽略状态持久化的边界条件，未用组合式 store覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "路由与状态管理 Vue Router",
+                "Pinia 导航守卫",
+                "状态持久化 组合式 store"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Vue Router与Pinia的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Vue Router的适用场景",
+                "解释Pinia的运行机制",
+                "诊断导航守卫相关故障",
+                "比较状态持久化的实现取舍",
+                "设计包含组合式 store的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "vue-ts-basics"
+              ]
+            },
+            {
+              "code": "frontend-form-validation",
+              "nodeOrder": 3,
+              "title": "表单与校验体验",
+              "objectives": [
+                "运用表单状态与异步校验完成“表单与校验体验”的可运行练习",
+                "解释错误提示的行为，并用可访问标签验证关键边界"
+              ],
+              "highFrequency": [
+                "表单状态与异步校验的核心机制",
+                "错误提示、可访问标签与防重复提交的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆表单状态和异步校验的职责，导致实现偏离契约",
+                "忽略可访问标签的边界条件，未用防重复提交覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "表单与校验体验 表单状态",
+                "异步校验 错误提示",
+                "可访问标签 防重复提交"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于表单状态与异步校验的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析表单状态的适用场景",
+                "解释异步校验的运行机制",
+                "诊断错误提示相关故障",
+                "比较可访问标签的实现取舍",
+                "设计包含防重复提交的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "vue-router-pinia"
+              ]
+            },
+            {
+              "code": "frontend-api-integration",
+              "nodeOrder": 4,
+              "title": "前后端 API 集成",
+              "objectives": [
+                "运用Axios与拦截器完成“前后端 API 集成”的可运行练习",
+                "解释JWT的行为，并用CORS验证关键边界"
+              ],
+              "highFrequency": [
+                "Axios与拦截器的核心机制",
+                "JWT、CORS与错误契约的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Axios和拦截器的职责，导致实现偏离契约",
+                "忽略CORS的边界条件，未用错误契约覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "前后端 API 集成 Axios",
+                "拦截器 JWT",
+                "CORS 错误契约"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Axios与拦截器的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Axios的适用场景",
+                "解释拦截器的运行机制",
+                "诊断JWT相关故障",
+                "比较CORS的实现取舍",
+                "设计包含错误契约的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "frontend-form-validation"
+              ]
+            },
+            {
+              "code": "git-workflow",
+              "nodeOrder": 5,
+              "title": "Git 协作工作流",
+              "objectives": [
+                "运用Git与feature branch完成“Git 协作工作流”的可运行练习",
+                "解释rebase的行为，并用冲突解决验证关键边界"
+              ],
+              "highFrequency": [
+                "Git与feature branch的核心机制",
+                "rebase、冲突解决与代码审查的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Git和feature branch的职责，导致实现偏离契约",
+                "忽略冲突解决的边界条件，未用代码审查覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Git 协作工作流 Git",
+                "feature branch rebase",
+                "冲突解决 代码审查"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Git与feature branch的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Git的适用场景",
+                "解释feature branch的运行机制",
+                "诊断rebase相关故障",
+                "比较冲突解决的实现取舍",
+                "设计包含代码审查的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "frontend-api-integration"
+              ]
+            },
+            {
+              "code": "linux-nginx",
+              "nodeOrder": 6,
+              "title": "Linux 与 Nginx",
+              "objectives": [
+                "运用Linux 权限与systemd完成“Linux 与 Nginx”的可运行练习",
+                "解释Nginx的行为，并用反向代理验证关键边界"
+              ],
+              "highFrequency": [
+                "Linux 权限与systemd的核心机制",
+                "Nginx、反向代理与TLS的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Linux 权限和systemd的职责，导致实现偏离契约",
+                "忽略反向代理的边界条件，未用TLS覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Linux 与 Nginx Linux 权限",
+                "systemd Nginx",
+                "反向代理 TLS"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Linux 权限与systemd的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Linux 权限的适用场景",
+                "解释systemd的运行机制",
+                "诊断Nginx相关故障",
+                "比较反向代理的实现取舍",
+                "设计包含TLS的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "git-workflow"
+              ]
+            },
+            {
+              "code": "docker-delivery",
+              "nodeOrder": 7,
+              "title": "Docker 容器化",
+              "objectives": [
+                "运用Dockerfile与多阶段构建完成“Docker 容器化”的可运行练习",
+                "解释Compose的行为，并用健康检查验证关键边界"
+              ],
+              "highFrequency": [
+                "Dockerfile与多阶段构建的核心机制",
+                "Compose、健康检查与镜像层的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Dockerfile和多阶段构建的职责，导致实现偏离契约",
+                "忽略健康检查的边界条件，未用镜像层覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Docker 容器化 Dockerfile",
+                "多阶段构建 Compose",
+                "健康检查 镜像层"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Dockerfile与多阶段构建的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Dockerfile的适用场景",
+                "解释多阶段构建的运行机制",
+                "诊断Compose相关故障",
+                "比较健康检查的实现取舍",
+                "设计包含镜像层的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "linux-nginx"
+              ]
+            },
+            {
+              "code": "frontend-delivery-project",
+              "nodeOrder": 8,
+              "title": "全栈交付里程碑",
+              "objectives": [
+                "运用Vue与Spring API完成“全栈交付里程碑”的可运行练习",
+                "解释Nginx的行为，并用Docker Compose验证关键边界"
+              ],
+              "highFrequency": [
+                "Vue与Spring API的核心机制",
+                "Nginx、Docker Compose与端到端验收的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Vue和Spring API的职责，导致实现偏离契约",
+                "忽略Docker Compose的边界条件，未用端到端验收覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "全栈交付里程碑 Vue",
+                "Spring API Nginx",
+                "Docker Compose 端到端验收"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“前端与交付”模块成果，必须展示Vue、Nginx和端到端验收并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析Vue的适用场景",
+                "解释Spring API的运行机制",
+                "诊断Nginx相关故障",
+                "比较Docker Compose的实现取舍",
+                "设计包含端到端验收的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "docker-delivery"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "python-fastapi",
+      "stageOrder": 6,
+      "title": "Python 与 FastAPI",
+      "description": "构建可与 Java 协作的 Python AI 服务",
+      "graduationProjectTitle": "Java-Python 双端服务",
+      "modules": [
+        {
+          "moduleCode": "python-engineering",
+          "moduleOrder": 1,
+          "title": "Python 工程",
+          "description": "围绕Python 工程组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "python-engineering",
+              "nodeOrder": 1,
+              "title": "Python 语言与工程基础",
+              "objectives": [
+                "运用Python与venv完成“Python 语言与工程基础”的可运行练习",
+                "解释pyproject.toml的行为，并用类型标注验证关键边界"
+              ],
+              "highFrequency": [
+                "Python与venv的核心机制",
+                "pyproject.toml、类型标注与pytest的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Python和venv的职责，导致实现偏离契约",
+                "忽略类型标注的边界条件，未用pytest覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Python 语言与工程基础 Python",
+                "venv pyproject.toml",
+                "类型标注 pytest"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Python与venv的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Python的适用场景",
+                "解释venv的运行机制",
+                "诊断pyproject.toml相关故障",
+                "比较类型标注的实现取舍",
+                "设计包含pytest的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "frontend-delivery-project"
+              ]
+            },
+            {
+              "code": "python-data-structures",
+              "nodeOrder": 2,
+              "title": "Python 数据结构与迭代",
+              "objectives": [
+                "运用list/dict/set与推导式完成“Python 数据结构与迭代”的可运行练习",
+                "解释生成器的行为，并用迭代器验证关键边界"
+              ],
+              "highFrequency": [
+                "list/dict/set与推导式的核心机制",
+                "生成器、迭代器与切片的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆list/dict/set和推导式的职责，导致实现偏离契约",
+                "忽略迭代器的边界条件，未用切片覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Python 数据结构与迭代 list/dict/set",
+                "推导式 生成器",
+                "迭代器 切片"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于list/dict/set与推导式的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析list/dict/set的适用场景",
+                "解释推导式的运行机制",
+                "诊断生成器相关故障",
+                "比较迭代器的实现取舍",
+                "设计包含切片的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "python-engineering"
+              ]
+            },
+            {
+              "code": "python-errors-files",
+              "nodeOrder": 3,
+              "title": "Python 异常与文件",
+              "objectives": [
+                "运用context manager与pathlib完成“Python 异常与文件”的可运行练习",
+                "解释异常链的行为，并用编码验证关键边界"
+              ],
+              "highFrequency": [
+                "context manager与pathlib的核心机制",
+                "异常链、编码与结构化日志的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆context manager和pathlib的职责，导致实现偏离契约",
+                "忽略编码的边界条件，未用结构化日志覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Python 异常与文件 context manager",
+                "pathlib 异常链",
+                "编码 结构化日志"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于context manager与pathlib的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析context manager的适用场景",
+                "解释pathlib的运行机制",
+                "诊断异常链相关故障",
+                "比较编码的实现取舍",
+                "设计包含结构化日志的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "python-data-structures"
+              ]
+            },
+            {
+              "code": "pydantic",
+              "nodeOrder": 4,
+              "title": "Pydantic 建模里程碑",
+              "objectives": [
+                "运用Pydantic与BaseModel完成“Pydantic 建模里程碑”的可运行练习",
+                "解释Field的行为，并用model_validator验证关键边界"
+              ],
+              "highFrequency": [
+                "Pydantic与BaseModel的核心机制",
+                "Field、model_validator与JSON Schema的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Pydantic和BaseModel的职责，导致实现偏离契约",
+                "忽略model_validator的边界条件，未用JSON Schema覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Pydantic 建模里程碑 Pydantic",
+                "BaseModel Field",
+                "model_validator JSON Schema"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“Python 工程”模块成果，必须展示Pydantic、Field和JSON Schema并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析Pydantic的适用场景",
+                "解释BaseModel的运行机制",
+                "诊断Field相关故障",
+                "比较model_validator的实现取舍",
+                "设计包含JSON Schema的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "python-errors-files"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "fastapi-integration",
+          "moduleOrder": 2,
+          "title": "FastAPI 集成",
+          "description": "围绕FastAPI 集成组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "fastapi-routing-dependencies",
+              "nodeOrder": 5,
+              "title": "FastAPI 路由与依赖",
+              "objectives": [
+                "运用FastAPI与APIRouter完成“FastAPI 路由与依赖”的可运行练习",
+                "解释Depends的行为，并用生命周期验证关键边界"
+              ],
+              "highFrequency": [
+                "FastAPI与APIRouter的核心机制",
+                "Depends、生命周期与OpenAPI的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆FastAPI和APIRouter的职责，导致实现偏离契约",
+                "忽略生命周期的边界条件，未用OpenAPI覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "FastAPI 路由与依赖 FastAPI",
+                "APIRouter Depends",
+                "生命周期 OpenAPI"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于FastAPI与APIRouter的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析FastAPI的适用场景",
+                "解释APIRouter的运行机制",
+                "诊断Depends相关故障",
+                "比较生命周期的实现取舍",
+                "设计包含OpenAPI的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "pydantic"
+              ]
+            },
+            {
+              "code": "fastapi-rest",
+              "nodeOrder": 6,
+              "title": "FastAPI REST 服务",
+              "objectives": [
+                "运用FastAPI与Pydantic完成“FastAPI REST 服务”的可运行练习",
+                "解释状态码的行为，并用异常处理验证关键边界"
+              ],
+              "highFrequency": [
+                "FastAPI与Pydantic的核心机制",
+                "状态码、异常处理与TestClient的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆FastAPI和Pydantic的职责，导致实现偏离契约",
+                "忽略异常处理的边界条件，未用TestClient覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "FastAPI REST 服务 FastAPI",
+                "Pydantic 状态码",
+                "异常处理 TestClient"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于FastAPI与Pydantic的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析FastAPI的适用场景",
+                "解释Pydantic的运行机制",
+                "诊断状态码相关故障",
+                "比较异常处理的实现取舍",
+                "设计包含TestClient的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "fastapi-routing-dependencies"
+              ]
+            },
+            {
+              "code": "python-async-http",
+              "nodeOrder": 7,
+              "title": "异步编程与 HTTP",
+              "objectives": [
+                "运用async/await与httpx完成“异步编程与 HTTP”的可运行练习",
+                "解释连接池的行为，并用超时验证关键边界"
+              ],
+              "highFrequency": [
+                "async/await与httpx的核心机制",
+                "连接池、超时与并发限制的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆async/await和httpx的职责，导致实现偏离契约",
+                "忽略超时的边界条件，未用并发限制覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "异步编程与 HTTP async/await",
+                "httpx 连接池",
+                "超时 并发限制"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于async/await与httpx的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析async/await的适用场景",
+                "解释httpx的运行机制",
+                "诊断连接池相关故障",
+                "比较超时的实现取舍",
+                "设计包含并发限制的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "fastapi-rest"
+              ]
+            },
+            {
+              "code": "java-python-contract",
+              "nodeOrder": 8,
+              "title": "Java-Python 接口契约",
+              "objectives": [
+                "运用OpenAPI与DTO完成“Java-Python 接口契约”的可运行练习",
+                "解释幂等键的行为，并用错误码验证关键边界"
+              ],
+              "highFrequency": [
+                "OpenAPI与DTO的核心机制",
+                "幂等键、错误码与契约测试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆OpenAPI和DTO的职责，导致实现偏离契约",
+                "忽略错误码的边界条件，未用契约测试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Java-Python 接口契约 OpenAPI",
+                "DTO 幂等键",
+                "错误码 契约测试"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于OpenAPI与DTO的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析OpenAPI的适用场景",
+                "解释DTO的运行机制",
+                "诊断幂等键相关故障",
+                "比较错误码的实现取舍",
+                "设计包含契约测试的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "python-async-http"
+              ]
+            },
+            {
+              "code": "fastapi-integration-project",
+              "nodeOrder": 9,
+              "title": "双端集成里程碑",
+              "objectives": [
+                "运用Spring Boot与FastAPI完成“双端集成里程碑”的可运行练习",
+                "解释OpenAPI的行为，并用异步 HTTP验证关键边界"
+              ],
+              "highFrequency": [
+                "Spring Boot与FastAPI的核心机制",
+                "OpenAPI、异步 HTTP与链路追踪的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Spring Boot和FastAPI的职责，导致实现偏离契约",
+                "忽略异步 HTTP的边界条件，未用链路追踪覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "双端集成里程碑 Spring Boot",
+                "FastAPI OpenAPI",
+                "异步 HTTP 链路追踪"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“FastAPI 集成”模块成果，必须展示Spring Boot、OpenAPI和链路追踪并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析Spring Boot的适用场景",
+                "解释FastAPI的运行机制",
+                "诊断OpenAPI相关故障",
+                "比较异步 HTTP的实现取舍",
+                "设计包含链路追踪的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "java-python-contract"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "deepseek-model",
+      "stageOrder": 7,
+      "title": "大模型基础",
+      "description": "实现可靠、安全且可观测的模型访问层",
+      "graduationProjectTitle": "可靠的大模型网关",
+      "modules": [
+        {
+          "moduleCode": "llm-foundations",
+          "moduleOrder": 1,
+          "title": "大模型基础",
+          "description": "围绕大模型基础组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "llm-api-basics",
+              "nodeOrder": 1,
+              "title": "大模型 API 基础",
+              "objectives": [
+                "运用chat completion与system message完成“大模型 API 基础”的可运行练习",
+                "解释token的行为，并用temperature验证关键边界"
+              ],
+              "highFrequency": [
+                "chat completion与system message的核心机制",
+                "token、temperature与流式响应的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆chat completion和system message的职责，导致实现偏离契约",
+                "忽略temperature的边界条件，未用流式响应覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "大模型 API 基础 chat completion",
+                "system message token",
+                "temperature 流式响应"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于chat completion与system message的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析chat completion的适用场景",
+                "解释system message的运行机制",
+                "诊断token相关故障",
+                "比较temperature的实现取舍",
+                "设计包含流式响应的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "fastapi-integration-project"
+              ]
+            },
+            {
+              "code": "prompt-engineering",
+              "nodeOrder": 2,
+              "title": "提示词工程",
+              "objectives": [
+                "运用角色指令与few-shot完成“提示词工程”的可运行练习",
+                "解释上下文边界的行为，并用提示注入验证关键边界"
+              ],
+              "highFrequency": [
+                "角色指令与few-shot的核心机制",
+                "上下文边界、提示注入与评测样例的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆角色指令和few-shot的职责，导致实现偏离契约",
+                "忽略提示注入的边界条件，未用评测样例覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "提示词工程 角色指令",
+                "few-shot 上下文边界",
+                "提示注入 评测样例"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于角色指令与few-shot的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析角色指令的适用场景",
+                "解释few-shot的运行机制",
+                "诊断上下文边界相关故障",
+                "比较提示注入的实现取舍",
+                "设计包含评测样例的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "llm-api-basics"
+              ]
+            },
+            {
+              "code": "structured-output",
+              "nodeOrder": 3,
+              "title": "结构化输出",
+              "objectives": [
+                "运用JSON Schema与结构化输出完成“结构化输出”的可运行练习",
+                "解释解析失败的行为，并用约束解码验证关键边界"
+              ],
+              "highFrequency": [
+                "JSON Schema与结构化输出的核心机制",
+                "解析失败、约束解码与重试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆JSON Schema和结构化输出的职责，导致实现偏离契约",
+                "忽略约束解码的边界条件，未用重试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "结构化输出 JSON Schema",
+                "结构化输出 解析失败",
+                "约束解码 重试"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于JSON Schema与结构化输出的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析JSON Schema的适用场景",
+                "解释结构化输出的运行机制",
+                "诊断解析失败相关故障",
+                "比较约束解码的实现取舍",
+                "设计包含重试的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "prompt-engineering"
+              ]
+            },
+            {
+              "code": "llm-foundations-project",
+              "nodeOrder": 4,
+              "title": "可靠模型调用里程碑",
+              "objectives": [
+                "运用prompt与JSON Schema完成“可靠模型调用里程碑”的可运行练习",
+                "解释流式输出的行为，并用token 预算验证关键边界"
+              ],
+              "highFrequency": [
+                "prompt与JSON Schema的核心机制",
+                "流式输出、token 预算与回归评测的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆prompt和JSON Schema的职责，导致实现偏离契约",
+                "忽略token 预算的边界条件，未用回归评测覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "可靠模型调用里程碑 prompt",
+                "JSON Schema 流式输出",
+                "token 预算 回归评测"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“大模型基础”模块成果，必须展示prompt、流式输出和回归评测并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析prompt的适用场景",
+                "解释JSON Schema的运行机制",
+                "诊断流式输出相关故障",
+                "比较token 预算的实现取舍",
+                "设计包含回归评测的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "structured-output"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "model-engineering",
+          "moduleOrder": 2,
+          "title": "模型工程",
+          "description": "围绕模型工程组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "model-cost-retry",
+              "nodeOrder": 5,
+              "title": "成本、限流与重试",
+              "objectives": [
+                "运用token 成本与rate limit完成“成本、限流与重试”的可运行练习",
+                "解释指数退避的行为，并用jitter验证关键边界"
+              ],
+              "highFrequency": [
+                "token 成本与rate limit的核心机制",
+                "指数退避、jitter与熔断的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆token 成本和rate limit的职责，导致实现偏离契约",
+                "忽略jitter的边界条件，未用熔断覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "成本、限流与重试 token 成本",
+                "rate limit 指数退避",
+                "jitter 熔断"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于token 成本与rate limit的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析token 成本的适用场景",
+                "解释rate limit的运行机制",
+                "诊断指数退避相关故障",
+                "比较jitter的实现取舍",
+                "设计包含熔断的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "llm-foundations-project"
+              ]
+            },
+            {
+              "code": "model-observability",
+              "nodeOrder": 6,
+              "title": "模型可观测性",
+              "objectives": [
+                "运用延迟与token 用量完成“模型可观测性”的可运行练习",
+                "解释trace的行为，并用成功率验证关键边界"
+              ],
+              "highFrequency": [
+                "延迟与token 用量的核心机制",
+                "trace、成功率与提示版本的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆延迟和token 用量的职责，导致实现偏离契约",
+                "忽略成功率的边界条件，未用提示版本覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "模型可观测性 延迟",
+                "token 用量 trace",
+                "成功率 提示版本"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于延迟与token 用量的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析延迟的适用场景",
+                "解释token 用量的运行机制",
+                "诊断trace相关故障",
+                "比较成功率的实现取舍",
+                "设计包含提示版本的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "model-cost-retry"
+              ]
+            },
+            {
+              "code": "llm-security",
+              "nodeOrder": 7,
+              "title": "大模型安全",
+              "objectives": [
+                "运用提示注入与数据泄露完成“大模型安全”的可运行练习",
+                "解释内容过滤的行为，并用输出校验验证关键边界"
+              ],
+              "highFrequency": [
+                "提示注入与数据泄露的核心机制",
+                "内容过滤、输出校验与最小权限的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆提示注入和数据泄露的职责，导致实现偏离契约",
+                "忽略输出校验的边界条件，未用最小权限覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "大模型安全 提示注入",
+                "数据泄露 内容过滤",
+                "输出校验 最小权限"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于提示注入与数据泄露的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析提示注入的适用场景",
+                "解释数据泄露的运行机制",
+                "诊断内容过滤相关故障",
+                "比较输出校验的实现取舍",
+                "设计包含最小权限的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "model-observability"
+              ]
+            },
+            {
+              "code": "model-engineering-project",
+              "nodeOrder": 8,
+              "title": "模型网关里程碑",
+              "objectives": [
+                "运用限流与重试完成“模型网关里程碑”的可运行练习",
+                "解释成本预算的行为，并用安全策略验证关键边界"
+              ],
+              "highFrequency": [
+                "限流与重试的核心机制",
+                "成本预算、安全策略与可观测性的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆限流和重试的职责，导致实现偏离契约",
+                "忽略安全策略的边界条件，未用可观测性覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "模型网关里程碑 限流",
+                "重试 成本预算",
+                "安全策略 可观测性"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“模型工程”模块成果，必须展示限流、成本预算和可观测性并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析限流的适用场景",
+                "解释重试的运行机制",
+                "诊断成本预算相关故障",
+                "比较安全策略的实现取舍",
+                "设计包含可观测性的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "llm-security"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "agent-tools",
+      "stageOrder": 8,
+      "title": "Agent 与工具",
+      "description": "用 LangGraph 与 MCP 构建受治理的工具 Agent",
+      "graduationProjectTitle": "可审批的 MCP Agent",
+      "modules": [
+        {
+          "moduleCode": "langgraph-agent",
+          "moduleOrder": 1,
+          "title": "LangGraph Agent",
+          "description": "围绕LangGraph Agent组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "langgraph-state",
+              "nodeOrder": 1,
+              "title": "LangGraph 状态图",
+              "objectives": [
+                "运用LangGraph与StateGraph完成“LangGraph 状态图”的可运行练习",
+                "解释节点的行为，并用边验证关键边界"
+              ],
+              "highFrequency": [
+                "LangGraph与StateGraph的核心机制",
+                "节点、边与状态归并的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆LangGraph和StateGraph的职责，导致实现偏离契约",
+                "忽略边的边界条件，未用状态归并覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "LangGraph 状态图 LangGraph",
+                "StateGraph 节点",
+                "边 状态归并"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于LangGraph与StateGraph的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析LangGraph的适用场景",
+                "解释StateGraph的运行机制",
+                "诊断节点相关故障",
+                "比较边的实现取舍",
+                "设计包含状态归并的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "model-engineering-project"
+              ]
+            },
+            {
+              "code": "langgraph-memory",
+              "nodeOrder": 2,
+              "title": "记忆与检查点",
+              "objectives": [
+                "运用checkpoint与thread_id完成“记忆与检查点”的可运行练习",
+                "解释短期记忆的行为，并用恢复验证关键边界"
+              ],
+              "highFrequency": [
+                "checkpoint与thread_id的核心机制",
+                "短期记忆、恢复与状态持久化的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆checkpoint和thread_id的职责，导致实现偏离契约",
+                "忽略恢复的边界条件，未用状态持久化覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "记忆与检查点 checkpoint",
+                "thread_id 短期记忆",
+                "恢复 状态持久化"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于checkpoint与thread_id的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析checkpoint的适用场景",
+                "解释thread_id的运行机制",
+                "诊断短期记忆相关故障",
+                "比较恢复的实现取舍",
+                "设计包含状态持久化的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "langgraph-state"
+              ]
+            },
+            {
+              "code": "tool-calling",
+              "nodeOrder": 3,
+              "title": "模型工具调用",
+              "objectives": [
+                "运用tool calling与JSON Schema完成“模型工具调用”的可运行练习",
+                "解释参数校验的行为，并用工具结果验证关键边界"
+              ],
+              "highFrequency": [
+                "tool calling与JSON Schema的核心机制",
+                "参数校验、工具结果与失败重试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆tool calling和JSON Schema的职责，导致实现偏离契约",
+                "忽略工具结果的边界条件，未用失败重试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "模型工具调用 tool calling",
+                "JSON Schema 参数校验",
+                "工具结果 失败重试"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于tool calling与JSON Schema的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析tool calling的适用场景",
+                "解释JSON Schema的运行机制",
+                "诊断参数校验相关故障",
+                "比较工具结果的实现取舍",
+                "设计包含失败重试的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "langgraph-memory"
+              ]
+            },
+            {
+              "code": "human-in-loop",
+              "nodeOrder": 4,
+              "title": "人工审批",
+              "objectives": [
+                "运用interrupt与resume完成“人工审批”的可运行练习",
+                "解释审批状态的行为，并用风险预览验证关键边界"
+              ],
+              "highFrequency": [
+                "interrupt与resume的核心机制",
+                "审批状态、风险预览与拒绝路径的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆interrupt和resume的职责，导致实现偏离契约",
+                "忽略风险预览的边界条件，未用拒绝路径覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "人工审批 interrupt",
+                "resume 审批状态",
+                "风险预览 拒绝路径"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于interrupt与resume的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析interrupt的适用场景",
+                "解释resume的运行机制",
+                "诊断审批状态相关故障",
+                "比较风险预览的实现取舍",
+                "设计包含拒绝路径的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "tool-calling"
+              ]
+            },
+            {
+              "code": "langgraph-agent-project",
+              "nodeOrder": 5,
+              "title": "可审批 Agent 里程碑",
+              "objectives": [
+                "运用LangGraph与checkpoint完成“可审批 Agent 里程碑”的可运行练习",
+                "解释tool calling的行为，并用human-in-the-loop验证关键边界"
+              ],
+              "highFrequency": [
+                "LangGraph与checkpoint的核心机制",
+                "tool calling、human-in-the-loop与状态回放的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆LangGraph和checkpoint的职责，导致实现偏离契约",
+                "忽略human-in-the-loop的边界条件，未用状态回放覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "可审批 Agent 里程碑 LangGraph",
+                "checkpoint tool calling",
+                "human-in-the-loop 状态回放"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“LangGraph Agent”模块成果，必须展示LangGraph、tool calling和状态回放并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析LangGraph的适用场景",
+                "解释checkpoint的运行机制",
+                "诊断tool calling相关故障",
+                "比较human-in-the-loop的实现取舍",
+                "设计包含状态回放的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "human-in-loop"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "tool-governance-mcp",
+          "moduleOrder": 2,
+          "title": "工具治理与 MCP",
+          "description": "围绕工具治理与 MCP组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "tool-contract-validation",
+              "nodeOrder": 6,
+              "title": "工具契约与校验",
+              "objectives": [
+                "运用工具 schema与输入校验完成“工具契约与校验”的可运行练习",
+                "解释超时的行为，并用错误分类验证关键边界"
+              ],
+              "highFrequency": [
+                "工具 schema与输入校验的核心机制",
+                "超时、错误分类与幂等性的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆工具 schema和输入校验的职责，导致实现偏离契约",
+                "忽略错误分类的边界条件，未用幂等性覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "工具契约与校验 工具 schema",
+                "输入校验 超时",
+                "错误分类 幂等性"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于工具 schema与输入校验的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析工具 schema的适用场景",
+                "解释输入校验的运行机制",
+                "诊断超时相关故障",
+                "比较错误分类的实现取舍",
+                "设计包含幂等性的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "langgraph-agent-project"
+              ]
+            },
+            {
+              "code": "tool-permission-audit",
+              "nodeOrder": 7,
+              "title": "工具权限与审计",
+              "objectives": [
+                "运用最小权限与allowlist完成“工具权限与审计”的可运行练习",
+                "解释审计事件的行为，并用用户确认验证关键边界"
+              ],
+              "highFrequency": [
+                "最小权限与allowlist的核心机制",
+                "审计事件、用户确认与敏感操作的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆最小权限和allowlist的职责，导致实现偏离契约",
+                "忽略用户确认的边界条件，未用敏感操作覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "工具权限与审计 最小权限",
+                "allowlist 审计事件",
+                "用户确认 敏感操作"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于最小权限与allowlist的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析最小权限的适用场景",
+                "解释allowlist的运行机制",
+                "诊断审计事件相关故障",
+                "比较用户确认的实现取舍",
+                "设计包含敏感操作的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "tool-contract-validation"
+              ]
+            },
+            {
+              "code": "mcp",
+              "nodeOrder": 8,
+              "title": "Model Context Protocol",
+              "objectives": [
+                "运用MCP与JSON-RPC完成“Model Context Protocol”的可运行练习",
+                "解释tools/list的行为，并用tools/call验证关键边界"
+              ],
+              "highFrequency": [
+                "MCP与JSON-RPC的核心机制",
+                "tools/list、tools/call与transport的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆MCP和JSON-RPC的职责，导致实现偏离契约",
+                "忽略tools/call的边界条件，未用transport覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Model Context Protocol MCP",
+                "JSON-RPC tools/list",
+                "tools/call transport"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于MCP与JSON-RPC的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析MCP的适用场景",
+                "解释JSON-RPC的运行机制",
+                "诊断tools/list相关故障",
+                "比较tools/call的实现取舍",
+                "设计包含transport的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "tool-permission-audit"
+              ]
+            },
+            {
+              "code": "spring-ai-elective",
+              "nodeOrder": 9,
+              "title": "Spring AI 集成（选修）",
+              "objectives": [
+                "运用Spring AI与ChatClient完成“Spring AI 集成（选修）”的可运行练习",
+                "解释ToolCallback的行为，并用Advisor验证关键边界"
+              ],
+              "highFrequency": [
+                "Spring AI与ChatClient的核心机制",
+                "ToolCallback、Advisor与模型适配的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Spring AI和ChatClient的职责，导致实现偏离契约",
+                "忽略Advisor的边界条件，未用模型适配覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Spring AI 集成（选修） Spring AI",
+                "ChatClient ToolCallback",
+                "Advisor 模型适配"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Spring AI与ChatClient的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Spring AI的适用场景",
+                "解释ChatClient的运行机制",
+                "诊断ToolCallback相关故障",
+                "比较Advisor的实现取舍",
+                "设计包含模型适配的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "MEDIUM",
+              "required": false,
+              "prerequisites": [
+                "mcp"
+              ]
+            },
+            {
+              "code": "mcp-governance-project",
+              "nodeOrder": 10,
+              "title": "MCP 工具服务器里程碑",
+              "objectives": [
+                "运用MCP Server与JSON-RPC完成“MCP 工具服务器里程碑”的可运行练习",
+                "解释权限策略的行为，并用审计日志验证关键边界"
+              ],
+              "highFrequency": [
+                "MCP Server与JSON-RPC的核心机制",
+                "权限策略、审计日志与兼容性测试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆MCP Server和JSON-RPC的职责，导致实现偏离契约",
+                "忽略审计日志的边界条件，未用兼容性测试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "MCP 工具服务器里程碑 MCP Server",
+                "JSON-RPC 权限策略",
+                "审计日志 兼容性测试"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“工具治理与 MCP”模块成果，必须展示MCP Server、权限策略和兼容性测试并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析MCP Server的适用场景",
+                "解释JSON-RPC的运行机制",
+                "诊断权限策略相关故障",
+                "比较审计日志的实现取舍",
+                "设计包含兼容性测试的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "MEDIUM",
+              "required": true,
+              "prerequisites": [
+                "spring-ai-elective"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "rag-assessment",
+      "stageOrder": 9,
+      "title": "RAG 与自适应评估",
+      "description": "实现混合检索、引用与质量评估",
+      "graduationProjectTitle": "带引用的自适应知识助手",
+      "modules": [
+        {
+          "moduleCode": "rag-retrieval",
+          "moduleOrder": 1,
+          "title": "RAG 检索",
+          "description": "围绕RAG 检索组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "document-parsing",
+              "nodeOrder": 1,
+              "title": "文档解析",
+              "objectives": [
+                "运用PDF/HTML 解析与元数据完成“文档解析”的可运行练习",
+                "解释编码检测的行为，并用表格提取验证关键边界"
+              ],
+              "highFrequency": [
+                "PDF/HTML 解析与元数据的核心机制",
+                "编码检测、表格提取与清洗的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆PDF/HTML 解析和元数据的职责，导致实现偏离契约",
+                "忽略表格提取的边界条件，未用清洗覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "文档解析 PDF/HTML 解析",
+                "元数据 编码检测",
+                "表格提取 清洗"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于PDF/HTML 解析与元数据的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析PDF/HTML 解析的适用场景",
+                "解释元数据的运行机制",
+                "诊断编码检测相关故障",
+                "比较表格提取的实现取舍",
+                "设计包含清洗的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "mcp-governance-project"
+              ]
+            },
+            {
+              "code": "chunking-metadata",
+              "nodeOrder": 2,
+              "title": "分块与元数据",
+              "objectives": [
+                "运用chunk size与overlap完成“分块与元数据”的可运行练习",
+                "解释语义分块的行为，并用metadata验证关键边界"
+              ],
+              "highFrequency": [
+                "chunk size与overlap的核心机制",
+                "语义分块、metadata与父子文档的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆chunk size和overlap的职责，导致实现偏离契约",
+                "忽略metadata的边界条件，未用父子文档覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "分块与元数据 chunk size",
+                "overlap 语义分块",
+                "metadata 父子文档"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于chunk size与overlap的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析chunk size的适用场景",
+                "解释overlap的运行机制",
+                "诊断语义分块相关故障",
+                "比较metadata的实现取舍",
+                "设计包含父子文档的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "document-parsing"
+              ]
+            },
+            {
+              "code": "embedding-qdrant",
+              "nodeOrder": 3,
+              "title": "向量嵌入与 Qdrant",
+              "objectives": [
+                "运用embedding与Qdrant完成“向量嵌入与 Qdrant”的可运行练习",
+                "解释collection的行为，并用cosine similarity验证关键边界"
+              ],
+              "highFrequency": [
+                "embedding与Qdrant的核心机制",
+                "collection、cosine similarity与payload filter的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆embedding和Qdrant的职责，导致实现偏离契约",
+                "忽略cosine similarity的边界条件，未用payload filter覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "向量嵌入与 Qdrant embedding",
+                "Qdrant collection",
+                "cosine similarity payload filter"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于embedding与Qdrant的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析embedding的适用场景",
+                "解释Qdrant的运行机制",
+                "诊断collection相关故障",
+                "比较cosine similarity的实现取舍",
+                "设计包含payload filter的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "chunking-metadata"
+              ]
+            },
+            {
+              "code": "hybrid-retrieval",
+              "nodeOrder": 4,
+              "title": "混合检索与重排",
+              "objectives": [
+                "运用BM25与向量检索完成“混合检索与重排”的可运行练习",
+                "解释RRF的行为，并用reranker验证关键边界"
+              ],
+              "highFrequency": [
+                "BM25与向量检索的核心机制",
+                "RRF、reranker与top-k的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆BM25和向量检索的职责，导致实现偏离契约",
+                "忽略reranker的边界条件，未用top-k覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "混合检索与重排 BM25",
+                "向量检索 RRF",
+                "reranker top-k"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于BM25与向量检索的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析BM25的适用场景",
+                "解释向量检索的运行机制",
+                "诊断RRF相关故障",
+                "比较reranker的实现取舍",
+                "设计包含top-k的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "embedding-qdrant"
+              ]
+            },
+            {
+              "code": "rag-retrieval-project",
+              "nodeOrder": 5,
+              "title": "RAG 检索里程碑",
+              "objectives": [
+                "运用文档分块与Qdrant完成“RAG 检索里程碑”的可运行练习",
+                "解释BM25的行为，并用重排验证关键边界"
+              ],
+              "highFrequency": [
+                "文档分块与Qdrant的核心机制",
+                "BM25、重排与召回评测的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆文档分块和Qdrant的职责，导致实现偏离契约",
+                "忽略重排的边界条件，未用召回评测覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "RAG 检索里程碑 文档分块",
+                "Qdrant BM25",
+                "重排 召回评测"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“RAG 检索”模块成果，必须展示文档分块、BM25和召回评测并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析文档分块的适用场景",
+                "解释Qdrant的运行机制",
+                "诊断BM25相关故障",
+                "比较重排的实现取舍",
+                "设计包含召回评测的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "hybrid-retrieval"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "search-assessment",
+          "moduleOrder": 2,
+          "title": "搜索与评估",
+          "description": "围绕搜索与评估组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "tavily-search",
+              "nodeOrder": 6,
+              "title": "Tavily 联网搜索",
+              "objectives": [
+                "运用Tavily与查询改写完成“Tavily 联网搜索”的可运行练习",
+                "解释域名过滤的行为，并用时效性验证关键边界"
+              ],
+              "highFrequency": [
+                "Tavily与查询改写的核心机制",
+                "域名过滤、时效性与搜索摘要的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Tavily和查询改写的职责，导致实现偏离契约",
+                "忽略时效性的边界条件，未用搜索摘要覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Tavily 联网搜索 Tavily",
+                "查询改写 域名过滤",
+                "时效性 搜索摘要"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Tavily与查询改写的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Tavily的适用场景",
+                "解释查询改写的运行机制",
+                "诊断域名过滤相关故障",
+                "比较时效性的实现取舍",
+                "设计包含搜索摘要的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "rag-retrieval-project"
+              ]
+            },
+            {
+              "code": "grounded-answer",
+              "nodeOrder": 7,
+              "title": "证据回答与引用",
+              "objectives": [
+                "运用grounding与citation完成“证据回答与引用”的可运行练习",
+                "解释证据片段的行为，并用拒答验证关键边界"
+              ],
+              "highFrequency": [
+                "grounding与citation的核心机制",
+                "证据片段、拒答与事实一致性的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆grounding和citation的职责，导致实现偏离契约",
+                "忽略拒答的边界条件，未用事实一致性覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "证据回答与引用 grounding",
+                "citation 证据片段",
+                "拒答 事实一致性"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于grounding与citation的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析grounding的适用场景",
+                "解释citation的运行机制",
+                "诊断证据片段相关故障",
+                "比较拒答的实现取舍",
+                "设计包含事实一致性的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "tavily-search"
+              ]
+            },
+            {
+              "code": "retrieval-evaluation",
+              "nodeOrder": 8,
+              "title": "检索质量评估",
+              "objectives": [
+                "运用Recall@k与MRR完成“检索质量评估”的可运行练习",
+                "解释nDCG的行为，并用黄金数据集验证关键边界"
+              ],
+              "highFrequency": [
+                "Recall@k与MRR的核心机制",
+                "nDCG、黄金数据集与错误分析的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Recall@k和MRR的职责，导致实现偏离契约",
+                "忽略黄金数据集的边界条件，未用错误分析覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "检索质量评估 Recall@k",
+                "MRR nDCG",
+                "黄金数据集 错误分析"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Recall@k与MRR的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Recall@k的适用场景",
+                "解释MRR的运行机制",
+                "诊断nDCG相关故障",
+                "比较黄金数据集的实现取舍",
+                "设计包含错误分析的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "grounded-answer"
+              ]
+            },
+            {
+              "code": "adaptive-assessment",
+              "nodeOrder": 9,
+              "title": "自适应学习评估",
+              "objectives": [
+                "运用IRT与难度估计完成“自适应学习评估”的可运行练习",
+                "解释能力画像的行为，并用题目选择验证关键边界"
+              ],
+              "highFrequency": [
+                "IRT与难度估计的核心机制",
+                "能力画像、题目选择与掌握度的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆IRT和难度估计的职责，导致实现偏离契约",
+                "忽略题目选择的边界条件，未用掌握度覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "自适应学习评估 IRT",
+                "难度估计 能力画像",
+                "题目选择 掌握度"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于IRT与难度估计的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析IRT的适用场景",
+                "解释难度估计的运行机制",
+                "诊断能力画像相关故障",
+                "比较题目选择的实现取舍",
+                "设计包含掌握度的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "retrieval-evaluation"
+              ]
+            },
+            {
+              "code": "search-assessment-project",
+              "nodeOrder": 10,
+              "title": "可信知识助手里程碑",
+              "objectives": [
+                "运用联网搜索与引用完成“可信知识助手里程碑”的可运行练习",
+                "解释检索指标的行为，并用自适应评估验证关键边界"
+              ],
+              "highFrequency": [
+                "联网搜索与引用的核心机制",
+                "检索指标、自适应评估与离线测试集的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆联网搜索和引用的职责，导致实现偏离契约",
+                "忽略自适应评估的边界条件，未用离线测试集覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "可信知识助手里程碑 联网搜索",
+                "引用 检索指标",
+                "自适应评估 离线测试集"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“搜索与评估”模块成果，必须展示联网搜索、检索指标和离线测试集并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析联网搜索的适用场景",
+                "解释引用的运行机制",
+                "诊断检索指标相关故障",
+                "比较自适应评估的实现取舍",
+                "设计包含离线测试集的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "adaptive-assessment"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "business-agent",
+      "stageOrder": 10,
+      "title": "业务 Agent",
+      "description": "形成授权、审批、幂等和补偿执行闭环",
+      "graduationProjectTitle": "可治理的业务执行 Agent",
+      "modules": [
+        {
+          "moduleCode": "business-tools",
+          "moduleOrder": 1,
+          "title": "业务工具",
+          "description": "围绕业务工具组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "business-tool-contracts",
+              "nodeOrder": 1,
+              "title": "业务工具契约",
+              "objectives": [
+                "运用工具契约与幂等键完成“业务工具契约”的可运行练习",
+                "解释输入 schema的行为，并用业务错误验证关键边界"
+              ],
+              "highFrequency": [
+                "工具契约与幂等键的核心机制",
+                "输入 schema、业务错误与副作用的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆工具契约和幂等键的职责，导致实现偏离契约",
+                "忽略业务错误的边界条件，未用副作用覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "业务工具契约 工具契约",
+                "幂等键 输入 schema",
+                "业务错误 副作用"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于工具契约与幂等键的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析工具契约的适用场景",
+                "解释幂等键的运行机制",
+                "诊断输入 schema相关故障",
+                "比较业务错误的实现取舍",
+                "设计包含副作用的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "search-assessment-project"
+              ]
+            },
+            {
+              "code": "intent-preview",
+              "nodeOrder": 2,
+              "title": "意图识别与预览",
+              "objectives": [
+                "运用意图分类与参数补全完成“意图识别与预览”的可运行练习",
+                "解释执行预览的行为，并用风险提示验证关键边界"
+              ],
+              "highFrequency": [
+                "意图分类与参数补全的核心机制",
+                "执行预览、风险提示与用户确认的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆意图分类和参数补全的职责，导致实现偏离契约",
+                "忽略风险提示的边界条件，未用用户确认覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "意图识别与预览 意图分类",
+                "参数补全 执行预览",
+                "风险提示 用户确认"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于意图分类与参数补全的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析意图分类的适用场景",
+                "解释参数补全的运行机制",
+                "诊断执行预览相关故障",
+                "比较风险提示的实现取舍",
+                "设计包含用户确认的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "business-tool-contracts"
+              ]
+            },
+            {
+              "code": "authorization-governance",
+              "nodeOrder": 3,
+              "title": "授权与治理",
+              "objectives": [
+                "运用RBAC与ABAC完成“授权与治理”的可运行练习",
+                "解释策略决策的行为，并用最小权限验证关键边界"
+              ],
+              "highFrequency": [
+                "RBAC与ABAC的核心机制",
+                "策略决策、最小权限与审计的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆RBAC和ABAC的职责，导致实现偏离契约",
+                "忽略最小权限的边界条件，未用审计覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "授权与治理 RBAC",
+                "ABAC 策略决策",
+                "最小权限 审计"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于RBAC与ABAC的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析RBAC的适用场景",
+                "解释ABAC的运行机制",
+                "诊断策略决策相关故障",
+                "比较最小权限的实现取舍",
+                "设计包含审计的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "intent-preview"
+              ]
+            },
+            {
+              "code": "business-tools-project",
+              "nodeOrder": 4,
+              "title": "受控业务工具里程碑",
+              "objectives": [
+                "运用工具契约与执行预览完成“受控业务工具里程碑”的可运行练习",
+                "解释授权策略的行为，并用审计记录验证关键边界"
+              ],
+              "highFrequency": [
+                "工具契约与执行预览的核心机制",
+                "授权策略、审计记录与拒绝路径的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆工具契约和执行预览的职责，导致实现偏离契约",
+                "忽略审计记录的边界条件，未用拒绝路径覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "受控业务工具里程碑 工具契约",
+                "执行预览 授权策略",
+                "审计记录 拒绝路径"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“业务工具”模块成果，必须展示工具契约、授权策略和拒绝路径并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析工具契约的适用场景",
+                "解释执行预览的运行机制",
+                "诊断授权策略相关故障",
+                "比较审计记录的实现取舍",
+                "设计包含拒绝路径的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "authorization-governance"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "business-agent-loop",
+          "moduleOrder": 2,
+          "title": "业务 Agent 闭环",
+          "description": "围绕业务 Agent 闭环组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "idempotent-execution",
+              "nodeOrder": 5,
+              "title": "幂等执行",
+              "objectives": [
+                "运用幂等键与状态机完成“幂等执行”的可运行练习",
+                "解释重复请求的行为，并用补偿验证关键边界"
+              ],
+              "highFrequency": [
+                "幂等键与状态机的核心机制",
+                "重复请求、补偿与outbox的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆幂等键和状态机的职责，导致实现偏离契约",
+                "忽略补偿的边界条件，未用outbox覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "幂等执行 幂等键",
+                "状态机 重复请求",
+                "补偿 outbox"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于幂等键与状态机的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析幂等键的适用场景",
+                "解释状态机的运行机制",
+                "诊断重复请求相关故障",
+                "比较补偿的实现取舍",
+                "设计包含outbox的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "business-tools-project"
+              ]
+            },
+            {
+              "code": "business-agent-planning",
+              "nodeOrder": 6,
+              "title": "业务任务规划",
+              "objectives": [
+                "运用任务分解与计划校验完成“业务任务规划”的可运行练习",
+                "解释依赖排序的行为，并用预算验证关键边界"
+              ],
+              "highFrequency": [
+                "任务分解与计划校验的核心机制",
+                "依赖排序、预算与终止条件的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆任务分解和计划校验的职责，导致实现偏离契约",
+                "忽略预算的边界条件，未用终止条件覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "业务任务规划 任务分解",
+                "计划校验 依赖排序",
+                "预算 终止条件"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于任务分解与计划校验的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析任务分解的适用场景",
+                "解释计划校验的运行机制",
+                "诊断依赖排序相关故障",
+                "比较预算的实现取舍",
+                "设计包含终止条件的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "idempotent-execution"
+              ]
+            },
+            {
+              "code": "business-agent-recovery",
+              "nodeOrder": 7,
+              "title": "失败恢复与补偿",
+              "objectives": [
+                "运用重试边界与补偿事务完成“失败恢复与补偿”的可运行练习",
+                "解释人工接管的行为，并用断点续跑验证关键边界"
+              ],
+              "highFrequency": [
+                "重试边界与补偿事务的核心机制",
+                "人工接管、断点续跑与死信的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆重试边界和补偿事务的职责，导致实现偏离契约",
+                "忽略断点续跑的边界条件，未用死信覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "失败恢复与补偿 重试边界",
+                "补偿事务 人工接管",
+                "断点续跑 死信"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于重试边界与补偿事务的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析重试边界的适用场景",
+                "解释补偿事务的运行机制",
+                "诊断人工接管相关故障",
+                "比较断点续跑的实现取舍",
+                "设计包含死信的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "business-agent-planning"
+              ]
+            },
+            {
+              "code": "business-agent-e2e",
+              "nodeOrder": 8,
+              "title": "业务 Agent 端到端",
+              "objectives": [
+                "运用意图识别与审批完成“业务 Agent 端到端”的可运行练习",
+                "解释幂等执行的行为，并用补偿验证关键边界"
+              ],
+              "highFrequency": [
+                "意图识别与审批的核心机制",
+                "幂等执行、补偿与审计回放的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆意图识别和审批的职责，导致实现偏离契约",
+                "忽略补偿的边界条件，未用审计回放覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "业务 Agent 端到端 意图识别",
+                "审批 幂等执行",
+                "补偿 审计回放"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“业务 Agent 闭环”模块成果，必须展示意图识别、幂等执行和审计回放并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析意图识别的适用场景",
+                "解释审批的运行机制",
+                "诊断幂等执行相关故障",
+                "比较补偿的实现取舍",
+                "设计包含审计回放的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "business-agent-recovery"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "developer-agent",
+      "stageOrder": 11,
+      "title": "开发者 Agent",
+      "description": "安全完成仓库理解、补丁和自动化验证",
+      "graduationProjectTitle": "测试驱动的编码 Agent",
+      "modules": [
+        {
+          "moduleCode": "repository-agent",
+          "moduleOrder": 1,
+          "title": "仓库 Agent",
+          "description": "围绕仓库 Agent组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "repo-read-search",
+              "nodeOrder": 1,
+              "title": "仓库读取与搜索",
+              "objectives": [
+                "运用ripgrep与文件树完成“仓库读取与搜索”的可运行练习",
+                "解释符号定位的行为，并用上下文预算验证关键边界"
+              ],
+              "highFrequency": [
+                "ripgrep与文件树的核心机制",
+                "符号定位、上下文预算与忽略规则的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆ripgrep和文件树的职责，导致实现偏离契约",
+                "忽略上下文预算的边界条件，未用忽略规则覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "仓库读取与搜索 ripgrep",
+                "文件树 符号定位",
+                "上下文预算 忽略规则"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于ripgrep与文件树的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析ripgrep的适用场景",
+                "解释文件树的运行机制",
+                "诊断符号定位相关故障",
+                "比较上下文预算的实现取舍",
+                "设计包含忽略规则的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "business-agent-e2e"
+              ]
+            },
+            {
+              "code": "code-context-planning",
+              "nodeOrder": 2,
+              "title": "代码上下文与计划",
+              "objectives": [
+                "运用依赖分析与调用链完成“代码上下文与计划”的可运行练习",
+                "解释变更范围的行为，并用验收条件验证关键边界"
+              ],
+              "highFrequency": [
+                "依赖分析与调用链的核心机制",
+                "变更范围、验收条件与风险清单的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆依赖分析和调用链的职责，导致实现偏离契约",
+                "忽略验收条件的边界条件，未用风险清单覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "代码上下文与计划 依赖分析",
+                "调用链 变更范围",
+                "验收条件 风险清单"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于依赖分析与调用链的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析依赖分析的适用场景",
+                "解释调用链的运行机制",
+                "诊断变更范围相关故障",
+                "比较验收条件的实现取舍",
+                "设计包含风险清单的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "repo-read-search"
+              ]
+            },
+            {
+              "code": "patch-diff",
+              "nodeOrder": 3,
+              "title": "补丁与 Diff 审查",
+              "objectives": [
+                "运用unified diff与补丁完成“补丁与 Diff 审查”的可运行练习",
+                "解释上下文行的行为，并用冲突验证关键边界"
+              ],
+              "highFrequency": [
+                "unified diff与补丁的核心机制",
+                "上下文行、冲突与最小变更的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆unified diff和补丁的职责，导致实现偏离契约",
+                "忽略冲突的边界条件，未用最小变更覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "补丁与 Diff 审查 unified diff",
+                "补丁 上下文行",
+                "冲突 最小变更"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于unified diff与补丁的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析unified diff的适用场景",
+                "解释补丁的运行机制",
+                "诊断上下文行相关故障",
+                "比较冲突的实现取舍",
+                "设计包含最小变更的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "code-context-planning"
+              ]
+            },
+            {
+              "code": "repository-agent-project",
+              "nodeOrder": 4,
+              "title": "仓库 Agent 里程碑",
+              "objectives": [
+                "运用代码搜索与变更计划完成“仓库 Agent 里程碑”的可运行练习",
+                "解释diff的行为，并用回归测试验证关键边界"
+              ],
+              "highFrequency": [
+                "代码搜索与变更计划的核心机制",
+                "diff、回归测试与审查报告的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆代码搜索和变更计划的职责，导致实现偏离契约",
+                "忽略回归测试的边界条件，未用审查报告覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "仓库 Agent 里程碑 代码搜索",
+                "变更计划 diff",
+                "回归测试 审查报告"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“仓库 Agent”模块成果，必须展示代码搜索、diff和审查报告并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析代码搜索的适用场景",
+                "解释变更计划的运行机制",
+                "诊断diff相关故障",
+                "比较回归测试的实现取舍",
+                "设计包含审查报告的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "patch-diff"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "developer-automation",
+          "moduleOrder": 2,
+          "title": "开发者自动化",
+          "description": "围绕开发者自动化组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "test-build-tools",
+              "nodeOrder": 5,
+              "title": "测试与构建工具",
+              "objectives": [
+                "运用测试选择与Maven完成“测试与构建工具”的可运行练习",
+                "解释退出码的行为，并用超时验证关键边界"
+              ],
+              "highFrequency": [
+                "测试选择与Maven的核心机制",
+                "退出码、超时与日志截断的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆测试选择和Maven的职责，导致实现偏离契约",
+                "忽略超时的边界条件，未用日志截断覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "测试与构建工具 测试选择",
+                "Maven 退出码",
+                "超时 日志截断"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于测试选择与Maven的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析测试选择的适用场景",
+                "解释Maven的运行机制",
+                "诊断退出码相关故障",
+                "比较超时的实现取舍",
+                "设计包含日志截断的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "repository-agent-project"
+              ]
+            },
+            {
+              "code": "git-tools",
+              "nodeOrder": 6,
+              "title": "Git 工具与工作流",
+              "objectives": [
+                "运用Git status与branch完成“Git 工具与工作流”的可运行练习",
+                "解释commit的行为，并用diff验证关键边界"
+              ],
+              "highFrequency": [
+                "Git status与branch的核心机制",
+                "commit、diff与安全检查的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Git status和branch的职责，导致实现偏离契约",
+                "忽略diff的边界条件，未用安全检查覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Git 工具与工作流 Git status",
+                "branch commit",
+                "diff 安全检查"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Git status与branch的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Git status的适用场景",
+                "解释branch的运行机制",
+                "诊断commit相关故障",
+                "比较diff的实现取舍",
+                "设计包含安全检查的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "test-build-tools"
+              ]
+            },
+            {
+              "code": "playwright-dom",
+              "nodeOrder": 7,
+              "title": "浏览器 DOM 自动化",
+              "objectives": [
+                "运用Playwright与locator完成“浏览器 DOM 自动化”的可运行练习",
+                "解释auto-wait的行为，并用trace验证关键边界"
+              ],
+              "highFrequency": [
+                "Playwright与locator的核心机制",
+                "auto-wait、trace与网络断言的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆Playwright和locator的职责，导致实现偏离契约",
+                "忽略trace的边界条件，未用网络断言覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "浏览器 DOM 自动化 Playwright",
+                "locator auto-wait",
+                "trace 网络断言"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于Playwright与locator的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析Playwright的适用场景",
+                "解释locator的运行机制",
+                "诊断auto-wait相关故障",
+                "比较trace的实现取舍",
+                "设计包含网络断言的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "git-tools"
+              ]
+            },
+            {
+              "code": "accessibility-desktop",
+              "nodeOrder": 8,
+              "title": "桌面无障碍自动化（选修）",
+              "objectives": [
+                "运用accessibility tree与键盘导航完成“桌面无障碍自动化（选修）”的可运行练习",
+                "解释屏幕坐标的行为，并用权限验证关键边界"
+              ],
+              "highFrequency": [
+                "accessibility tree与键盘导航的核心机制",
+                "屏幕坐标、权限与回退策略的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆accessibility tree和键盘导航的职责，导致实现偏离契约",
+                "忽略权限的边界条件，未用回退策略覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "桌面无障碍自动化（选修） accessibility tree",
+                "键盘导航 屏幕坐标",
+                "权限 回退策略"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“开发者自动化”模块成果，必须展示accessibility tree、屏幕坐标和回退策略并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析accessibility tree的适用场景",
+                "解释键盘导航的运行机制",
+                "诊断屏幕坐标相关故障",
+                "比较权限的实现取舍",
+                "设计包含回退策略的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": false,
+              "prerequisites": [
+                "playwright-dom"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stageCode": "security-release",
+      "stageOrder": 12,
+      "title": "安全与发布",
+      "description": "用隔离、策略、观测和回滚保障交付",
+      "graduationProjectTitle": "安全可恢复的 Agent 发布系统",
+      "modules": [
+        {
+          "moduleCode": "runner-security",
+          "moduleOrder": 1,
+          "title": "执行器安全",
+          "description": "围绕执行器安全组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "runner-sandbox",
+              "nodeOrder": 1,
+              "title": "执行器沙箱",
+              "objectives": [
+                "运用沙箱与容器隔离完成“执行器沙箱”的可运行练习",
+                "解释CPU/内存限制的行为，并用超时验证关键边界"
+              ],
+              "highFrequency": [
+                "沙箱与容器隔离的核心机制",
+                "CPU/内存限制、超时与文件系统边界的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆沙箱和容器隔离的职责，导致实现偏离契约",
+                "忽略超时的边界条件，未用文件系统边界覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "执行器沙箱 沙箱",
+                "容器隔离 CPU/内存限制",
+                "超时 文件系统边界"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于沙箱与容器隔离的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析沙箱的适用场景",
+                "解释容器隔离的运行机制",
+                "诊断CPU/内存限制相关故障",
+                "比较超时的实现取舍",
+                "设计包含文件系统边界的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "accessibility-desktop"
+              ]
+            },
+            {
+              "code": "secret-redaction",
+              "nodeOrder": 2,
+              "title": "密钥检测与脱敏",
+              "objectives": [
+                "运用secret scanning与正则脱敏完成“密钥检测与脱敏”的可运行练习",
+                "解释熵检测的行为，并用日志过滤验证关键边界"
+              ],
+              "highFrequency": [
+                "secret scanning与正则脱敏的核心机制",
+                "熵检测、日志过滤与凭据轮换的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆secret scanning和正则脱敏的职责，导致实现偏离契约",
+                "忽略日志过滤的边界条件，未用凭据轮换覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "密钥检测与脱敏 secret scanning",
+                "正则脱敏 熵检测",
+                "日志过滤 凭据轮换"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于secret scanning与正则脱敏的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析secret scanning的适用场景",
+                "解释正则脱敏的运行机制",
+                "诊断熵检测相关故障",
+                "比较日志过滤的实现取舍",
+                "设计包含凭据轮换的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "runner-sandbox"
+              ]
+            },
+            {
+              "code": "network-firewall",
+              "nodeOrder": 3,
+              "title": "网络访问控制",
+              "objectives": [
+                "运用egress allowlist与DNS完成“网络访问控制”的可运行练习",
+                "解释防火墙的行为，并用代理验证关键边界"
+              ],
+              "highFrequency": [
+                "egress allowlist与DNS的核心机制",
+                "防火墙、代理与SSRF的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆egress allowlist和DNS的职责，导致实现偏离契约",
+                "忽略代理的边界条件，未用SSRF覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "网络访问控制 egress allowlist",
+                "DNS 防火墙",
+                "代理 SSRF"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于egress allowlist与DNS的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析egress allowlist的适用场景",
+                "解释DNS的运行机制",
+                "诊断防火墙相关故障",
+                "比较代理的实现取舍",
+                "设计包含SSRF的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "secret-redaction"
+              ]
+            },
+            {
+              "code": "runner-policy-engine",
+              "nodeOrder": 4,
+              "title": "执行策略引擎",
+              "objectives": [
+                "运用policy engine与命令解析完成“执行策略引擎”的可运行练习",
+                "解释路径校验的行为，并用审批验证关键边界"
+              ],
+              "highFrequency": [
+                "policy engine与命令解析的核心机制",
+                "路径校验、审批与拒绝日志的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆policy engine和命令解析的职责，导致实现偏离契约",
+                "忽略审批的边界条件，未用拒绝日志覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "执行策略引擎 policy engine",
+                "命令解析 路径校验",
+                "审批 拒绝日志"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于policy engine与命令解析的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析policy engine的适用场景",
+                "解释命令解析的运行机制",
+                "诊断路径校验相关故障",
+                "比较审批的实现取舍",
+                "设计包含拒绝日志的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "network-firewall"
+              ]
+            },
+            {
+              "code": "runner-security-project",
+              "nodeOrder": 5,
+              "title": "安全执行器里程碑",
+              "objectives": [
+                "运用沙箱与密钥脱敏完成“安全执行器里程碑”的可运行练习",
+                "解释网络白名单的行为，并用策略引擎验证关键边界"
+              ],
+              "highFrequency": [
+                "沙箱与密钥脱敏的核心机制",
+                "网络白名单、策略引擎与攻击测试的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆沙箱和密钥脱敏的职责，导致实现偏离契约",
+                "忽略策略引擎的边界条件，未用攻击测试覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "安全执行器里程碑 沙箱",
+                "密钥脱敏 网络白名单",
+                "策略引擎 攻击测试"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“执行器安全”模块成果，必须展示沙箱、网络白名单和攻击测试并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析沙箱的适用场景",
+                "解释密钥脱敏的运行机制",
+                "诊断网络白名单相关故障",
+                "比较策略引擎的实现取舍",
+                "设计包含攻击测试的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "runner-policy-engine"
+              ]
+            }
+          ]
+        },
+        {
+          "moduleCode": "release-recovery",
+          "moduleOrder": 2,
+          "title": "发布与恢复",
+          "description": "围绕发布与恢复组织递进知识点，并以可验证的模块成果收束",
+          "nodes": [
+            {
+              "code": "observability-recovery",
+              "nodeOrder": 6,
+              "title": "Agent 可观测与恢复",
+              "objectives": [
+                "运用trace与checkpoint完成“Agent 可观测与恢复”的可运行练习",
+                "解释告警的行为，并用故障恢复验证关键边界"
+              ],
+              "highFrequency": [
+                "trace与checkpoint的核心机制",
+                "告警、故障恢复与运行回放的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆trace和checkpoint的职责，导致实现偏离契约",
+                "忽略故障恢复的边界条件，未用运行回放覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "Agent 可观测与恢复 trace",
+                "checkpoint 告警",
+                "故障恢复 运行回放"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于trace与checkpoint的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析trace的适用场景",
+                "解释checkpoint的运行机制",
+                "诊断告警相关故障",
+                "比较故障恢复的实现取舍",
+                "设计包含运行回放的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "runner-security-project"
+              ]
+            },
+            {
+              "code": "release-strategy",
+              "nodeOrder": 7,
+              "title": "发布策略",
+              "objectives": [
+                "运用蓝绿发布与金丝雀完成“发布策略”的可运行练习",
+                "解释feature flag的行为，并用健康检查验证关键边界"
+              ],
+              "highFrequency": [
+                "蓝绿发布与金丝雀的核心机制",
+                "feature flag、健康检查与流量切换的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆蓝绿发布和金丝雀的职责，导致实现偏离契约",
+                "忽略健康检查的边界条件，未用流量切换覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "发布策略 蓝绿发布",
+                "金丝雀 feature flag",
+                "健康检查 流量切换"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于蓝绿发布与金丝雀的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析蓝绿发布的适用场景",
+                "解释金丝雀的运行机制",
+                "诊断feature flag相关故障",
+                "比较健康检查的实现取舍",
+                "设计包含流量切换的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "observability-recovery"
+              ]
+            },
+            {
+              "code": "rollback-drill",
+              "nodeOrder": 8,
+              "title": "回滚与灾备演练",
+              "objectives": [
+                "运用回滚与备份恢复完成“回滚与灾备演练”的可运行练习",
+                "解释RTO的行为，并用RPO验证关键边界"
+              ],
+              "highFrequency": [
+                "回滚与备份恢复的核心机制",
+                "RTO、RPO与演练记录的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆回滚和备份恢复的职责，导致实现偏离契约",
+                "忽略RPO的边界条件，未用演练记录覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "回滚与灾备演练 回滚",
+                "备份恢复 RTO",
+                "RPO 演练记录"
+              ],
+              "artifactRequirement": {
+                "required": false,
+                "evaluationMode": "PRESENCE",
+                "description": "完成一份关于回滚与备份恢复的代码练习及自检记录，无需提交模块里程碑成果"
+              },
+              "quizBlueprint": [
+                "辨析回滚的适用场景",
+                "解释备份恢复的运行机制",
+                "诊断RTO相关故障",
+                "比较RPO的实现取舍",
+                "设计包含演练记录的验证用例"
+              ],
+              "estimatedMinutes": 45,
+              "practiceMinutes": 30,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "release-strategy"
+              ]
+            },
+            {
+              "code": "release-e2e",
+              "nodeOrder": 9,
+              "title": "安全发布端到端验收",
+              "objectives": [
+                "运用端到端与回滚完成“安全发布端到端验收”的可运行练习",
+                "解释安全扫描的行为，并用SLO验证关键边界"
+              ],
+              "highFrequency": [
+                "端到端与回滚的核心机制",
+                "安全扫描、SLO与发布清单的工程取舍"
+              ],
+              "commonMistakes": [
+                "混淆端到端和回滚的职责，导致实现偏离契约",
+                "忽略SLO的边界条件，未用发布清单覆盖失败路径"
+              ],
+              "searchKeywords": [
+                "安全发布端到端验收 端到端",
+                "回滚 安全扫描",
+                "SLO 发布清单"
+              ],
+              "artifactRequirement": {
+                "required": true,
+                "evaluationMode": "AI_RUBRIC",
+                "description": "提交可运行的“发布与恢复”模块成果，必须展示端到端、安全扫描和发布清单并附验证记录"
+              },
+              "quizBlueprint": [
+                "辨析端到端的适用场景",
+                "解释回滚的运行机制",
+                "诊断安全扫描相关故障",
+                "比较SLO的实现取舍",
+                "设计包含发布清单的验证用例"
+              ],
+              "estimatedMinutes": 60,
+              "practiceMinutes": 45,
+              "difficulty": "HARD",
+              "required": true,
+              "prerequisites": [
+                "rollback-drill"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "legacyLessonMappings": [
+    {
+      "lessonId": "lesson-rest-controller",
+      "nodeCode": "spring-mvc-rest"
+    }
+  ]
+}
