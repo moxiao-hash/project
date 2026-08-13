@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -169,7 +170,7 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void everyQuizEntryIsACompleteQuestionOrExecutableTask() {
-        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|列出");
+        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|列出|阅读|改正|观察|模拟|写出|检查|运行|给出");
         for (JsonNode node : nodes()) {
             for (JsonNode quiz : node.get("quizBlueprint")) {
                 assertThat(quiz.asString().length()).as(node.get("code").asString()).isGreaterThanOrEqualTo(12);
@@ -211,6 +212,43 @@ class RoadmapV2CatalogContentTest {
                     .map(JsonNode::asString).toList();
             assertThat(sentences).as(field).doesNotHaveDuplicates();
         }
+    }
+
+    @Test
+    void quizSetsUseDiverseTaskShapesWithoutCatalogWideSuffixes() {
+        Pattern fixedSuffix = Pattern.compile("在.*中的作用与限制。$|配置错误时的日志或响应症状。$|的正常路径与失败路径。$|与替代方案的约束和代价。$|的边界输入、操作步骤和预期断言。$|如何影响运行结果？$|配置错误时会出现什么症状？$|时最可能遗漏的保护措施。$");
+        Map<String, Long> sequences = nodes().stream().collect(Collectors.groupingBy(
+                node -> stream(node.get("quizBlueprint")).stream().map(RoadmapV2CatalogContentTest::openingVerb)
+                        .collect(Collectors.joining("|")), Collectors.counting()));
+        assertThat(sequences.values()).allMatch(count -> count <= 5);
+        for (JsonNode node : nodes()) {
+            for (JsonNode quiz : node.get("quizBlueprint")) {
+                assertThat(fixedSuffix.matcher(quiz.asString()).find()).as(node.get("code").asString()).isFalse();
+            }
+        }
+    }
+
+    @Test
+    void everyNodeQuizCoversAtLeastThreeOfItsSpecificConcepts() {
+        Map<String, List<String>> quizConceptTerms = nodes().stream().collect(Collectors.toMap(
+                node -> node.get("code").asString(), node -> conceptTerms(node).stream().limit(3).toList()));
+        assertThat(quizConceptTerms).hasSize(125).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
+        quizConceptTerms.forEach((code, terms) -> {
+            String quizzes = nodes().stream().filter(node -> code.equals(node.get("code").asString()))
+                    .findFirst().orElseThrow().get("quizBlueprint").toString();
+            assertThat(quizzes).as(code).contains(terms.toArray(String[]::new));
+        });
+    }
+
+    private static List<String> conceptTerms(JsonNode node) {
+        return stream(node.get("highFrequency")).stream().map(JsonNode::asString)
+                .flatMap(value -> Pattern.compile("[；]+ ").splitAsStream(value.replace("；", "； ")))
+                .map(String::strip).filter(term -> term.length() >= 3).distinct().toList();
+    }
+
+    private static String openingVerb(JsonNode quiz) {
+        var matcher = Pattern.compile("^(解释|分析|编写|设计|定位|实现|比较|判断|计算|选择|验证|说明|推演|修复|列出|阅读|给出|改正|观察|模拟|写出|检查|运行)").matcher(quiz.asString());
+        return matcher.find() ? matcher.group(1) : "OTHER";
     }
 
     @Test

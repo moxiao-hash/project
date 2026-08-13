@@ -45,11 +45,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“javac 如何把 .java 变为 .class”在JDK 环境与第一个程序中的作用与限制。",
-                "分析“java -cp 从哪个目录查找类”配置错误时的日志或响应症状。",
-                "编写最小示例验证“main 方法签名缺少 static 会怎样”的正常路径与失败路径。",
-                "比较“JDK 与 JRE 各包含什么”相关方案并说明选择依据。",
-                "如何判断错误发生在编译期还是运行期"
+                "阅读一段JDK/JRE/JVM 分工代码，写出输出并解释每一步。",
+                "改正源文件名与 public class 一致误用造成的编译或运行错误。",
+                "设计javac -d 与 java -cp的最小边界用例并给出断言。",
+                "比较JDK/JRE/JVM 分工和源文件名与 public class 一致在该场景的职责差异。",
+                "实现一个同时运用源文件名与 public class 一致与javac -d 与 java -cp的小功能。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -84,11 +84,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“int 溢出为何不会自动报错”在变量、类型与转换中的作用与限制。",
-                "分析“long 转 int 会丢失哪些位”配置错误时的日志或响应症状。",
-                "编写最小示例验证“null 自动拆箱为何触发 NPE”的正常路径与失败路径。",
-                "基本类型与包装类型如何选择",
-                "设计针对“向下转型前为何检查 instanceof”边界条件的可执行测试。"
+                "阅读一段byte/short/int 提升代码，写出输出并解释每一步。",
+                "改正long 字面量 L误用造成的编译或运行错误。",
+                "设计float 精度的最小边界用例并给出断言。",
+                "比较byte/short/int 提升和long 字面量 L在该场景的职责差异。",
+                "实现一个同时运用long 字面量 L与float 精度的小功能。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -125,11 +125,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“a++ 与 ++a 返回值有何区别”在运算符与控制台输入输出中的作用与限制。",
-                "分析“&& 为什么能保护右侧表达式”配置错误时的日志或响应症状。",
-                "编写最小示例验证“整数除法何时截断小数”的正常路径与失败路径。",
-                "比较“Scanner 为什么读到空行”相关方案并说明选择依据。",
-                "设计针对“运算符优先级不确定时怎么写”边界条件的可执行测试。"
+                "阅读一段算术/关系/逻辑运算符优先级代码，写出输出并解释每一步。",
+                "改正Scanner nextLine误用造成的编译或运行错误。",
+                "设计printf 占位符的最小边界用例并给出断言。",
+                "比较算术/关系/逻辑运算符优先级和Scanner nextLine在该场景的职责差异。",
+                "实现一个同时运用Scanner nextLine与printf 占位符的小功能。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -166,11 +166,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "何时选择 switch 而非多层 if",
-                "分析“箭头 case 是否需要 break”配置错误时的日志或响应症状。",
-                "编写最小示例验证“如何测试互斥且完备的区间”的正常路径与失败路径。",
-                "比较“default 分支应该返回还是抛错”相关方案并说明选择依据。",
-                "设计针对“短路条件顺序如何避免 NPE”边界条件的可执行测试。"
+                "阅读一段if 分支覆盖代码，写出输出并解释每一步。",
+                "改正switch 箭头标签误用造成的编译或运行错误。",
+                "设计模式匹配的最小边界用例并给出断言。",
+                "比较if 分支覆盖和switch 箭头标签在该场景的职责差异。",
+                "实现一个同时运用switch 箭头标签与模式匹配的小功能。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -207,11 +207,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“for 与 while 如何互换”在循环与流程控制中的作用与限制。",
-                "分析“continue 后哪些语句不会执行”配置错误时的日志或响应症状。",
-                "编写最小示例验证“i <= length 为什么越界”的正常路径与失败路径。",
-                "比较“怎样识别循环永不终止”相关方案并说明选择依据。",
-                "设计针对“嵌套循环如何退出外层”边界条件的可执行测试。"
+                "阅读一段for 初始化/条件/更新代码，写出输出并解释每一步。",
+                "改正while 与 do-while误用造成的编译或运行错误。",
+                "设计break 标签的最小边界用例并给出断言。",
+                "比较for 初始化/条件/更新和while 与 do-while在该场景的职责差异。",
+                "实现一个同时运用while 与 do-while与break 标签的小功能。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -248,11 +248,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“Java 传对象为何仍是值传递”在方法、参数与返回值中的作用与限制。",
-                "分析“返回 void 与返回结果如何选”配置错误时的日志或响应症状。",
-                "编写最小示例验证“重载依据是否包含返回类型”的正常路径与失败路径。",
-                "比较“递归缺少终止条件会发生什么”相关方案并说明选择依据。",
-                "设计针对“可变参数为何必须放最后”边界条件的可执行测试。"
+                "分析方法签名与重载解析失败日志，指出根因和首个修复动作。",
+                "给出return 提前退出的有效配置片段并标注关键项。",
+                "判断可变参数在两组输入下的状态变化。",
+                "编写测试证明方法签名与重载解析不会破坏return 提前退出。",
+                "说明选择可变参数而非替代方案的理由。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -289,11 +289,11 @@
                 "description": "提交命令行数组统计程序；运行 javac -Xlint 与 java 启动命令均成功，并附越界输入测试。"
               },
               "quizBlueprint": [
-                "解释“最后一个合法下标是多少”在数组与基础遍历中的作用与限制。",
-                "分析“增强 for 能否修改原数组元素”配置错误时的日志或响应症状。",
-                "编写最小示例验证“binarySearch 前为何必须排序”的正常路径与失败路径。",
-                "比较“数组与 ArrayList 容量有何区别”相关方案并说明选择依据。",
-                "设计针对“二维数组每行长度是否相同”边界条件的可执行测试。"
+                "分析数组 length失败日志，指出根因和首个修复动作。",
+                "给出零基下标的有效配置片段并标注关键项。",
+                "判断增强 for在两组输入下的状态变化。",
+                "编写测试证明数组 length不会破坏零基下标。",
+                "说明选择增强 for而非替代方案的理由。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -338,11 +338,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“new 表达式完成哪些步骤”在类与对象中的作用与限制。",
-                "分析“对象变量中保存的是对象还是引用”配置错误时的日志或响应症状。",
-                "编写最小示例验证“两个引用何时指向同一实例”的正常路径与失败路径。",
-                "比较“实例字段默认值是什么”相关方案并说明选择依据。",
-                "设计针对“对象何时可被 GC 回收”边界条件的可执行测试。"
+                "分析class 字段方法失败日志，指出根因和首个修复动作。",
+                "给出new的有效配置片段并标注关键项。",
+                "判断对象身份在两组输入下的状态变化。",
+                "编写测试证明class 字段方法不会破坏new。",
+                "说明选择对象身份而非替代方案的理由。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -379,11 +379,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“何时编译器提供无参构造器”在构造器与 this中的作用与限制。",
-                "分析“this(...) 和 super(...) 能否同时出现”配置错误时的日志或响应症状。",
-                "编写最小示例验证“字段初始化与构造器谁先执行”的正常路径与失败路径。",
-                "比较“如何禁止非法对象被构造”相关方案并说明选择依据。",
-                "设计针对“构造器能否被重写”边界条件的可执行测试。"
+                "分析构造器重载失败日志，指出根因和首个修复动作。",
+                "给出this(...)的有效配置片段并标注关键项。",
+                "判断初始化顺序在两组输入下的状态变化。",
+                "编写测试证明构造器重载不会破坏this(...)。",
+                "说明选择初始化顺序而非替代方案的理由。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -420,11 +420,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“为何不应为每个字段机械生成 setter”在封装与访问控制中的作用与限制。",
-                "分析“返回 Collections.unmodifiableList 是否足够”配置错误时的日志或响应症状。",
-                "编写最小示例验证“protected 在跨包对象上如何访问”的正常路径与失败路径。",
-                "比较“封装如何保证余额非负”相关方案并说明选择依据。",
-                "设计针对“包可见适合哪些协作者”边界条件的可执行测试。"
+                "分析private 封装不变量失败日志，指出根因和首个修复动作。",
+                "给出访问器最小化的有效配置片段并标注关键项。",
+                "判断protected 跨包继承在两组输入下的状态变化。",
+                "编写测试证明private 封装不变量不会破坏访问器最小化。",
+                "说明选择protected 跨包继承而非替代方案的理由。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -461,11 +461,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“static 字段属于类还是对象”在静态成员与常量中的作用与限制。",
-                "分析“final 引用为何不代表对象不可变”配置错误时的日志或响应症状。",
-                "编写最小示例验证“静态块何时执行”的正常路径与失败路径。",
-                "比较“为什么工具方法常为 static”相关方案并说明选择依据。",
-                "设计针对“常量改值后客户端为何可能需重编译”边界条件的可执行测试。"
+                "运行static 类成员示例后应观察到哪些关键输出？",
+                "定位static final 常量导致的错误响应并提出修复。",
+                "写出验证类加载初始化正常行为的命令或调用。",
+                "分析static 类成员与类加载初始化组合后的失败边界。",
+                "设计一次故障注入来检验static final 常量恢复能力。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -502,11 +502,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“重写方法能否降低可见性”在继承与方法重写中的作用与限制。",
-                "分析“static 方法是否参与动态分派”配置错误时的日志或响应症状。",
-                "何时调用 super 实现",
-                "比较“继承与组合怎样选择”相关方案并说明选择依据。",
-                "设计针对“final 方法为什么不能重写”边界条件的可执行测试。"
+                "运行extends 与 is-a示例后应观察到哪些关键输出？",
+                "定位方法重写导致的错误响应并提出修复。",
+                "写出验证super正常行为的命令或调用。",
+                "分析extends 与 is-a与super组合后的失败边界。",
+                "设计一次故障注入来检验方法重写恢复能力。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -543,11 +543,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“父类引用调用哪个重写方法”在多态中的作用与限制。",
-                "分析“字段访问是否动态绑定”配置错误时的日志或响应症状。",
-                "编写最小示例验证“向上转型会丢失对象本身吗”的正常路径与失败路径。",
-                "比较“多态如何消除条件分支”相关方案并说明选择依据。",
-                "设计针对“何时向下转型是设计警讯”边界条件的可执行测试。"
+                "运行动态绑定示例后应观察到哪些关键输出？",
+                "定位向上转型导致的错误响应并提出修复。",
+                "写出验证虚方法调用正常行为的命令或调用。",
+                "分析动态绑定与虚方法调用组合后的失败边界。",
+                "设计一次故障注入来检验向上转型恢复能力。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -584,11 +584,11 @@
                 "description": "提交接口驱动的订单模型；运行 mvn test 验证封装、多态和非法构造参数。"
               },
               "quizBlueprint": [
-                "解释“接口字段为何总是常量”在抽象类与接口中的作用与限制。",
-                "分析“抽象方法能否 private”配置错误时的日志或响应症状。",
-                "编写最小示例验证“default 方法冲突如何解决”的正常路径与失败路径。",
-                "比较“何时抽象类优于接口”相关方案并说明选择依据。",
-                "设计针对“接口隔离如何避免胖接口”边界条件的可执行测试。"
+                "运行abstract template method示例后应观察到哪些关键输出？",
+                "定位interface contract导致的错误响应并提出修复。",
+                "写出验证default 方法冲突正常行为的命令或调用。",
+                "分析abstract template method与default 方法冲突组合后的失败边界。",
+                "设计一次故障注入来检验interface contract恢复能力。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -633,11 +633,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释string-content-comparison中reference equality ==如何影响运行结果？",
-                "分析content equality equals配置错误时会出现什么症状？",
-                "编写一个测试验证String pool/intern的失败边界。",
-                "比较immutability的两种实现并说明选择依据。",
-                "定位使用StringBuilder时最可能遗漏的保护措施。"
+                "运行reference equality ==示例后应观察到哪些关键输出？",
+                "定位content equality equals导致的错误响应并提出修复。",
+                "写出验证String pool/intern正常行为的命令或调用。",
+                "分析reference equality ==与String pool/intern组合后的失败边界。",
+                "设计一次故障注入来检验content equality equals恢复能力。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -674,11 +674,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“包装类型何时可能为 null”在包装类型、枚举与日期时间中的作用与限制。",
-                "分析“Integer 127 与 128 的 == 为何不同”配置错误时的日志或响应症状。",
-                "编写最小示例验证“Instant 与 LocalDateTime 如何选”的正常路径与失败路径。",
-                "比较“enum valueOf 失败抛什么异常”相关方案并说明选择依据。",
-                "设计针对“DateTimeFormatter 是否线程安全”边界条件的可执行测试。"
+                "实现Integer 缓存与拆箱的核心流程并记录中间状态。",
+                "检查enum 穷尽性配置，找出其中两个风险点。",
+                "比较启用与禁用LocalDate/Instant/ZonedDateTime时的可观察差异。",
+                "解释Integer 缓存与拆箱为何会影响enum 穷尽性结果。",
+                "编写回归用例覆盖LocalDate/Instant/ZonedDateTime的异常输入。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -715,11 +715,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“相等对象的 hashCode 必须满足什么”在Object 核心契约中的作用与限制。",
-                "分析“equals 能否依赖可变字段”配置错误时的日志或响应症状。",
-                "编写最小示例验证“继承层次中 equals 为何困难”的正常路径与失败路径。",
-                "比较“toString 应包含哪些调试信息”相关方案并说明选择依据。",
-                "设计针对“Objects.equals 如何处理 null”边界条件的可执行测试。"
+                "实现equals 自反对称传递的核心流程并记录中间状态。",
+                "检查hashCode 一致性配置，找出其中两个风险点。",
+                "比较启用与禁用getClass 与 instanceof时的可观察差异。",
+                "解释equals 自反对称传递为何会影响hashCode 一致性结果。",
+                "编写回归用例覆盖getClass 与 instanceof的异常输入。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -756,11 +756,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“遍历删除元素应使用什么 API”在List 与迭代中的作用与限制。",
-                "分析“subList 是副本还是视图”配置错误时的日志或响应症状。",
-                "编写最小示例验证“ArrayList get 的复杂度”的正常路径与失败路径。",
-                "比较“LinkedList 何时并不更快”相关方案并说明选择依据。",
-                "设计针对“ListIterator 能做哪些 Iterator 不能做的事”边界条件的可执行测试。"
+                "实现ArrayList 扩容的核心流程并记录中间状态。",
+                "检查LinkedList 节点配置，找出其中两个风险点。",
+                "比较启用与禁用Iterator/ListIterator时的可观察差异。",
+                "解释ArrayList 扩容为何会影响LinkedList 节点结果。",
+                "编写回归用例覆盖Iterator/ListIterator的异常输入。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -797,11 +797,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "HashSet 如何判断重复",
-                "分析“哈希冲突后如何查找”配置错误时的日志或响应症状。",
-                "编写最小示例验证“Map key 为什么应不可变”的正常路径与失败路径。",
-                "比较“TreeMap 与 HashMap 顺序差异”相关方案并说明选择依据。",
-                "设计针对“computeIfAbsent 回调能否修改同一 Map”边界条件的可执行测试。"
+                "实现HashSet/HashMap 桶的核心流程并记录中间状态。",
+                "检查哈希冲突配置，找出其中两个风险点。",
+                "比较启用与禁用TreeSet 排序一致性时的可观察差异。",
+                "解释HashSet/HashMap 桶为何会影响哈希冲突结果。",
+                "编写回归用例覆盖TreeSet 排序一致性的异常输入。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -838,11 +838,11 @@
                 "description": "提交泛型集合仓库；运行 mvn test 验证 equals/hashCode 去重、Comparator 排序和空集合。"
               },
               "quizBlueprint": [
-                "? extends 为什么不能安全 add",
-                "? super 能读取出什么类型",
-                "编写最小示例验证“Comparator 与 Comparable 区别”的正常路径与失败路径。",
-                "比较器如何处理 null",
-                "设计针对“类型擦除后泛型信息去哪了”边界条件的可执行测试。"
+                "实现类型擦除的核心流程并记录中间状态。",
+                "检查通配符边界配置，找出其中两个风险点。",
+                "比较启用与禁用PECS时的可观察差异。",
+                "解释类型擦除为何会影响通配符边界结果。",
+                "编写回归用例覆盖PECS的异常输入。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -887,11 +887,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释exceptions-custom中异常链与 Throwable.getCause如何影响运行结果？",
-                "分析受检异常边界配置错误时会出现什么症状？",
-                "编写一个测试验证AutoCloseable 关闭顺序的失败边界。",
-                "比较finally 覆盖返回值风险的两种实现并说明选择依据。",
-                "定位使用Java exception chaining getCause时最可能遗漏的保护措施。"
+                "给出包含异常链与 Throwable.getCause的最小可执行示例。",
+                "推演受检异常边界从请求到结果的完整链路。",
+                "定位AutoCloseable 关闭顺序常见故障在日志中的信号。",
+                "选择适合异常链与 Throwable.getCause的实现并说明取舍。",
+                "验证受检异常边界与AutoCloseable 关闭顺序共同作用时的边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -928,11 +928,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释files-nio-streams中Path resolve/normalize如何影响运行结果？",
-                "分析Files.move ATOMIC_MOVE配置错误时会出现什么症状？",
-                "编写一个测试验证BufferedReader 流式读取的失败边界。",
-                "比较CharsetDecoder 错误处理的两种实现并说明选择依据。",
-                "定位使用Java NIO Path normalize traversal时最可能遗漏的保护措施。"
+                "给出包含Path resolve/normalize的最小可执行示例。",
+                "推演Files.move ATOMIC_MOVE从请求到结果的完整链路。",
+                "定位BufferedReader 流式读取常见故障在日志中的信号。",
+                "选择适合Path resolve/normalize的实现并说明取舍。",
+                "验证Files.move ATOMIC_MOVE与BufferedReader 流式读取共同作用时的边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -969,11 +969,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“函数式接口为何只能一个抽象方法”在Lambda 与函数式接口中的作用与限制。",
-                "分析“andThen 与 compose 顺序区别”配置错误时的日志或响应症状。",
-                "编写最小示例验证“lambda 中 this 指向谁”的正常路径与失败路径。",
-                "比较“捕获变量为何需 effectively final”相关方案并说明选择依据。",
-                "设计针对“何时方法引用降低可读性”边界条件的可执行测试。"
+                "给出包含Function/Predicate/Consumer/Supplier的最小可执行示例。",
+                "推演方法引用从请求到结果的完整链路。",
+                "定位闭包捕获常见故障在日志中的信号。",
+                "选择适合Function/Predicate/Consumer/Supplier的实现并说明取舍。",
+                "验证方法引用与闭包捕获共同作用时的边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1010,11 +1010,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“中间操作何时真正执行”在Stream 与 Optional中的作用与限制。",
-                "分析“peek 是否适合承载业务副作用”配置错误时的日志或响应症状。",
-                "map 与 flatMap 如何选择",
-                "比较“并行流为何可能打乱顺序”相关方案并说明选择依据。",
-                "设计针对“Optional 应否用作实体字段”边界条件的可执行测试。"
+                "给出包含Stream 惰性求值的最小可执行示例。",
+                "推演短路操作从请求到结果的完整链路。",
+                "定位Optional map/flatMap/orElseGet常见故障在日志中的信号。",
+                "选择适合Stream 惰性求值的实现并说明取舍。",
+                "验证短路操作与Optional map/flatMap/orElseGet共同作用时的边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1051,11 +1051,11 @@
                 "description": "提交 record/sealed 建模项目；mvn verify 必须通过 JUnit 5 与 Checkstyle，并附失败规则输出。"
               },
               "quizBlueprint": [
-                "解释record-sealed-maven-junit-checkstyle中record 紧凑构造器如何影响运行结果？",
-                "分析sealed permits 穷尽分支配置错误时会出现什么症状？",
-                "编写一个测试验证Maven lifecycle的失败边界。",
-                "比较JUnit 参数化测试的两种实现并说明选择依据。",
-                "定位使用Checkstyle gate时最可能遗漏的保护措施。"
+                "给出包含record 紧凑构造器的最小可执行示例。",
+                "推演sealed permits 穷尽分支从请求到结果的完整链路。",
+                "定位Maven lifecycle常见故障在日志中的信号。",
+                "选择适合record 紧凑构造器的实现并说明取舍。",
+                "验证sealed permits 穷尽分支与Maven lifecycle共同作用时的边界。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1109,11 +1109,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“自动配置为何被 negative matches 排除”在Spring Boot 启动与分层中的作用与限制。",
-                "分析“启动类包位置如何影响扫描”配置错误时的日志或响应症状。",
-                "编写最小示例验证“如何查看实际生效的配置类”的正常路径与失败路径。",
-                "比较“Controller 能否直接调用 Repository”相关方案并说明选择依据。",
-                "设计针对“启动失败时先看哪个 caused by”边界条件的可执行测试。"
+                "判断一段SpringApplication 启动阶段实现是否正确，并列出依据。",
+                "设计自动配置条件的成功、失败和空值三组数据。",
+                "修复组件扫描边界引起的资源泄漏或状态错误。",
+                "说明SpringApplication 启动阶段的默认行为何时不安全。",
+                "比较两种自动配置条件方案的复杂度和维护成本。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1151,11 +1151,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“构造器注入”在Spring IoC 与依赖注入中的作用与限制。",
-                "分析“Bean scope 与生命周期”配置错误时的日志或响应症状。",
-                "编写最小示例验证“@Configuration/@Bean”的正常路径与失败路径。",
-                "比较“条件装配”相关方案并说明选择依据。",
-                "设计针对“循环依赖诊断”边界条件的可执行测试。"
+                "判断一段构造器注入实现是否正确，并列出依据。",
+                "设计Bean scope 与生命周期的成功、失败和空值三组数据。",
+                "修复@Configuration/@Bean引起的资源泄漏或状态错误。",
+                "说明构造器注入的默认行为何时不安全。",
+                "比较两种Bean scope 与生命周期方案的复杂度和维护成本。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1193,11 +1193,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释@RestController 与 @RequestMapping在Spring MVC 与 REST中的执行过程。",
-                "分析HTTP 状态码与 ResponseEntity失效时最先出现的错误信号。",
-                "编写测试验证请求 DTO 与 Jackson的成功与失败分支。",
-                "比较REST 资源命名与替代方案的约束和代价。",
-                "设计MockMvc 接口测试的边界输入、操作步骤和预期断言。"
+                "判断一段@RestController 与 @RequestMapping实现是否正确，并列出依据。",
+                "设计HTTP 状态码与 ResponseEntity的成功、失败和空值三组数据。",
+                "修复请求 DTO 与 Jackson引起的资源泄漏或状态错误。",
+                "说明@RestController 与 @RequestMapping的默认行为何时不安全。",
+                "比较两种HTTP 状态码与 ResponseEntity方案的复杂度和维护成本。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1234,11 +1234,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“为什么约束注解存在却不生效”在DTO 与参数校验中的作用与限制。",
-                "分析“@NotNull 与 @NotBlank 区别”配置错误时的日志或响应症状。",
-                "编写最小示例验证“嵌套 DTO 如何触发级联校验”的正常路径与失败路径。",
-                "比较“校验错误为何应返回 400”相关方案并说明选择依据。",
-                "设计针对“实体直接接收请求有什么越权风险”边界条件的可执行测试。"
+                "判断一段Bean Validation 约束实现是否正确，并列出依据。",
+                "设计级联校验的成功、失败和空值三组数据。",
+                "修复校验分组引起的资源泄漏或状态错误。",
+                "说明Bean Validation 约束的默认行为何时不安全。",
+                "比较两种级联校验方案的复杂度和维护成本。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1276,11 +1276,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“Bean Validation DTO 约束”在统一异常处理中的作用与限制。",
-                "分析“@Valid 与分组校验”配置错误时的日志或响应症状。",
-                "编写最小示例验证“@RestControllerAdvice”的正常路径与失败路径。",
-                "比较“ProblemDetail 错误契约”相关方案并说明选择依据。",
-                "设计针对“MethodArgumentNotValidException”边界条件的可执行测试。"
+                "判断一段Bean Validation DTO 约束实现是否正确，并列出依据。",
+                "设计@Valid 与分组校验的成功、失败和空值三组数据。",
+                "修复@RestControllerAdvice引起的资源泄漏或状态错误。",
+                "说明Bean Validation DTO 约束的默认行为何时不安全。",
+                "比较两种@Valid 与分组校验方案的复杂度和维护成本。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1318,11 +1318,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释@ConfigurationProperties在配置、Profile 与日志中的执行过程。",
-                "分析profile 配置覆盖失效时最先出现的错误信号。",
-                "编写测试验证Logback MDC的成功与失败分支。",
-                "比较结构化 JSON 日志与替代方案的约束和代价。",
-                "设计敏感字段脱敏的边界输入、操作步骤和预期断言。"
+                "编写@ConfigurationProperties配置并说明每个参数的含义。",
+                "分析profile 配置覆盖出现异常时的调用栈或响应码。",
+                "实现Logback MDC并提供一条验证命令。",
+                "判断@ConfigurationProperties和Logback MDC的执行先后关系。",
+                "设计针对profile 配置覆盖并发或重复调用的测试。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1359,11 +1359,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“../ 文件名为何危险”在安全文件上传下载中的作用与限制。",
-                "分析“normalize 后还要检查 startsWith 吗”配置错误时的日志或响应症状。",
-                "编写最小示例验证“getOriginalFilename 能否信任”的正常路径与失败路径。",
-                "比较“大文件为何不能 readAllBytes”相关方案并说明选择依据。",
-                "设计针对“下载文件名如何安全编码”边界条件的可执行测试。"
+                "编写MultipartFile 流式处理配置并说明每个参数的含义。",
+                "分析安全文件名出现异常时的调用栈或响应码。",
+                "实现目录穿越并提供一条验证命令。",
+                "判断MultipartFile 流式处理和目录穿越的执行先后关系。",
+                "设计针对安全文件名并发或重复调用的测试。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1400,11 +1400,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释spring-scheduling中cron 时区与 misfire如何影响运行结果？",
-                "分析@Scheduled 线程池配置错误时会出现什么症状？",
-                "编写一个测试验证ShedLock 锁租期的失败边界。",
-                "比较幂等键的两种实现并说明选择依据。",
-                "定位使用重试退避时最可能遗漏的保护措施。"
+                "编写cron 时区与 misfire配置并说明每个参数的含义。",
+                "分析@Scheduled 线程池出现异常时的调用栈或响应码。",
+                "实现ShedLock 锁租期并提供一条验证命令。",
+                "判断cron 时区与 misfire和ShedLock 锁租期的执行先后关系。",
+                "设计针对@Scheduled 线程池并发或重复调用的测试。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1441,11 +1441,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释spring-testing-slices中WebMvcTest Controller slice如何影响运行结果？",
-                "分析MockMvc配置错误时会出现什么症状？",
-                "编写一个测试验证DataJpaTest 回滚的失败边界。",
-                "比较Testcontainers 生命周期的两种实现并说明选择依据。",
-                "定位使用WebMvcTest MockMvc ProblemDetail时最可能遗漏的保护措施。"
+                "编写WebMvcTest Controller slice配置并说明每个参数的含义。",
+                "分析MockMvc出现异常时的调用栈或响应码。",
+                "实现DataJpaTest 回滚并提供一条验证命令。",
+                "判断WebMvcTest Controller slice和DataJpaTest 回滚的执行先后关系。",
+                "设计针对MockMvc并发或重复调用的测试。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1482,11 +1482,11 @@
                 "description": "提交分层 Spring Boot 文件服务；./mvnw verify 通过 REST、校验、异常和调度集成测试。"
               },
               "quizBlueprint": [
-                "解释spring-module-project中分层依赖方向如何影响运行结果？",
-                "分析DTO 映射配置错误时会出现什么症状？",
-                "编写一个测试验证ProblemDetail 契约的失败边界。",
-                "比较MockMvc 集成测试的两种实现并说明选择依据。",
-                "定位使用Spring layered module DTO mapper时最可能遗漏的保护措施。"
+                "编写分层依赖方向配置并说明每个参数的含义。",
+                "分析DTO 映射出现异常时的调用栈或响应码。",
+                "实现ProblemDetail 契约并提供一条验证命令。",
+                "判断分层依赖方向和ProblemDetail 契约的执行先后关系。",
+                "设计针对DTO 映射并发或重复调用的测试。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1540,11 +1540,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“金额为何不用 FLOAT”在MySQL 表结构与类型中的作用与限制。",
-                "分析“VARCHAR 长度按字符还是字节”配置错误时的日志或响应症状。",
-                "NULL 与默认值如何设计",
-                "比较“隐式转换为何导致全表扫描”相关方案并说明选择依据。",
-                "主键选择 BIGINT 还是 UUID"
+                "定位DECIMAL 精度标度示例中的边界缺陷并改正。",
+                "实现VARCHAR 字符集后列出可观测的状态变化。",
+                "解释BIGINT 主键如何阻止一个具体故障。",
+                "比较DECIMAL 精度标度的两种 API 用法。",
+                "编写端到端用例串联VARCHAR 字符集和BIGINT 主键。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1582,11 +1582,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“主键与外键约束”在SQL 与关系建模中的作用与限制。",
-                "分析“一对多表设计”配置错误时的日志或响应症状。",
-                "编写最小示例验证“JOIN 与聚合”的正常路径与失败路径。",
-                "比较“窗口函数”相关方案并说明选择依据。",
-                "设计针对“EXPLAIN 执行计划”边界条件的可执行测试。"
+                "定位主键与外键约束示例中的边界缺陷并改正。",
+                "实现一对多表设计后列出可观测的状态变化。",
+                "解释JOIN 与聚合如何阻止一个具体故障。",
+                "比较主键与外键约束的两种 API 用法。",
+                "编写端到端用例串联一对多表设计和JOIN 与聚合。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1623,11 +1623,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“type=ALL 表示什么”在索引与执行计划中的作用与限制。",
-                "分析“key 为 NULL 如何排查”配置错误时的日志或响应症状。",
-                "编写最小示例验证“rows 是实际行数吗”的正常路径与失败路径。",
-                "比较“覆盖索引如何避免回表”相关方案并说明选择依据。",
-                "范围条件后哪些列不能继续定位"
+                "定位B+Tree 高度示例中的边界缺陷并改正。",
+                "实现聚簇与二级索引后列出可观测的状态变化。",
+                "解释联合索引如何阻止一个具体故障。",
+                "比较B+Tree 高度的两种 API 用法。",
+                "编写端到端用例串联聚簇与二级索引和联合索引。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1664,11 +1664,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释mysql-transactions-locks中MVCC Read View如何影响运行结果？",
-                "分析隔离级别配置错误时会出现什么症状？",
-                "编写一个测试验证行锁与间隙锁的失败边界。",
-                "比较死锁检测与回滚的两种实现并说明选择依据。",
-                "定位使用MySQL MVCC Read View时最可能遗漏的保护措施。"
+                "定位MVCC Read View示例中的边界缺陷并改正。",
+                "实现隔离级别后列出可观测的状态变化。",
+                "解释行锁与间隙锁如何阻止一个具体故障。",
+                "比较MVCC Read View的两种 API 用法。",
+                "编写端到端用例串联隔离级别和行锁与间隙锁。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1706,11 +1706,11 @@
                 "description": "提交 MySQL 建表与查询脚本；mysql 执行成功，附 EXPLAIN ANALYZE 的 key、type、rows 结果。"
               },
               "quizBlueprint": [
-                "解释“B+Tree 联合索引”在MySQL 数据建模里程碑中的作用与限制。",
-                "分析“最左前缀”配置错误时的日志或响应症状。",
-                "编写最小示例验证“MVCC 隔离级别”的正常路径与失败路径。",
-                "比较“死锁分析”相关方案并说明选择依据。",
-                "设计针对“慢查询日志”边界条件的可执行测试。"
+                "定位B+Tree 联合索引示例中的边界缺陷并改正。",
+                "实现最左前缀后列出可观测的状态变化。",
+                "解释MVCC 隔离级别如何阻止一个具体故障。",
+                "比较B+Tree 联合索引的两种 API 用法。",
+                "编写端到端用例串联最左前缀和MVCC 隔离级别。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1755,11 +1755,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释jdbc-transactions中PreparedStatement 参数绑定如何影响运行结果？",
-                "分析batch配置错误时会出现什么症状？",
-                "编写一个测试验证Connection autoCommit的失败边界。",
-                "比较commit/rollback的两种实现并说明选择依据。",
-                "定位使用连接池时最可能遗漏的保护措施。"
+                "设计PreparedStatement 参数绑定的数据模型或接口契约。",
+                "阅读batch输出，判断操作是否成功。",
+                "分析Connection autoCommit缺失会引发的生产症状。",
+                "实现PreparedStatement 参数绑定的失败回退路径。",
+                "验证batch在极端输入下仍满足约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1797,11 +1797,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“resultMap 关联映射”在MyBatis 核心映射中的作用与限制。",
-                "分析“动态 SQL if/foreach”配置错误时的日志或响应症状。",
-                "编写最小示例验证“#{ } 参数绑定”的正常路径与失败路径。",
-                "比较“一级二级缓存”相关方案并说明选择依据。",
-                "设计针对“Mapper XML 测试”边界条件的可执行测试。"
+                "设计resultMap 关联映射的数据模型或接口契约。",
+                "阅读动态 SQL if/foreach输出，判断操作是否成功。",
+                "分析#{ } 参数绑定缺失会引发的生产症状。",
+                "实现resultMap 关联映射的失败回退路径。",
+                "验证动态 SQL if/foreach在极端输入下仍满足约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1839,11 +1839,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释BaseMapper 与 IService在MyBatis-Plus 工程实践中的执行过程。",
-                "分析LambdaQueryWrapper失效时最先出现的错误信号。",
-                "编写测试验证分页插件的成功与失败分支。",
-                "比较逻辑删除与替代方案的约束和代价。",
-                "设计自动填充 MetaObjectHandler的边界输入、操作步骤和预期断言。"
+                "设计BaseMapper 与 IService的数据模型或接口契约。",
+                "阅读LambdaQueryWrapper输出，判断操作是否成功。",
+                "分析分页插件缺失会引发的生产症状。",
+                "实现BaseMapper 与 IService的失败回退路径。",
+                "验证LambdaQueryWrapper在极端输入下仍满足约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1881,11 +1881,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释实体状态与持久化上下文在Spring Data JPA 核心中的执行过程。",
-                "分析Repository 派生查询失效时最先出现的错误信号。",
-                "编写测试验证fetch join 与 EntityGraph的成功与失败分支。",
-                "比较乐观锁 @Version与替代方案的约束和代价。",
-                "设计事务脏检查的边界输入、操作步骤和预期断言。"
+                "设计实体状态与持久化上下文的数据模型或接口契约。",
+                "阅读Repository 派生查询输出，判断操作是否成功。",
+                "分析fetch join 与 EntityGraph缺失会引发的生产症状。",
+                "实现实体状态与持久化上下文的失败回退路径。",
+                "验证Repository 派生查询在极端输入下仍满足约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1923,11 +1923,11 @@
                 "description": "提交 MyBatis、MyBatis-Plus、JPA 三实现；./mvnw test 校验结果一致并统计 SQL 次数。"
               },
               "quizBlueprint": [
-                "解释MyBatis 显式 SQL在数据访问方案对照实践中的执行过程。",
-                "分析JPA 聚合建模失效时最先出现的错误信号。",
-                "编写测试验证N+1 查询检测的成功与失败分支。",
-                "比较批量写入策略与替代方案的约束和代价。",
-                "设计迁移成本评估的边界输入、操作步骤和预期断言。"
+                "设计MyBatis 显式 SQL的数据模型或接口契约。",
+                "阅读JPA 聚合建模输出，判断操作是否成功。",
+                "分析N+1 查询检测缺失会引发的生产症状。",
+                "实现MyBatis 显式 SQL的失败回退路径。",
+                "验证JPA 聚合建模在极端输入下仍满足约束。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1981,11 +1981,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释redis-data-structures中HASH HSET/HGET如何影响运行结果？",
-                "分析ZSET ZADD/ZRANGE配置错误时会出现什么症状？",
-                "编写一个测试验证TTL/EXPIRE的失败边界。",
-                "比较RDB/AOF的两种实现并说明选择依据。",
-                "定位使用maxmemory policy时最可能遗漏的保护措施。"
+                "检查一份HASH HSET/HGET方案，列出安全或正确性漏洞。",
+                "编写ZSET ZADD/ZRANGE的单元测试与期望结果。",
+                "推演TTL/EXPIRE失败后的状态恢复过程。",
+                "选择HASH HSET/HGET参数值并给出量化依据。",
+                "解释ZSET ZADD/ZRANGE与TTL/EXPIRE的协作边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2023,11 +2023,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释缓存穿透与空值缓存在Redis 缓存设计中的执行过程。",
-                "分析缓存击穿与互斥锁失效时最先出现的错误信号。",
-                "编写测试验证TTL 抖动的成功与失败分支。",
-                "比较Cache Aside 一致性与替代方案的约束和代价。",
-                "设计RedisTemplate 序列化的边界输入、操作步骤和预期断言。"
+                "检查一份缓存穿透与空值缓存方案，列出安全或正确性漏洞。",
+                "编写缓存击穿与互斥锁的单元测试与期望结果。",
+                "推演TTL 抖动失败后的状态恢复过程。",
+                "选择缓存穿透与空值缓存参数值并给出量化依据。",
+                "解释缓存击穿与互斥锁与TTL 抖动的协作边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2064,11 +2064,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释spring-security-authentication中AuthenticationEntryPoint 401如何影响运行结果？",
-                "分析AccessDeniedHandler 403配置错误时会出现什么症状？",
-                "编写一个测试验证SecurityContext的失败边界。",
-                "比较BCrypt cost的两种实现并说明选择依据。",
-                "定位使用Session fixation时最可能遗漏的保护措施。"
+                "检查一份AuthenticationEntryPoint 401方案，列出安全或正确性漏洞。",
+                "编写AccessDeniedHandler 403的单元测试与期望结果。",
+                "推演SecurityContext失败后的状态恢复过程。",
+                "选择AuthenticationEntryPoint 401参数值并给出量化依据。",
+                "解释AccessDeniedHandler 403与SecurityContext的协作边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2106,11 +2106,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释SecurityFilterChain在JWT 授权中的执行过程。",
-                "分析JWT 签名与过期失效时最先出现的错误信号。",
-                "编写测试验证OncePerRequestFilter的成功与失败分支。",
-                "比较BCrypt 密码散列与替代方案的约束和代价。",
-                "设计RBAC 方法授权的边界输入、操作步骤和预期断言。"
+                "检查一份SecurityFilterChain方案，列出安全或正确性漏洞。",
+                "编写JWT 签名与过期的单元测试与期望结果。",
+                "推演OncePerRequestFilter失败后的状态恢复过程。",
+                "选择SecurityFilterChain参数值并给出量化依据。",
+                "解释JWT 签名与过期与OncePerRequestFilter的协作边界。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2147,11 +2147,11 @@
                 "description": "提交 Redis 与 JWT 安全服务；redis-cli 验证 TTL，./mvnw test 覆盖 401、403 和缓存失效。"
               },
               "quizBlueprint": [
-                "解释cache-security-project中Cache Aside 删除顺序如何影响运行结果？",
-                "分析TTL 抖动配置错误时会出现什么症状？",
-                "编写一个测试验证JWT exp/aud的失败边界。",
-                "比较RBAC的两种实现并说明选择依据。",
-                "定位使用缓存穿透保护时最可能遗漏的保护措施。"
+                "检查一份Cache Aside 删除顺序方案，列出安全或正确性漏洞。",
+                "编写TTL 抖动的单元测试与期望结果。",
+                "推演JWT exp/aud失败后的状态恢复过程。",
+                "选择Cache Aside 删除顺序参数值并给出量化依据。",
+                "解释TTL 抖动与JWT exp/aud的协作边界。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2197,11 +2197,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“OpenAPI 3 注解”在API 文档与集成测试中的作用与限制。",
-                "分析“springdoc 接口文档”配置错误时的日志或响应症状。",
-                "编写最小示例验证“MockMvc 集成测试”的正常路径与失败路径。",
-                "比较“Testcontainers 数据库”相关方案并说明选择依据。",
-                "设计针对“契约示例校验”边界条件的可执行测试。"
+                "模拟OpenAPI 3 注解的正常请求和恶意请求。",
+                "定位springdoc 接口文档指标异常对应的代码位置。",
+                "设计MockMvc 集成测试的回滚或补偿步骤。",
+                "实现OpenAPI 3 注解时如何验证输入合法性？",
+                "比较springdoc 接口文档在开发与生产环境的配置差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2239,11 +2239,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“Idempotency-Key”在幂等、并发控制与审计中的作用与限制。",
-                "分析“数据库唯一约束”配置错误时的日志或响应症状。",
-                "编写最小示例验证“乐观锁与悲观锁”的正常路径与失败路径。",
-                "比较“审计日志 actor/action”相关方案并说明选择依据。",
-                "设计针对“重复请求状态机”边界条件的可执行测试。"
+                "模拟Idempotency-Key的正常请求和恶意请求。",
+                "定位数据库唯一约束指标异常对应的代码位置。",
+                "设计乐观锁与悲观锁的回滚或补偿步骤。",
+                "实现Idempotency-Key时如何验证输入合法性？",
+                "比较数据库唯一约束在开发与生产环境的配置差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2281,11 +2281,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释Micrometer 指标在监控、日志与可观测性中的执行过程。",
-                "分析Actuator health失效时最先出现的错误信号。",
-                "编写测试验证OpenTelemetry trace的成功与失败分支。",
-                "比较SLI/SLO 告警与替代方案的约束和代价。",
-                "设计日志 traceId 关联的边界输入、操作步骤和预期断言。"
+                "模拟Micrometer 指标的正常请求和恶意请求。",
+                "定位Actuator health指标异常对应的代码位置。",
+                "设计OpenTelemetry trace的回滚或补偿步骤。",
+                "实现Micrometer 指标时如何验证输入合法性？",
+                "比较Actuator health在开发与生产环境的配置差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2322,11 +2322,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释performance-profiling中JFR recording如何影响运行结果？",
-                "分析async-profiler 火焰图配置错误时会出现什么症状？",
-                "编写一个测试验证连接池排队的失败边界。",
-                "比较P95/P99的两种实现并说明选择依据。",
-                "定位使用Little 定律时最可能遗漏的保护措施。"
+                "模拟JFR recording的正常请求和恶意请求。",
+                "定位async-profiler 火焰图指标异常对应的代码位置。",
+                "设计连接池排队的回滚或补偿步骤。",
+                "实现JFR recording时如何验证输入合法性？",
+                "比较async-profiler 火焰图在开发与生产环境的配置差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2363,11 +2363,11 @@
                 "description": "提交后端质量门禁；./mvnw verify 生成覆盖率报告，并提供一次压测与告警证据。"
               },
               "quizBlueprint": [
-                "解释backend-quality-gate中JaCoCo branch coverage如何影响运行结果？",
-                "分析mutation testing配置错误时会出现什么症状？",
-                "编写一个测试验证SLO/error budget的失败边界。",
-                "比较质量门禁退出码的两种实现并说明选择依据。",
-                "定位使用JaCoCo branch coverage gate时最可能遗漏的保护措施。"
+                "模拟JaCoCo branch coverage的正常请求和恶意请求。",
+                "定位mutation testing指标异常对应的代码位置。",
+                "设计SLO/error budget的回滚或补偿步骤。",
+                "实现JaCoCo branch coverage时如何验证输入合法性？",
+                "比较mutation testing在开发与生产环境的配置差异。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2422,11 +2422,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“Composition API setup”在Vue 3 与 TypeScript中的作用与限制。",
-                "分析“ref/reactive 响应式”配置错误时的日志或响应症状。",
-                "编写最小示例验证“TypeScript Props 类型”的正常路径与失败路径。",
-                "比较“computed/watch”相关方案并说明选择依据。",
-                "设计针对“Vitest 组件测试”边界条件的可执行测试。"
+                "列出Composition API setup执行前必须满足的三个条件。",
+                "改正一段违反ref/reactive 响应式契约的实现。",
+                "观察TypeScript Props 类型开启前后的日志差异。",
+                "分析Composition API setup失败是否适合重试。",
+                "编写脚本自动验证ref/reactive 响应式和TypeScript Props 类型。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2464,11 +2464,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释Pinia defineStore在路由与状态管理中的执行过程。",
-                "分析Vue Router 导航守卫失效时最先出现的错误信号。",
-                "编写测试验证持久化状态的成功与失败分支。",
-                "比较动态路由权限与替代方案的约束和代价。",
-                "设计storeToRefs的边界输入、操作步骤和预期断言。"
+                "列出Pinia defineStore执行前必须满足的三个条件。",
+                "改正一段违反Vue Router 导航守卫契约的实现。",
+                "观察持久化状态开启前后的日志差异。",
+                "分析Pinia defineStore失败是否适合重试。",
+                "编写脚本自动验证Vue Router 导航守卫和持久化状态。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2505,11 +2505,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释frontend-form-validation中touched/dirty 状态如何影响运行结果？",
-                "分析异步校验竞态配置错误时会出现什么症状？",
-                "编写一个测试验证aria-invalid的失败边界。",
-                "比较aria-describedby的两种实现并说明选择依据。",
-                "定位使用幂等提交时最可能遗漏的保护措施。"
+                "列出touched/dirty 状态执行前必须满足的三个条件。",
+                "改正一段违反异步校验竞态契约的实现。",
+                "观察aria-invalid开启前后的日志差异。",
+                "分析touched/dirty 状态失败是否适合重试。",
+                "编写脚本自动验证异步校验竞态和aria-invalid。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2547,11 +2547,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释Axios 拦截器在前后端 API 集成中的执行过程。",
-                "分析Bearer token 刷新失效时最先出现的错误信号。",
-                "编写测试验证CORS 预检的成功与失败分支。",
-                "比较统一错误码与替代方案的约束和代价。",
-                "设计请求取消与竞态的边界输入、操作步骤和预期断言。"
+                "列出Axios 拦截器执行前必须满足的三个条件。",
+                "改正一段违反Bearer token 刷新契约的实现。",
+                "观察CORS 预检开启前后的日志差异。",
+                "分析Axios 拦截器失败是否适合重试。",
+                "编写脚本自动验证Bearer token 刷新和CORS 预检。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2588,11 +2588,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释git-workflow中rebase 重放如何影响运行结果？",
-                "分析merge commit配置错误时会出现什么症状？",
-                "编写一个测试验证冲突标记的失败边界。",
-                "比较force-with-lease的两种实现并说明选择依据。",
-                "定位使用review diff时最可能遗漏的保护措施。"
+                "列出rebase 重放执行前必须满足的三个条件。",
+                "改正一段违反merge commit契约的实现。",
+                "观察冲突标记开启前后的日志差异。",
+                "分析rebase 重放失败是否适合重试。",
+                "编写脚本自动验证merge commit和冲突标记。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2629,11 +2629,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释linux-nginx中systemd Restart/on-failure如何影响运行结果？",
-                "分析journalctl配置错误时会出现什么症状？",
-                "编写一个测试验证Nginx location/proxy_pass的失败边界。",
-                "比较TLS chain的两种实现并说明选择依据。",
-                "定位使用Nginx proxy_pass trailing slash时最可能遗漏的保护措施。"
+                "写出systemd Restart/on-failure操作的输入、输出和副作用。",
+                "验证journalctl遇到空值或缺失字段的行为。",
+                "比较Nginx location/proxy_pass不同策略对结果的影响。",
+                "定位systemd Restart/on-failure性能退化的观测证据。",
+                "设计journalctl故障时的降级方案。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2671,11 +2671,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释多阶段 Dockerfile在Docker 容器化中的执行过程。",
-                "分析Compose healthcheck失效时最先出现的错误信号。",
-                "编写测试验证镜像层缓存的成功与失败分支。",
-                "比较非 root 用户与替代方案的约束和代价。",
-                "设计滚动发布与回滚的边界输入、操作步骤和预期断言。"
+                "写出多阶段 Dockerfile操作的输入、输出和副作用。",
+                "验证Compose healthcheck遇到空值或缺失字段的行为。",
+                "比较镜像层缓存不同策略对结果的影响。",
+                "定位多阶段 Dockerfile性能退化的观测证据。",
+                "设计Compose healthcheck故障时的降级方案。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2712,11 +2712,11 @@
                 "description": "提交 Vue 全栈控制台；npm test、npm run build 与 docker compose up --wait 均成功。"
               },
               "quizBlueprint": [
-                "解释frontend-delivery-project中Vite production build如何影响运行结果？",
-                "分析Nginx SPA fallback配置错误时会出现什么症状？",
-                "编写一个测试验证Cypress/Playwright的失败边界。",
-                "比较Compose healthcheck的两种实现并说明选择依据。",
-                "定位使用Vue SPA nginx try_files时最可能遗漏的保护措施。"
+                "写出Vite production build操作的输入、输出和副作用。",
+                "验证Nginx SPA fallback遇到空值或缺失字段的行为。",
+                "比较Cypress/Playwright不同策略对结果的影响。",
+                "定位Vite production build性能退化的观测证据。",
+                "设计Nginx SPA fallback故障时的降级方案。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2771,11 +2771,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“venv 与 pyproject.toml”在Python 语言与工程基础中的作用与限制。",
-                "分析“类型提示与 mypy”配置错误时的日志或响应症状。",
-                "编写最小示例验证“pytest fixture”的正常路径与失败路径。",
-                "比较“ruff 格式检查”相关方案并说明选择依据。",
-                "设计针对“包结构与依赖锁定”边界条件的可执行测试。"
+                "写出venv 与 pyproject.toml操作的输入、输出和副作用。",
+                "验证类型提示与 mypy遇到空值或缺失字段的行为。",
+                "比较pytest fixture不同策略对结果的影响。",
+                "定位venv 与 pyproject.toml性能退化的观测证据。",
+                "设计类型提示与 mypy故障时的降级方案。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2812,11 +2812,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释python-data-structures中list/dict/set 复杂度如何影响运行结果？",
-                "分析hashable key配置错误时会出现什么症状？",
-                "编写一个测试验证iterator/generator的失败边界。",
-                "比较yield的两种实现并说明选择依据。",
-                "定位使用惰性消费时最可能遗漏的保护措施。"
+                "写出list/dict/set 复杂度操作的输入、输出和副作用。",
+                "验证hashable key遇到空值或缺失字段的行为。",
+                "比较iterator/generator不同策略对结果的影响。",
+                "定位list/dict/set 复杂度性能退化的观测证据。",
+                "设计hashable key故障时的降级方案。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2853,11 +2853,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释python-errors-files中context manager __enter__/__exit__如何影响运行结果？",
-                "分析pathlib配置错误时会出现什么症状？",
-                "编写一个测试验证异常链 __cause__的失败边界。",
-                "比较encoding的两种实现并说明选择依据。",
-                "定位使用Python raise from cause时最可能遗漏的保护措施。"
+                "解释context manager __enter__/__exit__内部状态如何随操作变化。",
+                "实现pathlib并处理一次明确的错误场景。",
+                "阅读异常链 __cause__结果，判断是否满足验收标准。",
+                "分析context manager __enter__/__exit__与业务边界不一致的后果。",
+                "编写参数化测试覆盖pathlib关键分支。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2895,11 +2895,11 @@
                 "description": "提交带 pyproject.toml 的 Pydantic 包；pytest 与类型检查通过，覆盖无效模型输入。"
               },
               "quizBlueprint": [
-                "解释“BaseModel 字段约束”在Pydantic 建模里程碑中的作用与限制。",
-                "分析“field_validator”配置错误时的日志或响应症状。",
-                "编写最小示例验证“model_validator”的正常路径与失败路径。",
-                "比较“model_dump”相关方案并说明选择依据。",
-                "设计针对“SettingsConfigDict”边界条件的可执行测试。"
+                "解释BaseModel 字段约束内部状态如何随操作变化。",
+                "实现field_validator并处理一次明确的错误场景。",
+                "阅读model_validator结果，判断是否满足验收标准。",
+                "分析BaseModel 字段约束与业务边界不一致的后果。",
+                "编写参数化测试覆盖field_validator关键分支。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2944,11 +2944,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“Depends 默认是否缓存结果”在FastAPI 路由与依赖中的作用与限制。",
-                "分析“yield 依赖何时执行清理”配置错误时的日志或响应症状。",
-                "编写最小示例验证“async 路由能否调用阻塞函数”的正常路径与失败路径。",
-                "比较“如何覆盖鉴权依赖做测试”相关方案并说明选择依据。",
-                "设计针对“lifespan 如何替代 startup event”边界条件的可执行测试。"
+                "解释FastAPI Depends 缓存内部状态如何随操作变化。",
+                "实现yield 清理并处理一次明确的错误场景。",
+                "阅读APIRouter结果，判断是否满足验收标准。",
+                "分析FastAPI Depends 缓存与业务边界不一致的后果。",
+                "编写参数化测试覆盖yield 清理关键分支。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2986,11 +2986,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“FastAPI Depends”在FastAPI REST 服务中的作用与限制。",
-                "分析“Pydantic 请求响应模型”配置错误时的日志或响应症状。",
-                "编写最小示例验证“APIRouter”的正常路径与失败路径。",
-                "比较“HTTPException”相关方案并说明选择依据。",
-                "设计针对“TestClient/OpenAPI”边界条件的可执行测试。"
+                "解释FastAPI Depends内部状态如何随操作变化。",
+                "实现Pydantic 请求响应模型并处理一次明确的错误场景。",
+                "实现 APIRouter 响应模型并判断返回字段是否满足 OpenAPI 契约。",
+                "分析FastAPI Depends与业务边界不一致的后果。",
+                "编写参数化测试覆盖Pydantic 请求响应模型关键分支。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3027,11 +3027,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“协程与 Task 有何区别”在异步编程与 HTTP中的作用与限制。",
-                "分析“为什么 async 中不能直接 requests”配置错误时的日志或响应症状。",
-                "编写最小示例验证“连接超时和读取超时区别”的正常路径与失败路径。",
-                "比较“gather 一个失败会怎样”相关方案并说明选择依据。",
-                "设计针对“Semaphore 如何限制并发”边界条件的可执行测试。"
+                "解释event loop内部状态如何随操作变化。",
+                "实现coroutine/task并处理一次明确的错误场景。",
+                "阅读httpx timeout结果，判断是否满足验收标准。",
+                "分析event loop与业务边界不一致的后果。",
+                "编写参数化测试覆盖coroutine/task关键分支。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3069,11 +3069,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“OpenAPI 契约”在Java-Python 接口契约中的作用与限制。",
-                "分析“JSON 字段命名”配置错误时的日志或响应症状。",
-                "编写最小示例验证“时区与 ISO-8601”的正常路径与失败路径。",
-                "比较“错误码映射”相关方案并说明选择依据。",
-                "设计针对“契约测试”边界条件的可执行测试。"
+                "选择OpenAPI 契约适用的数据或请求样例。",
+                "定位JSON 字段命名引起的不一致并给出修复顺序。",
+                "实现时区与 ISO-8601的监控或审计记录。",
+                "说明OpenAPI 契约如何处理重复输入。",
+                "设计压力场景验证JSON 字段命名容量上限。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3110,11 +3110,11 @@
                 "description": "提交 Java-FastAPI 双端服务；pytest 与契约测试通过，并附超时调用日志。"
               },
               "quizBlueprint": [
-                "解释fastapi-integration-project中OpenAPI schema diff如何影响运行结果？",
-                "分析client generation配置错误时会出现什么症状？",
-                "编写一个测试验证correlationId的失败边界。",
-                "比较httpx timeout的两种实现并说明选择依据。",
-                "定位使用错误码映射时最可能遗漏的保护措施。"
+                "选择OpenAPI schema diff适用的数据或请求样例。",
+                "定位client generation引起的不一致并给出修复顺序。",
+                "实现correlationId的监控或审计记录。",
+                "说明OpenAPI schema diff如何处理重复输入。",
+                "设计压力场景验证client generation容量上限。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3168,11 +3168,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“system message 与 user message 优先级”在大模型 API 基础中的作用与限制。",
-                "分析“temperature=0 是否绝对确定”配置错误时的日志或响应症状。",
-                "编写最小示例验证“finish_reason 有哪些取值”的正常路径与失败路径。",
-                "比较“流式响应如何拼接”相关方案并说明选择依据。",
-                "设计针对“上下文超限如何处理”边界条件的可执行测试。"
+                "选择消息角色与上下文窗口适用的数据或请求样例。",
+                "定位temperature/top_p引起的不一致并给出修复顺序。",
+                "实现流式 delta的监控或审计记录。",
+                "说明消息角色与上下文窗口如何处理重复输入。",
+                "设计压力场景验证temperature/top_p容量上限。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3210,11 +3210,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释system/user 消息分层在提示词工程中的执行过程。",
-                "分析few-shot 示例失效时最先出现的错误信号。",
-                "编写测试验证提示词变量模板的成功与失败分支。",
-                "比较上下文窗口预算与替代方案的约束和代价。",
-                "设计提示注入防护的边界输入、操作步骤和预期断言。"
+                "选择system/user 消息分层适用的数据或请求样例。",
+                "定位few-shot 示例引起的不一致并给出修复顺序。",
+                "实现提示词变量模板的监控或审计记录。",
+                "说明system/user 消息分层如何处理重复输入。",
+                "设计压力场景验证few-shot 示例容量上限。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3252,11 +3252,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“DeepSeek structured output”在结构化输出中的作用与限制。",
-                "分析“JSON Schema”配置错误时的日志或响应症状。",
-                "编写最小示例验证“Pydantic model_validate_json”的正常路径与失败路径。",
-                "比较“拒绝与截断处理”相关方案并说明选择依据。",
-                "设计针对“schema 版本兼容”边界条件的可执行测试。"
+                "选择DeepSeek structured output适用的数据或请求样例。",
+                "定位JSON Schema引起的不一致并给出修复顺序。",
+                "实现Pydantic model_validate_json的监控或审计记录。",
+                "说明DeepSeek structured output如何处理重复输入。",
+                "设计压力场景验证JSON Schema容量上限。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3293,11 +3293,11 @@
                 "description": "提交结构化模型客户端；pytest 验证 JSON Schema、截断响应和 token 预算。"
               },
               "quizBlueprint": [
-                "解释llm-foundations-project中finish_reason如何影响运行结果？",
-                "分析usage token配置错误时会出现什么症状？",
-                "编写一个测试验证stream delta的失败边界。",
-                "比较JSON Schema strict的两种实现并说明选择依据。",
-                "定位使用解析重试时最可能遗漏的保护措施。"
+                "推演finish_reason在一次完整调用中的生命周期。",
+                "编写usage token配置错误的复现步骤。",
+                "分析stream delta对可测试性的影响。",
+                "验证finish_reason失败时资源是否正确释放。",
+                "比较usage token同步与异步处理的差异。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3343,11 +3343,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“token 预算”在成本、限流与重试中的作用与限制。",
-                "分析“429 Retry-After”配置错误时的日志或响应症状。",
-                "编写最小示例验证“指数退避加 jitter”的正常路径与失败路径。",
-                "比较“熔断与降级”相关方案并说明选择依据。",
-                "设计针对“模型路由成本”边界条件的可执行测试。"
+                "推演token 预算在一次完整调用中的生命周期。",
+                "编写429 Retry-After配置错误的复现步骤。",
+                "分析指数退避加 jitter对可测试性的影响。",
+                "验证token 预算失败时资源是否正确释放。",
+                "比较429 Retry-After同步与异步处理的差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3384,11 +3384,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“TTFT 如何计算”在模型可观测性中的作用与限制。",
-                "分析“token 用量从哪里获取”配置错误时的日志或响应症状。",
-                "编写最小示例验证“提示版本为何必须进 trace”的正常路径与失败路径。",
-                "比较“如何区分模型错误与解析错误”相关方案并说明选择依据。",
-                "设计针对“哪些标签会造成高基数”边界条件的可执行测试。"
+                "推演TTFT 与 tokens/sec在一次完整调用中的生命周期。",
+                "编写端到端 trace配置错误的复现步骤。",
+                "分析token 成本标签对可测试性的影响。",
+                "验证TTFT 与 tokens/sec失败时资源是否正确释放。",
+                "比较端到端 trace同步与异步处理的差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3426,11 +3426,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释prompt injection在大模型安全中的执行过程。",
-                "分析输出内容过滤失效时最先出现的错误信号。",
-                "编写测试验证工具参数 allowlist的成功与失败分支。",
-                "比较PII 脱敏与替代方案的约束和代价。",
-                "设计模型越权防护的边界输入、操作步骤和预期断言。"
+                "推演prompt injection在一次完整调用中的生命周期。",
+                "编写输出内容过滤配置错误的复现步骤。",
+                "分析工具参数 allowlist对可测试性的影响。",
+                "验证prompt injection失败时资源是否正确释放。",
+                "比较输出内容过滤同步与异步处理的差异。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3467,11 +3467,11 @@
                 "description": "提交限流模型网关；pytest 验证 429 重试、成本指标和提示注入拒绝。"
               },
               "quizBlueprint": [
-                "解释model-engineering-project中Retry-After如何影响运行结果？",
-                "分析指数退避 jitter配置错误时会出现什么症状？",
-                "编写一个测试验证TTFT的失败边界。",
-                "比较cost attribution的两种实现并说明选择依据。",
-                "定位使用prompt injection filter时最可能遗漏的保护措施。"
+                "推演Retry-After在一次完整调用中的生命周期。",
+                "编写指数退避 jitter配置错误的复现步骤。",
+                "分析TTFT对可测试性的影响。",
+                "验证Retry-After失败时资源是否正确释放。",
+                "比较指数退避 jitter同步与异步处理的差异。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3526,11 +3526,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“LangGraph StateGraph”在LangGraph 状态图中的作用与限制。",
-                "分析“TypedDict state”配置错误时的日志或响应症状。",
-                "编写最小示例验证“节点与条件边”的正常路径与失败路径。",
-                "比较“compile/checkpointer”相关方案并说明选择依据。",
-                "设计针对“递归上限”边界条件的可执行测试。"
+                "修复LangGraph StateGraph案例中的 off-by-one 或边界错误。",
+                "设计TypedDict state的可重复故障实验。",
+                "说明Annotated reducer 合并并行更新输出中哪些字段可用于诊断。",
+                "实现防止LangGraph StateGraph重复执行的措施。",
+                "判断TypedDict state是否满足Annotated reducer 合并并行更新约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3568,11 +3568,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释checkpointer thread_id在记忆与检查点中的执行过程。",
-                "分析短期消息记忆失效时最先出现的错误信号。",
-                "编写测试验证长期 store namespace的成功与失败分支。",
-                "比较摘要压缩与替代方案的约束和代价。",
-                "设计会话隔离的边界输入、操作步骤和预期断言。"
+                "修复 checkpointer thread_id 使用错误导致会话状态串线的问题。",
+                "设计短期消息记忆的可重复故障实验。",
+                "说明长期 store namespace输出中哪些字段可用于诊断。",
+                "实现消息摘要后，验证旧 checkpoint 仍能按相同 thread_id 恢复。",
+                "判断短期消息记忆是否满足长期 store namespace约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3610,11 +3610,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“tool schema”在模型工具调用中的作用与限制。",
-                "分析“参数 JSON Schema”配置错误时的日志或响应症状。",
-                "编写最小示例验证“并行 tool_calls”的正常路径与失败路径。",
-                "比较“结果回传 tool_call_id”相关方案并说明选择依据。",
-                "设计针对“超时与错误封装”边界条件的可执行测试。"
+                "修复tool schema案例中的 off-by-one 或边界错误。",
+                "设计参数 JSON Schema的可重复故障实验。",
+                "说明并行 tool_calls输出中哪些字段可用于诊断。",
+                "实现防止tool schema重复执行的措施。",
+                "判断参数 JSON Schema是否满足并行 tool_calls约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3652,11 +3652,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“LangGraph interrupt”在人工审批中的作用与限制。",
-                "分析“Command resume”配置错误时的日志或响应症状。",
-                "编写最小示例验证“审批状态持久化”的正常路径与失败路径。",
-                "比较“超时拒绝”相关方案并说明选择依据。",
-                "设计针对“审批内容防篡改”边界条件的可执行测试。"
+                "修复LangGraph interrupt案例中的 off-by-one 或边界错误。",
+                "设计Command resume的可重复故障实验。",
+                "说明审批状态持久化输出中哪些字段可用于诊断。",
+                "实现防止LangGraph interrupt重复执行的措施。",
+                "判断Command resume是否满足审批状态持久化约束。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3693,11 +3693,11 @@
                 "description": "提交可中断 LangGraph；pytest 覆盖 checkpoint、interrupt、resume 与工具失败恢复。"
               },
               "quizBlueprint": [
-                "解释langgraph-agent-project中checkpointer thread_id如何影响运行结果？",
-                "分析state reducer配置错误时会出现什么症状？",
-                "编写一个测试验证interrupt/resume的失败边界。",
-                "比较tool_call_id的两种实现并说明选择依据。",
-                "定位使用状态回放时最可能遗漏的保护措施。"
+                "修复checkpointer thread_id案例中的 off-by-one 或边界错误。",
+                "设计state reducer的可重复故障实验。",
+                "说明interrupt/resume输出中哪些字段可用于诊断。",
+                "实现防止checkpointer thread_id重复执行的措施。",
+                "判断state reducer是否满足interrupt/resume约束。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3742,11 +3742,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释tool-contract-validation中JSON Schema required/enum如何影响运行结果？",
-                "分析输入规范化配置错误时会出现什么症状？",
-                "编写一个测试验证deadline的失败边界。",
-                "比较错误 taxonomy的两种实现并说明选择依据。",
-                "定位使用幂等键时最可能遗漏的保护措施。"
+                "观察JSON Schema required/enum示例的输出并解释反直觉之处。",
+                "比较输入规范化两种实现的性能和语义。",
+                "编写deadline的负向测试。",
+                "定位JSON Schema required/enum与预期不符的最小输入。",
+                "实现同时覆盖输入规范化和deadline的验收任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3783,11 +3783,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释tool-permission-audit中least privilege如何影响运行结果？",
-                "分析allowlist配置错误时会出现什么症状？",
-                "编写一个测试验证resource scope的失败边界。",
-                "比较approval snapshot的两种实现并说明选择依据。",
-                "定位使用tamper-evident audit时最可能遗漏的保护措施。"
+                "观察least privilege示例的输出并解释反直觉之处。",
+                "比较allowlist两种实现的性能和语义。",
+                "编写resource scope的负向测试。",
+                "定位least privilege与预期不符的最小输入。",
+                "实现同时覆盖allowlist和resource scope的验收任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3825,11 +3825,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“MCP tools/resources/prompts”在Model Context Protocol中的作用与限制。",
-                "分析“stdio 与 Streamable HTTP”配置错误时的日志或响应症状。",
-                "编写最小示例验证“capabilities 握手”的正常路径与失败路径。",
-                "比较“JSON-RPC 错误”相关方案并说明选择依据。",
-                "设计针对“客户端权限边界”边界条件的可执行测试。"
+                "观察MCP tools/resources/prompts示例的输出并解释反直觉之处。",
+                "比较stdio 与 Streamable HTTP两种实现的性能和语义。",
+                "编写capabilities 握手的负向测试。",
+                "定位MCP tools/resources/prompts与预期不符的最小输入。",
+                "实现同时覆盖stdio 与 Streamable HTTP和capabilities 握手的验收任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3867,11 +3867,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释Spring AI ChatClient在Spring AI 集成（选修）中的执行过程。",
-                "分析ToolCallback失效时最先出现的错误信号。",
-                "编写测试验证Advisor 链的成功与失败分支。",
-                "比较ChatMemory与替代方案的约束和代价。",
-                "设计模型 Provider 配置的边界输入、操作步骤和预期断言。"
+                "观察Spring AI ChatClient示例的输出并解释反直觉之处。",
+                "比较ToolCallback两种实现的性能和语义。",
+                "编写Advisor 链的负向测试。",
+                "定位Spring AI ChatClient与预期不符的最小输入。",
+                "实现同时覆盖ToolCallback和Advisor 链的验收任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3908,11 +3908,11 @@
                 "description": "提交 MCP server；协议检查验证 initialize、tools/list、tools/call 及未授权拒绝。"
               },
               "quizBlueprint": [
-                "解释mcp-governance-project中MCP capabilities如何影响运行结果？",
-                "分析protocol version配置错误时会出现什么症状？",
-                "编写一个测试验证JSON-RPC id/error的失败边界。",
-                "比较stdio framing的两种实现并说明选择依据。",
-                "定位使用tool permission时最可能遗漏的保护措施。"
+                "观察MCP capabilities示例的输出并解释反直觉之处。",
+                "比较protocol version两种实现的性能和语义。",
+                "编写JSON-RPC id/error的负向测试。",
+                "定位MCP capabilities与预期不符的最小输入。",
+                "实现同时覆盖protocol version和JSON-RPC id/error的验收任务。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3967,11 +3967,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释PDF/DOCX 解析在文档解析中的执行过程。",
-                "分析标题层级切分失效时最先出现的错误信号。",
-                "编写测试验证滑动窗口 overlap的成功与失败分支。",
-                "比较表格与页码元数据与替代方案的约束和代价。",
-                "设计扫描件 OCR的边界输入、操作步骤和预期断言。"
+                "阅读PDF/DOCX 解析配置，预测启动或执行结果。",
+                "分析标题层级切分的一个真实错误现象。",
+                "设计滑动窗口 overlap的权限、容量或范围边界。",
+                "编写命令检查PDF/DOCX 解析是否生效。",
+                "比较修复标题层级切分前后的观测指标。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4008,11 +4008,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释chunking-metadata中semantic chunk如何影响运行结果？",
-                "分析token size配置错误时会出现什么症状？",
-                "编写一个测试验证overlap的失败边界。",
-                "比较metadata filter的两种实现并说明选择依据。",
-                "定位使用parent-child时最可能遗漏的保护措施。"
+                "阅读semantic chunk配置，预测启动或执行结果。",
+                "分析token size的一个真实错误现象。",
+                "设计overlap的权限、容量或范围边界。",
+                "编写命令检查semantic chunk是否生效。",
+                "比较修复token size前后的观测指标。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4050,11 +4050,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释embedding 维度在向量嵌入与 Qdrant中的执行过程。",
-                "分析Qdrant collection失效时最先出现的错误信号。",
-                "编写测试验证payload filter的成功与失败分支。",
-                "比较HNSW 参数与替代方案的约束和代价。",
-                "设计upsert 与删除同步的边界输入、操作步骤和预期断言。"
+                "阅读embedding 维度配置，预测启动或执行结果。",
+                "分析Qdrant collection的一个真实错误现象。",
+                "设计payload filter的权限、容量或范围边界。",
+                "编写命令检查embedding 维度是否生效。",
+                "比较修复Qdrant collection前后的观测指标。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4092,11 +4092,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释BM25 与向量召回在混合检索与重排中的执行过程。",
-                "分析RRF 融合失效时最先出现的错误信号。",
-                "编写测试验证cross-encoder rerank的成功与失败分支。",
-                "比较top-k 与阈值与替代方案的约束和代价。",
-                "设计检索评测 Recall@k的边界输入、操作步骤和预期断言。"
+                "阅读BM25 与向量召回配置，预测启动或执行结果。",
+                "分析RRF 融合的一个真实错误现象。",
+                "设计cross-encoder rerank的权限、容量或范围边界。",
+                "编写命令检查BM25 与向量召回是否生效。",
+                "比较修复RRF 融合前后的观测指标。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4133,11 +4133,11 @@
                 "description": "提交 Qdrant 混合检索管线；pytest 通过并报告 BM25、向量与重排 Recall@k。"
               },
               "quizBlueprint": [
-                "解释rag-retrieval-project中Qdrant collection/payload如何影响运行结果？",
-                "分析embedding dimension配置错误时会出现什么症状？",
-                "编写一个测试验证BM25的失败边界。",
-                "比较RRF的两种实现并说明选择依据。",
-                "定位使用reranker时最可能遗漏的保护措施。"
+                "阅读Qdrant collection/payload配置，预测启动或执行结果。",
+                "分析embedding dimension的一个真实错误现象。",
+                "设计BM25的权限、容量或范围边界。",
+                "编写命令检查Qdrant collection/payload是否生效。",
+                "比较修复embedding dimension前后的观测指标。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4183,11 +4183,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“Tavily Search API”在Tavily 联网搜索中的作用与限制。",
-                "分析“search_depth”配置错误时的日志或响应症状。",
-                "编写最小示例验证“域名 include/exclude”的正常路径与失败路径。",
-                "比较“时间过滤”相关方案并说明选择依据。",
-                "设计针对“来源去重”边界条件的可执行测试。"
+                "给出Tavily Search API的失败案例并解释根因。",
+                "实现search_depth的最小安全版本。",
+                "检查域名 include/exclude是否遗漏清理或回滚。",
+                "设计Tavily Search API的属性或契约测试。",
+                "说明search_depth如何改变域名 include/exclude风险。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4225,11 +4225,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释引用 chunk_id在证据回答与引用中的执行过程。",
-                "分析claim-evidence 对齐失效时最先出现的错误信号。",
-                "编写测试验证无证据拒答的成功与失败分支。",
-                "比较引用覆盖率与替代方案的约束和代价。",
-                "设计来源冲突处理的边界输入、操作步骤和预期断言。"
+                "给出引用 chunk_id的失败案例并解释根因。",
+                "实现claim-evidence 对齐的最小安全版本。",
+                "检查无证据拒答是否遗漏清理或回滚。",
+                "设计引用 chunk_id的属性或契约测试。",
+                "说明claim-evidence 对齐如何改变无证据拒答风险。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4266,11 +4266,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释retrieval-evaluation中Recall@k 漏召回如何影响运行结果？",
-                "分析MRR 首个命中配置错误时会出现什么症状？",
-                "编写一个测试验证nDCG 分级相关的失败边界。",
-                "比较confidence interval的两种实现并说明选择依据。",
-                "定位使用Recall@k MRR nDCG formulas时最可能遗漏的保护措施。"
+                "给出Recall@k 漏召回的失败案例并解释根因。",
+                "实现MRR 首个命中的最小安全版本。",
+                "检查nDCG 分级相关是否遗漏清理或回滚。",
+                "设计Recall@k 漏召回的属性或契约测试。",
+                "说明MRR 首个命中如何改变nDCG 分级相关风险。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4308,11 +4308,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“IRT 难度思想”在自适应学习评估中的作用与限制。",
-                "分析“掌握度状态”配置错误时的日志或响应症状。",
-                "编写最小示例验证“题目标签”的正常路径与失败路径。",
-                "比较“错因反馈”相关方案并说明选择依据。",
-                "设计针对“间隔复习”边界条件的可执行测试。"
+                "给出IRT 难度思想的失败案例并解释根因。",
+                "实现掌握度状态的最小安全版本。",
+                "检查题目标签是否遗漏清理或回滚。",
+                "设计IRT 难度思想的属性或契约测试。",
+                "说明掌握度状态如何改变题目标签风险。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4349,11 +4349,11 @@
                 "description": "提交带引用的评估助手；离线评测输出 MRR、引用命中率和拒答案例。"
               },
               "quizBlueprint": [
-                "解释search-assessment-project中claim-evidence alignment如何影响运行结果？",
-                "分析citation配置错误时会出现什么症状？",
-                "编写一个测试验证MRR/Recall的失败边界。",
-                "比较拒答率的两种实现并说明选择依据。",
-                "定位使用assessment mastery时最可能遗漏的保护措施。"
+                "给出claim-evidence alignment的失败案例并解释根因。",
+                "实现citation的最小安全版本。",
+                "检查MRR/Recall是否遗漏清理或回滚。",
+                "设计claim-evidence alignment的属性或契约测试。",
+                "说明citation如何改变MRR/Recall风险。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4408,11 +4408,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释命令/查询分离在业务工具契约中的执行过程。",
-                "分析工具输入 JSON Schema失效时最先出现的错误信号。",
-                "编写测试验证业务错误码的成功与失败分支。",
-                "比较dry-run 预览与替代方案的约束和代价。",
-                "设计副作用声明的边界输入、操作步骤和预期断言。"
+                "计算或推导命令/查询分离案例的最终结果。",
+                "定位工具输入 JSON Schema配置中的歧义点。",
+                "编写业务错误码操作的幂等性验证。",
+                "比较命令/查询分离在小规模与大规模下的表现。",
+                "设计工具输入 JSON Schema异常时的人工处置步骤。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4450,11 +4450,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“意图分类置信度”在意图识别与预览中的作用与限制。",
-                "分析“结构化执行计划”配置错误时的日志或响应症状。",
-                "编写最小示例验证“参数差异预览”的正常路径与失败路径。",
-                "比较“风险等级”相关方案并说明选择依据。",
-                "设计针对“用户确认快照”边界条件的可执行测试。"
+                "计算或推导意图分类置信度案例的最终结果。",
+                "定位结构化执行计划配置中的歧义点。",
+                "编写参数差异预览操作的幂等性验证。",
+                "比较意图分类置信度在小规模与大规模下的表现。",
+                "设计结构化执行计划异常时的人工处置步骤。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4492,11 +4492,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“最小权限 scope”在授权与治理中的作用与限制。",
-                "分析“策略决策点 PDP”配置错误时的日志或响应症状。",
-                "编写最小示例验证“资源级授权”的正常路径与失败路径。",
-                "比较“审批审计”相关方案并说明选择依据。",
-                "设计针对“权限撤销”边界条件的可执行测试。"
+                "计算或推导RBAC 角色权限案例的最终结果。",
+                "定位ABAC 属性策略配置中的歧义点。",
+                "编写策略决策点 PDP操作的幂等性验证。",
+                "比较RBAC 角色权限在小规模与大规模下的表现。",
+                "设计ABAC 属性策略异常时的人工处置步骤。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4533,11 +4533,11 @@
                 "description": "提交受控业务工具集；pytest 覆盖 JSON Schema、RBAC/ABAC、dry-run 和拒绝审计。"
               },
               "quizBlueprint": [
-                "解释business-tools-project中dry-run immutable snapshot如何影响运行结果？",
-                "分析policy decision配置错误时会出现什么症状？",
-                "编写一个测试验证RBAC/ABAC的失败边界。",
-                "比较idempotency key的两种实现并说明选择依据。",
-                "定位使用audit时最可能遗漏的保护措施。"
+                "计算或推导dry-run immutable snapshot案例的最终结果。",
+                "定位policy decision配置中的歧义点。",
+                "编写RBAC/ABAC操作的幂等性验证。",
+                "比较dry-run immutable snapshot在小规模与大规模下的表现。",
+                "设计policy decision异常时的人工处置步骤。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4583,11 +4583,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释幂等键在幂等执行中的执行过程。",
-                "分析请求指纹失效时最先出现的错误信号。",
-                "编写测试验证执行状态机的成功与失败分支。",
-                "比较结果重放与替代方案的约束和代价。",
-                "设计失败补偿的边界输入、操作步骤和预期断言。"
+                "计算或推导幂等键案例的最终结果。",
+                "定位请求指纹配置中的歧义点。",
+                "编写执行状态机操作的幂等性验证。",
+                "比较幂等键在小规模与大规模下的表现。",
+                "设计请求指纹异常时的人工处置步骤。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4624,11 +4624,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释business-agent-planning中DAG topological order如何影响运行结果？",
-                "分析precondition配置错误时会出现什么症状？",
-                "编写一个测试验证budget accounting的失败边界。",
-                "比较termination的两种实现并说明选择依据。",
-                "定位使用replan时最可能遗漏的保护措施。"
+                "检查DAG topological order输入是否满足前置条件。",
+                "实现precondition并输出便于排错的证据。",
+                "分析budget accounting被跳过时的连锁影响。",
+                "写出DAG topological order的代码审查清单。",
+                "验证precondition升级后仍兼容budget accounting。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4665,11 +4665,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“哪些错误值得重试”在失败恢复与补偿中的作用与限制。",
-                "分析“补偿是否等同数据库回滚”配置错误时的日志或响应症状。",
-                "编写最小示例验证“死信记录应保留什么”的正常路径与失败路径。",
-                "比较“断点恢复从哪个状态继续”相关方案并说明选择依据。",
-                "设计针对“人工接管后如何防止 Agent 再执行”边界条件的可执行测试。"
+                "检查Saga 补偿输入是否满足前置条件。",
+                "实现重试边界并输出便于排错的证据。",
+                "分析死信队列被跳过时的连锁影响。",
+                "写出Saga 补偿的代码审查清单。",
+                "验证重试边界升级后仍兼容死信队列。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4707,11 +4707,11 @@
                 "description": "提交业务 Agent 状态机；端到端测试证明幂等执行、补偿、死信与人工接管。"
               },
               "quizBlueprint": [
-                "解释“意图到工具闭环”在业务 Agent 端到端中的作用与限制。",
-                "分析“审批与授权”配置错误时的日志或响应症状。",
-                "编写最小示例验证“事务边界”的正常路径与失败路径。",
-                "比较“失败补偿”相关方案并说明选择依据。",
-                "设计针对“端到端追踪”边界条件的可执行测试。"
+                "检查意图到工具闭环输入是否满足前置条件。",
+                "实现审批与授权并输出便于排错的证据。",
+                "分析事务边界被跳过时的连锁影响。",
+                "写出意图到工具闭环的代码审查清单。",
+                "验证审批与授权升级后仍兼容事务边界。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4765,11 +4765,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“rg 默认是否尊重 .gitignore”在仓库读取与搜索中的作用与限制。",
-                "分析“如何包含隐藏文件但排除 .git”配置错误时的日志或响应症状。",
-                "编写最小示例验证“定义和引用应分别怎么搜”的正常路径与失败路径。",
-                "比较“为什么不应读取整个仓库”相关方案并说明选择依据。",
-                "设计针对“二进制文件如何跳过”边界条件的可执行测试。"
+                "检查ripgrep glob/type输入是否满足前置条件。",
+                "实现文件树并输出便于排错的证据。",
+                "分析符号引用被跳过时的连锁影响。",
+                "写出ripgrep glob/type的代码审查清单。",
+                "验证文件树升级后仍兼容符号引用。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4806,11 +4806,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释code-context-planning中call graph如何影响运行结果？",
-                "分析symbol references配置错误时会出现什么症状？",
-                "编写一个测试验证blast radius的失败边界。",
-                "比较acceptance criteria的两种实现并说明选择依据。",
-                "定位使用risk list时最可能遗漏的保护措施。"
+                "检查call graph输入是否满足前置条件。",
+                "实现symbol references并输出便于排错的证据。",
+                "分析blast radius被跳过时的连锁影响。",
+                "写出call graph的代码审查清单。",
+                "验证symbol references升级后仍兼容blast radius。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4847,11 +4847,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“@@ 行号代表什么”在补丁与 Diff 审查中的作用与限制。",
-                "分析“为什么上下文行不带加减号”配置错误时的日志或响应症状。",
-                "编写最小示例验证“如何先 dry-run 补丁”的正常路径与失败路径。",
-                "比较“部分应用后如何发现”相关方案并说明选择依据。",
-                "设计针对“最小 diff 为什么更易审查”边界条件的可执行测试。"
+                "分析diff hunk @@数据流中的信任边界。",
+                "设计上下文行的超时、取消和重试策略。",
+                "实现新增/删除标记并证明没有泄露敏感信息。",
+                "判断diff hunk @@结果能否安全缓存。",
+                "编写集成测试覆盖上下文行的依赖故障。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4888,11 +4888,11 @@
                 "description": "提交仓库修改 Agent；在样例仓库运行搜索、生成 diff，并由测试证明未改无关文件。"
               },
               "quizBlueprint": [
-                "解释repository-agent-project中rg --files/-n如何影响运行结果？",
-                "分析git diff配置错误时会出现什么症状？",
-                "编写一个测试验证focused test的失败边界。",
-                "比较diff check的两种实现并说明选择依据。",
-                "定位使用change summary时最可能遗漏的保护措施。"
+                "分析rg --files/-n数据流中的信任边界。",
+                "设计git diff的超时、取消和重试策略。",
+                "实现focused test并证明没有泄露敏感信息。",
+                "判断rg --files/-n结果能否安全缓存。",
+                "编写集成测试覆盖git diff的依赖故障。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4938,11 +4938,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“测试选择器”在测试与构建工具中的作用与限制。",
-                "分析“构建超时”配置错误时的日志或响应症状。",
-                "编写最小示例验证“stdout/stderr 截断”的正常路径与失败路径。",
-                "比较“退出码传播”相关方案并说明选择依据。",
-                "设计针对“失败报告解析”边界条件的可执行测试。"
+                "分析测试选择器数据流中的信任边界。",
+                "设计构建超时的超时、取消和重试策略。",
+                "实现stdout/stderr 截断并证明没有泄露敏感信息。",
+                "判断测试选择器结果能否安全缓存。",
+                "编写集成测试覆盖构建超时的依赖故障。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4980,11 +4980,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释status/diff 安全读取在Git 工具与工作流中的执行过程。",
-                "分析分支 allowlist失效时最先出现的错误信号。",
-                "编写测试验证提交身份的成功与失败分支。",
-                "比较非交互 rebase与替代方案的约束和代价。",
-                "设计受保护分支的边界输入、操作步骤和预期断言。"
+                "分析status/diff 安全读取数据流中的信任边界。",
+                "设计分支 allowlist的超时、取消和重试策略。",
+                "实现提交身份并证明没有泄露敏感信息。",
+                "判断status/diff 安全读取结果能否安全缓存。",
+                "编写集成测试覆盖分支 allowlist的依赖故障。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5021,11 +5021,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“locator 为什么是惰性查询”在浏览器 DOM 自动化中的作用与限制。",
-                "分析“strict mode 何时触发”配置错误时的日志或响应症状。",
-                "编写最小示例验证“为何不推荐 waitForTimeout”的正常路径与失败路径。",
-                "比较“如何等待接口完成”相关方案并说明选择依据。",
-                "设计针对“trace 包含哪些诊断信息”边界条件的可执行测试。"
+                "分析locator strict mode数据流中的信任边界。",
+                "设计auto-wait的超时、取消和重试策略。",
+                "实现role selector并证明没有泄露敏感信息。",
+                "判断locator strict mode结果能否安全缓存。",
+                "编写集成测试覆盖auto-wait的依赖故障。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5063,11 +5063,11 @@
                 "description": "提交开发自动化工具链；构建命令和 Playwright 测试通过，附 strict mode 失败 trace。"
               },
               "quizBlueprint": [
-                "解释“ARIA 可访问名称”在桌面无障碍自动化（选修）中的作用与限制。",
-                "分析“键盘焦点顺序”配置错误时的日志或响应症状。",
-                "编写最小示例验证“WCAG 对比度”的正常路径与失败路径。",
-                "比较“屏幕坐标缩放”相关方案并说明选择依据。",
-                "设计针对“桌面权限提示”边界条件的可执行测试。"
+                "实现ARIA 可访问名称后用具体命令验收。",
+                "说明键盘焦点顺序的错误如何传播到调用方。",
+                "比较WCAG 对比度开启前后的资源消耗。",
+                "定位ARIA 可访问名称中的竞态或顺序问题。",
+                "设计键盘焦点顺序与WCAG 对比度组合的恢复演练。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -5121,11 +5121,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“OOM 后退出码如何识别”在执行器沙箱中的作用与限制。",
-                "分析“超时应杀单进程还是进程组”配置错误时的日志或响应症状。",
-                "编写最小示例验证“seccomp 能限制什么系统调用”的正常路径与失败路径。",
-                "比较“临时目录如何配额”相关方案并说明选择依据。",
-                "设计针对“容器是否天然等于安全沙箱”边界条件的可执行测试。"
+                "实现cgroup CPU/内存限制后用具体命令验收。",
+                "说明seccomp 系统调用过滤的错误如何传播到调用方。",
+                "比较只读文件系统开启前后的资源消耗。",
+                "定位cgroup CPU/内存限制中的竞态或顺序问题。",
+                "设计seccomp 系统调用过滤与只读文件系统组合的恢复演练。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5162,11 +5162,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“熵阈值过低会怎样”在密钥检测与脱敏中的作用与限制。",
-                "分析“如何区分 UUID 与密钥”配置错误时的日志或响应症状。",
-                "编写最小示例验证“脱敏后应保留多少字符”的正常路径与失败路径。",
-                "比较“发现泄露为何还要轮换”相关方案并说明选择依据。",
-                "设计针对“扫描二进制内容有何代价”边界条件的可执行测试。"
+                "实现API key 模式后用具体命令验收。",
+                "说明Shannon entropy的错误如何传播到调用方。",
+                "比较日志 redaction开启前后的资源消耗。",
+                "定位API key 模式中的竞态或顺序问题。",
+                "设计Shannon entropy与日志 redaction组合的恢复演练。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5203,11 +5203,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“为何域名白名单还不够”在网络访问控制中的作用与限制。",
-                "分析“重定向后是否重新校验”配置错误时的日志或响应症状。",
-                "编写最小示例验证“哪些 IP 段必须拒绝”的正常路径与失败路径。",
-                "比较“DNS pinning 如何缓解 rebinding”相关方案并说明选择依据。",
-                "设计针对“代理日志应记录什么”边界条件的可执行测试。"
+                "实现egress allowlist后用具体命令验收。",
+                "说明代理审计的错误如何传播到调用方。",
+                "比较SSRF开启前后的资源消耗。",
+                "定位egress allowlist中的竞态或顺序问题。",
+                "设计代理审计与SSRF组合的恢复演练。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5244,11 +5244,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释runner-policy-engine中shell AST如何影响运行结果？",
-                "分析argv normalization配置错误时会出现什么症状？",
-                "编写一个测试验证path canonicalization的失败边界。",
-                "比较allowlist的两种实现并说明选择依据。",
-                "定位使用deny audit时最可能遗漏的保护措施。"
+                "实现shell AST后用具体命令验收。",
+                "说明argv normalization的错误如何传播到调用方。",
+                "比较path canonicalization开启前后的资源消耗。",
+                "定位shell AST中的竞态或顺序问题。",
+                "设计argv normalization与path canonicalization组合的恢复演练。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5285,11 +5285,11 @@
                 "description": "提交受限执行器；攻击测试验证 OOM、超时、密钥脱敏、SSRF 和 DNS rebinding 均被阻断。"
               },
               "quizBlueprint": [
-                "解释runner-security-project中seccomp如何影响运行结果？",
-                "分析cgroup配置错误时会出现什么症状？",
-                "编写一个测试验证read-only mount的失败边界。",
-                "比较secret entropy的两种实现并说明选择依据。",
-                "定位使用egress proxy时最可能遗漏的保护措施。"
+                "验证seccomp在边界输入下返回什么。",
+                "编写cgroup的错误处理分支。",
+                "解释read-only mount为何是该主题的关键约束。",
+                "分析seccomp配置变更的兼容性风险。",
+                "实现一个综合cgroup和read-only mount的实践任务。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -5335,11 +5335,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释run_id 全链路在Agent 可观测与恢复中的执行过程。",
-                "分析结构化事件失效时最先出现的错误信号。",
-                "编写测试验证checkpoint 恢复的成功与失败分支。",
-                "比较重试预算与替代方案的约束和代价。",
-                "设计人工接管的边界输入、操作步骤和预期断言。"
+                "验证run_id 全链路在边界输入下返回什么。",
+                "编写结构化事件的错误处理分支。",
+                "解释checkpoint 恢复为何是该主题的关键约束。",
+                "分析run_id 全链路配置变更的兼容性风险。",
+                "实现一个综合结构化事件和checkpoint 恢复的实践任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5376,11 +5376,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“金丝雀每阶观察多久”在发布策略中的作用与限制。",
-                "分析“哪些指标触发自动停止”配置错误时的日志或响应症状。",
-                "编写最小示例验证“蓝绿发布数据库如何兼容”的正常路径与失败路径。",
-                "比较“feature flag 谁能修改”相关方案并说明选择依据。",
-                "设计针对“健康检查为何需覆盖依赖”边界条件的可执行测试。"
+                "验证金丝雀流量阶梯在边界输入下返回什么。",
+                "编写蓝绿切换的错误处理分支。",
+                "解释feature flag为何是该主题的关键约束。",
+                "分析金丝雀流量阶梯配置变更的兼容性风险。",
+                "实现一个综合蓝绿切换和feature flag的实践任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5417,11 +5417,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释“RTO 与 RPO 分别衡量什么”在回滚与灾备演练中的作用与限制。",
-                "分析“如何证明备份可用”配置错误时的日志或响应症状。",
-                "编写最小示例验证“expand-contract 如何支持回滚”的正常路径与失败路径。",
-                "比较“演练为何要记录时间线”相关方案并说明选择依据。",
-                "设计针对“不可逆迁移如何预案”边界条件的可执行测试。"
+                "验证RTO 恢复时间在边界输入下返回什么。",
+                "编写RPO 数据窗口的错误处理分支。",
+                "解释备份校验为何是该主题的关键约束。",
+                "分析RTO 恢复时间配置变更的兼容性风险。",
+                "实现一个综合RPO 数据窗口和备份校验的实践任务。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5459,11 +5459,11 @@
                 "description": "提交发布恢复演练；烟测通过，金丝雀阈值触发回滚，并记录实测 RTO、RPO 与 SLO。"
               },
               "quizBlueprint": [
-                "解释“供应链 SBOM”在安全发布端到端验收中的作用与限制。",
-                "分析“镜像签名”配置错误时的日志或响应症状。",
-                "编写最小示例验证“灰度发布”的正常路径与失败路径。",
-                "比较“安全回归”相关方案并说明选择依据。",
-                "设计针对“回滚演练”边界条件的可执行测试。"
+                "验证供应链 SBOM在边界输入下返回什么。",
+                "编写镜像签名的错误处理分支。",
+                "解释灰度发布为何是该主题的关键约束。",
+                "分析供应链 SBOM配置变更的兼容性风险。",
+                "实现一个综合镜像签名和灰度发布的实践任务。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
