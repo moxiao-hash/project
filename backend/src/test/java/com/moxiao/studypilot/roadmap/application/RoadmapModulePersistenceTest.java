@@ -33,6 +33,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Transactional
 class RoadmapModulePersistenceTest {
 
+    private static final String V1_TEMPLATE_ID = "studypilot-java-ai-v1";
+    private static final String V2_TEMPLATE_ID = "studypilot-java-ai-v2";
+
     @Autowired
     private RoadmapTemplateJpaRepository templateRepository;
 
@@ -61,33 +64,33 @@ class RoadmapModulePersistenceTest {
                 new ClassPathResource("db/migration/V25__add_roadmap_modules.sql")
         ).execute(dataSource);
 
-        insertTemplate("template-v1", "roadmap", 1);
-        insertTemplate("template-v2", "roadmap", 2);
-        insertStage("stage-v1", "template-v1", 1);
-        insertStage("stage-v2-a", "template-v2", 1);
-        insertStage("stage-v2-b", "template-v2", 2);
+        insertTemplate(V1_TEMPLATE_ID, "roadmap", 1);
+        insertTemplate(V2_TEMPLATE_ID, "roadmap", 2);
+        insertStage("stage-v1", V1_TEMPLATE_ID, 1);
+        insertStage("stage-v2-a", V2_TEMPLATE_ID, 1);
+        insertStage("stage-v2-b", V2_TEMPLATE_ID, 2);
     }
 
     @Test
     void modulesAreScopedToTheirTemplateAndStage() {
         assertThatCode(() -> insertModule(
-                "module-valid", "template-v2", "stage-v2-a", "basics", 1
+                "module-valid", V2_TEMPLATE_ID, "stage-v2-a", "basics", 1
         )).doesNotThrowAnyException();
 
         assertThatThrownBy(() -> insertModule(
-                "module-cross-template", "template-v1", "stage-v2-a", "invalid", 2
+                "module-cross-template", V1_TEMPLATE_ID, "stage-v2-a", "invalid", 2
         )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
     void moduleCodesAndOrdersAreUniqueWithinTheirCatalogScopes() {
-        insertModule("module-1", "template-v2", "stage-v2-a", "basics", 1);
+        insertModule("module-1", V2_TEMPLATE_ID, "stage-v2-a", "basics", 1);
 
         assertThatThrownBy(() -> insertModule(
-                "module-duplicate-code", "template-v2", "stage-v2-b", "basics", 1
+                "module-duplicate-code", V2_TEMPLATE_ID, "stage-v2-b", "basics", 1
         )).isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> insertModule(
-                "module-duplicate-order", "template-v2", "stage-v2-a", "collections", 1
+                "module-duplicate-order", V2_TEMPLATE_ID, "stage-v2-a", "collections", 1
         )).isInstanceOf(DataIntegrityViolationException.class);
     }
 
@@ -121,13 +124,16 @@ class RoadmapModulePersistenceTest {
 
     @Test
     void v2NodesRequireAValidModuleInTheirTemplate() {
-        insertModule("module-v2", "template-v2", "stage-v2-a", "basics", 1);
+        insertModule("module-v2", V2_TEMPLATE_ID, "stage-v2-a", "basics", 1);
 
+        assertThatThrownBy(() -> insertNode(
+                "node-v2-without-module", V2_TEMPLATE_ID, "stage-v2-a", null
+        )).isInstanceOf(DataIntegrityViolationException.class);
         assertThatCode(() -> insertNode(
-                "node-v2", "template-v2", "stage-v2-a", "module-v2"
+                "node-v2", V2_TEMPLATE_ID, "stage-v2-a", "module-v2"
         )).doesNotThrowAnyException();
         assertThatThrownBy(() -> insertNode(
-                "node-cross-template", "template-v1", "stage-v1", "module-v2"
+                "node-cross-template", V1_TEMPLATE_ID, "stage-v1", "module-v2"
         )).isInstanceOf(DataIntegrityViolationException.class);
 
         assertThatNullPointerException().isThrownBy(() -> v2Node(null));
@@ -137,11 +143,11 @@ class RoadmapModulePersistenceTest {
     @Test
     void v1NodesRemainCompatibleWithoutAModule() {
         assertThatCode(() -> insertNode(
-                "node-v1", "template-v1", "stage-v1", null
+                "node-v1", V1_TEMPLATE_ID, "stage-v1", null
         )).doesNotThrowAnyException();
 
         RoadmapNodeEntity legacyNode = new RoadmapNodeEntity(
-                "legacy-node", "template-v1", "stage-v1", "legacy", 1, "Legacy",
+                "legacy-node", V1_TEMPLATE_ID, "stage-v1", "legacy", 1, "Legacy",
                 "[]", "[]", "[]", "[]", "{}", "{}", 30, 20, "BASIC", true
         );
         assertThat(legacyNode.getModuleId()).isNull();
@@ -149,7 +155,7 @@ class RoadmapModulePersistenceTest {
 
     private RoadmapNodeEntity v2Node(String moduleId) {
         return new RoadmapNodeEntity(
-                "v2-node", "template-v2", "stage-v2-a", moduleId, "v2", 1, "V2",
+                "v2-node", V2_TEMPLATE_ID, "stage-v2-a", moduleId, "v2", 1, "V2",
                 "[]", "[]", "[]", "[]", "{}", "{}", 30, 20, "BASIC", true
         );
     }

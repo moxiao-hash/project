@@ -20,3 +20,8 @@ ALTER TABLE roadmap_nodes ADD COLUMN module_id VARCHAR(100);
 ALTER TABLE roadmap_nodes
     ADD CONSTRAINT fk_roadmap_nodes_module_scope FOREIGN KEY (module_id, template_id)
         REFERENCES roadmap_modules (id, template_id);
+
+ALTER TABLE roadmap_nodes
+    ADD CONSTRAINT ck_roadmap_nodes_v2_module_required CHECK (
+        template_id <> 'studypilot-java-ai-v2' OR module_id IS NOT NULL
+    );
