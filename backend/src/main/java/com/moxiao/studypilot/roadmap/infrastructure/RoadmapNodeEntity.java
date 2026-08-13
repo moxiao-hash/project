@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.util.Objects;
+
 @Entity
 @Table(name = "roadmap_nodes")
 public class RoadmapNodeEntity {
@@ -18,6 +20,9 @@ public class RoadmapNodeEntity {
 
     @Column(name = "stage_id", nullable = false, length = 80)
     private String stageId;
+
+    @Column(name = "module_id", length = 100)
+    private String moduleId;
 
     @Column(name = "node_code", nullable = false, length = 100)
     private String nodeCode;
@@ -97,9 +102,38 @@ public class RoadmapNodeEntity {
         this.requiredNode = requiredNode;
     }
 
+    public RoadmapNodeEntity(
+            String id,
+            String templateId,
+            String stageId,
+            String moduleId,
+            String nodeCode,
+            int nodeOrder,
+            String title,
+            String objectivesJson,
+            String highFrequencyJson,
+            String commonMistakesJson,
+            String searchKeywordsJson,
+            String artifactRequirementJson,
+            String quizBlueprintJson,
+            int estimatedMinutes,
+            int practiceMinutes,
+            String difficulty,
+            boolean requiredNode
+    ) {
+        this(
+                id, templateId, stageId, nodeCode, nodeOrder, title, objectivesJson,
+                highFrequencyJson, commonMistakesJson, searchKeywordsJson,
+                artifactRequirementJson, quizBlueprintJson, estimatedMinutes, practiceMinutes,
+                difficulty, requiredNode
+        );
+        this.moduleId = Objects.requireNonNull(moduleId, "moduleId");
+    }
+
     public String getId() { return id; }
     public String getTemplateId() { return templateId; }
     public String getStageId() { return stageId; }
+    public String getModuleId() { return moduleId; }
     public String getNodeCode() { return nodeCode; }
     public int getNodeOrder() { return nodeOrder; }
     public String getTitle() { return title; }
