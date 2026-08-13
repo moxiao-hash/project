@@ -7,8 +7,11 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,7 +75,7 @@ class RoadmapV2CatalogContentTest {
                 assertThat(artifact.get("required").asBoolean()).as(code).isEqualTo(milestone);
                 assertThat(artifact.get("evaluationMode").asString()).as(code)
                         .isEqualTo(milestone ? "AI_RUBRIC" : "PRESENCE");
-                if (!milestone) assertThat(artifact.get("description").asString()).contains("无需提交模块里程碑成果");
+                if (!milestone) assertThat(artifact.get("description").asString()).contains("无需提交里程碑成果");
                 if (!node.get("required").asBoolean()) optional.add(code);
                 String serialized = node.toString();
                 forbidden.forEach(phrase -> assertThat(serialized).as(code).doesNotContain(phrase));
@@ -118,6 +121,67 @@ class RoadmapV2CatalogContentTest {
         assertTerms("patch-diff", "diff", "补丁");
         assertTerms("runner-sandbox", "沙箱", "CPU/内存限制");
         assertTerms("release-e2e", "回滚", "端到端");
+    }
+
+    @Test
+    void requiredNodesNeverDependDirectlyOrTransitivelyOnOptionalNodes() {
+        Map<String, JsonNode> byCode = new HashMap<>();
+        nodes().forEach(node -> byCode.put(node.get("code").asString(), node));
+        Set<String> optional = byCode.values().stream().filter(node -> !node.get("required").asBoolean())
+                .map(node -> node.get("code").asString()).collect(java.util.stream.Collectors.toSet());
+        for (JsonNode node : byCode.values()) {
+            if (node.get("required").asBoolean()) {
+                assertThat(transitivePrerequisites(node, byCode)).as(node.get("code").asString())
+                        .doesNotContainAnyElementsOf(optional);
+            }
+        }
+    }
+
+    @Test
+    void rejectsCatalogWideGeneratedSentenceTemplates() {
+        List<Pattern> forbidden = List.of(
+                Pattern.compile("的可运行练习"),
+                Pattern.compile("解释.*的行为，并用.*验证关键边界"),
+                Pattern.compile("的核心机制"), Pattern.compile("的工程取舍"),
+                Pattern.compile("混淆.*的职责，导致实现偏离契约"),
+                Pattern.compile("忽略.*的边界条件"), Pattern.compile("辨析.*的适用场景"));
+        for (JsonNode node : nodes()) {
+            String content = node.toString();
+            forbidden.forEach(pattern -> assertThat(pattern.matcher(content).find())
+                    .as("%s must not match %s", node.get("code").asString(), pattern).isFalse());
+        }
+    }
+
+    @Test
+    void stageOneContainsExactlyThePlannedTwentyFiveFoundationalNodes() {
+        JsonNode stage = catalog.get("stages").get(0);
+        assertThat(stream(stage.get("modules")).stream().flatMap(module -> stream(module.get("nodes")).stream())
+                .map(node -> List.of(node.get("code").asString(), node.get("title").asString(),
+                        Integer.toString(node.get("nodeOrder").asInt()))).toList()).containsExactly(
+                row("java-environment-first-program", "JDK 环境与第一个程序", 1), row("variables-types-conversion", "变量、类型与转换", 2),
+                row("operators-console-io", "运算符与控制台输入输出", 3), row("conditions-if-switch", "条件分支", 4), row("loops-control", "循环与流程控制", 5), row("methods-parameters-return", "方法、参数与返回值", 6), row("arrays-basic-traversal", "数组与基础遍历", 7),
+                row("classes-objects", "类与对象", 8), row("constructors-this", "构造器与 this", 9), row("encapsulation-access", "封装与访问控制", 10), row("static-constants-members", "静态成员与常量", 11), row("inheritance-overriding", "继承与方法重写", 12), row("polymorphism", "多态", 13), row("abstract-classes-interfaces", "抽象类与接口", 14),
+                row("string-content-comparison", "字符串与内容比较", 15), row("wrappers-enums-datetime", "包装类型、枚举与日期时间", 16), row("object-equals-hashcode-tostring", "Object 核心契约", 17), row("list-iteration", "List 与迭代", 18), row("set-map-deduplication", "Set、Map 与去重", 19), row("generics-comparator-type-safety", "泛型、比较器与类型安全", 20),
+                row("exceptions-custom", "异常处理与自定义异常", 21), row("files-nio-streams", "文件、NIO 与流", 22), row("lambda-functional-interfaces", "Lambda 与函数式接口", 23), row("stream-optional", "Stream 与 Optional", 24), row("record-sealed-maven-junit-checkstyle", "现代 Java 建模与工程质量实践", 25));
+        String firstModule = stage.get("modules").get(0).toString();
+        assertThat(firstModule).doesNotContain("record", "sealed", "Stream", "Optional", "Checkstyle");
+    }
+
+    private static List<String> row(String code, String title, int order) {
+        return List.of(code, title, Integer.toString(order));
+    }
+
+    private static Set<String> transitivePrerequisites(JsonNode start, Map<String, JsonNode> byCode) {
+        Set<String> result = new HashSet<>();
+        collectPrerequisites(start, byCode, result);
+        return result;
+    }
+
+    private static void collectPrerequisites(JsonNode node, Map<String, JsonNode> byCode, Set<String> result) {
+        for (JsonNode prerequisite : node.get("prerequisites")) {
+            String code = prerequisite.asString();
+            if (result.add(code)) collectPrerequisites(byCode.get(code), byCode, result);
+        }
     }
 
     private void assertTerms(String code, String... terms) {

@@ -5,6 +5,7 @@ import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,8 @@ class RoadmapCatalogConcurrencyTest {
     @Autowired RoadmapStageJpaRepository stageRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
     @Autowired RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    @Autowired RoadmapModuleJpaRepository moduleRepository;
+    @Autowired RoadmapCatalogImporter productionImporter;
     @Autowired LessonJpaRepository lessonRepository;
     @Autowired LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
     @Autowired CourseCatalogImporter courseCatalogImporter;
@@ -50,9 +53,32 @@ class RoadmapCatalogConcurrencyTest {
         legacyMappingRepository.deleteAll();
         prerequisiteRepository.deleteAll();
         nodeRepository.deleteAll();
+        moduleRepository.deleteAll();
         stageRepository.deleteAll();
         templateRepository.deleteAll();
         courseCatalogImporter.importCatalog();
+    }
+
+    @Test
+    void productionImporterPublishesBothVersionsUnderConcurrentStartup() throws Exception {
+        executor = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<?>> futures = List.of(
+                    executor.submit(() -> { await(start); productionImporter.importCatalog(); }),
+                    executor.submit(() -> { await(start); productionImporter.importCatalog(); }));
+            start.countDown();
+            for (Future<?> future : futures) getWithinDeadline(future);
+
+            assertThat(templateRepository.count()).isEqualTo(2);
+            assertThat(stageRepository.count()).isEqualTo(24);
+            assertThat(moduleRepository.count()).isEqualTo(24);
+            assertThat(nodeRepository.count()).isEqualTo(189);
+            assertThat(prerequisiteRepository.count()).isEqualTo(203);
+            assertThat(legacyMappingRepository.count()).isEqualTo(2);
+        } finally {
+            shutdownExecutor();
+        }
     }
 
     @Test
