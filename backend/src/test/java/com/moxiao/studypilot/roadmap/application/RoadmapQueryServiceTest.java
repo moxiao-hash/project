@@ -6,6 +6,8 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
@@ -30,6 +32,52 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class RoadmapQueryServiceTest {
+
+    @Test
+    void moduleDetailUsesOneBoundedScopedCallPerAggregate() {
+        Fixture fixture = new Fixture();
+        RoadmapModuleEntity module = new RoadmapModuleEntity(
+                "module", "template", "stage", "module-code", 1, "模块", "描述");
+        RoadmapNodeEntity first = fixture.moduleNode("first", "first-code", 1);
+        RoadmapNodeEntity milestone = fixture.moduleNode("milestone", "milestone-code", 2);
+        UserRoadmapNodeEntity firstState = fixture.state("first");
+        UserRoadmapNodeEntity milestoneState = fixture.state("milestone");
+        when(fixture.modules.findByIdAndTemplateId("module", "template"))
+                .thenReturn(Optional.of(module));
+        when(fixture.nodes.findAllByModuleIdAndTemplateIdOrderByNodeOrderAsc(
+                "module", "template")).thenReturn(List.of(first, milestone));
+        when(fixture.states.findAllByUserRoadmapIdAndNodeIdIn(
+                "enrollment", List.of("first", "milestone")))
+                .thenReturn(List.of(firstState, milestoneState));
+        when(fixture.prerequisites.findAllByTemplateIdAndNodeIdIn(
+                "template", List.of("first", "milestone")))
+                .thenReturn(List.of(new RoadmapNodePrerequisiteEntity(
+                        "edge", "template", "milestone", "first")));
+        when(fixture.nodes.findAllByTemplateIdAndIdInRoadmapOrder(
+                "template", List.of("first"))).thenReturn(List.of(first));
+
+        var response = fixture.service.currentModule("owner", "module");
+
+        assertThat(response.nodes()).extracting(node -> node.code())
+                .containsExactly("first-code", "milestone-code");
+        assertThat(response.milestoneNode().code()).isEqualTo("milestone-code");
+        assertThat(response.nodes().get(1).prerequisiteCodes()).containsExactly("first-code");
+        fixture.verifyCurrentEnrollment();
+        verify(fixture.modules).findByIdAndTemplateId("module", "template");
+        verify(fixture.nodes).findAllByModuleIdAndTemplateIdOrderByNodeOrderAsc(
+                "module", "template");
+        verify(fixture.states).findAllByUserRoadmapIdAndNodeIdIn(
+                "enrollment", List.of("first", "milestone"));
+        verify(fixture.prerequisites).findAllByTemplateIdAndNodeIdIn(
+                "template", List.of("first", "milestone"));
+        verify(fixture.nodes).findAllByTemplateIdAndIdInRoadmapOrder(
+                "template", List.of("first"));
+        verify(fixture.nodes, never()).findAllByTemplateIdOrderByStageIdAscNodeOrderAsc("template");
+        verify(fixture.states, never()).findAllByUserRoadmapId("enrollment");
+        verifyNoInteractions(fixture.templates, fixture.stages);
+        verifyNoMoreInteractions(fixture.userRoadmaps, fixture.modules, fixture.nodes,
+                fixture.prerequisites, fixture.states);
+    }
 
     @Test
     void nodeDetailUsesOnlyTargetScopedRepositoryCalls() {
@@ -83,6 +131,8 @@ class RoadmapQueryServiceTest {
                 .thenReturn(Optional.of(requested));
         when(fixture.nodes.findAllByStageIdAndTemplateIdOrderByNodeOrderAsc("stage", "template"))
                 .thenReturn(List.of(node));
+        when(fixture.modules.findAllByStageIdAndTemplateIdOrderByModuleOrderAsc(
+                "stage", "template")).thenReturn(List.of());
         when(fixture.states.findAllByUserRoadmapIdAndNodeIdIn("enrollment", List.of("node")))
                 .thenReturn(List.of(state));
         when(fixture.prerequisites.findAllByTemplateIdAndNodeIdIn("template", List.of("node")))
@@ -96,6 +146,8 @@ class RoadmapQueryServiceTest {
         verify(fixture.stages).findByIdAndTemplateId("stage", "template");
         verify(fixture.nodes)
                 .findAllByStageIdAndTemplateIdOrderByNodeOrderAsc("stage", "template");
+        verify(fixture.modules).findAllByStageIdAndTemplateIdOrderByModuleOrderAsc(
+                "stage", "template");
         verify(fixture.states)
                 .findAllByUserRoadmapIdAndNodeIdIn("enrollment", List.of("node"));
         verify(fixture.prerequisites)
@@ -106,7 +158,7 @@ class RoadmapQueryServiceTest {
         verify(fixture.states, never()).findAllByUserRoadmapId("enrollment");
         verifyNoInteractions(fixture.templates);
         verifyNoMoreInteractions(
-                fixture.userRoadmaps, fixture.stages, fixture.nodes,
+                fixture.userRoadmaps, fixture.stages, fixture.modules, fixture.nodes,
                 fixture.prerequisites, fixture.states);
     }
 
@@ -154,13 +206,15 @@ class RoadmapQueryServiceTest {
         private final UserRoadmapJpaRepository userRoadmaps = mock(UserRoadmapJpaRepository.class);
         private final RoadmapTemplateJpaRepository templates = mock(RoadmapTemplateJpaRepository.class);
         private final RoadmapStageJpaRepository stages = mock(RoadmapStageJpaRepository.class);
+        private final RoadmapModuleJpaRepository modules = mock(RoadmapModuleJpaRepository.class);
         private final RoadmapNodeJpaRepository nodes = mock(RoadmapNodeJpaRepository.class);
         private final RoadmapNodePrerequisiteJpaRepository prerequisites =
                 mock(RoadmapNodePrerequisiteJpaRepository.class);
         private final UserRoadmapNodeJpaRepository states = mock(UserRoadmapNodeJpaRepository.class);
         private final Instant now = Instant.now();
         private final RoadmapQueryService service = new RoadmapQueryService(
-                userRoadmaps, templates, stages, nodes, prerequisites, states, new ObjectMapper());
+                userRoadmaps, templates, stages, modules, nodes, prerequisites, states,
+                new ObjectMapper());
 
         private Fixture() {
             when(userRoadmaps.findByOwnerIdAndActiveSlot("owner", "CURRENT"))
@@ -175,6 +229,13 @@ class RoadmapQueryServiceTest {
                 String objectives
         ) {
             return node(id, stageId, code, objectives, 1);
+        }
+
+        private RoadmapNodeEntity moduleNode(String id, String code, int nodeOrder) {
+            return new RoadmapNodeEntity(
+                    id, "template", "stage", "module", code, nodeOrder, "节点", "[]",
+                    "[]", "[]", "[]", "{\"required\":false}", "[]",
+                    30, 15, "EASY", true);
         }
 
         private RoadmapNodeEntity node(

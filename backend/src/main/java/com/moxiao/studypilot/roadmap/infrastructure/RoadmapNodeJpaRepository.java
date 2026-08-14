@@ -20,6 +20,11 @@ public interface RoadmapNodeJpaRepository extends JpaRepository<RoadmapNodeEntit
             String templateId
     );
 
+    List<RoadmapNodeEntity> findAllByModuleIdAndTemplateIdOrderByNodeOrderAsc(
+            String moduleId,
+            String templateId
+    );
+
     @Query("""
             SELECT node
             FROM RoadmapNodeEntity node

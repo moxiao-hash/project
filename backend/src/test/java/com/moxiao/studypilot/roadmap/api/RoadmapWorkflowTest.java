@@ -7,6 +7,8 @@ import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
@@ -33,6 +35,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -53,6 +56,7 @@ class RoadmapWorkflowTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @Autowired RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
+    @Autowired RoadmapModuleJpaRepository moduleRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
 
     @BeforeEach
@@ -172,6 +176,78 @@ class RoadmapWorkflowTest {
     }
 
     @Test
+    void returnsAuthenticatedModuleDetailAndEmbedsOrderedModuleSummaries() throws Exception {
+        String token = register("module-detail");
+        JsonNode enrollment = enroll(token, 2);
+
+        MvcResult mapResult = mockMvc.perform(get("/api/roadmaps/current/map")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.templateVersion").value(2))
+                .andExpect(jsonPath("$.stages[0].modules.length()").value(4))
+                .andExpect(jsonPath("$.stages[0].modules[0].code").value("java-language-start"))
+                .andExpect(jsonPath("$.stages[0].modules[0].completedRequiredNodes").value(0))
+                .andExpect(jsonPath("$.stages[0].modules[0].totalRequiredNodes").value(7))
+                .andExpect(jsonPath("$.stages[0].modules[0].milestoneNodeCode")
+                        .value("arrays-basic-traversal"))
+                .andExpect(jsonPath("$.stages[0].modules[0].displayStatus").value("AVAILABLE"))
+                .andReturn();
+        JsonNode map = objectMapper.readTree(mapResult.getResponse().getContentAsString());
+        String stageId = map.get("stages").get(0).get("id").asText();
+        String moduleId = map.get("stages").get(0).get("modules").get(0).get("id").asText();
+
+        mockMvc.perform(get("/api/roadmaps/current/stages/{stageId}", stageId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.modules.length()").value(4))
+                .andExpect(jsonPath("$.modules[0].id").value(moduleId));
+
+        mockMvc.perform(get("/api/roadmaps/current/modules/{moduleId}", moduleId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(moduleId))
+                .andExpect(jsonPath("$.code").value("java-language-start"))
+                .andExpect(jsonPath("$.stageId").value(stageId))
+                .andExpect(jsonPath("$.completedRequiredNodes").value(0))
+                .andExpect(jsonPath("$.totalRequiredNodes").value(7))
+                .andExpect(jsonPath("$.displayStatus").value("AVAILABLE"))
+                .andExpect(jsonPath("$.milestoneNode.code").value("arrays-basic-traversal"))
+                .andExpect(jsonPath("$.nodes.length()").value(7))
+                .andExpect(jsonPath("$.nodes[0].code").value("java-environment-first-program"))
+                .andExpect(jsonPath("$.nodes[1].code").value("variables-types-conversion"))
+                .andExpect(jsonPath("$.nodes[1].prerequisiteCodes[0]")
+                        .value("java-environment-first-program"));
+
+        assertThat(enrollment.get("templateVersion").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void hidesForeignAndMissingModulesBehindTheSameNotFoundResponse() throws Exception {
+        String token = register("module-scope");
+        enroll(token, 2);
+        String suffix = UUID.randomUUID().toString();
+        String templateId = "module-foreign-template-" + suffix.substring(0, 8);
+        String stageId = "module-foreign-stage-" + suffix;
+        String moduleId = "module-foreign-" + suffix;
+        templateRepository.save(new RoadmapTemplateEntity(
+                templateId, "module-foreign-" + suffix, 1, "其他路线", "其他路线",
+                RoadmapPublicationStatus.PUBLISHED, "e".repeat(64), Instant.now()));
+        stageRepository.save(new RoadmapStageEntity(
+                stageId, templateId, "foreign", 1, "其他阶段", "其他阶段", "其他项目"));
+        moduleRepository.save(new RoadmapModuleEntity(
+                moduleId, templateId, stageId, "foreign", 1, "其他模块", "其他模块"));
+
+        mockMvc.perform(get("/api/roadmaps/current/modules/{moduleId}", moduleId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/roadmaps/current/modules/{moduleId}", "missing-module")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/roadmaps/current/modules/{moduleId}", moduleId))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void derivesDisplayStatusWithTheRequiredPrecedence() throws Exception {
         String token = register("status");
         JsonNode enrollment = enroll(token);
@@ -207,6 +283,7 @@ class RoadmapWorkflowTest {
         UserRoadmapJpaRepository userRoadmaps = mock(UserRoadmapJpaRepository.class);
         RoadmapTemplateJpaRepository templates = mock(RoadmapTemplateJpaRepository.class);
         RoadmapStageJpaRepository stages = mock(RoadmapStageJpaRepository.class);
+        RoadmapModuleJpaRepository modules = mock(RoadmapModuleJpaRepository.class);
         RoadmapNodeJpaRepository nodes = mock(RoadmapNodeJpaRepository.class);
         RoadmapNodePrerequisiteJpaRepository prerequisites =
                 mock(RoadmapNodePrerequisiteJpaRepository.class);
@@ -230,22 +307,26 @@ class RoadmapWorkflowTest {
         when(templates.findById("template")).thenReturn(Optional.of(template));
         when(stages.findAllByTemplateIdOrderByStageOrderAsc("template"))
                 .thenReturn(List.of(stage));
+        when(modules.findAllByTemplateIdOrderByStageIdAscModuleOrderAsc("template"))
+                .thenReturn(List.of());
         when(nodes.findAllByTemplateIdOrderByStageIdAscNodeOrderAsc("template"))
                 .thenReturn(List.of(node));
         when(prerequisites.findAllByTemplateId("template")).thenReturn(List.of());
         when(states.findAllByUserRoadmapId("enrollment")).thenReturn(List.of(state));
         RoadmapQueryService service = new RoadmapQueryService(
-                userRoadmaps, templates, stages, nodes, prerequisites, states, objectMapper);
+                userRoadmaps, templates, stages, modules, nodes, prerequisites, states, objectMapper);
 
         service.currentMap("owner");
 
         verify(userRoadmaps).findByOwnerIdAndActiveSlot("owner", "CURRENT");
         verify(templates).findById("template");
         verify(stages).findAllByTemplateIdOrderByStageOrderAsc("template");
+        verify(modules).findAllByTemplateIdOrderByStageIdAscModuleOrderAsc("template");
         verify(nodes).findAllByTemplateIdOrderByStageIdAscNodeOrderAsc("template");
         verify(prerequisites).findAllByTemplateId("template");
         verify(states).findAllByUserRoadmapId("enrollment");
-        verifyNoMoreInteractions(userRoadmaps, templates, stages, nodes, prerequisites, states);
+        verifyNoMoreInteractions(
+                userRoadmaps, templates, stages, modules, nodes, prerequisites, states);
     }
 
     @Test
@@ -370,15 +451,19 @@ class RoadmapWorkflowTest {
     }
 
     private JsonNode enroll(String token) throws Exception {
+        return enroll(token, 1);
+    }
+
+    private JsonNode enroll(String token, int templateVersion) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/roadmap-enrollments")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "roadmapCode": "studypilot-java-ai",
-                                  "templateVersion": 1
+                                  "templateVersion": %d
                                 }
-                                """))
+                                """.formatted(templateVersion)))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());

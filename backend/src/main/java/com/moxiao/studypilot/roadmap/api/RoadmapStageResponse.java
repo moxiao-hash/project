@@ -11,6 +11,7 @@ public record RoadmapStageResponse(
         String graduationProjectTitle,
         int completedRequiredNodes,
         int totalRequiredNodes,
+        List<RoadmapModuleResponse.Summary> modules,
         List<RoadmapNodeResponse> nodes
 ) {
 }

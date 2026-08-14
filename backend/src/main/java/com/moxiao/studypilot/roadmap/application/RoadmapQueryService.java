@@ -2,6 +2,7 @@ package com.moxiao.studypilot.roadmap.application;
 
 import com.moxiao.studypilot.roadmap.api.RoadmapEnrollmentResponse;
 import com.moxiao.studypilot.roadmap.api.RoadmapMapResponse;
+import com.moxiao.studypilot.roadmap.api.RoadmapModuleResponse;
 import com.moxiao.studypilot.roadmap.api.RoadmapNodeResponse;
 import com.moxiao.studypilot.roadmap.api.RoadmapStageResponse;
 import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
@@ -11,6 +12,8 @@ import com.moxiao.studypilot.roadmap.domain.LearningStatus;
 import com.moxiao.studypilot.roadmap.domain.QuizStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapDisplayStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
@@ -45,6 +48,7 @@ public class RoadmapQueryService {
     private final UserRoadmapJpaRepository userRoadmapRepository;
     private final RoadmapTemplateJpaRepository templateRepository;
     private final RoadmapStageJpaRepository stageRepository;
+    private final RoadmapModuleJpaRepository moduleRepository;
     private final RoadmapNodeJpaRepository nodeRepository;
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     private final UserRoadmapNodeJpaRepository userNodeRepository;
@@ -54,6 +58,7 @@ public class RoadmapQueryService {
             UserRoadmapJpaRepository userRoadmapRepository,
             RoadmapTemplateJpaRepository templateRepository,
             RoadmapStageJpaRepository stageRepository,
+            RoadmapModuleJpaRepository moduleRepository,
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
             UserRoadmapNodeJpaRepository userNodeRepository,
@@ -62,6 +67,7 @@ public class RoadmapQueryService {
         this.userRoadmapRepository = userRoadmapRepository;
         this.templateRepository = templateRepository;
         this.stageRepository = stageRepository;
+        this.moduleRepository = moduleRepository;
         this.nodeRepository = nodeRepository;
         this.prerequisiteRepository = prerequisiteRepository;
         this.userNodeRepository = userNodeRepository;
@@ -86,6 +92,9 @@ public class RoadmapQueryService {
         List<RoadmapNodeEntity> nodes = nodeRepository
                 .findAllByStageIdAndTemplateIdOrderByNodeOrderAsc(
                         stageId, enrollment.getTemplateId());
+        List<RoadmapModuleEntity> modules = moduleRepository
+                .findAllByStageIdAndTemplateIdOrderByModuleOrderAsc(
+                        stageId, enrollment.getTemplateId());
         List<String> nodeIds = nodes.stream().map(RoadmapNodeEntity::getId).toList();
         Map<String, UserRoadmapNodeEntity> stateByNodeId = uniqueIndex(
                 userNodeRepository.findAllByUserRoadmapIdAndNodeIdIn(enrollment.getId(), nodeIds),
@@ -99,8 +108,35 @@ public class RoadmapQueryService {
                 orderedPrerequisites, RoadmapNodeEntity::getId, "路线前置节点重复");
         return toStageResponse(
                 stage,
+                modules,
                 nodes,
                 stateByNodeId,
+                prerequisiteCodes(edges, prerequisitesById, orderedPrerequisites));
+    }
+
+    public RoadmapModuleResponse currentModule(String ownerId, String moduleId) {
+        UserRoadmapEntity enrollment = currentEnrollment(ownerId);
+        RoadmapModuleEntity module = moduleRepository
+                .findByIdAndTemplateId(moduleId, enrollment.getTemplateId())
+                .orElseThrow(() -> new ResourceNotFoundException("路线模块不存在"));
+        List<RoadmapNodeEntity> nodes = nodeRepository
+                .findAllByModuleIdAndTemplateIdOrderByNodeOrderAsc(
+                        moduleId, enrollment.getTemplateId());
+        if (nodes.isEmpty()) {
+            throw new IllegalStateException("路线模块没有节点: " + moduleId);
+        }
+        List<String> nodeIds = nodes.stream().map(RoadmapNodeEntity::getId).toList();
+        Map<String, UserRoadmapNodeEntity> stateByNodeId = uniqueIndex(
+                userNodeRepository.findAllByUserRoadmapIdAndNodeIdIn(enrollment.getId(), nodeIds),
+                UserRoadmapNodeEntity::getNodeId,
+                "用户路线节点状态重复");
+        List<RoadmapNodePrerequisiteEntity> edges = prerequisiteRepository
+                .findAllByTemplateIdAndNodeIdIn(enrollment.getTemplateId(), nodeIds);
+        List<RoadmapNodeEntity> orderedPrerequisites = orderedPrerequisiteNodes(
+                enrollment.getTemplateId(), edges);
+        Map<String, RoadmapNodeEntity> prerequisitesById = uniqueIndex(
+                orderedPrerequisites, RoadmapNodeEntity::getId, "路线前置节点重复");
+        return toModuleResponse(module, nodes, stateByNodeId,
                 prerequisiteCodes(edges, prerequisitesById, orderedPrerequisites));
     }
 
@@ -131,6 +167,8 @@ public class RoadmapQueryService {
         RoadmapTemplateEntity template = template(enrollment.getTemplateId());
         List<RoadmapStageEntity> stages = stageRepository
                 .findAllByTemplateIdOrderByStageOrderAsc(template.getId());
+        List<RoadmapModuleEntity> modules = moduleRepository
+                .findAllByTemplateIdOrderByStageIdAscModuleOrderAsc(template.getId());
         List<RoadmapNodeEntity> nodes = orderedNodes(template.getId(), stages);
         List<RoadmapNodePrerequisiteEntity> prerequisites = prerequisiteRepository
                 .findAllByTemplateId(template.getId());
@@ -148,10 +186,16 @@ public class RoadmapQueryService {
                         RoadmapNodeEntity::getStageId,
                         java.util.LinkedHashMap::new,
                         Collectors.toList()));
+        Map<String, List<RoadmapModuleEntity>> modulesByStageId = modules.stream()
+                .collect(Collectors.groupingBy(
+                        RoadmapModuleEntity::getStageId,
+                        java.util.LinkedHashMap::new,
+                        Collectors.toList()));
 
         List<RoadmapStageResponse> stageResponses = stages.stream()
                 .map(stage -> toStageResponse(
                         stage,
+                        modulesByStageId.getOrDefault(stage.getId(), List.of()),
                         nodesByStageId.getOrDefault(stage.getId(), List.of()),
                         stateByNodeId,
                         prerequisiteCodes))
@@ -224,6 +268,7 @@ public class RoadmapQueryService {
 
     private RoadmapStageResponse toStageResponse(
             RoadmapStageEntity stage,
+            List<RoadmapModuleEntity> modules,
             List<RoadmapNodeEntity> nodes,
             Map<String, UserRoadmapNodeEntity> stateByNodeId,
             Map<String, List<String>> prerequisiteCodes
@@ -240,6 +285,15 @@ public class RoadmapQueryService {
                 .filter(node -> requiredState(stateByNodeId, node.getId()).getCompletionStatus()
                         == CompletionStatus.COMPLETED)
                 .count();
+        Map<String, List<RoadmapNodeEntity>> nodesByModuleId = nodes.stream()
+                .filter(node -> node.getModuleId() != null)
+                .collect(Collectors.groupingBy(RoadmapNodeEntity::getModuleId));
+        List<RoadmapModuleResponse.Summary> moduleResponses = modules.stream()
+                .map(module -> toModuleSummary(
+                        module,
+                        nodesByModuleId.getOrDefault(module.getId(), List.of()),
+                        stateByNodeId))
+                .toList();
         return new RoadmapStageResponse(
                 stage.getId(),
                 stage.getStageCode(),
@@ -249,7 +303,82 @@ public class RoadmapQueryService {
                 stage.getGraduationProjectTitle(),
                 completedRequired,
                 totalRequired,
+                moduleResponses,
                 nodeResponses);
+    }
+
+    private RoadmapModuleResponse toModuleResponse(
+            RoadmapModuleEntity module,
+            List<RoadmapNodeEntity> nodes,
+            Map<String, UserRoadmapNodeEntity> stateByNodeId,
+            Map<String, List<String>> prerequisiteCodes
+    ) {
+        List<RoadmapNodeResponse> nodeResponses = nodes.stream()
+                .map(node -> toNodeResponse(
+                        node,
+                        requiredState(stateByNodeId, node.getId()),
+                        prerequisiteCodes.getOrDefault(node.getId(), List.of())))
+                .toList();
+        ModuleProgress progress = moduleProgress(nodes, stateByNodeId);
+        return new RoadmapModuleResponse(
+                module.getId(), module.getStageId(), module.getModuleCode(),
+                module.getModuleOrder(), module.getTitle(), module.getDescription(),
+                progress.completedRequired(), progress.totalRequired(), progress.displayStatus(),
+                nodeResponses.get(nodeResponses.size() - 1), nodeResponses);
+    }
+
+    private RoadmapModuleResponse.Summary toModuleSummary(
+            RoadmapModuleEntity module,
+            List<RoadmapNodeEntity> nodes,
+            Map<String, UserRoadmapNodeEntity> stateByNodeId
+    ) {
+        if (nodes.isEmpty()) {
+            throw new IllegalStateException("路线模块没有节点: " + module.getId());
+        }
+        RoadmapNodeEntity milestone = nodes.get(nodes.size() - 1);
+        ModuleProgress progress = moduleProgress(nodes, stateByNodeId);
+        return new RoadmapModuleResponse.Summary(
+                module.getId(), module.getModuleCode(), module.getModuleOrder(),
+                module.getTitle(), module.getDescription(), progress.completedRequired(),
+                progress.totalRequired(), milestone.getId(), milestone.getNodeCode(),
+                progress.displayStatus());
+    }
+
+    private ModuleProgress moduleProgress(
+            List<RoadmapNodeEntity> nodes,
+            Map<String, UserRoadmapNodeEntity> stateByNodeId
+    ) {
+        List<UserRoadmapNodeEntity> states = nodes.stream()
+                .map(node -> requiredState(stateByNodeId, node.getId()))
+                .toList();
+        int totalRequired = (int) nodes.stream().filter(RoadmapNodeEntity::isRequiredNode).count();
+        int completedRequired = (int) nodes.stream()
+                .filter(RoadmapNodeEntity::isRequiredNode)
+                .filter(node -> requiredState(stateByNodeId, node.getId()).getCompletionStatus()
+                        == CompletionStatus.COMPLETED)
+                .count();
+        String status;
+        if (totalRequired > 0 && completedRequired == totalRequired) {
+            status = RoadmapDisplayStatus.COMPLETED.name();
+        } else if (states.stream().anyMatch(state -> displayStatus(state)
+                == RoadmapDisplayStatus.REVIEW_REQUIRED)) {
+            status = RoadmapDisplayStatus.REVIEW_REQUIRED.name();
+        } else if (states.stream().anyMatch(state -> displayStatus(state)
+                == RoadmapDisplayStatus.QUIZ_PENDING)) {
+            status = RoadmapDisplayStatus.QUIZ_PENDING.name();
+        } else if (completedRequired > 0 || states.stream().anyMatch(state ->
+                state.getLearningStatus() == LearningStatus.IN_PROGRESS)) {
+            status = RoadmapDisplayStatus.IN_PROGRESS.name();
+        } else if (states.stream().anyMatch(state ->
+                state.getAvailabilityStatus() == AvailabilityStatus.AVAILABLE)) {
+            status = RoadmapDisplayStatus.AVAILABLE.name();
+        } else if (states.stream().anyMatch(state ->
+                state.getLearningStatus() == LearningStatus.SCHEDULED)) {
+            status = RoadmapDisplayStatus.SCHEDULED.name();
+        } else {
+            status = RoadmapDisplayStatus.LOCKED.name();
+        }
+        return new ModuleProgress(completedRequired, totalRequired, status);
     }
 
     private RoadmapNodeResponse toNodeResponse(
@@ -382,4 +511,10 @@ public class RoadmapQueryService {
     ) {
         return new IllegalStateException("路线节点元数据无效: " + nodeId + "/" + field, cause);
     }
+
+    private record ModuleProgress(
+            int completedRequired,
+            int totalRequired,
+            String displayStatus
+    ) { }
 }

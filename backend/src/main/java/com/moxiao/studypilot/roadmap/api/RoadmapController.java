@@ -60,6 +60,14 @@ public class RoadmapController {
         return queryService.currentStage(user.id(), stageId);
     }
 
+    @GetMapping("/roadmaps/current/modules/{moduleId}")
+    public RoadmapModuleResponse module(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String moduleId
+    ) {
+        return queryService.currentModule(user.id(), moduleId);
+    }
+
     @GetMapping("/roadmaps/current/nodes/{nodeId}")
     public RoadmapNodeResponse node(
             @AuthenticationPrincipal AuthenticatedUser user,
