@@ -25,6 +25,7 @@ import com.moxiao.studypilot.assessment.domain.QuestionType;
 import com.moxiao.studypilot.assessment.domain.QuizAttemptStatus;
 import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import com.moxiao.studypilot.learning.infrastructure.LearningTaskJpaRepository;
+import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
 import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressEntity;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressJpaRepository;
@@ -92,6 +93,22 @@ public class QuizService {
         if (request.taskId() != null && request.lessonId() != null) {
             throw new IllegalArgumentException("taskId 与 lessonId 只能提供一个");
         }
+        boolean roadmapQuiz = request.roadmapNodeId() != null || request.purpose() != null;
+        if (roadmapQuiz && (request.roadmapNodeId() == null
+                || request.purpose() != RoadmapQuizPurpose.NODE
+                || request.materialId() != null || request.taskId() != null || request.lessonId() != null)) {
+            throw new IllegalArgumentException("节点测验必须使用 NODE purpose 且只绑定 roadmapNodeId");
+        }
+        if (roadmapQuiz) {
+            Set<String> signatures = new java.util.HashSet<>();
+            for (CreateQuizRequest.QuestionInput question : request.questions()) {
+                if (question.questionSignature() == null
+                        || question.questionSignature().isBlank()
+                        || !signatures.add(question.questionSignature())) {
+                    throw new IllegalArgumentException("节点测验每道题必须提供唯一 questionSignature");
+                }
+            }
+        }
         if (request.lessonId() != null
                 && !lessonRepository.existsById(request.lessonId())) {
             throw new ResourceNotFoundException("课时不存在");
@@ -103,6 +120,8 @@ public class QuizService {
                 request.materialId(),
                 request.taskId(),
                 request.lessonId(),
+                request.roadmapNodeId(),
+                request.purpose(),
                 request.title().trim(),
                 request.modelName(),
                 Instant.now()
@@ -137,7 +156,8 @@ public class QuizService {
                                     source.locator(),
                                     source.snippet()
                             ))
-                            .toList()
+                            .toList(),
+                    input.questionSignature()
             ));
         }
         return new QuizBundle(quiz, questionRepository.saveAll(questions));

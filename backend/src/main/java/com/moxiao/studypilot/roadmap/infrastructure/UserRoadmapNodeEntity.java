@@ -108,6 +108,43 @@ public class UserRoadmapNodeEntity {
         this.updatedAt = now;
     }
 
+    public void submitCheckInAndQueueQuiz(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (availabilityStatus != AvailabilityStatus.AVAILABLE) {
+            throw new IllegalStateException("锁定节点不能提交打卡: " + nodeId);
+        }
+        checkInStatus = CheckInStatus.SUBMITTED;
+        quizStatus = QuizStatus.GENERATING;
+        if (learningStatus == LearningStatus.NOT_STARTED) {
+            learningStatus = LearningStatus.IN_PROGRESS;
+        }
+        updatedAt = now;
+    }
+
+    public void markQuizGenerationFailed(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        quizStatus = QuizStatus.FAILED;
+        updatedAt = now;
+    }
+
+    public void retryQuizGeneration(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (checkInStatus != CheckInStatus.SUBMITTED || quizStatus != QuizStatus.FAILED) {
+            throw new IllegalStateException("路线节点测验当前不可重试: " + nodeId);
+        }
+        quizStatus = QuizStatus.GENERATING;
+        updatedAt = now;
+    }
+
+    public void markQuizReady(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (checkInStatus != CheckInStatus.SUBMITTED) {
+            throw new IllegalStateException("未打卡节点不能生成测验: " + nodeId);
+        }
+        quizStatus = QuizStatus.READY;
+        updatedAt = now;
+    }
+
     void completeAfterRequirements(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
         if (completionStatus == CompletionStatus.COMPLETED) {

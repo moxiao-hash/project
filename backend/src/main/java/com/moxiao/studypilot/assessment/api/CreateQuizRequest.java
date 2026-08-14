@@ -3,6 +3,7 @@ package com.moxiao.studypilot.assessment.api;
 import com.moxiao.studypilot.assessment.domain.QuestionType;
 import com.moxiao.studypilot.assessment.domain.CodingKind;
 import com.moxiao.studypilot.assessment.domain.Difficulty;
+import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -17,6 +18,8 @@ public record CreateQuizRequest(
         String materialId,
         String taskId,
         String lessonId,
+        String roadmapNodeId,
+        RoadmapQuizPurpose purpose,
         @NotBlank @Size(max = 160) String title,
         @NotBlank @Size(max = 100) String modelName,
         @NotEmpty List<@Valid QuestionInput> questions
@@ -34,7 +37,8 @@ public record CreateQuizRequest(
             String starterCode,
             RubricInput rubric,
             String referenceAnswer,
-            List<@Valid SourceInput> sources
+            List<@Valid SourceInput> sources,
+            @Size(max = 64) String questionSignature
     ) {
     }
 

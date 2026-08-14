@@ -1,7 +1,10 @@
 package com.moxiao.studypilot.assessment.infrastructure;
 
+import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
@@ -25,6 +28,13 @@ public class QuizEntity {
 
     @Column(name = "lesson_id")
     private String lessonId;
+
+    @Column(name = "roadmap_node_id", length = 100)
+    private String roadmapNodeId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 30)
+    private RoadmapQuizPurpose purpose;
 
     @Column(nullable = false, length = 160)
     private String title;
@@ -59,11 +69,22 @@ public class QuizEntity {
             String modelName,
             Instant createdAt
     ) {
+        this(id, ownerId, materialId, taskId, lessonId, null, null,
+                title, modelName, createdAt);
+    }
+
+    public QuizEntity(
+            String id, String ownerId, String materialId, String taskId, String lessonId,
+            String roadmapNodeId, RoadmapQuizPurpose purpose, String title,
+            String modelName, Instant createdAt
+    ) {
         this.id = id;
         this.ownerId = ownerId;
         this.materialId = materialId;
         this.taskId = taskId;
         this.lessonId = lessonId;
+        this.roadmapNodeId = roadmapNodeId;
+        this.purpose = purpose;
         this.title = title;
         this.modelName = modelName;
         this.createdAt = createdAt;
@@ -88,6 +109,9 @@ public class QuizEntity {
     public String getLessonId() {
         return lessonId;
     }
+
+    public String getRoadmapNodeId() { return roadmapNodeId; }
+    public RoadmapQuizPurpose getPurpose() { return purpose; }
 
     public String getTitle() {
         return title;
