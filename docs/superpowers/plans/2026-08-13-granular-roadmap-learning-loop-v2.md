@@ -21,10 +21,10 @@
 - Modify: `backend/src/main/java/com/moxiao/studypilot/roadmap/infrastructure/RoadmapNodeEntity.java`
 - Test: `backend/src/test/java/com/moxiao/studypilot/roadmap/application/RoadmapModulePersistenceTest.java`
 
-- [ ] Write a failing migration/JPA test proving modules are template/stage scoped, ordered, uniquely coded, and every V2 node belongs to exactly one module.
-- [ ] Run `./mvnw -q -Dtest=RoadmapModulePersistenceTest test` and confirm the missing table/entity failure.
-- [ ] Add `roadmap_modules`; add nullable `module_id` for V1 compatibility and composite V2 foreign-key support; map the entity and repository.
-- [ ] Re-run the focused test and commit `feat: model roadmap modules`.
+- [x] Write a failing migration/JPA test proving modules are template/stage scoped, ordered, uniquely coded, and every V2 node belongs to exactly one module.
+- [x] Run `./mvnw -q -Dtest=RoadmapModulePersistenceTest test` and confirm the missing table/entity failure.
+- [x] Add `roadmap_modules`; add nullable `module_id` for V1 compatibility and composite V2 foreign-key support; map the entity and repository.
+- [x] Re-run the focused test and commit `feat: model roadmap modules`.
 
 ### Task 2: Publish the immutable V2 catalog
 
@@ -35,11 +35,11 @@
 - Test: `backend/src/test/java/com/moxiao/studypilot/roadmap/application/RoadmapV2CatalogContentTest.java`
 - Test: `backend/src/test/java/com/moxiao/studypilot/roadmap/application/RoadmapCatalogImporterTest.java`
 
-- [ ] Write failing tests for exactly 12 stages, 24 modules, 125 nodes, 30–60 estimated minutes, stable unique codes, acyclic prerequisites, five-item quiz blueprints, and one milestone at each module end.
-- [ ] Pin the 25 Stage-1 node titles/order from the approved specification and assert that record/sealed/Stream/Optional/Checkstyle are absent from the first basic-syntax module.
-- [ ] Author all node-specific objectives, high-frequency points, mistakes, search keywords, artifact requirements, and practical quiz blueprints; reject repeated generic templates.
-- [ ] Generalize importer configuration to import V1 and V2 in order without mutating an existing checksum; persist modules before nodes and preserve optional legacy mappings.
-- [ ] Run focused importer/catalog tests and commit `feat: publish granular java ai roadmap v2`.
+- [x] Write failing tests for exactly 12 stages, 24 modules, 125 nodes, 30–60 estimated minutes, stable unique codes, acyclic prerequisites, five-item quiz blueprints, and one milestone at each module end.
+- [x] Pin the 25 Stage-1 node titles/order from the approved specification and assert that record/sealed/Stream/Optional/Checkstyle are absent from the first basic-syntax module.
+- [x] Author all node-specific objectives, high-frequency points, mistakes, search keywords, artifact requirements, and practical quiz blueprints; reject repeated generic templates.
+- [x] Generalize importer configuration to import V1 and V2 in order without mutating an existing checksum; persist modules before nodes and preserve optional legacy mappings.
+- [x] Run focused importer/catalog tests and commit `feat: publish granular java ai roadmap v2`.
 
 ### Task 3: Harden V1-to-V2 upgrade semantics
 
@@ -48,9 +48,9 @@
 - Modify: `backend/src/main/java/com/moxiao/studypilot/roadmap/infrastructure/UserRoadmapNodeEntity.java`
 - Test: `backend/src/test/java/com/moxiao/studypilot/roadmap/api/RoadmapUpgradeWorkflowTest.java`
 
-- [ ] Write failing tests showing broad V1 nodes do not fan out completion to granular V2 nodes, exact unchanged nodes may carry completion, and V1 evidence/history remains readable.
-- [ ] Include module-level added/removed/changed counts in the preview while retaining owner isolation, idempotency, latest-published locking, and atomic rollback.
-- [ ] Recalculate V2 availability after confirmed upgrade; commit `feat: preview granular roadmap upgrades`.
+- [x] Write failing tests showing broad V1 nodes do not fan out completion to granular V2 nodes, exact unchanged nodes may carry completion, and V1 evidence/history remains readable.
+- [x] Include module-level added/removed/changed counts in the preview while retaining owner isolation, idempotency, latest-published locking, and atomic rollback.
+- [x] Recalculate V2 availability after confirmed upgrade; commit `feat: preview granular roadmap upgrades`.
 
 ### Task 4: Expose module-aware roadmap queries
 
@@ -61,10 +61,10 @@
 - Modify: roadmap response DTOs and scoped repositories.
 - Test: roadmap workflow and query service tests.
 
-- [ ] Write failing authenticated API tests for `GET /api/roadmaps/current/modules/{moduleId}` and module summaries embedded in map/stage responses.
-- [ ] Return module progress, milestone node, ordered nodes, prerequisites, and display status without accepting owner IDs.
-- [ ] Use bounded template/enrollment-scoped batch queries and make foreign/nonexistent IDs indistinguishable as 404.
-- [ ] Run focused/full Java tests and commit `feat: query roadmap modules`.
+- [x] Write failing authenticated API tests for `GET /api/roadmaps/current/modules/{moduleId}` and module summaries embedded in map/stage responses.
+- [x] Return module progress, milestone node, ordered nodes, prerequisites, and display status without accepting owner IDs.
+- [x] Use bounded template/enrollment-scoped batch queries and make foreign/nonexistent IDs indistinguishable as 404.
+- [x] Run focused/full Java tests and commit `feat: query roadmap modules`.
 
 ### Task 5: Render Stage → Module → Node navigation
 
@@ -72,9 +72,9 @@
 - Create: `web/src/modules/roadmap/ModuleView.vue`
 - Modify: roadmap client/types, RoadmapView, StageView, NodeView, router and navigation tests.
 
-- [ ] Write failing tests for `/roadmap/modules/:id`, named-route parameter consistency, module progress, milestone labels, locked-node explanations, and real-router reachability.
-- [ ] Render modules between stages and nodes, preserve accessible graph/list behavior, and keep legacy course routes as history-only compatibility pages.
-- [ ] Verify focused/full frontend tests, typecheck and build; commit `feat: navigate granular roadmap modules`.
+- [x] Write failing tests for `/roadmap/modules/:id`, named-route parameter consistency, module progress, milestone labels, locked-node explanations, and real-router reachability.
+- [x] Render modules between stages and nodes, preserve accessible graph/list behavior, and keep legacy course routes as history-only compatibility pages.
+- [x] Verify focused/full frontend tests, typecheck and build; commit `feat: navigate granular roadmap modules`.
 
 ## Batch 2 — Learning loop
 
