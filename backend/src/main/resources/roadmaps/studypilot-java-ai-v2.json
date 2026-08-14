@@ -45,11 +45,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读一段JDK/JRE/JVM 分工代码，写出输出并解释每一步。",
-                "改正源文件名与 public class 一致误用造成的编译或运行错误。",
-                "设计javac -d 与 java -cp的最小边界用例并给出断言。",
-                "比较JDK/JRE/JVM 分工和源文件名与 public class 一致在该场景的职责差异。",
-                "实现一个同时运用源文件名与 public class 一致与javac -d 与 java -cp的小功能。"
+                "运行 java -version 与 javac -version，说明为何只有 JRE 时第二条命令不可用。",
+                "给定 public class Hello，选择 Hello.java 或 Main.java 作为源文件名，并写出选错时的 javac 错误。",
+                "写出 javac -d out src/demo/Hello.java 后生成的 class 路径，再给出正确的 java -cp out 启动命令。",
+                "阅读 UnsupportedClassVersionError 日志，判断是 JDK/JRE/JVM 版本的哪一环不匹配。",
+                "编写一个打印 args.length 的 main 方法，用两组命令行参数验证运行入口。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -84,11 +84,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读一段byte/short/int 提升代码，写出输出并解释每一步。",
-                "改正long 字面量 L误用造成的编译或运行错误。",
-                "设计float 精度的最小边界用例并给出断言。",
-                "比较byte/short/int 提升和long 字面量 L在该场景的职责差异。",
-                "实现一个同时运用long 字面量 L与float 精度的小功能。"
+                "计算 byte a=100,b=30 时 a+b 的编译类型，说明为何不能直接赋给 byte。",
+                "改正 long population=3_000_000_000 的编译错误，并写出必需的 long 字面量 L。",
+                "推演 int max=Integer.MAX_VALUE; max+1 的值，再用 Math.addExact 验证数值溢出信号。",
+                "比较 0.1f+0.2f 与 BigDecimal(\"0.1\").add(...) 的结果，说明 float 精度为何不适合金额。",
+                "判断 Integer value=null 执行 int n=value 的异常，并用 instanceof 模式变量安全转型 Object 输入。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -125,11 +125,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读一段算术/关系/逻辑运算符优先级代码，写出输出并解释每一步。",
-                "改正Scanner nextLine误用造成的编译或运行错误。",
-                "设计printf 占位符的最小边界用例并给出断言。",
-                "比较算术/关系/逻辑运算符优先级和Scanner nextLine在该场景的职责差异。",
-                "实现一个同时运用Scanner nextLine与printf 占位符的小功能。"
+                "计算 7/2 与 7/2.0 的输出，说明整数除法在哪一步丢失小数。",
+                "阅读 boolean ok = age>=18 && hasId || isAdmin，按运算符优先级补括号表达实际计算顺序。",
+                "分析 Scanner.nextInt() 后紧接 nextLine() 读到空串的原因，写出消费换行符的修复代码。",
+                "写出 printf(\"%s %.2f%n\", name, price) 的样例输出，并判断把 %.2f 换成 %d 时的异常。",
+                "编写短路测试：左侧为 false 时 && 右侧计数器不应递增，给出预期断言。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -166,11 +166,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读一段if 分支覆盖代码，写出输出并解释每一步。",
-                "改正switch 箭头标签误用造成的编译或运行错误。",
-                "设计模式匹配的最小边界用例并给出断言。",
-                "比较if 分支覆盖和switch 箭头标签在该场景的职责差异。",
-                "实现一个同时运用switch 箭头标签与模式匹配的小功能。"
+                "给定分数 59、60、89、90，写出 if/else if 的区间上下界并列出四个预期等级。",
+                "改正旧式 switch 中因漏写 break 导致贯穿的代码，重写为 switch 箭头标签。",
+                "判断 switch(day) 作为表达式时漏掉 default 的编译结果，补全穷尽分支。",
+                "阅读 if (obj instanceof String s && !s.isBlank())，说明模式变量 s 在哪个作用域可用。",
+                "设计一组 JUnit 参数化数据覆盖负数、0、正数三个布尔条件分支。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -207,11 +207,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读一段for 初始化/条件/更新代码，写出输出并解释每一步。",
-                "改正while 与 do-while误用造成的编译或运行错误。",
-                "设计break 标签的最小边界用例并给出断言。",
-                "比较for 初始化/条件/更新和while 与 do-while在该场景的职责差异。",
-                "实现一个同时运用while 与 do-while与break 标签的小功能。"
+                "推演 for(int i=0;i<3;i++) 的初始化、条件、更新顺序，写出 i 的三次输出。",
+                "修复遍历 length 个元素时使用 i<=length 导致的循环边界错误，说明最后合法下标。",
+                "比较初始条件为 false 时 while 与 do-while 的执行次数，给出具体输出。",
+                "阅读两层循环中 continue 与 break outer 的代码，标出各自跳转到的位置。",
+                "编写一个求 1 到 n 之和的循环，用断言验证每轮结束时 sum 等于已处理数字之和这一循环不变量。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -248,11 +248,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析方法签名与重载解析失败日志，指出根因和首个修复动作。",
-                "给出return 提前退出的有效配置片段并标注关键项。",
-                "判断可变参数在两组输入下的状态变化。",
-                "编写测试证明方法签名与重载解析不会破坏return 提前退出。",
-                "说明选择可变参数而非替代方案的理由。"
+                "判断 print(int) 与 print(long) 在传入 byte 时选中哪个重载，列出重载解析依据。",
+                "改写一个多层 if 方法，用 return 提前退出处理 null，并给出 null 输入的返回值。",
+                "运行 sum(int... values) 分别传入空参数与 null，说明 values.length 的结果或异常。",
+                "推演 swap(int a,int b) 方法调用后主方法变量未交换的原因，用 Java 值传递解释。",
+                "编写 factorial(n) 的递归终止条件，并用 JUnit 断言 n=0 和 n=5 的结果。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -289,11 +289,11 @@
                 "description": "提交命令行数组统计程序；运行 javac -Xlint 与 java 启动命令均成功，并附越界输入测试。"
               },
               "quizBlueprint": [
-                "分析数组 length失败日志，指出根因和首个修复动作。",
-                "给出零基下标的有效配置片段并标注关键项。",
-                "判断增强 for在两组输入下的状态变化。",
-                "编写测试证明数组 length不会破坏零基下标。",
-                "说明选择增强 for而非替代方案的理由。"
+                "给定 int[] a={4,7,9}，写出 a.length、a[0]、a[2] 的值，并判断 a[3] 的异常。",
+                "修复 for(int i=0;i<=a.length;i++) 中的数组越界，给出能遍历所有元素的条件。",
+                "比较 Arrays.copyOf(a,5) 后新增位置的值，写出拷贝后数组的完整内容。",
+                "判断未排序数组直接调用 Arrays.binarySearch 为何不可依赖，先写出 sort 调用。",
+                "编写遍历 int[][] ragged={{1},{2,3}} 的两层循环，内层必须使用当前行长度。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -338,11 +338,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析class 字段方法失败日志，指出根因和首个修复动作。",
-                "给出new的有效配置片段并标注关键项。",
-                "判断对象身份在两组输入下的状态变化。",
-                "编写测试证明class 字段方法不会破坏new。",
-                "说明选择对象身份而非替代方案的理由。"
+                "编写 class Counter，包含 int value 字段和 increment() 方法，连续调用两次后输出值。",
+                "判断 Counter a=new Counter(); Counter b=a; 时 a==b 的结果，用引用别名解释。",
+                "比较 new Counter() 两次产生的对象身份，即使字段相同也写出 == 的结果。",
+                "改正 static main 直接访问实例字段的编译错误，给出先 new 对象的调用。",
+                "画出对象 A 引用 B、局部变量指向 A 时的可达性，删除局部引用后判断哪些对象可被回收。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -379,11 +379,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析构造器重载失败日志，指出根因和首个修复动作。",
-                "给出this(...)的有效配置片段并标注关键项。",
-                "判断初始化顺序在两组输入下的状态变化。",
-                "编写测试证明构造器重载不会破坏this(...)。",
-                "说明选择初始化顺序而非替代方案的理由。"
+                "编写 User(String name) 与 User(String name,int age) 两个构造器，使前者通过 this(...) 设置默认年龄。",
+                "修复把 this(...) 放在打印语句之后的编译错误，说明构造器调用必须位于哪一行。",
+                "推演字段初始值、实例初始化块、构造器体三者的初始化顺序和输出。",
+                "判断类声明了带参构造器后 new User() 的编译结果，补写所需默认构造器。",
+                "设计构造器的防御性校验：name 为空时抛 IllegalArgumentException，给出 JUnit 异常断言。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -420,11 +420,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析private 封装不变量失败日志，指出根因和首个修复动作。",
-                "给出访问器最小化的有效配置片段并标注关键项。",
-                "判断protected 跨包继承在两组输入下的状态变化。",
-                "编写测试证明private 封装不变量不会破坏访问器最小化。",
-                "说明选择protected 跨包继承而非替代方案的理由。"
+                "将 BankAccount.balance 改为 private，编写拒绝负数的 deposit 方法以维持 private 封装不变量。",
+                "说明为何不应为 password 生成 setter，给出只暴露 verifyPassword 的访问器最小化设计。",
+                "判断 protected 跨包继承时，子类能否通过普通父类对象访问 protected 成员并写出编译结果。",
+                "修复 getRoles() 直接返回内部 List 导致外部篡改，用 List.copyOf 返回不可变快照。",
+                "编写一个测试，修改传入构造器的可变列表后，对象内部状态仍不变以验证防御性复制。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -461,11 +461,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "运行static 类成员示例后应观察到哪些关键输出？",
-                "定位static final 常量导致的错误响应并提出修复。",
-                "写出验证类加载初始化正常行为的命令或调用。",
-                "分析static 类成员与类加载初始化组合后的失败边界。",
-                "设计一次故障注入来检验static final 常量恢复能力。"
+                "创建两个 Counter 对象并各调一次 static count++，计算通过 Counter.count 读到的结果。",
+                "改正 static 方法直接访问 this.name 的编译错误，说明实例成员需要哪个对象。",
+                "编写 public static final int MAX_RETRIES=3，说明 static final 常量命名与赋值位置。",
+                "推演静态字段初始器和 static 块的类加载初始化顺序，写出首次主动使用时的输出。",
+                "判断客户端编译后依赖的 public static final int 改值但未重编译客户端时，常量内联会产生什么旧值问题。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -502,11 +502,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "运行extends 与 is-a示例后应观察到哪些关键输出？",
-                "定位方法重写导致的错误响应并提出修复。",
-                "写出验证super正常行为的命令或调用。",
-                "分析extends 与 is-a与super组合后的失败边界。",
-                "设计一次故障注入来检验方法重写恢复能力。"
+                "判断 Car extends Vehicle 是否满足 is-a，再说明 Engine 为何更适合组合而非 extends。",
+                "为子类方法补上 @Override，修复参数类型不同导致意外重载而非方法重写的错误。",
+                "编写子类构造器通过 super(id) 初始化父类字段的代码，标明调用位置。",
+                "判断父类方法返回 Animal、子类重写返回 Dog 是否符合协变返回类型。",
+                "运行子类尝试重写 final 方法的编译，解释为何这种限制能保护里氏替换不变量。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -543,11 +543,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "运行动态绑定示例后应观察到哪些关键输出？",
-                "定位向上转型导致的错误响应并提出修复。",
-                "写出验证虚方法调用正常行为的命令或调用。",
-                "分析动态绑定与虚方法调用组合后的失败边界。",
-                "设计一次故障注入来检验向上转型恢复能力。"
+                "给定 Animal a=new Dog(); a.speak()，写出调用 Dog 重写实现的输出，并用动态绑定解释。",
+                "说明 Dog 向上转型为 Animal 后哪些成员在编译期可见，为何不需要强制转型。",
+                "修复把 Cat 强制转为 Dog 导致的 ClassCastException，使用 instanceof Dog dog 做安全检查。",
+                "创建 List<Animal> 同时放入 Dog 和 Cat，遍历调用 speak() 并写出多态集合的输出顺序。",
+                "比较为每种动物写 instanceof 分支与调用虚方法的维护成本，选择符合开闭原则的设计。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -584,11 +584,11 @@
                 "description": "提交接口驱动的订单模型；运行 mvn test 验证封装、多态和非法构造参数。"
               },
               "quizBlueprint": [
-                "运行abstract template method示例后应观察到哪些关键输出？",
-                "定位interface contract导致的错误响应并提出修复。",
-                "写出验证default 方法冲突正常行为的命令或调用。",
-                "分析abstract template method与default 方法冲突组合后的失败边界。",
-                "设计一次故障注入来检验interface contract恢复能力。"
+                "编写抽象类 ReportGenerator，用 final generate() 串联抽象 load() 与 render() 模板方法。",
+                "实现 PaymentGateway interface contract 的 pay(amount)，对 amount<=0 给出明确异常契约。",
+                "判断一个类同时实现 A、B 且两者有同签名 default 方法时的编译错误，写出 A.super 解决方式。",
+                "将同时包含 save、sendEmail 的肥大接口拆分，说明客户端如何仅依赖所需契约以符合接口隔离。",
+                "设计 OrderService 构造器接收 PaymentPort 接口而非具体 StripeClient，给出一个可替换的测试实现。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -633,11 +633,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "运行reference equality ==示例后应观察到哪些关键输出？",
-                "定位content equality equals导致的错误响应并提出修复。",
-                "写出验证String pool/intern正常行为的命令或调用。",
-                "分析reference equality ==与String pool/intern组合后的失败边界。",
-                "设计一次故障注入来检验content equality equals恢复能力。"
+                "计算 String a=new String(\"java\"), b=new String(\"java\") 时 a==b 与 a.equals(b) 的两个结果。",
+                "修复用 input==\"yes\" 判断用户输入的错误，使用 content equality equals 并处理 null。",
+                "比较字面量 \"x\" 与 new String(\"x\").intern() 的 reference equality ==，解释 String pool/intern 的影响。",
+                "给定 String s=\"ab\"; s.concat(\"c\") 未接收返回值，写出 s 仍为 \"ab\" 并说明 immutability。",
+                "编写循环拼接一千个数字的 StringBuilder 版本，列出 append 与 toString 的调用位置。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -674,11 +674,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现Integer 缓存与拆箱的核心流程并记录中间状态。",
-                "检查enum 穷尽性配置，找出其中两个风险点。",
-                "比较启用与禁用LocalDate/Instant/ZonedDateTime时的可观察差异。",
-                "解释Integer 缓存与拆箱为何会影响enum 穷尽性结果。",
-                "编写回归用例覆盖LocalDate/Instant/ZonedDateTime的异常输入。"
+                "判断 Integer.valueOf(127) 两次的 == 结果，再对 128 重复操作以观察 Integer 缓存与拆箱边界。",
+                "分析 Integer n=null; int x=n 触发的拆箱异常，给出避免 NullPointerException 的显式默认值。",
+                "为 enum Status 写 switch 表达式，列出所有枚举分支以保持 enum 穷尽性。",
+                "将北京 2026-08-14 09:00 用 ZonedDateTime 转成 Instant，比较 LocalDate/Instant/ZonedDateTime 表达的信息。",
+                "用 DateTimeFormatter.ofPattern(\"uuuu-MM-dd\") 解析 2026-02-30，写出应断言的 DateTimeParseException。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -715,11 +715,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现equals 自反对称传递的核心流程并记录中间状态。",
-                "检查hashCode 一致性配置，找出其中两个风险点。",
-                "比较启用与禁用getClass 与 instanceof时的可观察差异。",
-                "解释equals 自反对称传递为何会影响hashCode 一致性结果。",
-                "编写回归用例覆盖getClass 与 instanceof的异常输入。"
+                "为 Money 创建 a、b、c 三个等值对象，写出检查 equals 自反、对称、传递的 JUnit 断言。",
+                "修复 equals 使用 amount 和 currency、hashCode 却只使用 amount 的实现，用 Objects.hash 保持 hashCode 一致性。",
+                "比较 equals 中 getClass() 与 instanceof 对 Money 子类的影响，判断哪种更能避免对称性破坏。",
+                "编写一个 toString 只输出 userId 而隐去 password 和 token 的实现，给出预期日志文本。",
+                "将可变字段放入 equals/hashCode 后把对象加入 HashSet，推演修改字段后 contains 查找为何失败。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -756,11 +756,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现ArrayList 扩容的核心流程并记录中间状态。",
-                "检查LinkedList 节点配置，找出其中两个风险点。",
-                "比较启用与禁用Iterator/ListIterator时的可观察差异。",
-                "解释ArrayList 扩容为何会影响LinkedList 节点结果。",
-                "编写回归用例覆盖Iterator/ListIterator的异常输入。"
+                "创建 new ArrayList<>(2) 并添加三个元素，说明 ArrayList 扩容不改变 size 和元素顺序。",
+                "对需要频繁 get(5000) 的场景比较 ArrayList 与 LinkedList 节点遍历成本，选择合适实现。",
+                "修复增强 for 中直接 list.remove 导致的 ConcurrentModificationException，改用 Iterator.remove。",
+                "用 ListIterator 从索引 2 向前遍历，写出 previousIndex() 与 previous() 的调用顺序。",
+                "给定 view=list.subList(1,3)，通过 view.set 修改元素后写出原 List 内容，说明 subList 是视图。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -797,11 +797,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现HashSet/HashMap 桶的核心流程并记录中间状态。",
-                "检查哈希冲突配置，找出其中两个风险点。",
-                "比较启用与禁用TreeSet 排序一致性时的可观察差异。",
-                "解释HashSet/HashMap 桶为何会影响哈希冲突结果。",
-                "编写回归用例覆盖TreeSet 排序一致性的异常输入。"
+                "将两个 equals 相等且 hashCode 相同的 User 放入 HashSet，写出 set.size() 以验证去重。",
+                "构造两个 hashCode 相同但 equals 不等的 key，说明 HashMap 如何在同一桶处理哈希冲突。",
+                "修复 Comparator 对两个不等对象返回 0 导致 TreeSet 意外去重，保持排序一致性。",
+                "用 map.computeIfAbsent(dept,k->new ArrayList<>()).add(user) 按部门分组，写出首次缺键时的状态变化。",
+                "判断 HashMap 与 Map.of 对 null key 的处理差异，给出各自的返回或异常。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -838,11 +838,11 @@
                 "description": "提交泛型集合仓库；运行 mvn test 验证 equals/hashCode 去重、Comparator 排序和空集合。"
               },
               "quizBlueprint": [
-                "实现类型擦除的核心流程并记录中间状态。",
-                "检查通配符边界配置，找出其中两个风险点。",
-                "比较启用与禁用PECS时的可观察差异。",
-                "解释类型擦除为何会影响通配符边界结果。",
-                "编写回归用例覆盖PECS的异常输入。"
+                "阅读 javap 输出，说明 List<String> 与 List<Integer> 编译后为何共享 List 这一类型擦除形式。",
+                "修复尝试向 List<? extends Number> 添加 Integer 的编译错误，说明该通配符边界只适合读取。",
+                "为 copy(List<? extends T> src,List<? super T> dst) 标注 PECS 中 producer 和 consumer 的角色。",
+                "组合 Comparator.comparing(User::lastName).thenComparing(User::id) 的比较器链，写出同姓时的排序依据。",
+                "将使用原始类型 List 导致的运行期 ClassCastException 改为 List<String>，说明 Comparable 契约如何带来编译期类型安全。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -887,11 +887,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出包含异常链与 Throwable.getCause的最小可执行示例。",
-                "推演受检异常边界从请求到结果的完整链路。",
-                "定位AutoCloseable 关闭顺序常见故障在日志中的信号。",
-                "选择适合异常链与 Throwable.getCause的实现并说明取舍。",
-                "验证受检异常边界与AutoCloseable 关闭顺序共同作用时的边界。"
+                "编写捕获 SQLException 后抛出 new RepositoryException(\"query failed\", e) 的代码，用 Throwable.getCause 断言异常链保留原因。",
+                "为 Files.readString 选择 throws IOException 或在边界转换为业务异常，说明受检异常的处理位置。",
+                "推演 try-with-resources 中先声明 reader 后声明 writer 时 AutoCloseable 的逆序关闭顺序。",
+                "给定 try 体与 close() 都抛异常，说明主异常和 getSuppressed() 中的关闭异常各是什么。",
+                "修复 finally 中 return 覆盖 try 中返回值或异常的代码，并写出修复前后调用结果。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -928,11 +928,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出包含Path resolve/normalize的最小可执行示例。",
-                "推演Files.move ATOMIC_MOVE从请求到结果的完整链路。",
-                "定位BufferedReader 流式读取常见故障在日志中的信号。",
-                "选择适合Path resolve/normalize的实现并说明取舍。",
-                "验证Files.move ATOMIC_MOVE与BufferedReader 流式读取共同作用时的边界。"
+                "给定 base=/srv/data 与输入 ../secret，计算 base.resolve(input).normalize() 的 Path 并检查 startsWith(base) 以拒绝越界。",
+                "编写 Files.move(tmp,target,ATOMIC_MOVE) 的调用，对 AtomicMoveNotSupportedException 选择明确报错或受控备用策略。",
+                "用 Files.newBufferedReader(path, UTF-8) 逐行统计百万行文件，说明 BufferedReader 流式读取为何不需要整文件入内存。",
+                "配置 CharsetDecoder 对非法 UTF-8 字节使用 CodingErrorAction.REPORT，写出预期 CharacterCodingException。",
+                "设计一个临时目录测试：写入 UTF-8 中文、原子移动后读取，断言目标内容与源文件状态。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -969,11 +969,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出包含Function/Predicate/Consumer/Supplier的最小可执行示例。",
-                "推演方法引用从请求到结果的完整链路。",
-                "定位闭包捕获常见故障在日志中的信号。",
-                "选择适合Function/Predicate/Consumer/Supplier的实现并说明取舍。",
-                "验证方法引用与闭包捕获共同作用时的边界。"
+                "为 String::length、s->!s.isBlank()、System.out::println、ArrayList::new 分别选择 Function/Predicate/Consumer/Supplier 接口。",
+                "把 user -> user.getName() 改写为 User::getName 方法引用，判断输入与返回类型是否变化。",
+                "修复 lambda 修改局部变量 sum 导致的 effectively final 编译错误，说明闭包捕获规则。",
+                "组合 Predicate<String> nonBlank.and(shorterThan20) 并对空串、短文本、长文本写出布尔结果。",
+                "用 Function.andThen 先 trim 再转大写，计算输入 \" java \" 的最终字符串。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1010,11 +1010,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出包含Stream 惰性求值的最小可执行示例。",
-                "推演短路操作从请求到结果的完整链路。",
-                "定位Optional map/flatMap/orElseGet常见故障在日志中的信号。",
-                "选择适合Stream 惰性求值的实现并说明取舍。",
-                "验证短路操作与Optional map/flatMap/orElseGet共同作用时的边界。"
+                "给定 stream.peek(counter::increment).map(...) 未调用终止操作，写出 counter 仍为 0 以说明 Stream 惰性求值。",
+                "推演 Stream.of(2,4,5,6).anyMatch(n->n%2!=0) 的短路操作，列出实际检查到哪个元素停止。",
+                "把 optional.map(repo::findById) 产生的嵌套 Optional 改为 flatMap，写出有值和空值时的结果。",
+                "比较 orElse(expensive()) 与 orElseGet(this::expensive) 在 Optional 有值时是否执行备用计算。",
+                "修复 parallelStream().forEach 往共享 ArrayList 写入的并行流约束问题，改用 collect(toList()) 并断言元素数。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1051,11 +1051,11 @@
                 "description": "提交 record/sealed 建模项目；mvn verify 必须通过 JUnit 5 与 Checkstyle，并附失败规则输出。"
               },
               "quizBlueprint": [
-                "给出包含record 紧凑构造器的最小可执行示例。",
-                "推演sealed permits 穷尽分支从请求到结果的完整链路。",
-                "定位Maven lifecycle常见故障在日志中的信号。",
-                "选择适合record 紧凑构造器的实现并说明取舍。",
-                "验证sealed permits 穷尽分支与Maven lifecycle共同作用时的边界。"
+                "编写 record Email(String value) 的紧凑构造器，对不含 @ 的值抛 IllegalArgumentException。",
+                "为 sealed interface Result permits Success,Failure 写穷尽 switch，说明 sealed permits 如何让编译器检查分支。",
+                "按 Maven lifecycle 说明 mvn test 与 mvn verify 执行到的阶段差异，给出运行质量门禁的命令。",
+                "设计 JUnit @ParameterizedTest 的空串、非法邮箱、合法邮箱三组参数与预期结果。",
+                "在 Checkstyle gate 报 LineLength 失败时阅读 target/checkstyle-result.xml，写出修复后重跑 mvn verify 的验证步骤。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1109,11 +1109,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "判断一段SpringApplication 启动阶段实现是否正确，并列出依据。",
-                "设计自动配置条件的成功、失败和空值三组数据。",
-                "修复组件扫描边界引起的资源泄漏或状态错误。",
-                "说明SpringApplication 启动阶段的默认行为何时不安全。",
-                "比较两种自动配置条件方案的复杂度和维护成本。"
+                "运行带 --debug 的 SpringApplication，阅读 ConditionEvaluationReport 中某自动配置 did not match 的具体条件。",
+                "给定 @ConditionalOnMissingBean Clock，判断用户声明 Clock Bean 前后容器最终各有几个该类型 Bean。",
+                "定位主启动类放在 com.example.app 子包导致 com.example.order 未被扫描的 NoSuchBeanDefinitionException，并调整组件扫描边界。",
+                "画出 Controller→Service→Repository 的分层依赖方向，判断 Repository 反向注入 Service 为何会形成错误耦合。",
+                "用 curl /actuator/conditions 检查自动配置命中结果，说明生产环境暴露该 Actuator 端点前需限制访问。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1151,11 +1151,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "判断一段构造器注入实现是否正确，并列出依据。",
-                "设计Bean scope 与生命周期的成功、失败和空值三组数据。",
-                "修复@Configuration/@Bean引起的资源泄漏或状态错误。",
-                "说明构造器注入的默认行为何时不安全。",
-                "比较两种Bean scope 与生命周期方案的复杂度和维护成本。"
+                "把 OrderService 的字段 @Autowired 改为单构造器注入，写出 final PaymentGateway 字段与构造器签名。",
+                "在 singleton Bean 中直接注入 prototype Bean，连续调用两次并判断 Bean scope 与生命周期是否产生同一实例。",
+                "为 @Configuration 中的 HttpClient @Bean 声明 destroyMethod=\"close\"，说明容器关闭时资源如何释放。",
+                "阅读两个 @Bean 互相依赖产生的 BeanCurrentlyInCreationException，画出循环依赖链并选择拆分职责的修复点。",
+                "给 dev 环境的 FakePaymentGateway 添加 @Profile(\"dev\")，用 prod Profile 启动时判断条件装配结果。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1193,11 +1193,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "判断一段@RestController 与 @RequestMapping实现是否正确，并列出依据。",
-                "设计HTTP 状态码与 ResponseEntity的成功、失败和空值三组数据。",
-                "修复请求 DTO 与 Jackson引起的资源泄漏或状态错误。",
-                "说明@RestController 与 @RequestMapping的默认行为何时不安全。",
-                "比较两种HTTP 状态码与 ResponseEntity方案的复杂度和维护成本。"
+                "为 @RestController 编写 POST /api/orders，成功创建时用 ResponseEntity.created(location) 返回 201 与 Location 头。",
+                "给定查询不存在的订单，选择 404 而非返回 200+null，并写出对应 ResponseEntity.notFound() 调用。",
+                "修复 Jackson 反序列化 record CreateOrderRequest 缺少必填 JSON 字段导致的 400，给出请求体与字段名。",
+                "比较 PUT /orders/{id} 与 POST /orders/{id}/update 的 REST 资源命名，选择能表达幂等更新语义的路由。",
+                "运行 MockMvc 的 get(\"/api/orders/42\")，断言 status().isOk() 与 jsonPath(\"$.id\").value(42)。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1234,11 +1234,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "判断一段Bean Validation 约束实现是否正确，并列出依据。",
-                "设计级联校验的成功、失败和空值三组数据。",
-                "修复校验分组引起的资源泄漏或状态错误。",
-                "说明Bean Validation 约束的默认行为何时不安全。",
-                "比较两种级联校验方案的复杂度和维护成本。"
+                "为 CreateUserRequest 的 email 与 age 分别添加 @Email、@Min(18)，写出非法请求触发的两个 Bean Validation 约束消息。",
+                "在 OrderRequest.items 上添加 @Valid，构造 items[0].quantity=0 的 JSON 以验证级联校验定位到嵌套字段。",
+                "定义 OnCreate 与 OnUpdate 校验分组，使 id 在创建时为空、更新时非空，并列出 Controller 的 @Validated 参数。",
+                "判断在方法参数旁声明 BindingResult 时它必须紧跟哪个 @Valid 参数，写出读取 fieldErrors 的代码。",
+                "将实体字段直接暴露为请求体改成 DTO 映射，说明为什么客户端不能通过 JSON 修改 createdAt。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1276,11 +1276,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "判断一段Bean Validation DTO 约束实现是否正确，并列出依据。",
-                "设计@Valid 与分组校验的成功、失败和空值三组数据。",
-                "修复@RestControllerAdvice引起的资源泄漏或状态错误。",
-                "说明Bean Validation DTO 约束的默认行为何时不安全。",
-                "比较两种@Valid 与分组校验方案的复杂度和维护成本。"
+                "给 POST 参数漏加 @Valid 的 Controller 发送空 name，判断为何 Bean Validation DTO 约束未执行并补上注解。",
+                "在 @RestControllerAdvice 中捕获 MethodArgumentNotValidException，说明 @Valid 与分组校验失败后返回 status=400 的 ProblemDetail。",
+                "把字段错误转换成 {\"field\":\"email\",\"message\":\"must be valid\"} 数组，写出 ProblemDetail 的 errors 属性。",
+                "为 DomainNotFoundException 添加异常处理器并返回 404，说明它与兜底 500 处理器的匹配优先级。",
+                "运行 MockMvc 提交非法 JSON，断言 contentType application/problem+json、status 400 和 title=\"Validation failed\"。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1318,11 +1318,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "编写@ConfigurationProperties配置并说明每个参数的含义。",
-                "分析profile 配置覆盖出现异常时的调用栈或响应码。",
-                "实现Logback MDC并提供一条验证命令。",
-                "判断@ConfigurationProperties和Logback MDC的执行先后关系。",
-                "设计针对profile 配置覆盖并发或重复调用的测试。"
+                "为 app.client.timeout=2s 编写 @ConfigurationProperties(prefix=\"app.client\") record，并说明配置缺失时的启动校验。",
+                "给定 application.yml timeout=5s、application-prod.yml timeout=1s，使用 --spring.profiles.active=prod 启动并写出最终绑定值。",
+                "在 HTTP 过滤器中把 X-Correlation-Id 放入 Logback MDC，给出 finally 中 MDC.clear() 防止线程复用串号。",
+                "写出一条包含 timestamp、level、correlationId、message 的结构化 JSON 日志，并用 jq 检查 correlationId。",
+                "检查登录日志模板，移除 password、Authorization 与 token，仅保留 userId 以验证敏感字段脱敏。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1359,11 +1359,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "编写MultipartFile 流式处理配置并说明每个参数的含义。",
-                "分析安全文件名出现异常时的调用栈或响应码。",
-                "实现目录穿越并提供一条验证命令。",
-                "判断MultipartFile 流式处理和目录穿越的执行先后关系。",
-                "设计针对安全文件名并发或重复调用的测试。"
+                "用 MultipartFile.getInputStream() 实现 MultipartFile 流式处理，说明为什么不应对大文件先调用 getBytes()。",
+                "把客户端文件名 ../../etc/passwd 经 Paths.get(name).getFileName() 处理，写出得到的安全文件名并生成服务端 UUID 名称。",
+                "识别目录穿越输入后，将 base.resolve(name).normalize() 并检查 startsWith(base)，对试图越出上传目录的请求返回 400。",
+                "配置 spring.servlet.multipart.max-file-size=10MB，给出超过上传上限时期望的 413 HTTP 状态。",
+                "检查下载 report.pdf 时的 Content-Disposition: attachment; filename*=UTF-8''report.pdf，并断言响应 Content-Type。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1400,11 +1400,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "编写cron 时区与 misfire配置并说明每个参数的含义。",
-                "分析@Scheduled 线程池出现异常时的调用栈或响应码。",
-                "实现ShedLock 锁租期并提供一条验证命令。",
-                "判断cron 时区与 misfire和ShedLock 锁租期的执行先后关系。",
-                "设计针对@Scheduled 线程池并发或重复调用的测试。"
+                "为每天北京时间 02:30 的任务写 @Scheduled(cron=\"0 30 2 * * *\", zone=\"Asia/Shanghai\") 并说明 cron 时区。",
+                "配置 ThreadPoolTaskScheduler 的 poolSize=4，判断一个长任务占满默认单线程时其他 @Scheduled 任务为何延迟。",
+                "为 ShedLock 写 lockAtMostFor=\"PT10M\" 与 lockAtLeastFor=\"PT30S\"，解释锁租期分别防止哪种重复执行。",
+                "以 jobDate 作为幂等键建立唯一约束，模拟同一天任务执行两次并断言业务记录只有一条。",
+                "对临时 503 设计指数重试 1s、2s、4s 且最多三次，判断参数校验错误为何不进入重试退避。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1441,11 +1441,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "编写WebMvcTest Controller slice配置并说明每个参数的含义。",
-                "分析MockMvc出现异常时的调用栈或响应码。",
-                "实现DataJpaTest 回滚并提供一条验证命令。",
-                "判断WebMvcTest Controller slice和DataJpaTest 回滚的执行先后关系。",
-                "设计针对MockMvc并发或重复调用的测试。"
+                "使用 @WebMvcTest(OrderController.class) 与 @MockitoBean OrderService，说明 WebMvcTest Controller slice 不会加载真实 Repository。",
+                "运行 MockMvc 提交缺少 name 的 JSON，断言 400 与 jsonPath(\"$.errors[0].field\").value(\"name\")。",
+                "在 @DataJpaTest 中保存实体后执行 TestEntityManager.flush()，说明 SQL 约束错误为何要在 flush 时断言。",
+                "写出 DataJpaTest 回滚验证：测试内 count=1，测试结束后不污染下一用例。",
+                "让 PostgreSQL Testcontainers 使用 static @Container，比较每方法重启容器对测试生命周期和速度的影响。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1482,11 +1482,11 @@
                 "description": "提交分层 Spring Boot 文件服务；./mvnw verify 通过 REST、校验、异常和调度集成测试。"
               },
               "quizBlueprint": [
-                "编写分层依赖方向配置并说明每个参数的含义。",
-                "分析DTO 映射出现异常时的调用栈或响应码。",
-                "实现ProblemDetail 契约并提供一条验证命令。",
-                "判断分层依赖方向和ProblemDetail 契约的执行先后关系。",
-                "设计针对DTO 映射并发或重复调用的测试。"
+                "检查业务模块包依赖，确保 api 只调用 application、application 通过端口访问 infrastructure，并列出禁止的反向分层依赖。",
+                "把 CreateOrderRequest 映射成 Order 聚合时忽略客户端 suppliedId，写出 DTO 映射后的字段值。",
+                "为库存不足返回 type、title、status=409、detail 的 ProblemDetail 契约，给出完整 application/problem+json 示例。",
+                "运行 MockMvc 完成创建订单后查询订单的集成流程，断言 POST 201、GET 200 及金额字段。",
+                "运行 ./mvnw -Dtest=OrderModuleTest test，说明失败报告中应同时定位 HTTP 状态和 ProblemDetail 字段断言。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1540,11 +1540,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "定位DECIMAL 精度标度示例中的边界缺陷并改正。",
-                "实现VARCHAR 字符集后列出可观测的状态变化。",
-                "解释BIGINT 主键如何阻止一个具体故障。",
-                "比较DECIMAL 精度标度的两种 API 用法。",
-                "编写端到端用例串联VARCHAR 字符集和BIGINT 主键。"
+                "为金额选择 DECIMAL(12,2)，判断插入 12345678901.23 时违反的是精度还是标度并写出可接受最大值。",
+                "检查 SHOW CREATE TABLE 的 VARCHAR 字符集为 utf8mb4，并用一条含 emoji 的 INSERT 验证不会出现 Incorrect string value。",
+                "比较 INT 与 BIGINT 主键的有符号上限，选择能容纳 30 亿订单编号的列类型。",
+                "给 created_at 选择 TIMESTAMP 或 DATETIME，说明需要时区转换与超出 2038 年日期时的差异。",
+                "为 nullable coupon_code 写出 IS NULL 查询，改正 coupon_code = NULL 永远得不到 true 的 SQL。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1582,11 +1582,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "定位主键与外键约束示例中的边界缺陷并改正。",
-                "实现一对多表设计后列出可观测的状态变化。",
-                "解释JOIN 与聚合如何阻止一个具体故障。",
-                "比较主键与外键约束的两种 API 用法。",
-                "编写端到端用例串联一对多表设计和JOIN 与聚合。"
+                "为 orders.customer_id 添加外键约束，写出插入不存在 customer_id 时预期的 MySQL 错误。",
+                "设计 customers 与 orders 的一对多表结构，指出外键应位于多的一侧并给出两列定义。",
+                "编写 LEFT JOIN 统计每位客户订单数的 SQL，确保没有订单的客户也返回 count=0。",
+                "编写 ROW_NUMBER() OVER(PARTITION BY customer_id ORDER BY created_at DESC) 以选出每位客户最新订单。",
+                "阅读一条 JOIN 查询的 EXPLAIN，依据 type、key、rows 判断 orders.customer_id 是否需要索引。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1623,11 +1623,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "定位B+Tree 高度示例中的边界缺陷并改正。",
-                "实现聚簇与二级索引后列出可观测的状态变化。",
-                "解释联合索引如何阻止一个具体故障。",
-                "比较B+Tree 高度的两种 API 用法。",
-                "编写端到端用例串联聚簇与二级索引和联合索引。"
+                "解释 InnoDB B+Tree 高度与高扇出为何通常只需少量页访问，指出把索引理解为逐行链表会错在哪里。",
+                "给定聚簇与二级索引 idx_email(email)，说明查询未覆盖列 address 时如何通过主键回到聚簇索引取行。",
+                "为 WHERE tenant_id=? AND status=? ORDER BY created_at DESC 设计联合索引并写出列顺序。",
+                "判断索引 (tenant_id,status,created_at) 能否服务仅按 status 过滤的查询，并用最左前缀说明原因。",
+                "运行 EXPLAIN SELECT tenant_id,status FROM orders WHERE tenant_id=1，检查 Extra 是否为 Using index 以验证覆盖索引。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1664,11 +1664,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "定位MVCC Read View示例中的边界缺陷并改正。",
-                "实现隔离级别后列出可观测的状态变化。",
-                "解释行锁与间隙锁如何阻止一个具体故障。",
-                "比较MVCC Read View的两种 API 用法。",
-                "编写端到端用例串联隔离级别和行锁与间隙锁。"
+                "在 REPEATABLE READ 事务中连续两次普通 SELECT，中间另一事务提交更新，写出 MVCC Read View 下两次读取值。",
+                "比较 READ COMMITTED 与 REPEATABLE READ 每条语句或每事务生成 Read View 的差异，指出不可重复读出现在哪一种。",
+                "执行 SELECT * FROM account WHERE id=1 FOR UPDATE，说明命中唯一索引时获得的行锁范围。",
+                "给范围 UPDATE WHERE score BETWEEN 60 AND 70 分析可能的间隙锁，并写出另一事务插入 score=65 的等待现象。",
+                "阅读 SHOW ENGINE INNODB STATUS 的 LATEST DETECTED DEADLOCK，列出两个事务持有与等待的锁并说明被回滚者。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1706,11 +1706,11 @@
                 "description": "提交 MySQL 建表与查询脚本；mysql 执行成功，附 EXPLAIN ANALYZE 的 key、type、rows 结果。"
               },
               "quizBlueprint": [
-                "定位B+Tree 联合索引示例中的边界缺陷并改正。",
-                "实现最左前缀后列出可观测的状态变化。",
-                "解释MVCC 隔离级别如何阻止一个具体故障。",
-                "比较B+Tree 联合索引的两种 API 用法。",
-                "编写端到端用例串联最左前缀和MVCC 隔离级别。"
+                "为订单列表查询建立 B+Tree 联合索引 (tenant_id,status,created_at)，用 EXPLAIN 检查 key 与 rows 的变化。",
+                "判断 WHERE tenant_id=? AND created_at>? 能使用联合索引的哪些最左前缀列，说明跳过 status 的影响。",
+                "模拟两个会话的 MVCC 隔离级别：事务 A 重复读取，事务 B 更新并提交，记录 READ COMMITTED 下的两个值。",
+                "根据死锁日志中的 trx id、index name、lock mode 还原加锁顺序，并选择统一更新顺序来减少死锁。",
+                "开启 slow_query_log 与 long_query_time=1，执行慢查询后检查慢查询日志中的 Query_time 和 Rows_examined。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -1755,11 +1755,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "设计PreparedStatement 参数绑定的数据模型或接口契约。",
-                "阅读batch输出，判断操作是否成功。",
-                "分析Connection autoCommit缺失会引发的生产症状。",
-                "实现PreparedStatement 参数绑定的失败回退路径。",
-                "验证batch在极端输入下仍满足约束。"
+                "把拼接 username 的 SELECT SQL 改为 PreparedStatement 参数绑定，写出含 ? 的 SQL 与 setString(1, username)。",
+                "使用 addBatch/executeBatch 插入三条记录，读取 int[] 更新计数并判断 Statement.EXECUTE_FAILED。",
+                "关闭 Connection autoCommit 后更新余额与流水，写出全部成功时 commit、任一步 SQLException 时 rollback 的代码顺序。",
+                "分析连接池 exhausted 日志中的 active、idle、pending，判断未关闭 Connection 如何导致请求超时。",
+                "在 try-with-resources 中依次声明 Connection、PreparedStatement、ResultSet，说明异常时的逆序释放。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1797,11 +1797,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "设计resultMap 关联映射的数据模型或接口契约。",
-                "阅读动态 SQL if/foreach输出，判断操作是否成功。",
-                "分析#{ } 参数绑定缺失会引发的生产症状。",
-                "实现resultMap 关联映射的失败回退路径。",
-                "验证动态 SQL if/foreach在极端输入下仍满足约束。"
+                "为 order 与 customer JOIN 结果编写 resultMap，并用 association 将 customer_id、customer_name 映射到嵌套对象。",
+                "在动态 SQL 中仅当 status != null 时添加 <if test=\"status != null\">，写出 null 时最终 WHERE 片段。",
+                "编写 <foreach collection=\"ids\" item=\"id\" open=\"(\" separator=\",\" close=\")\"> 构造 IN 参数列表。",
+                "将 ${name} 拼接改成 #{name} 参数绑定，说明前者如何引入 SQL 注入而后者使用 PreparedStatement。",
+                "运行 Mapper XML 测试，断言一级缓存同一 SqlSession 内命中，并说明 commit 后缓存何时清空。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1839,11 +1839,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "设计BaseMapper 与 IService的数据模型或接口契约。",
-                "阅读LambdaQueryWrapper输出，判断操作是否成功。",
-                "分析分页插件缺失会引发的生产症状。",
-                "实现BaseMapper 与 IService的失败回退路径。",
-                "验证LambdaQueryWrapper在极端输入下仍满足约束。"
+                "用 BaseMapper.selectById 查询用户，再说明批量业务校验为何应放在 IService 实现而非 Controller。",
+                "编写 LambdaQueryWrapper<User> 按 User::getStatus 等于 ACTIVE 且 User::getAge 大于 18 查询。",
+                "未注册 PaginationInnerInterceptor 时调用 selectPage，检查实际 SQL 是否含 LIMIT 并说明全表返回风险。",
+                "为 @TableLogic deleted 字段给出 0/1 配置，写出 deleteById 后默认查询追加的逻辑删除条件。",
+                "实现 MetaObjectHandler 在 insertFill 写 createdAt、updateFill 写 updatedAt，并测试客户端值不会错误覆盖审计字段。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1881,11 +1881,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "设计实体状态与持久化上下文的数据模型或接口契约。",
-                "阅读Repository 派生查询输出，判断操作是否成功。",
-                "分析fetch join 与 EntityGraph缺失会引发的生产症状。",
-                "实现实体状态与持久化上下文的失败回退路径。",
-                "验证Repository 派生查询在极端输入下仍满足约束。"
+                "判断 new User、persist 后 User、EntityManager.clear 后 User 分别处于 transient、managed、detached 哪个实体状态。",
+                "为 findByStatusAndCreatedAtAfter 写 Spring Data Repository 派生查询方法签名并给出参数类型。",
+                "读取 1 条订单后逐个访问 customer 产生 101 条 SQL，使用 fetch join 或 @EntityGraph 修复 N+1 并断言查询数。",
+                "给 Order.version 添加 @Version，模拟两个事务更新同一行并断言后提交者抛 ObjectOptimisticLockingFailureException。",
+                "在 @Transactional 方法中修改 managed 实体但不调用 save，说明事务提交时脏检查生成的 UPDATE。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -1923,11 +1923,11 @@
                 "description": "提交 MyBatis、MyBatis-Plus、JPA 三实现；./mvnw test 校验结果一致并统计 SQL 次数。"
               },
               "quizBlueprint": [
-                "设计MyBatis 显式 SQL的数据模型或接口契约。",
-                "阅读JPA 聚合建模输出，判断操作是否成功。",
-                "分析N+1 查询检测缺失会引发的生产症状。",
-                "实现MyBatis 显式 SQL的失败回退路径。",
-                "验证JPA 聚合建模在极端输入下仍满足约束。"
+                "对包含窗口函数与数据库提示的报表查询选择 MyBatis 显式 SQL，并说明 Mapper 测试应断言的结果列。",
+                "对需要级联保存订单与明细的领域对象选择 JPA 聚合建模，写出聚合根保存入口与事务边界。",
+                "开启 SQL 统计后加载 20 个订单，若查询数为 21 则定位 N+1 查询并用 EntityGraph 将其降为固定次数。",
+                "比较 MyBatis executorType=BATCH 与 JPA saveAll 的批量写入，列出必须测量的 SQL 批次数和内存占用。",
+                "设计从 MyBatis-Plus 迁移到 JPA 的小步方案：先固定接口契约与集成测试，再替换一条查询并核对 SQL 与结果。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2507,8 +2507,8 @@
               "quizBlueprint": [
                 "列出touched/dirty 状态执行前必须满足的三个条件。",
                 "改正一段违反异步校验竞态契约的实现。",
-                "观察aria-invalid开启前后的日志差异。",
-                "分析touched/dirty 状态失败是否适合重试。",
+                "检查输入无效时 aria-invalid=\"true\" 与 aria-describedby 指向的错误消息是否同时存在。",
+                "分析 touched/dirty 状态应在 blur、输入或提交哪个事件更新，并写出表单断言。",
                 "编写脚本自动验证异步校验竞态和aria-invalid。"
               ],
               "estimatedMinutes": 45,
@@ -2813,10 +2813,10 @@
               },
               "quizBlueprint": [
                 "写出list/dict/set 复杂度操作的输入、输出和副作用。",
-                "验证hashable key遇到空值或缺失字段的行为。",
+                "验证字典读取缺失字段时 get(key, default) 与直接下标访问的返回值或 KeyError。",
                 "比较iterator/generator不同策略对结果的影响。",
                 "定位list/dict/set 复杂度性能退化的观测证据。",
-                "设计hashable key故障时的降级方案。"
+                "改正可变 list 作为 hashable key 的错误，转换为 tuple 后断言能够稳定查找。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3526,7 +3526,7 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复LangGraph StateGraph案例中的 off-by-one 或边界错误。",
+                "修复 LangGraph StateGraph 节点遗漏终止路由导致的重复执行，并断言最终到达 END。",
                 "设计TypedDict state的可重复故障实验。",
                 "说明Annotated reducer 合并并行更新输出中哪些字段可用于诊断。",
                 "实现防止LangGraph StateGraph重复执行的措施。",
@@ -3610,7 +3610,7 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复tool schema案例中的 off-by-one 或边界错误。",
+                "修复 tool schema 中 required 字段与 properties 不一致的问题，并验证非法参数被拒绝。",
                 "设计参数 JSON Schema的可重复故障实验。",
                 "说明并行 tool_calls输出中哪些字段可用于诊断。",
                 "实现防止tool schema重复执行的措施。",
@@ -3652,7 +3652,7 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复LangGraph interrupt案例中的 off-by-one 或边界错误。",
+                "修复 LangGraph interrupt 恢复时重复执行副作用节点的问题，并验证 resume 后只执行一次。",
                 "设计Command resume的可重复故障实验。",
                 "说明审批状态持久化输出中哪些字段可用于诊断。",
                 "实现防止LangGraph interrupt重复执行的措施。",
@@ -3693,7 +3693,7 @@
                 "description": "提交可中断 LangGraph；pytest 覆盖 checkpoint、interrupt、resume 与工具失败恢复。"
               },
               "quizBlueprint": [
-                "修复checkpointer thread_id案例中的 off-by-one 或边界错误。",
+                "修复 checkpointer 复用错误 thread_id 导致状态串线的问题，并用两个会话隔离验证。",
                 "设计state reducer的可重复故障实验。",
                 "说明interrupt/resume输出中哪些字段可用于诊断。",
                 "实现防止checkpointer thread_id重复执行的措施。",
@@ -5205,7 +5205,7 @@
               "quizBlueprint": [
                 "实现egress allowlist后用具体命令验收。",
                 "说明代理审计的错误如何传播到调用方。",
-                "比较SSRF开启前后的资源消耗。",
+                "验证代理拒绝访问 169.254.169.254、回环地址与解析到私网的域名，并记录 SSRF 防护审计结果。",
                 "定位egress allowlist中的竞态或顺序问题。",
                 "设计代理审计与SSRF组合的恢复演练。"
               ],

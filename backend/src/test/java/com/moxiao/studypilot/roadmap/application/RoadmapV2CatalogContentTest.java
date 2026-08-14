@@ -169,6 +169,25 @@ class RoadmapV2CatalogContentTest {
     }
 
     @Test
+    void rejectsKnownDangerousOrSemanticallyMismatchedQuizPrompts() {
+        List<Pattern> forbidden = List.of(
+                Pattern.compile("实现目录穿越"),
+                Pattern.compile("SSRF开启前后"),
+                Pattern.compile("aria-invalid开启前后的日志"),
+                Pattern.compile("touched/dirty.*重试"),
+                Pattern.compile("hashable key.*缺失字段"),
+                Pattern.compile("hashable key.*降级"),
+                Pattern.compile("LangGraph.*off-by-one"),
+                Pattern.compile("tool schema.*off-by-one"));
+        for (JsonNode node : nodes()) {
+            for (JsonNode quiz : node.get("quizBlueprint")) {
+                forbidden.forEach(pattern -> assertThat(pattern.matcher(quiz.asString()).find())
+                        .as("%s must not match %s", node.get("code").asString(), pattern).isFalse());
+            }
+        }
+    }
+
+    @Test
     void everyQuizEntryIsACompleteQuestionOrExecutableTask() {
         Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|列出|阅读|改正|观察|模拟|写出|检查|运行|给出");
         for (JsonNode node : nodes()) {
@@ -230,11 +249,12 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void everyNodeQuizCoversAtLeastThreeOfItsSpecificConcepts() {
-        Map<String, List<String>> quizConceptTerms = nodes().stream().collect(Collectors.toMap(
+        List<JsonNode> laterStageNodes = nodes().stream().skip(45).toList();
+        Map<String, List<String>> quizConceptTerms = laterStageNodes.stream().collect(Collectors.toMap(
                 node -> node.get("code").asString(), node -> conceptTerms(node).stream().limit(3).toList()));
-        assertThat(quizConceptTerms).hasSize(125).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
+        assertThat(quizConceptTerms).hasSize(80).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
         quizConceptTerms.forEach((code, terms) -> {
-            String quizzes = nodes().stream().filter(node -> code.equals(node.get("code").asString()))
+            String quizzes = laterStageNodes.stream().filter(node -> code.equals(node.get("code").asString()))
                     .findFirst().orElseThrow().get("quizBlueprint").toString();
             assertThat(quizzes).as(code).contains(terms.toArray(String[]::new));
         });
@@ -309,6 +329,65 @@ class RoadmapV2CatalogContentTest {
                 row("exceptions-custom", "异常处理与自定义异常", 21), row("files-nio-streams", "文件、NIO 与流", 22), row("lambda-functional-interfaces", "Lambda 与函数式接口", 23), row("stream-optional", "Stream 与 Optional", 24), row("record-sealed-maven-junit-checkstyle", "现代 Java 建模与工程质量实践", 25));
         String firstModule = stage.get("modules").get(0).toString();
         assertThat(firstModule).doesNotContain("record", "sealed", "Stream", "Optional", "Checkstyle");
+    }
+
+    @Test
+    void stageOneToThreeQuizzesContainHandwrittenNodeSpecificFragments() {
+        Map<String, List<String>> expected = Map.ofEntries(
+                Map.entry("java-environment-first-program", List.of("java -version 与 javac -version", "UnsupportedClassVersionError 日志")),
+                Map.entry("variables-types-conversion", List.of("Math.addExact 验证数值溢出", "float 精度为何不适合金额")),
+                Map.entry("operators-console-io", List.of("7/2 与 7/2.0", "左侧为 false 时 && 右侧计数器")),
+                Map.entry("conditions-if-switch", List.of("分数 59、60、89、90", "switch(day) 作为表达式")),
+                Map.entry("loops-control", List.of("i<=length 导致的循环边界错误", "求 1 到 n 之和的循环")),
+                Map.entry("methods-parameters-return", List.of("print(int) 与 print(long)", "Java 值传递解释")),
+                Map.entry("arrays-basic-traversal", List.of("a[3] 的异常", "int[][] ragged")),
+                Map.entry("classes-objects", List.of("连续调用两次后输出值", "对象 A 引用 B")),
+                Map.entry("constructors-this", List.of("默认年龄", "实例初始化块")),
+                Map.entry("encapsulation-access", List.of("BankAccount.balance", "List.copyOf 返回不可变快照")),
+                Map.entry("static-constants-members", List.of("static count++", "常量内联会产生什么旧值问题")),
+                Map.entry("inheritance-overriding", List.of("Car extends Vehicle", "协变返回类型")),
+                Map.entry("polymorphism", List.of("Animal a=new Dog()", "List<Animal> 同时放入 Dog 和 Cat")),
+                Map.entry("abstract-classes-interfaces", List.of("ReportGenerator", "A.super 解决方式")),
+                Map.entry("string-content-comparison", List.of("a==b 与 a.equals(b)", "StringBuilder 版本")),
+                Map.entry("wrappers-enums-datetime", List.of("Integer.valueOf(127)", "2026-02-30")),
+                Map.entry("object-equals-hashcode-tostring", List.of("Money 创建 a、b、c", "contains 查找为何失败")),
+                Map.entry("list-iteration", List.of("new ArrayList<>(2)", "view=list.subList(1,3)")),
+                Map.entry("set-map-deduplication", List.of("set.size() 以验证去重", "Map.of 对 null key")),
+                Map.entry("generics-comparator-type-safety", List.of("List<? extends Number>", "producer 和 consumer 的角色")),
+                Map.entry("exceptions-custom", List.of("new RepositoryException", "getSuppressed() 中的关闭异常")),
+                Map.entry("files-nio-streams", List.of("base=/srv/data 与输入 ../secret", "CodingErrorAction.REPORT")),
+                Map.entry("lambda-functional-interfaces", List.of("System.out::println", "nonBlank.and(shorterThan20)")),
+                Map.entry("stream-optional", List.of("counter 仍为 0", "orElse(expensive())")),
+                Map.entry("record-sealed-maven-junit-checkstyle", List.of("record Email(String value)", "target/checkstyle-result.xml")),
+                Map.entry("spring-boot-layering", List.of("ConditionEvaluationReport 中某自动配置", "curl /actuator/conditions")),
+                Map.entry("spring-ioc-di", List.of("final PaymentGateway 字段", "BeanCurrentlyInCreationException")),
+                Map.entry("spring-mvc-rest", List.of("ResponseEntity.created(location)", "jsonPath")),
+                Map.entry("spring-dto-validation", List.of("items[0].quantity=0", "OnCreate 与 OnUpdate")),
+                Map.entry("spring-validation-errors", List.of("status=400 的 ProblemDetail", "application/problem+json")),
+                Map.entry("spring-config-logging", List.of("app.client.timeout=2s", "MDC.clear() 防止线程复用串号")),
+                Map.entry("spring-files-upload", List.of("MultipartFile.getInputStream()", "startsWith(base)")),
+                Map.entry("spring-scheduling", List.of("Asia/Shanghai", "指数重试 1s、2s、4s")),
+                Map.entry("spring-testing-slices", List.of("@WebMvcTest(OrderController.class)", "TestEntityManager.flush()")),
+                Map.entry("spring-module-project", List.of("suppliedId", "库存不足返回 type")),
+                Map.entry("mysql-schema-types", List.of("DECIMAL(12,2)", "Incorrect string value")),
+                Map.entry("mysql-sql-modeling", List.of("ROW_NUMBER() OVER", "没有订单的客户也返回 count=0")),
+                Map.entry("mysql-index-basics", List.of("idx_email(email)", "Extra 是否为 Using index")),
+                Map.entry("mysql-transactions-locks", List.of("score BETWEEN 60 AND 70", "LATEST DETECTED DEADLOCK")),
+                Map.entry("mysql-index-transaction", List.of("long_query_time=1", "Query_time 和 Rows_examined")),
+                Map.entry("jdbc-transactions", List.of("setString(1, username)", "Statement.EXECUTE_FAILED")),
+                Map.entry("mybatis-core", List.of("customer_id、customer_name", "foreach collection")),
+                Map.entry("mybatis-plus", List.of("PaginationInnerInterceptor", "insertFill 写 createdAt")),
+                Map.entry("jpa-core", List.of("transient、managed、detached", "ObjectOptimisticLockingFailureException")),
+                Map.entry("data-access-comparison", List.of("executorType=BATCH", "先固定接口契约与集成测试")));
+        assertThat(expected).hasSize(45);
+        assertThat(expected.values()).allSatisfy(fragments -> assertThat(fragments).hasSize(2));
+        assertThat(expected.values().stream().flatMap(List::stream).toList()).doesNotHaveDuplicates();
+        expected.forEach((code, fragments) -> {
+            JsonNode node = nodes().stream().filter(it -> code.equals(it.get("code").asString()))
+                    .findFirst().orElseThrow();
+            assertThat(node.get("quizBlueprint").toString()).as(code)
+                    .contains(fragments.toArray(String[]::new));
+        });
     }
 
     private static List<String> row(String code, String title, int order) {
