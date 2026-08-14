@@ -3,6 +3,7 @@ package com.moxiao.studypilot.roadmap.api;
 import com.moxiao.studypilot.roadmap.application.RoadmapLearningLoopService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -20,6 +21,11 @@ public class InternalRoadmapQuizJobController {
     @PostMapping("/claim")
     public RoadmapQuizJobPayload claim(@Valid @RequestBody ClaimRoadmapQuizJobRequest request) {
         return service.claimQuizJob(request.workerId(), request.leaseSeconds());
+    }
+
+    @GetMapping("/{jobId}/context")
+    public RoadmapQuizContextResponse context(@PathVariable String jobId) {
+        return service.quizJobContext(jobId);
     }
 
     @PostMapping("/{jobId}/heartbeat")

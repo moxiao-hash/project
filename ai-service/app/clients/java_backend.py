@@ -121,6 +121,43 @@ class JavaBackendClient:
         response = await self._request("POST", "/internal/quizzes", json=payload)
         return response.json()
 
+    async def claim_roadmap_quiz_job(self, worker_id: str) -> dict[str, Any] | None:
+        try:
+            response = await self._request(
+                "POST",
+                "/internal/roadmap-quiz-generation-jobs/claim",
+                json={"workerId": worker_id, "leaseSeconds": 120},
+            )
+        except JavaBackendError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return response.json()
+
+    async def get_roadmap_quiz_context(self, job_id: str) -> dict[str, Any]:
+        response = await self._request(
+            "GET", f"/internal/roadmap-quiz-generation-jobs/{job_id}/context"
+        )
+        return response.json()
+
+    async def complete_roadmap_quiz_job(
+        self, job_id: str, worker_id: str, lease_token: str, quiz_id: str
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/roadmap-quiz-generation-jobs/{job_id}/complete",
+            json={"workerId": worker_id, "leaseToken": lease_token, "quizId": quiz_id},
+        )
+
+    async def fail_roadmap_quiz_job(
+        self, job_id: str, worker_id: str, lease_token: str, error: str
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/roadmap-quiz-generation-jobs/{job_id}/fail",
+            json={"workerId": worker_id, "leaseToken": lease_token, "error": error},
+        )
+
     async def claim_coding_evaluation_job(
         self,
         worker_id: str,

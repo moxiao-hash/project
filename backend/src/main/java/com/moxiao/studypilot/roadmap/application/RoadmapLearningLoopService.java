@@ -2,17 +2,22 @@ package com.moxiao.studypilot.roadmap.application;
 
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizJpaRepository;
+import com.moxiao.studypilot.assessment.infrastructure.QuestionJpaRepository;
 import com.moxiao.studypilot.roadmap.api.CreateRoadmapNodeCheckInRequest;
 import com.moxiao.studypilot.roadmap.api.RoadmapNodeCheckInResponse;
 import com.moxiao.studypilot.roadmap.api.RetryRoadmapQuizRequest;
 import com.moxiao.studypilot.roadmap.api.RoadmapNodeQuizResponse;
 import com.moxiao.studypilot.roadmap.api.RoadmapQuizGenerationResponse;
 import com.moxiao.studypilot.roadmap.api.RoadmapQuizJobPayload;
+import com.moxiao.studypilot.roadmap.api.RoadmapQuizContextResponse;
 import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeCheckInEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeCheckInJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapQuizGenerationJobEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapQuizGenerationJobJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapEntity;
@@ -27,7 +32,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.UUID;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class RoadmapLearningLoopService {
@@ -39,6 +47,10 @@ public class RoadmapLearningLoopService {
     private final RoadmapQuizGenerationJobJpaRepository jobRepository;
     private final QuizJpaRepository quizRepository;
     private final RoadmapQuizLeaseReaper leaseReaper;
+    private final RoadmapNodeJpaRepository nodeRepository;
+    private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    private final QuestionJpaRepository questionRepository;
+    private final ObjectMapper objectMapper;
 
     public RoadmapLearningLoopService(
             UserRoadmapJpaRepository enrollmentRepository,
@@ -46,7 +58,11 @@ public class RoadmapLearningLoopService {
             RoadmapNodeCheckInJpaRepository checkInRepository,
             RoadmapQuizGenerationJobJpaRepository jobRepository,
             QuizJpaRepository quizRepository,
-            RoadmapQuizLeaseReaper leaseReaper
+            RoadmapQuizLeaseReaper leaseReaper,
+            RoadmapNodeJpaRepository nodeRepository,
+            RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            QuestionJpaRepository questionRepository,
+            ObjectMapper objectMapper
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
@@ -54,6 +70,10 @@ public class RoadmapLearningLoopService {
         this.jobRepository = jobRepository;
         this.quizRepository = quizRepository;
         this.leaseReaper = leaseReaper;
+        this.nodeRepository = nodeRepository;
+        this.prerequisiteRepository = prerequisiteRepository;
+        this.questionRepository = questionRepository;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -123,6 +143,79 @@ public class RoadmapLearningLoopService {
                 .orElseThrow(() -> new ResourceNotFoundException("节点测验尚未生成"));
         return new RoadmapNodeQuizResponse(nodeId, state.getQuizStatus().name(),
                 job.getQuizId(), RoadmapQuizGenerationResponse.from(job));
+    }
+
+    @Transactional(readOnly = true)
+    public RoadmapQuizContextResponse quizJobContext(String jobId) {
+        RoadmapQuizGenerationJobEntity job = jobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线测验生成任务不存在"));
+        if (job.getStatus() != RoadmapQuizGenerationStatus.LEASED) {
+            throw new ConflictException("仅已领取的路线测验任务可以读取上下文");
+        }
+        RoadmapNodeEntity node = nodeRepository.findById(job.getNodeId())
+                .orElseThrow(() -> new ResourceNotFoundException("路线节点不存在"));
+        List<String> prerequisiteIds = prerequisiteRepository
+                .findAllByTemplateIdAndNodeId(node.getTemplateId(), node.getId()).stream()
+                .map(edge -> edge.getPrerequisiteNodeId()).toList();
+        List<RoadmapQuizContextResponse.NodeContext> prerequisites = prerequisiteIds.isEmpty()
+                ? List.of()
+                : nodeRepository.findAllByTemplateIdAndIdInRoadmapOrder(
+                        node.getTemplateId(), prerequisiteIds).stream()
+                        .map(this::nodeContext).toList();
+        List<String> quizIds = quizRepository
+                .findAllByOwnerIdAndRoadmapNodeIdOrderByCreatedAtDesc(
+                        job.getOwnerId(), job.getNodeId()).stream()
+                .limit(5).map(QuizEntity::getId).toList();
+        List<String> recentSignatures = quizIds.isEmpty() ? List.of()
+                : questionRepository.findAllByQuizIdIn(quizIds).stream()
+                .map(question -> question.getQuestionSignature())
+                .filter(signature -> signature != null && !signature.isBlank())
+                .distinct().limit(25).toList();
+        return new RoadmapQuizContextResponse(
+                jobId, job.getOwnerId(), nodeContext(node), prerequisites,
+                recentSignatures, officialDomains(node));
+    }
+
+    private RoadmapQuizContextResponse.NodeContext nodeContext(RoadmapNodeEntity node) {
+        return new RoadmapQuizContextResponse.NodeContext(
+                node.getId(), node.getNodeCode(), node.getTitle(),
+                strings(node.getObjectivesJson()), strings(node.getHighFrequencyJson()),
+                strings(node.getCommonMistakesJson()), blueprints(node.getQuizBlueprintJson()));
+    }
+
+    private List<String> strings(String json) {
+        List<String> values = new ArrayList<>();
+        for (JsonNode item : objectMapper.readTree(json)) {
+            values.add(item.asText());
+        }
+        return List.copyOf(values);
+    }
+
+    private List<RoadmapQuizContextResponse.Blueprint> blueprints(String json) {
+        List<RoadmapQuizContextResponse.Blueprint> values = new ArrayList<>();
+        for (JsonNode item : objectMapper.readTree(json)) {
+            if (item.isObject()) {
+                values.add(new RoadmapQuizContextResponse.Blueprint(
+                        item.path("prompt").asText(), item.path("timeSensitive").asBoolean(false)));
+            } else {
+                values.add(new RoadmapQuizContextResponse.Blueprint(item.asText(), false));
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    private List<String> officialDomains(RoadmapNodeEntity node) {
+        String searchable = (node.getTitle() + " " + node.getSearchKeywordsJson()).toLowerCase();
+        if (searchable.contains("spring")) {
+            return List.of("docs.spring.io");
+        }
+        if (searchable.contains("mysql")) {
+            return List.of("dev.mysql.com");
+        }
+        if (searchable.contains("fastapi")) {
+            return List.of("fastapi.tiangolo.com");
+        }
+        return List.of("docs.oracle.com");
     }
 
     @Transactional
@@ -202,7 +295,19 @@ public class RoadmapLearningLoopService {
     public RoadmapQuizJobPayload completeQuizJob(
             String jobId, String workerId, String leaseToken, String quizId
     ) {
+        RoadmapQuizGenerationJobEntity candidate = jobRepository.findById(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线测验生成任务不存在"));
+        UserRoadmapEntity enrollment = enrollmentRepository
+                .findByIdForUpdate(candidate.getUserRoadmapId())
+                .orElseThrow(() -> new ResourceNotFoundException("路线报名不存在"));
+        UserRoadmapNodeEntity state = stateRepository
+                .findByUserRoadmapIdAndNodeIdForUpdate(enrollment.getId(), candidate.getNodeId())
+                .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"));
         RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
+        if (!job.getUserRoadmapId().equals(enrollment.getId())
+                || !job.getUserRoadmapNodeId().equals(state.getId())) {
+            throw new ConflictException("路线测验生成任务范围已变化");
+        }
         QuizEntity quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("节点测验不存在"));
         if (!job.getOwnerId().equals(quiz.getOwnerId())
@@ -213,9 +318,7 @@ public class RoadmapLearningLoopService {
         Instant now = Instant.now();
         try {
             if (job.complete(workerId, leaseToken, quizId, now)) {
-                stateRepository.findById(job.getUserRoadmapNodeId())
-                        .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"))
-                        .markQuizReady(now);
+                state.markQuizReady(now);
             }
         } catch (IllegalArgumentException exception) {
             throw new ConflictException(exception.getMessage());

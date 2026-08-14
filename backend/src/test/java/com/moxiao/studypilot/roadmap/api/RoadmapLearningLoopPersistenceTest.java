@@ -300,19 +300,27 @@ class RoadmapLearningLoopPersistenceTest {
         String leaseToken = objectMapper.readTree(claim.getResponse().getContentAsString())
                 .get("leaseToken").asText();
 
+        java.util.List<java.util.Map<String, Object>> completionQuestions = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            completionQuestions.add(java.util.Map.of(
+                    "type", "SINGLE_CHOICE",
+                    "knowledgePoint", "javac 与 java " + index,
+                    "questionText", "第 " + (index + 1) + " 个命令场景应如何判断？",
+                    "options", java.util.List.of("javac Main.java", "java Main.java"),
+                    "correctAnswers", java.util.List.of("javac Main.java"),
+                    "explanation", "javac 生成字节码，java 启动 JVM。",
+                    "questionSignature", "java-env-command-v" + (index + 1)));
+        }
         MvcResult createdQuiz = mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"ownerId":"%s","roadmapNodeId":"%s","purpose":"NODE",
-                                 "title":"Java 环境节点测验","modelName":"test-model","questions":[
-                                  {"type":"SINGLE_CHOICE","knowledgePoint":"javac 与 java",
-                                   "questionText":"哪个命令只负责编译 Main.java？",
-                                   "options":["javac Main.java","java Main.java"],
-                                   "correctAnswers":["javac Main.java"],
-                                   "explanation":"javac 生成字节码，java 启动 JVM。",
-                                   "questionSignature":"java-env-command-v1"}]}
-                                """.formatted(owner.userId(), availableNodeId)))
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "ownerId", owner.userId(),
+                                "roadmapNodeId", availableNodeId,
+                                "purpose", "NODE",
+                                "title", "Java 环境节点测验",
+                                "modelName", "test-model",
+                                "questions", completionQuestions))))
                 .andExpect(status().isCreated())
                 .andReturn();
         String quizId = objectMapper.readTree(createdQuiz.getResponse().getContentAsString())
@@ -368,9 +376,9 @@ class RoadmapLearningLoopPersistenceTest {
                 .andExpect(jsonPath("$.quizId").value(quizId));
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT purpose FROM quizzes WHERE id = ?", String.class, quizId)).isEqualTo("NODE");
-        assertThat(jdbcTemplate.queryForObject(
+        assertThat(jdbcTemplate.queryForList(
                 "SELECT question_signature FROM quiz_questions WHERE quiz_id = ?",
-                String.class, quizId)).isEqualTo("java-env-command-v1");
+                String.class, quizId)).contains("java-env-command-v1").hasSize(5);
     }
 
     @Test
@@ -394,6 +402,14 @@ class RoadmapLearningLoopPersistenceTest {
                 .andExpect(status().isBadRequest());
         String signedQuestion = question.substring(0, question.lastIndexOf('}'))
                 + ",\"questionSignature\":\"origin-signature\"}";
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":"%s","roadmapNodeId":"%s","purpose":"NODE",
+                                 "title":"题量不足","modelName":"test-model","questions":[%s]}
+                                """.formatted(owner.userId(), availableNodeId, signedQuestion)))
+                .andExpect(status().isBadRequest());
         mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -505,6 +521,129 @@ class RoadmapLearningLoopPersistenceTest {
         assertThat(expired).hasSize(1);
         assertThat(expired.get(0).getOwnerId()).isIn(first.userId(), second.userId());
         assertThat(expired).noneMatch(job -> job.getOwnerId().equals(active.userId()));
+    }
+
+    @Test
+    void exposesOnlyCurrentNodeAndDirectPrerequisitesToTheGenerationWorker() throws Exception {
+        Registration owner = register("roadmap-quiz-context");
+        enrollV2(owner.token());
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes SET availability_status = 'AVAILABLE'
+                WHERE owner_id = ? AND node_id = ?
+                """, owner.userId(), lockedNodeId);
+        mockMvc.perform(post("/api/roadmap-nodes/{nodeId}/check-ins", lockedNodeId)
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idempotencyKey":"context-check-in",
+                                 "summary":"我练习了变量类型转换，并记录了整数溢出的疑问。"}
+                                """))
+                .andExpect(status().isCreated());
+        MvcResult claim = mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/claim")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workerId":"roadmap-worker","leaseSeconds":60}
+                                """))
+                .andExpect(status().isOk()).andReturn();
+        String jobId = objectMapper.readTree(claim.getResponse().getContentAsString())
+                .get("id").asText();
+
+        mockMvc.perform(get("/internal/roadmap-quiz-generation-jobs/{jobId}/context", jobId)
+                        .header("X-Internal-Service-Token", "test-internal-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.ownerId").value(owner.userId()))
+                .andExpect(jsonPath("$.node.id").value(lockedNodeId))
+                .andExpect(jsonPath("$.node.code").value("variables-types-conversion"))
+                .andExpect(jsonPath("$.node.objectives.length()").value(2))
+                .andExpect(jsonPath("$.node.highFrequency.length()").value(2))
+                .andExpect(jsonPath("$.node.quizBlueprint.length()").value(5))
+                .andExpect(jsonPath("$.node.quizBlueprint[0].timeSensitive").value(false))
+                .andExpect(jsonPath("$.directPrerequisites.length()").value(1))
+                .andExpect(jsonPath("$.directPrerequisites[0].id").value(availableNodeId))
+                .andExpect(jsonPath("$.recentQuestionSignatures.length()").value(0))
+                .andExpect(jsonPath("$.officialDomains[0]").value("docs.oracle.com"));
+    }
+
+    @Test
+    void recordsSeventyAsTheNodePassThresholdAndPreservesEarlierAttempts() throws Exception {
+        Registration owner = register("roadmap-quiz-attempts");
+        enrollV2(owner.token());
+        submitCheckIn(owner.token(), "attempt-check-in");
+        MvcResult claim = mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/claim")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerId\":\"attempt-worker\",\"leaseSeconds\":60}"))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode claimed = objectMapper.readTree(claim.getResponse().getContentAsString());
+
+        java.util.List<java.util.Map<String, Object>> questions = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            questions.add(java.util.Map.of(
+                    "type", "SINGLE_CHOICE",
+                    "knowledgePoint", "Java 环境实践 " + index,
+                    "questionText", "第 " + (index + 1) + " 题应选择哪个编译命令？",
+                    "options", java.util.List.of("A", "B"),
+                    "correctAnswers", java.util.List.of("A"),
+                    "explanation", "A 是正确命令。",
+                    "questionSignature", "node-attempt-signature-" + index));
+        }
+        MvcResult created = mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "ownerId", owner.userId(),
+                                "roadmapNodeId", availableNodeId,
+                                "purpose", "NODE",
+                                "title", "五题节点测验",
+                                "modelName", "test-model",
+                                "questions", questions))))
+                .andExpect(status().isCreated()).andReturn();
+        JsonNode quiz = objectMapper.readTree(created.getResponse().getContentAsString());
+        String quizId = quiz.get("id").asText();
+        mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete",
+                        claimed.get("id").asText())
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "workerId", "attempt-worker",
+                                "leaseToken", claimed.get("leaseToken").asText(),
+                                "quizId", quizId))))
+                .andExpect(status().isOk());
+
+        String failedAttemptId = submitQuizAttempt(owner.token(), quiz, 3, "score-60")
+                .get("id").asText();
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT quiz_status FROM user_roadmap_nodes WHERE owner_id = ? AND node_id = ?
+                """, String.class, owner.userId(), availableNodeId)).isEqualTo("FAILED");
+
+        JsonNode passed = submitQuizAttempt(owner.token(), quiz, 4, "score-80");
+        assertThat(passed.get("score").asDouble()).isEqualTo(80.0);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT quiz_status FROM user_roadmap_nodes WHERE owner_id = ? AND node_id = ?
+                """, String.class, owner.userId(), availableNodeId)).isEqualTo("PASSED");
+        mockMvc.perform(get("/api/quiz-attempts/{attemptId}", failedAttemptId)
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.score").value(60.0));
+    }
+
+    private JsonNode submitQuizAttempt(
+            String token, JsonNode quiz, int correctCount, String idempotencyKey
+    ) throws Exception {
+        java.util.List<java.util.Map<String, Object>> answers = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            answers.add(java.util.Map.of(
+                    "questionId", quiz.get("questions").get(index).get("id").asText(),
+                    "selectedAnswers", java.util.List.of(index < correctCount ? "A" : "B")));
+        }
+        MvcResult result = mockMvc.perform(post("/api/quizzes/{quizId}/attempts", quiz.get("id").asText())
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "idempotencyKey", idempotencyKey, "answers", answers))))
+                .andExpect(status().isCreated()).andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
     private Registration register(String label) throws Exception {

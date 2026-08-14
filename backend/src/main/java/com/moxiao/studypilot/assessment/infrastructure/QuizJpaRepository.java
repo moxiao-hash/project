@@ -10,4 +10,7 @@ public interface QuizJpaRepository extends JpaRepository<QuizEntity, String> {
     Optional<QuizEntity> findByIdAndOwnerId(String id, String ownerId);
 
     List<QuizEntity> findAllByOwnerIdOrderByCreatedAtDesc(String ownerId);
+
+    List<QuizEntity> findAllByOwnerIdAndRoadmapNodeIdOrderByCreatedAtDesc(
+            String ownerId, String roadmapNodeId);
 }

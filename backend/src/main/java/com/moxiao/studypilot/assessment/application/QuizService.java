@@ -28,6 +28,7 @@ import com.moxiao.studypilot.learning.infrastructure.LearningTaskJpaRepository;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
+import com.moxiao.studypilot.roadmap.application.RoadmapQuizProgressService;
 import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressEntity;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressJpaRepository;
@@ -60,6 +61,7 @@ public class QuizService {
     private final LessonProgressJpaRepository lessonProgressRepository;
     private final UserRoadmapJpaRepository userRoadmapRepository;
     private final RoadmapStageJpaRepository roadmapStageRepository;
+    private final RoadmapQuizProgressService roadmapQuizProgressService;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -75,7 +77,8 @@ public class QuizService {
             LessonJpaRepository lessonRepository,
             LessonProgressJpaRepository lessonProgressRepository,
             UserRoadmapJpaRepository userRoadmapRepository,
-            RoadmapStageJpaRepository roadmapStageRepository
+            RoadmapStageJpaRepository roadmapStageRepository,
+            RoadmapQuizProgressService roadmapQuizProgressService
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -91,6 +94,7 @@ public class QuizService {
         this.lessonProgressRepository = lessonProgressRepository;
         this.userRoadmapRepository = userRoadmapRepository;
         this.roadmapStageRepository = roadmapStageRepository;
+        this.roadmapQuizProgressService = roadmapQuizProgressService;
     }
 
     @Transactional
@@ -109,6 +113,9 @@ public class QuizService {
         boolean roadmapQuiz = request.purpose() != null;
         if (roadmapQuiz) {
             validateRoadmapOrigin(request);
+        }
+        if (request.purpose() == RoadmapQuizPurpose.NODE && request.questions().size() != 5) {
+            throw new IllegalArgumentException("节点测验必须恰好包含五题");
         }
         if (roadmapQuiz) {
             Set<String> signatures = new java.util.HashSet<>();
@@ -326,6 +333,9 @@ public class QuizService {
                 now
         ));
         if (!submittedCode.isEmpty()) {
+            if (bundle.quiz().getPurpose() == RoadmapQuizPurpose.NODE) {
+                roadmapQuizProgressService.markEvaluating(bundle.quiz(), now);
+            }
             codingJobRepository.save(new CodingEvaluationJobEntity(
                     UUID.randomUUID().toString(), attemptId, now
             ));
@@ -346,6 +356,9 @@ public class QuizService {
                     bundle.quiz(), attemptId, Set.of()
             );
             markLessonQuizPassed(bundle.quiz(), objectiveScore, now);
+            if (bundle.quiz().getPurpose() == RoadmapQuizPurpose.NODE) {
+                roadmapQuizProgressService.recordResult(bundle.quiz(), objectiveScore, now);
+            }
         }
         return new QuizAttemptResponse(
                 attemptId, objectiveScore, attemptStatus.name(), null, results
@@ -432,6 +445,9 @@ public class QuizService {
                 .collect(java.util.stream.Collectors.toSet());
         reviewTaskCandidateService.createCandidates(quiz, attempt.getId(), weakCodingPoints);
         markLessonQuizPassed(quiz, finalScore, now);
+        if (quiz.getPurpose() == RoadmapQuizPurpose.NODE) {
+            roadmapQuizProgressService.recordResult(quiz, finalScore, now);
+        }
         return toAttemptResponse(attemptRepository.save(attempt), questions);
     }
 

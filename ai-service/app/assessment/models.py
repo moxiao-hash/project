@@ -134,6 +134,24 @@ class GeneratedQuiz(BaseModel):
     questions: list[GeneratedQuestion] = Field(min_length=5, max_length=5)
 
 
+class RoadmapGeneratedQuestion(GeneratedQuestion):
+    coverage_node_id: str = Field(alias="coverageNodeId", min_length=1)
+    practical: bool
+    points: int = Field(gt=0, le=100)
+    question_signature: str = Field(alias="questionSignature", min_length=1, max_length=64)
+
+
+class RoadmapGeneratedQuiz(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    questions: list[RoadmapGeneratedQuestion] = Field(min_length=5, max_length=5)
+
+    @model_validator(mode="after")
+    def require_one_hundred_points(self):
+        if sum(question.points for question in self.questions) != 100:
+            raise ValueError("路线节点测验总分必须为 100")
+        return self
+
+
 class GenerateQuizRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

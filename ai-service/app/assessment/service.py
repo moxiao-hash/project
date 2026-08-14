@@ -1,7 +1,9 @@
 """自适应题目配比和测验生成编排。"""
 
+from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any, Protocol
+from urllib.parse import urlparse
 
 from app.assessment.models import (
     Difficulty,
@@ -243,3 +245,159 @@ class QuizGenerationService:
                 raise InvalidGeneratedQuizError("题目引用了不存在的来源")
         if any(counts[item] != mix[item] for item in QuestionType):
             raise InvalidGeneratedQuizError("模型题型配比不符合自适应策略")
+
+
+class RoadmapQuizWorker:
+    """领取 Java 持久化任务并生成受节点图约束的五题测验。"""
+
+    def __init__(
+        self,
+        backend: Any,
+        generator: Any,
+        web_search: Any,
+        *,
+        generator_factory: Callable[[str], Awaitable[Any]] | None = None,
+        web_search_factory: Callable[[str], Awaitable[Any]] | None = None,
+        worker_id: str,
+        model_name: str,
+    ) -> None:
+        self._backend = backend
+        self._generator = generator
+        self._web_search = web_search
+        self._generator_factory = generator_factory
+        self._web_search_factory = web_search_factory
+        self._worker_id = worker_id
+        self._model_name = model_name
+
+    async def process_once(self) -> bool:
+        job = await self._backend.claim_roadmap_quiz_job(self._worker_id)
+        if job is None:
+            return False
+        job_id = job["id"]
+        lease_token = job["leaseToken"]
+        try:
+            context = await self._backend.get_roadmap_quiz_context(job_id)
+            sources = self._catalog_sources(context)
+            if self._is_explicitly_time_sensitive(context):
+                sources.extend(await self._official_web_sources(context))
+            recent = set(context.get("recentQuestionSignatures", []))
+            generator = self._generator
+            if self._generator_factory is not None:
+                generator = await self._generator_factory(job["ownerId"])
+            generated = await generator.generate_node_quiz(
+                context=context,
+                sources=sources,
+                recent_signatures=recent,
+            )
+            self._validate_node_quiz(generated, context, recent)
+            questions = []
+            for question in generated.questions:
+                payload = question.model_dump(
+                    by_alias=True,
+                    mode="json",
+                    exclude={"source_indexes"},
+                )
+                payload["sources"] = [
+                    source.model_dump(by_alias=True, mode="json", exclude_none=True)
+                    for index, source in enumerate(sources)
+                    if index in question.source_indexes
+                ]
+                questions.append(payload)
+            quiz = await self._backend.create_quiz(
+                {
+                    "ownerId": job["ownerId"],
+                    "roadmapNodeId": job["nodeId"],
+                    "purpose": "NODE",
+                    "title": generated.title,
+                    "modelName": self._model_name,
+                    "questions": questions,
+                }
+            )
+            await self._backend.complete_roadmap_quiz_job(
+                job_id,
+                self._worker_id,
+                lease_token,
+                quiz["id"],
+            )
+        except Exception as exc:
+            await self._backend.fail_roadmap_quiz_job(
+                job_id,
+                self._worker_id,
+                lease_token,
+                f"路线测验生成失败: {type(exc).__name__}",
+            )
+        return True
+
+    @staticmethod
+    def _catalog_sources(context: dict[str, Any]) -> list[QuizSource]:
+        nodes = [context["node"], *context.get("directPrerequisites", [])]
+        return [
+            QuizSource(
+                source_type="ROADMAP_CATALOG",
+                title=node["title"],
+                locator=f"roadmap-node:{node['id']}",
+                snippet="；".join(
+                    [
+                        *node.get("objectives", []),
+                        *node.get("highFrequency", []),
+                        *[
+                            item.get("prompt", "") if isinstance(item, dict) else item
+                            for item in node.get("quizBlueprint", [])
+                        ],
+                    ]
+                ),
+            )
+            for node in nodes
+        ]
+
+    @staticmethod
+    def _is_explicitly_time_sensitive(context: dict[str, Any]) -> bool:
+        return any(
+            isinstance(item, dict) and item.get("timeSensitive") is True
+            for item in context["node"].get("quizBlueprint", [])
+        )
+
+    async def _official_web_sources(self, context: dict[str, Any]) -> list[QuizSource]:
+        web_search = self._web_search
+        if self._web_search_factory is not None:
+            web_search = await self._web_search_factory(context["ownerId"])
+        if web_search is None:
+            return []
+        outcome = await web_search.search(
+            context["ownerId"],
+            context["node"]["title"],
+        )
+        allowed = tuple(context.get("officialDomains", []))
+        return [
+            QuizSource(
+                source_type="WEB",
+                web_result_id=result.result_id,
+                title=result.title,
+                locator=result.url,
+                snippet=result.snippet,
+            )
+            for result in outcome.results
+            if self._is_official(result.url, allowed)
+        ]
+
+    @staticmethod
+    def _is_official(url: str, allowed: tuple[str, ...]) -> bool:
+        host = (urlparse(url).hostname or "").lower()
+        return any(host == domain or host.endswith("." + domain) for domain in allowed)
+
+    @staticmethod
+    def _validate_node_quiz(generated, context: dict[str, Any], recent: set[str]) -> None:
+        current = context["node"]["id"]
+        allowed = {current} | {
+            node["id"] for node in context.get("directPrerequisites", [])
+        }
+        coverage = [question.coverage_node_id for question in generated.questions]
+        signatures = [question.question_signature for question in generated.questions]
+        if len(generated.questions) != 5 or sum(q.points for q in generated.questions) != 100:
+            raise InvalidGeneratedQuizError("路线节点测验必须恰好五题且总分为100")
+        if coverage.count(current) < 3 or not set(coverage) <= allowed:
+            raise InvalidGeneratedQuizError("题目超出当前节点或直接前置范围")
+        if sum(question.practical for question in generated.questions) < 3:
+            raise InvalidGeneratedQuizError("高频实用题不足三题")
+        if len(set(signatures)) != 5 or recent.intersection(signatures):
+            raise InvalidGeneratedQuizError("题目签名与近期测验重复")

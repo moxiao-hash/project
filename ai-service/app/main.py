@@ -38,6 +38,8 @@ from app.api.task_conversations import (
 from app.api.teaching_conversations import OwnerScopedTeachingServices
 from app.api.teaching_conversations import router as teaching_conversations_router
 from app.assessment.evaluation import CodingEvaluationWorker, DeepSeekCodingEvaluator
+from app.assessment.generator import DeepSeekQuizGenerator
+from app.assessment.service import RoadmapQuizWorker
 from app.clients.java_backend import JavaBackendClient
 from app.core.request_context import (
     REQUEST_ID_HEADER,
@@ -54,12 +56,15 @@ from app.providers.credentials import CredentialProvider, CredentialResolver
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.factory import get_hybrid_index
 from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
+from app.search.service import WebSearchService
+from app.search.tavily import TavilySearchClient
 from app.search.web_fetcher import SafeWebFetcher
 
 logger = logging.getLogger(__name__)
 install_secret_redaction()
 _material_processing_service: MaterialProcessingService | None = None
 _coding_evaluation_worker: CodingEvaluationWorker | None = None
+_roadmap_quiz_worker: RoadmapQuizWorker | None = None
 
 
 async def build_owner_material_analyzer(
@@ -166,6 +171,43 @@ async def run_coding_evaluation_job() -> None:
         logger.exception("代码文本评估任务执行失败")
 
 
+async def run_roadmap_quiz_job() -> None:
+    """领取至多一个持久化路线节点测验任务。"""
+
+    settings = get_settings()
+    global _roadmap_quiz_worker
+    try:
+        if _roadmap_quiz_worker is None:
+            java = JavaBackendClient(settings)
+            resolver = CredentialResolver(java, settings)
+
+            async def generator_for(owner_id: str):
+                key = await resolver.resolve(owner_id, CredentialProvider.DEEPSEEK)
+                return DeepSeekQuizGenerator(create_chat_model(settings, key))
+
+            async def web_search_for(owner_id: str):
+                key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
+                return WebSearchService(
+                    TavilySearchClient(key, base_url=settings.tavily_base_url),
+                    java,
+                )
+
+            _roadmap_quiz_worker = RoadmapQuizWorker(
+                java,
+                None,
+                None,
+                generator_factory=generator_for,
+                web_search_factory=web_search_for,
+                worker_id=settings.roadmap_quiz_worker_id,
+                model_name=settings.model_name,
+            )
+        await _roadmap_quiz_worker.process_once()
+    except ModelConfigurationError:
+        logger.warning("未配置模型，暂不生成路线节点测验")
+    except Exception:
+        logger.exception("路线节点测验生成任务执行失败")
+
+
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     # Uvicorn 可能在导入 app 后重建 handler；启动阶段再次幂等安装，确保生产日志
@@ -220,6 +262,15 @@ async def lifespan(application: FastAPI):
             "interval",
             seconds=settings.coding_evaluation_interval_seconds,
             id="coding-evaluation",
+            coalesce=True,
+            max_instances=1,
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            run_roadmap_quiz_job,
+            "interval",
+            seconds=settings.roadmap_quiz_interval_seconds,
+            id="roadmap-quiz-generation",
             coalesce=True,
             max_instances=1,
             replace_existing=True,

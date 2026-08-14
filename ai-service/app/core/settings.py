@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     material_worker_id: str = "studypilot-ai-local"
     coding_evaluation_interval_seconds: int = 5
     coding_evaluation_worker_id: str = "studypilot-ai-coding-local"
+    roadmap_quiz_interval_seconds: int = 5
+    roadmap_quiz_worker_id: str = "studypilot-ai-roadmap-quiz-local"
     qdrant_path: str = "./data/qdrant"
     fastembed_cache_path: str = "./data/fastembed"
     tavily_api_key: SecretStr = SecretStr("")

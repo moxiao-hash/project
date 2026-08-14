@@ -145,6 +145,23 @@ public class UserRoadmapNodeEntity {
         updatedAt = now;
     }
 
+    public void markQuizEvaluating(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (quizStatus != QuizStatus.PASSED) {
+            quizStatus = QuizStatus.EVALUATING;
+            updatedAt = now;
+        }
+    }
+
+    public void recordQuizResult(double score, Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (quizStatus == QuizStatus.PASSED) {
+            return;
+        }
+        quizStatus = score >= 70 ? QuizStatus.PASSED : QuizStatus.FAILED;
+        updatedAt = now;
+    }
+
     void completeAfterRequirements(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
         if (completionStatus == CompletionStatus.COMPLETED) {
