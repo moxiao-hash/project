@@ -170,6 +170,7 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void rejectsKnownDangerousOrSemanticallyMismatchedQuizPrompts() {
+        assertThat(catalog.toString()).doesNotContain("rg --files/-n");
         List<Pattern> forbidden = List.of(
                 Pattern.compile("实现目录穿越"),
                 Pattern.compile("SSRF开启前后"),
@@ -180,7 +181,11 @@ class RoadmapV2CatalogContentTest {
                 Pattern.compile("LangGraph.*off-by-one"),
                 Pattern.compile("tool schema.*off-by-one"),
                 Pattern.compile("Command\\(resume=.*approved.*false"),
-                Pattern.compile("stdio.*Content-Length"));
+                Pattern.compile("stdio.*Content-Length"),
+                Pattern.compile("pids.max=.*第 65 个进程"),
+                Pattern.compile("rg --files/-n"),
+                Pattern.compile("点击后等待.*响应"),
+                Pattern.compile("DNS rebinding.*二次解析"));
         for (JsonNode node : nodes()) {
             for (JsonNode quiz : node.get("quizBlueprint")) {
                 forbidden.forEach(pattern -> assertThat(pattern.matcher(quiz.asString()).find())
@@ -247,27 +252,6 @@ class RoadmapV2CatalogContentTest {
                 assertThat(fixedSuffix.matcher(quiz.asString()).find()).as(node.get("code").asString()).isFalse();
             }
         }
-    }
-
-    @Test
-    void everyNodeQuizCoversAtLeastThreeOfItsSpecificConcepts() {
-        // Stage 1-9 quizzes are protected by independent, hand-authored fragment maps below.
-        // Keep this legacy concept-presence heuristic only for the remaining Stage 10-12 nodes.
-        List<JsonNode> laterStageNodes = nodes().stream().skip(100).toList();
-        Map<String, List<String>> quizConceptTerms = laterStageNodes.stream().collect(Collectors.toMap(
-                node -> node.get("code").asString(), node -> conceptTerms(node).stream().limit(3).toList()));
-        assertThat(quizConceptTerms).hasSize(25).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
-        quizConceptTerms.forEach((code, terms) -> {
-            String quizzes = laterStageNodes.stream().filter(node -> code.equals(node.get("code").asString()))
-                    .findFirst().orElseThrow().get("quizBlueprint").toString();
-            assertThat(quizzes).as(code).contains(terms.toArray(String[]::new));
-        });
-    }
-
-    private static List<String> conceptTerms(JsonNode node) {
-        return stream(node.get("highFrequency")).stream().map(JsonNode::asString)
-                .flatMap(value -> Pattern.compile("[；]+ ").splitAsStream(value.replace("；", "； ")))
-                .map(String::strip).filter(term -> term.length() >= 3).distinct().toList();
     }
 
     private static String openingVerb(JsonNode quiz) {

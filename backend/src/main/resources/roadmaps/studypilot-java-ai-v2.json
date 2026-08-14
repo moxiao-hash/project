@@ -4870,7 +4870,7 @@
                 "执行 git diff --check 与全量回归，输出未修改保护文件的证据"
               ],
               "highFrequency": [
-                "rg --files/-n；git diff",
+                "rg --files 与 rg -n；git diff",
                 "focused test；diff check；change summary"
               ],
               "commonMistakes": [
@@ -4888,7 +4888,7 @@
                 "description": "提交仓库修改 Agent；在样例仓库运行搜索、生成 diff，并由测试证明未改无关文件。"
               },
               "quizBlueprint": [
-                "运行 rg --files -g '*.java' 后再用 rg --files/-n 定位目标类与测试，记录搜索命令和命中路径。",
+                "运行 rg --files -g '*.java' 列出 Java 文件，再用 rg -n 'class Target' -g '*.java' 定位目标类与测试，记录命中路径。",
                 "基于搜索结果生成只改两个文件的 git diff，逐个 hunk 对照 acceptance criteria。",
                 "先执行 focused test 并保存退出码，再运行相关模块回归，说明两层验证各捕获什么风险。",
                 "执行 git diff --check，构造尾随空格使检查失败，再修正并确认输出为空。",
@@ -5023,7 +5023,7 @@
               "quizBlueprint": [
                 "使用 getByRole('button', {name:'保存'}) 构造 role selector，验证页面只有一个可见匹配项。",
                 "分析两个按钮共享名称时触发的 locator strict mode，并用所在表单或对话框缩小语义范围。",
-                "点击后等待 /api/invoices 响应，比较 auto-wait 与固定 sleep 对慢速环境的稳定性。",
+                "先创建 page.waitForResponse('/api/invoices') promise，再点击按钮并 await 响应，比较它与固定 sleep 的稳定性。",
                 "测试超时时保存 trace.zip，定位 network expect 已完成但 DOM 按钮仍 disabled 的时间点。",
                 "用 trace viewer 检查请求、控制台和 DOM 快照，写出不把授权 token 放进失败摘要的规则。"
               ],
@@ -5122,7 +5122,7 @@
               },
               "quizBlueprint": [
                 "配置 cgroup CPU/内存限制，其中 memory.max=268435456，并验证超限任务被标记 OOM 而不影响其他租户。",
-                "设置 pids.max=64 后运行只创建受控子进程的测试，检查第 65 个进程被内核拒绝。",
+                "设置 pids.max=64 后观察 pids.current；当 task 总数达到 64 时，验证下一次 fork/clone 返回 EAGAIN 且 pids.events 的 max 计数增加。",
                 "使用 seccomp 系统调用过滤阻止未授权系统调用，断言执行器返回策略拒绝而不是宿主错误。",
                 "把工作区挂载为只读文件系统，仅允许 /workspace/out 写入，验证源码目录写入被拒绝。",
                 "触发 3 秒超时后清理完整进程树，检查父子 pid 均退出且临时输出目录按策略保留。"
@@ -5206,7 +5206,7 @@
                 "配置 egress allowlist 只允许 api.example.com:443，验证其他域名与非 443 端口均在代理前被拒绝。",
                 "记录代理审计中的原始域名、resolved_ip=10.0.0.8 与拒绝规则，且不保存 Authorization 值。",
                 "验证防护层拒绝 169.254.169.254、回环地址和私网地址段，并生成 SSRF 审计事件。",
-                "模拟允许域名发生 DNS rebinding，检查连接前二次解析仍会拦截变为私网的目标 IP。",
+                "模拟允许域名发生 DNS rebinding：解析并校验全部 A/AAAA 后，直接连接已验证 IP 且保留原 Host/SNI，阻止校验后再次按域名解析的 TOCTOU。",
                 "跟随一次 HTTPS 重定向时重新执行域名与 IP 校验，证明初始允许不会授权新的目标。"
               ],
               "estimatedMinutes": 45,
