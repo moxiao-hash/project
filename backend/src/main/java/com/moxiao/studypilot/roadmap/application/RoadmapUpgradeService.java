@@ -146,9 +146,6 @@ public class RoadmapUpgradeService {
         if (upgrade.getStatus() == UpgradeStatus.COMPLETED) {
             return response(upgrade, diff);
         }
-        if (!diff.manualReviewNodeCodes().isEmpty()) {
-            throw new ConflictException("路线升级包含需要人工映射的节点，当前版本不能确认");
-        }
         if (!CURRENT.equals(sourceEnrollment.getActiveSlot())) {
             throw new ConflictException("原路线已不再是当前路线");
         }
@@ -160,6 +157,10 @@ public class RoadmapUpgradeService {
                 || !publishedVersions.get(0).getId().equals(target.getId())) {
             throw new ConflictException("路线升级预览已过期，请重新生成");
         }
+        if (!diff.manualReviewNodeCodes().isEmpty()) {
+            throw new ConflictException("路线升级包含需要人工映射的节点，当前版本不能确认");
+        }
+        diff = restoreLegacyInheritanceMappings(source.getId(), target.getId(), diff);
 
         Instant now = Instant.now();
         sourceEnrollment.supersede(now);
@@ -194,7 +195,6 @@ public class RoadmapUpgradeService {
         List<RoadmapNodeEntity> targetNodes = nodeRepository
                 .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(targetTemplateId);
         Map<String, RoadmapNodeEntity> sourceByCode = byCode(sourceNodes);
-        Map<String, RoadmapNodeEntity> targetByCode = byCode(targetNodes);
         Map<String, RoadmapNodeEntity> sourceById = sourceNodes.stream().collect(Collectors.toMap(
                 RoadmapNodeEntity::getId, node -> node));
         Map<String, RoadmapNodeEntity> targetById = targetNodes.stream().collect(Collectors.toMap(
@@ -222,20 +222,20 @@ public class RoadmapUpgradeService {
                 }
             } else if (equivalentCompletionContract(source, target)
                     && equivalentPrerequisites(source, target, sourcePrerequisites,
-                    targetPrerequisites, sourceByCode, targetByCode, mappings)) {
+                    targetPrerequisites, sourceByCode, targetById, mappings)) {
                 unchanged.add(target.getNodeCode());
                 inheritedNodeMappings.put(target.getNodeCode(), source.getNodeCode());
                 matchedSourceIds.add(source.getId());
             } else {
-                manualReview.add(target.getNodeCode());
-                matchedSourceIds.add(source.getId());
+                added.add(target.getNodeCode());
             }
         }
         List<String> removed = sourceNodes.stream()
                 .filter(node -> !matchedSourceIds.contains(node.getId()))
                 .map(RoadmapNodeEntity::getNodeCode)
                 .toList();
-        ModuleDiff moduleDiff = compareModules(sourceTemplateId, targetTemplateId);
+        ModuleDiff moduleDiff = compareModules(
+                sourceTemplateId, targetTemplateId, sourceNodes, targetNodes);
         return new UpgradeDiff(unchanged, added, removed, manualReview, inheritedNodeMappings,
                 moduleDiff.added(), moduleDiff.removed(), moduleDiff.changed());
     }
@@ -288,6 +288,7 @@ public class RoadmapUpgradeService {
             sourcesByTarget.computeIfAbsent(targetId, ignored -> new HashSet<>()).add(sourceId);
         }
         Map<String, String> sourceIdByTargetId = new HashMap<>();
+        Map<String, String> targetIdBySourceId = new HashMap<>();
         Set<String> ambiguousTargetIds = new HashSet<>();
         for (Map.Entry<String, Set<String>> entry : sourcesByTarget.entrySet()) {
             String targetId = entry.getKey();
@@ -302,8 +303,9 @@ public class RoadmapUpgradeService {
                 continue;
             }
             sourceIdByTargetId.put(targetId, sourceId);
+            targetIdBySourceId.put(sourceId, targetId);
         }
-        return new ExplicitMappings(sourceIdByTargetId, ambiguousTargetIds);
+        return new ExplicitMappings(sourceIdByTargetId, targetIdBySourceId, ambiguousTargetIds);
     }
 
     private boolean equivalentPrerequisites(
@@ -312,7 +314,7 @@ public class RoadmapUpgradeService {
             Map<String, Set<String>> sourcePrerequisites,
             Map<String, Set<String>> targetPrerequisites,
             Map<String, RoadmapNodeEntity> sourceByCode,
-            Map<String, RoadmapNodeEntity> targetByCode,
+            Map<String, RoadmapNodeEntity> targetById,
             ExplicitMappings mappings
     ) {
         Set<String> expectedTargetPrerequisiteCodes = new HashSet<>();
@@ -322,8 +324,7 @@ public class RoadmapUpgradeService {
                 return false;
             }
             String targetId = mappings.targetIdBySourceId().get(sourcePrerequisite.getId());
-            RoadmapNodeEntity mappedTarget = targetByCode.values().stream()
-                    .filter(node -> node.getId().equals(targetId)).findFirst().orElse(null);
+            RoadmapNodeEntity mappedTarget = targetById.get(targetId);
             if (mappedTarget == null) {
                 return false;
             }
@@ -333,7 +334,12 @@ public class RoadmapUpgradeService {
                 targetPrerequisites.getOrDefault(target.getNodeCode(), Set.of()));
     }
 
-    private ModuleDiff compareModules(String sourceTemplateId, String targetTemplateId) {
+    private ModuleDiff compareModules(
+            String sourceTemplateId,
+            String targetTemplateId,
+            List<RoadmapNodeEntity> sourceNodes,
+            List<RoadmapNodeEntity> targetNodes
+    ) {
         Map<String, String> sourceStageCodes = stageRepository
                 .findAllByTemplateIdOrderByStageOrderAsc(sourceTemplateId).stream()
                 .collect(Collectors.toMap(RoadmapStageEntity::getId, RoadmapStageEntity::getStageCode));
@@ -342,12 +348,14 @@ public class RoadmapUpgradeService {
                 .collect(Collectors.toMap(RoadmapStageEntity::getId, RoadmapStageEntity::getStageCode));
         Map<String, RoadmapModuleEntity> source = modulesByCode(sourceTemplateId);
         Map<String, RoadmapModuleEntity> target = modulesByCode(targetTemplateId);
+        Map<String, List<String>> sourceMembers = nodeCodesByModuleId(sourceNodes);
+        Map<String, List<String>> targetMembers = nodeCodesByModuleId(targetNodes);
         int added = (int) target.keySet().stream().filter(code -> !source.containsKey(code)).count();
         int removed = (int) source.keySet().stream().filter(code -> !target.containsKey(code)).count();
         int changed = (int) target.entrySet().stream()
                 .filter(entry -> source.containsKey(entry.getKey()))
                 .filter(entry -> moduleChanged(source.get(entry.getKey()), entry.getValue(),
-                        sourceStageCodes, targetStageCodes))
+                        sourceStageCodes, targetStageCodes, sourceMembers, targetMembers))
                 .count();
         return new ModuleDiff(added, removed, changed);
     }
@@ -367,13 +375,26 @@ public class RoadmapUpgradeService {
             RoadmapModuleEntity source,
             RoadmapModuleEntity target,
             Map<String, String> sourceStageCodes,
-            Map<String, String> targetStageCodes
+            Map<String, String> targetStageCodes,
+            Map<String, List<String>> sourceMembers,
+            Map<String, List<String>> targetMembers
     ) {
         return source.getModuleOrder() != target.getModuleOrder()
                 || !source.getTitle().equals(target.getTitle())
                 || !source.getDescription().equals(target.getDescription())
                 || !java.util.Objects.equals(sourceStageCodes.get(source.getStageId()),
-                targetStageCodes.get(target.getStageId()));
+                targetStageCodes.get(target.getStageId()))
+                || !sourceMembers.getOrDefault(source.getId(), List.of()).equals(
+                targetMembers.getOrDefault(target.getId(), List.of()));
+    }
+
+    private Map<String, List<String>> nodeCodesByModuleId(List<RoadmapNodeEntity> nodes) {
+        return nodes.stream()
+                .filter(node -> node.getModuleId() != null)
+                .collect(Collectors.groupingBy(
+                        RoadmapNodeEntity::getModuleId,
+                        LinkedHashMap::new,
+                        Collectors.mapping(RoadmapNodeEntity::getNodeCode, Collectors.toList())));
     }
 
     /** Objects are unordered, arrays remain ordered, and JSON numbers compare by numeric value. */
@@ -438,6 +459,41 @@ public class RoadmapUpgradeService {
         } catch (RuntimeException exception) {
             throw new IllegalStateException("路线节点完成契约不是合法 JSON", exception);
         }
+    }
+
+    private UpgradeDiff restoreLegacyInheritanceMappings(
+            String sourceTemplateId,
+            String targetTemplateId,
+            UpgradeDiff diff
+    ) {
+        if (!diff.inheritedNodeMappings().isEmpty() || diff.unchangedNodeCodes().isEmpty()) {
+            return diff;
+        }
+        List<RoadmapNodeEntity> sourceNodes = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(sourceTemplateId);
+        List<RoadmapNodeEntity> targetNodes = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(targetTemplateId);
+        Map<String, RoadmapNodeEntity> sourceByCode = byCode(sourceNodes);
+        Map<String, RoadmapNodeEntity> targetByCode = byCode(targetNodes);
+        Map<String, Set<String>> sourcePrerequisites = prerequisitesByNodeCode(sourceNodes,
+                prerequisiteRepository.findAllByTemplateId(sourceTemplateId));
+        Map<String, Set<String>> targetPrerequisites = prerequisitesByNodeCode(targetNodes,
+                prerequisiteRepository.findAllByTemplateId(targetTemplateId));
+        Map<String, String> restored = new LinkedHashMap<>();
+        for (String code : diff.unchangedNodeCodes()) {
+            RoadmapNodeEntity source = sourceByCode.get(code);
+            RoadmapNodeEntity target = targetByCode.get(code);
+            if (source != null && target != null
+                    && equivalentCompletionContract(source, target)
+                    && sourcePrerequisites.getOrDefault(code, Set.of()).equals(
+                    targetPrerequisites.getOrDefault(code, Set.of()))) {
+                restored.put(code, code);
+            }
+        }
+        return new UpgradeDiff(
+                diff.unchangedNodeCodes(), diff.addedNodeCodes(), diff.removedNodeCodes(),
+                diff.manualReviewNodeCodes(), restored, diff.addedModuleCount(),
+                diff.removedModuleCount(), diff.changedModuleCount());
     }
 
     private Map<String, Set<String>> prerequisitesByNodeCode(
@@ -565,24 +621,23 @@ public class RoadmapUpgradeService {
             List<String> removedNodeCodes,
             List<String> manualReviewNodeCodes,
             Map<String, String> inheritedNodeMappings,
-            int addedModuleCount,
-            int removedModuleCount,
-            int changedModuleCount
+            Integer addedModuleCount,
+            Integer removedModuleCount,
+            Integer changedModuleCount
     ) {
         private UpgradeDiff {
             inheritedNodeMappings = inheritedNodeMappings == null ? Map.of() : inheritedNodeMappings;
+            addedModuleCount = addedModuleCount == null ? 0 : addedModuleCount;
+            removedModuleCount = removedModuleCount == null ? 0 : removedModuleCount;
+            changedModuleCount = changedModuleCount == null ? 0 : changedModuleCount;
         }
     }
 
     private record ExplicitMappings(
             Map<String, String> sourceIdByTargetId,
+            Map<String, String> targetIdBySourceId,
             Set<String> ambiguousTargetIds
-    ) {
-        private Map<String, String> targetIdBySourceId() {
-            return sourceIdByTargetId.entrySet().stream().collect(Collectors.toMap(
-                    Map.Entry::getValue, Map.Entry::getKey));
-        }
-    }
+    ) { }
 
     private record ModuleDiff(int added, int removed, int changed) { }
 }

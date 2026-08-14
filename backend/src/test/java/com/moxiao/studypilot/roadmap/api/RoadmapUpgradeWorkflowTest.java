@@ -1,6 +1,8 @@
 package com.moxiao.studypilot.roadmap.api;
 
+import com.moxiao.studypilot.course.application.CourseCatalogImporter;
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
+import com.moxiao.studypilot.roadmap.application.RoadmapCatalogImporter;
 import com.moxiao.studypilot.roadmap.application.RoadmapUpgradeService;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
@@ -65,6 +67,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RoadmapUpgradeWorkflowTest {
 
     @Autowired MockMvc mockMvc;
+    @Autowired CourseCatalogImporter courseCatalogImporter;
+    @Autowired RoadmapCatalogImporter roadmapCatalogImporter;
     @Autowired ObjectMapper objectMapper;
     @Autowired JdbcTemplate jdbcTemplate;
     @MockitoSpyBean RoadmapTemplateJpaRepository templateRepository;
@@ -81,12 +85,21 @@ class RoadmapUpgradeWorkflowTest {
     @PersistenceContext EntityManager entityManager;
 
     @Test
-    void previewsOnlyTheLatestPublishedVersionAndRequiresManualReviewForContractChanges()
+    void previewsOnlyTheLatestPublishedVersionWithoutBlockingUniqueNonEquivalentMappings()
             throws Exception {
         Fixture fixture = fixture(true);
         String ownerToken = register("review-owner");
         String otherToken = register("review-other");
-        enroll(ownerToken, fixture.roadmapCode(), 1);
+        JsonNode oldEnrollment = enroll(ownerToken, fixture.roadmapCode(), 1);
+        RoadmapNodeEntity oldContract = node(fixture.v1TemplateId(), "contract-node");
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, oldEnrollment.get("id").asText(), oldContract.getId());
 
         MvcResult result = mockMvc.perform(get("/api/roadmaps/current/upgrades")
                         .header("Authorization", bearer(ownerToken)))
@@ -95,10 +108,13 @@ class RoadmapUpgradeWorkflowTest {
                 .andExpect(jsonPath("$[0].targetVersion").value(2))
                 .andExpect(jsonPath("$[0].status").value("PREVIEW"))
                 .andExpect(jsonPath("$[0].unchangedNodeCodes[0]").value("stable-node"))
-                .andExpect(jsonPath("$[0].addedNodeCodes[0]").value("added-node"))
-                .andExpect(jsonPath("$[0].removedNodeCodes[0]").value("removed-node"))
-                .andExpect(jsonPath("$[0].manualReviewNodeCodes[0]").value("split-node"))
-                .andExpect(jsonPath("$[0].manualReviewNodeCodes[1]").value("contract-node"))
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes.length()").value(0))
+                .andExpect(jsonPath("$[0].addedNodeCodes",
+                        org.hamcrest.Matchers.hasItems(
+                                "split-node", "contract-node", "added-node")))
+                .andExpect(jsonPath("$[0].removedNodeCodes",
+                        org.hamcrest.Matchers.hasItems(
+                                "split-node", "contract-node", "removed-node")))
                 .andExpect(jsonPath("$[0].addedModuleCount").value(1))
                 .andExpect(jsonPath("$[0].removedModuleCount").value(1))
                 .andExpect(jsonPath("$[0].changedModuleCount").value(1))
@@ -114,9 +130,6 @@ class RoadmapUpgradeWorkflowTest {
         assertThat(upgradeRepository.countByOwnerId(ownerId(ownerToken))).isEqualTo(1);
 
         mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
-                        .header("Authorization", bearer(ownerToken)))
-                .andExpect(status().isConflict());
-        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
                         .header("Authorization", bearer(otherToken)))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/roadmaps/current/upgrades")
@@ -124,9 +137,19 @@ class RoadmapUpgradeWorkflowTest {
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/roadmaps/current/upgrades"))
                 .andExpect(status().isUnauthorized());
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(ownerToken)))
+                .andExpect(status().isOk());
         assertThat(enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId(ownerToken), "CURRENT"))
                 .get().extracting(enrollment -> enrollment.getTemplateId())
-                .isEqualTo(fixture.v1TemplateId());
+                .isEqualTo(fixture.v2TemplateId());
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(
+                ownerId(ownerToken), "CURRENT").orElseThrow();
+        String newContractId = node(fixture.v2TemplateId(), "contract-node").getId();
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId()))
+                .filteredOn(state -> state.getNodeId().equals(newContractId))
+                .singleElement().extracting(state -> state.getCompletionStatus().name())
+                .isEqualTo("INCOMPLETE");
     }
 
     @Test
@@ -243,7 +266,8 @@ class RoadmapUpgradeWorkflowTest {
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].unchangedNodeCodes[0]").value("stable-node"))
-                .andExpect(jsonPath("$[0].manualReviewNodeCodes").value(
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes.length()").value(0))
+                .andExpect(jsonPath("$[0].addedNodeCodes").value(
                         org.hamcrest.Matchers.hasItem("contract-node")));
     }
 
@@ -332,6 +356,134 @@ class RoadmapUpgradeWorkflowTest {
     }
 
     @Test
+    void confirmsTheRealGranularCatalogWithoutTreatingChangedContentAsAmbiguous()
+            throws Exception {
+        courseCatalogImporter.importCatalog();
+        roadmapCatalogImporter.importCatalog();
+        String token = register("real-catalog-upgrade");
+        enroll(token, "studypilot-java-ai", 1);
+
+        MvcResult previewResult = mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].sourceVersion").value(1))
+                .andExpect(jsonPath("$[0].targetVersion").value(2))
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes.length()").value(0))
+                .andExpect(jsonPath("$[0].addedModuleCount").value(24))
+                .andReturn();
+        String upgradeId = objectMapper.readTree(previewResult.getResponse().getContentAsString())
+                .get(0).get("id").asText();
+
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"));
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(
+                ownerId(token), "CURRENT").orElseThrow();
+        assertThat(nodeRepository.findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(
+                current.getTemplateId())).hasSize(125);
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId())).hasSize(125);
+    }
+
+    @Test
+    void countsOrderedNodeMembershipChangesEvenWhenModuleMetadataIsEqual() throws Exception {
+        Fixture fixture = fixture(false);
+        jdbcTemplate.update("""
+                UPDATE roadmap_modules SET title = '旧标题'
+                WHERE template_id = ? AND module_code = 'common-module'
+                """, fixture.v2TemplateId());
+        String targetCommonModuleId = jdbcTemplate.queryForObject("""
+                SELECT id FROM roadmap_modules
+                WHERE template_id = ? AND module_code = 'common-module'
+                """, String.class, fixture.v2TemplateId());
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes SET module_id = ?
+                WHERE template_id = ? AND node_code = 'added-node'
+                """, targetCommonModuleId, fixture.v2TemplateId());
+        String token = register("module-membership-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+
+        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].changedModuleCount").value(1));
+    }
+
+    @Test
+    void reconstructsSafeSameCodeInheritanceFromLegacyPreviewJson() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("legacy-preview-owner");
+        JsonNode enrollment = enroll(token, fixture.roadmapCode(), 1);
+        String oldEnrollmentId = enrollment.get("id").asText();
+        RoadmapNodeEntity oldStable = node(fixture.v1TemplateId(), "stable-node");
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, oldEnrollmentId, oldStable.getId());
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        jdbcTemplate.update("""
+                UPDATE roadmap_upgrades SET diff_json = ? WHERE id = ?
+                """, """
+                {"unchangedNodeCodes":["stable-node","split-node","contract-node"],
+                 "addedNodeCodes":["added-node"],"removedNodeCodes":["removed-node"],
+                 "manualReviewNodeCodes":[]}
+                """, upgradeId);
+
+        upgradeService.confirm(ownerId, upgradeId);
+
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT").orElseThrow();
+        String newStableId = node(fixture.v2TemplateId(), "stable-node").getId();
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId()))
+                .filteredOn(state -> state.getNodeId().equals(newStableId))
+                .singleElement().satisfies(state -> {
+                    assertThat(state.getCompletionStatus().name()).isEqualTo("COMPLETED");
+                    assertThat(state.getQuizStatus().name()).isEqualTo("PASSED");
+                });
+    }
+
+    @Test
+    void revalidatesLegacyPreviewContractsBeforeRestoringCompletion() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("legacy-preview-revalidation");
+        JsonNode enrollment = enroll(token, fixture.roadmapCode(), 1);
+        RoadmapNodeEntity oldStable = node(fixture.v1TemplateId(), "stable-node");
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollment.get("id").asText(), oldStable.getId());
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        jdbcTemplate.update("""
+                UPDATE roadmap_upgrades SET diff_json = ? WHERE id = ?
+                """, """
+                {"unchangedNodeCodes":["stable-node"],"addedNodeCodes":[],
+                 "removedNodeCodes":[],"manualReviewNodeCodes":[]}
+                """, upgradeId);
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes SET objectives_json = '["contract changed after preview"]'
+                WHERE template_id = ? AND node_code = 'stable-node'
+                """, fixture.v2TemplateId());
+
+        upgradeService.confirm(ownerId, upgradeId);
+
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT").orElseThrow();
+        String newStableId = node(fixture.v2TemplateId(), "stable-node").getId();
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId()))
+                .filteredOn(state -> state.getNodeId().equals(newStableId))
+                .singleElement().extracting(state -> state.getCompletionStatus().name())
+                .isEqualTo("INCOMPLETE");
+    }
+
+    @Test
     void returnsNoPreviewWhenNoHigherPublishedVersionExists() throws Exception {
         Fixture fixture = fixture(false);
         templateRepository.save(new RoadmapTemplateEntity(
@@ -388,7 +540,9 @@ class RoadmapUpgradeWorkflowTest {
         mockMvc.perform(get("/api/roadmaps/current/upgrades")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].manualReviewNodeCodes[0]").value("contract-node"));
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes.length()").value(0))
+                .andExpect(jsonPath("$[0].addedNodeCodes").value(
+                        org.hamcrest.Matchers.hasItem("contract-node")));
     }
 
     @Test
