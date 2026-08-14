@@ -2,6 +2,7 @@ import { http } from './http'
 import type {
   RoadmapEnrollment,
   RoadmapMap,
+  RoadmapModule,
   RoadmapNode,
   RoadmapStage,
 } from '@/types/roadmap'
@@ -23,6 +24,11 @@ export const roadmapApi = {
   getStage(stageId: string) {
     return http
       .get<RoadmapStage>(`/api/roadmaps/current/stages/${encodeURIComponent(stageId)}`)
+      .then((response) => response.data)
+  },
+  getModule(moduleId: string) {
+    return http
+      .get<RoadmapModule>(`/api/roadmaps/current/modules/${encodeURIComponent(moduleId)}`)
       .then((response) => response.data)
   },
   getNode(nodeId: string) {

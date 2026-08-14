@@ -12,7 +12,13 @@
       <button class="btn btn-secondary" :disabled="loading" @click="loadNode">重试</button>
     </section>
     <template v-else-if="node">
-      <RouterLink class="node-back" to="/roadmap">← 返回学习路线</RouterLink>
+      <RouterLink
+        class="node-back"
+        data-testid="node-back"
+        :to="moduleId
+          ? { name: 'roadmap-module', params: { id: moduleId } }
+          : { name: 'roadmap' }"
+      >{{ moduleId ? '← 返回所属模块' : '← 返回学习路线' }}</RouterLink>
       <header class="node-hero">
         <div class="node-meta">
           <span>{{ statusLabel }}</span>
@@ -79,6 +85,7 @@ import { roadmapApi } from '@/services/roadmap'
 import type { RoadmapMap, RoadmapNode } from '@/types/roadmap'
 
 const route = useRoute()
+const moduleId = computed(() => typeof route.query.moduleId === 'string' ? route.query.moduleId : '')
 const node = ref<RoadmapNode | null>(null)
 const loading = ref(false)
 const error = ref(false)

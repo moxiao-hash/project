@@ -9,6 +9,7 @@ import router from '@/app/router'
 import AppShell from '@/components/AppShell.vue'
 import RoadmapView from '@/modules/roadmap/RoadmapView.vue'
 import StageView from '@/modules/roadmap/StageView.vue'
+import ModuleView from '@/modules/roadmap/ModuleView.vue'
 import NodeView from '@/modules/roadmap/NodeView.vue'
 import CourseCatalogView from '@/modules/course/CourseCatalogView.vue'
 import CourseDetailView from '@/modules/course/CourseDetailView.vue'
@@ -58,6 +59,7 @@ const stage: RoadmapStage = {
   graduationProjectTitle: '命令行学习记录器',
   completedRequiredNodes: 0,
   totalRequiredNodes: 1,
+  modules: [],
   nodes: [node],
 }
 
@@ -115,6 +117,29 @@ describe('roadmapApi', () => {
     )
   })
 
+  it('encodes the module ID and returns the response data', async () => {
+    const module = {
+      id: 'module/1',
+      stageId: 'stage/1',
+      code: 'java-language-start',
+      order: 1,
+      title: 'Java 语言起步',
+      description: '从环境搭建到数组遍历',
+      completedRequiredNodes: 1,
+      totalRequiredNodes: 7,
+      displayStatus: 'IN_PROGRESS',
+      milestoneNode: node,
+      nodes: [node],
+    }
+    const get = vi.spyOn(http, 'get').mockResolvedValueOnce({ data: module })
+
+    await expect(roadmapApi.getModule('module/1 with space')).resolves.toEqual(module)
+
+    expect(get).toHaveBeenCalledExactlyOnceWith(
+      '/api/roadmaps/current/modules/module%2F1%20with%20space',
+    )
+  })
+
   it('encodes the node ID and returns the response data', async () => {
     const get = vi.spyOn(http, 'get').mockResolvedValueOnce({ data: node })
 
@@ -134,9 +159,21 @@ describe('roadmapApi', () => {
 })
 
 describe('production roadmap routes', () => {
+  it('makes module pages reachable with the shared id route parameter', () => {
+    const resolved = router.resolve('/roadmap/modules/module-1')
+
+    expect(resolved.name).toBe('roadmap-module')
+    expect(resolved.meta.title).toBe('路线模块')
+    expect(resolved.params).toEqual({ id: 'module-1' })
+    expect(typeof resolved.matched.at(-1)?.components?.default).toBe('function')
+    expect(router.resolve({ name: 'roadmap-module', params: { id: 'module-1' } }).href)
+      .toBe('/roadmap/modules/module-1')
+  })
+
   const cases = [
     ['/roadmap', 'roadmap', 'Java + AI 学习路线', RoadmapView, undefined],
     ['/roadmap/stages/stage-1', 'roadmap-stage', '路线阶段', StageView, 'stage-1'],
+    ['/roadmap/modules/module-1', 'roadmap-module', '路线模块', ModuleView, 'module-1'],
     ['/roadmap/nodes/node-1', 'roadmap-node', '知识节点', NodeView, 'node-1'],
   ] as const
 
@@ -156,6 +193,7 @@ describe('production roadmap routes', () => {
 
   it.each([
     ['roadmap-stage', 'stage-1', '/roadmap/stages/stage-1'],
+    ['roadmap-module', 'module-1', '/roadmap/modules/module-1'],
     ['roadmap-node', 'node-1', '/roadmap/nodes/node-1'],
   ] as const)('generates %s links from the shared id parameter', (name, id, href) => {
     expect(() => router.resolve({ name, params: { id } })).not.toThrow()

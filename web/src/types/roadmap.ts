@@ -38,6 +38,33 @@ export interface RoadmapNode {
   version: number
 }
 
+export interface RoadmapModuleSummary {
+  id: string
+  code: string
+  order: number
+  title: string
+  description: string
+  completedRequiredNodes: number
+  totalRequiredNodes: number
+  milestoneNodeId: string
+  milestoneNodeCode: string
+  displayStatus: RoadmapDisplayStatus
+}
+
+export interface RoadmapModule {
+  id: string
+  stageId: string
+  code: string
+  order: number
+  title: string
+  description: string
+  completedRequiredNodes: number
+  totalRequiredNodes: number
+  displayStatus: RoadmapDisplayStatus
+  milestoneNode: RoadmapNode
+  nodes: RoadmapNode[]
+}
+
 export interface RoadmapStage {
   id: string
   code: string
@@ -47,6 +74,7 @@ export interface RoadmapStage {
   graduationProjectTitle: string
   completedRequiredNodes: number
   totalRequiredNodes: number
+  modules: RoadmapModuleSummary[]
   nodes: RoadmapNode[]
 }
 

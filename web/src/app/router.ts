@@ -39,6 +39,12 @@ const router = createRouter({
           meta: { title: '路线阶段' },
         },
         {
+          path: 'roadmap/modules/:id',
+          name: 'roadmap-module',
+          component: () => import('@/modules/roadmap/ModuleView.vue'),
+          meta: { title: '路线模块' },
+        },
+        {
           path: 'roadmap/nodes/:id',
           name: 'roadmap-node',
           component: () => import('@/modules/roadmap/NodeView.vue'),

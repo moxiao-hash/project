@@ -9,7 +9,7 @@
   >
     <component
       :is="locked ? 'div' : RouterLink"
-      v-bind="locked ? {} : { to: { name: 'roadmap-node', params: { id: node.id } } }"
+      v-bind="locked ? {} : { to: nodeRoute }"
       class="roadmap-node-card__body"
     >
       <div class="roadmap-node-card__topline">
@@ -34,6 +34,7 @@ import type { RoadmapNode } from '@/types/roadmap'
 const props = withDefaults(defineProps<{
   node: RoadmapNode
   compact?: boolean
+  moduleId?: string
 }>(), { compact: false })
 
 const statusLabels: Record<RoadmapNode['displayStatus'], string> = {
@@ -47,6 +48,11 @@ const statusLabels: Record<RoadmapNode['displayStatus'], string> = {
 }
 
 const locked = computed(() => props.node.displayStatus === 'LOCKED')
+const nodeRoute = computed(() => ({
+  name: 'roadmap-node',
+  params: { id: props.node.id },
+  query: props.moduleId ? { moduleId: props.moduleId } : {},
+}))
 const statusLabel = computed(() => statusLabels[props.node.displayStatus])
 const lockedReason = computed(() => locked.value
   ? `完成前置节点后解锁：${props.node.prerequisiteCodes.join('、')}`

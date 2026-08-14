@@ -9,9 +9,16 @@
           </h2>
         </header>
         <ol class="roadmap-list__nodes">
-          <li v-for="item in stage.nodes" :key="item.id">
-            <RoadmapNodeCard :node="item" compact />
-          </li>
+          <template v-if="stage.modules?.length">
+            <li v-for="item in stage.modules" :key="item.id">
+              <RoadmapModuleCard :module="item" compact />
+            </li>
+          </template>
+          <template v-else>
+            <li v-for="item in stage.nodes" :key="item.id">
+              <RoadmapNodeCard :node="item" compact />
+            </li>
+          </template>
         </ol>
       </li>
     </ol>
@@ -21,6 +28,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import RoadmapNodeCard from './RoadmapNodeCard.vue'
+import RoadmapModuleCard from './RoadmapModuleCard.vue'
 import type { RoadmapStage } from '@/types/roadmap'
 
 defineProps<{ stages: RoadmapStage[] }>()

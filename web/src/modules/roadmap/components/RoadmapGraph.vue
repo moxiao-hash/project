@@ -12,9 +12,16 @@
         </div>
       </header>
       <ol class="roadmap-graph__branches">
-        <li v-for="item in stage.nodes" :key="item.id">
-          <RoadmapNodeCard :node="item" />
-        </li>
+        <template v-if="stage.modules?.length">
+          <li v-for="item in stage.modules" :key="item.id">
+            <RoadmapModuleCard :module="item" />
+          </li>
+        </template>
+        <template v-else>
+          <li v-for="item in stage.nodes" :key="item.id">
+            <RoadmapNodeCard :node="item" />
+          </li>
+        </template>
       </ol>
     </article>
   </section>
@@ -23,6 +30,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import RoadmapNodeCard from './RoadmapNodeCard.vue'
+import RoadmapModuleCard from './RoadmapModuleCard.vue'
 import type { RoadmapStage } from '@/types/roadmap'
 
 defineProps<{ stages: RoadmapStage[] }>()

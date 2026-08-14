@@ -3,6 +3,7 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NodeView from './NodeView.vue'
+import ModuleView from './ModuleView.vue'
 import RoadmapView from './RoadmapView.vue'
 import StageView from './StageView.vue'
 import RoadmapNodeCard from './components/RoadmapNodeCard.vue'
@@ -14,6 +15,7 @@ vi.mock('@/services/roadmap', () => ({
     enroll: vi.fn(),
     getCurrentMap: vi.fn(),
     getStage: vi.fn(),
+    getModule: vi.fn(),
     getNode: vi.fn(),
   },
 }))
@@ -55,6 +57,7 @@ function stage(overrides: Partial<RoadmapStage> = {}): RoadmapStage {
     graduationProjectTitle: 'Java 命令行学习记录器',
     completedRequiredNodes: 0,
     totalRequiredNodes: 2,
+    modules: [],
     nodes: [
       node(),
       node({
@@ -70,6 +73,52 @@ function stage(overrides: Partial<RoadmapStage> = {}): RoadmapStage {
     ],
     ...overrides,
   }
+}
+
+function moduleFixture() {
+  const nodes = [
+    node({
+      id: 'node-variables', code: 'variables-types-conversion', order: 2,
+      title: '变量、类型与转换', prerequisiteCodes: ['java-environment-first-program'],
+    }),
+    node({
+      id: 'node-milestone', code: 'arrays-basic-traversal', order: 7,
+      title: '数组基础与遍历里程碑', prerequisiteCodes: ['variables-types-conversion'],
+      displayStatus: 'LOCKED', availabilityStatus: 'LOCKED', artifactStatus: 'MISSING',
+    }),
+  ]
+  return {
+    id: 'module-java-language',
+    stageId: 'stage-java',
+    code: 'java-language-start',
+    order: 1,
+    title: 'Java 语言起步',
+    description: '从环境搭建到数组遍历，建立可运行的语言基础。',
+    completedRequiredNodes: 1,
+    totalRequiredNodes: 7,
+    displayStatus: 'LOCKED' as const,
+    milestoneNode: nodes[1],
+    nodes,
+  }
+}
+
+function stageWithModules(): RoadmapStage {
+  const module = moduleFixture()
+  return stage({
+    modules: [{
+      id: module.id,
+      code: module.code,
+      order: module.order,
+      title: module.title,
+      description: module.description,
+      completedRequiredNodes: module.completedRequiredNodes,
+      totalRequiredNodes: module.totalRequiredNodes,
+      milestoneNodeId: module.milestoneNode.id,
+      milestoneNodeCode: module.milestoneNode.code,
+      displayStatus: module.displayStatus,
+    }],
+    nodes: module.nodes,
+  })
 }
 
 function fixtureRoadmap(): RoadmapMap {
@@ -90,8 +139,9 @@ function makeRouter(): Router {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
-      { path: '/roadmap', component: { template: '<div />' } },
+      { path: '/roadmap', name: 'roadmap', component: { template: '<div />' } },
       { path: '/roadmap/stages/:id', name: 'roadmap-stage', component: { template: '<div />' } },
+      { path: '/roadmap/modules/:id', name: 'roadmap-module', component: { template: '<div />' } },
       { path: '/roadmap/nodes/:id', name: 'roadmap-node', component: { template: '<div />' } },
     ],
   })
@@ -129,6 +179,26 @@ describe('roadmap read views', () => {
     expect(wrapper.get('#roadmap-list').element.tagName).toBe('SECTION')
     expect(wrapper.get('#roadmap-list').find('ol').exists()).toBe(true)
     expect(wrapper.get('#roadmap-list').text()).toContain('Java 语法')
+  })
+
+  it('uses module summaries as the overview hierarchy for granular roadmaps', async () => {
+    vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue({
+      ...fixtureRoadmap(),
+      templateVersion: 2,
+      stages: [stageWithModules()],
+    })
+    const { wrapper } = await mountAt(RoadmapView)
+    await flushPromises()
+
+    const graph = wrapper.get('[data-testid="roadmap-graph"]')
+    expect(graph.text()).toContain('Java 语言起步')
+    expect(graph.find('a[href="/roadmap/modules/module-java-language"]').exists()).toBe(true)
+    expect(graph.find('a[href="/roadmap/nodes/node-variables"]').exists()).toBe(false)
+
+    await wrapper.get('button[aria-controls="roadmap-list"]').trigger('click')
+    const list = wrapper.get('#roadmap-list')
+    expect(list.text()).toContain('里程碑 arrays-basic-traversal')
+    expect(list.find('a[href="/roadmap/modules/module-java-language"]').exists()).toBe(true)
   })
 
   it('renders visible statuses, optional styling, and links only unlocked nodes', async () => {
@@ -241,6 +311,69 @@ describe('roadmap read views', () => {
     expect(wrapper.text()).toContain('集合、泛型')
   })
 
+  it('shows ordered module summaries on granular stages and links them by module id', async () => {
+    vi.mocked(roadmapApi.getStage).mockResolvedValue(stageWithModules())
+    const { wrapper } = await mountAt(StageView, '/roadmap/stages/stage-java')
+    await flushPromises()
+
+    const modules = wrapper.get('[data-testid="stage-modules"]')
+    expect(modules.text()).toContain('Java 语言起步')
+    expect(modules.text()).toContain('1 / 7 个必修节点')
+    expect(modules.text()).toContain('里程碑：arrays-basic-traversal')
+    expect(modules.get('a').attributes('href')).toBe('/roadmap/modules/module-java-language')
+    expect(wrapper.find('[data-testid="stage-nodes"]').exists()).toBe(false)
+  })
+
+  it('loads a module by route id and shows progress, milestone, prerequisites, and ordered nodes', async () => {
+    const module = moduleFixture()
+    vi.mocked(roadmapApi.getModule).mockResolvedValue({
+      ...module,
+      nodes: [...module.nodes].reverse(),
+    })
+    const { wrapper } = await mountAt(ModuleView, '/roadmap/modules/module-java-language')
+    await flushPromises()
+
+    expect(roadmapApi.getModule).toHaveBeenCalledWith('module-java-language')
+    expect(wrapper.text()).toContain('Java 语言起步')
+    expect(wrapper.text()).toContain('必修进度 1 / 7')
+    expect(wrapper.text()).toContain('里程碑：数组基础与遍历里程碑')
+    expect(wrapper.text()).toContain('模块前置：java-environment-first-program')
+    expect(wrapper.text()).toContain('该模块尚未解锁，请先完成模块前置节点。')
+    expect(wrapper.findAll('[data-testid="module-nodes"] > li').map((item) => item.text()))
+      .toEqual(expect.arrayContaining([
+        expect.stringContaining('变量、类型与转换'),
+        expect.stringContaining('数组基础与遍历里程碑'),
+      ]))
+    expect(wrapper.get('[data-testid="module-nodes"] > li:first-child').text())
+      .toContain('变量、类型与转换')
+    expect(wrapper.get('[data-testid="module-nodes"] > li:first-child a').attributes('href'))
+      .toBe('/roadmap/nodes/node-variables?moduleId=module-java-language')
+  })
+
+  it('ignores stale module responses and state updates after unmount', async () => {
+    const oldModule = deferred<ReturnType<typeof moduleFixture>>()
+    const unmountedModule = deferred<ReturnType<typeof moduleFixture>>()
+    vi.mocked(roadmapApi.getModule)
+      .mockReturnValueOnce(oldModule.promise)
+      .mockResolvedValueOnce({ ...moduleFixture(), id: 'module-new', title: '新模块' })
+      .mockReturnValueOnce(unmountedModule.promise)
+    const { wrapper, router } = await mountAt(ModuleView, '/roadmap/modules/module-old')
+    await router.push('/roadmap/modules/module-new')
+    await flushPromises()
+    oldModule.resolve(moduleFixture())
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('新模块')
+    expect(wrapper.text()).not.toContain('Java 语言起步')
+
+    await router.push('/roadmap/modules/module-unmounted')
+    await flushPromises()
+    wrapper.unmount()
+    unmountedModule.resolve({ ...moduleFixture(), title: '不应渲染' })
+    await flushPromises()
+    expect(roadmapApi.getModule).toHaveBeenCalledTimes(3)
+  })
+
   it('ignores a stale stage response after the route changes', async () => {
     const first = deferred<RoadmapStage>()
     vi.mocked(roadmapApi.getStage)
@@ -274,6 +407,20 @@ describe('roadmap read views', () => {
       .toBe('/roadmap/nodes/node-basics')
     expect(wrapper.text()).toContain('打卡、测验和必交成果全部满足后才完成节点')
     expect(wrapper.find('button').exists()).toBe(false)
+  })
+
+  it('keeps module context when navigating into a node', async () => {
+    vi.mocked(roadmapApi.getNode).mockResolvedValue(node())
+    const { wrapper } = await mountAt(
+      NodeView,
+      '/roadmap/nodes/node-java?moduleId=module-java-language',
+    )
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="node-back"]').attributes('href'))
+      .toBe('/roadmap/modules/module-java-language')
+    expect(wrapper.get('[data-testid="node-back"]').text()).toContain('返回所属模块')
+    expect(wrapper.text()).toContain('能够编写结构清晰的 Java 类')
   })
 
   it('resolves prerequisite codes to current-roadmap node ids and never creates bogus links', async () => {
@@ -342,14 +489,17 @@ describe('roadmap read views', () => {
     expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(1)
   })
 
-  it('renders stable not-found states for missing stage and node', async () => {
+  it('renders stable not-found states for missing stage, module, and node', async () => {
     vi.mocked(roadmapApi.getStage).mockRejectedValue({ response: { status: 404 } })
+    vi.mocked(roadmapApi.getModule).mockRejectedValue({ response: { status: 404 } })
     vi.mocked(roadmapApi.getNode).mockRejectedValue({ response: { status: 404 } })
     const stageView = await mountAt(StageView, '/roadmap/stages/missing-stage')
+    const moduleView = await mountAt(ModuleView, '/roadmap/modules/missing-module')
     const nodeView = await mountAt(NodeView, '/roadmap/nodes/missing-node')
     await flushPromises()
 
     expect(stageView.wrapper.text()).toContain('未找到该路线阶段')
+    expect(moduleView.wrapper.text()).toContain('未找到该路线模块')
     expect(nodeView.wrapper.text()).toContain('未找到该学习节点')
   })
 })
