@@ -4408,11 +4408,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "计算或推导命令/查询分离案例的最终结果。",
-                "定位工具输入 JSON Schema配置中的歧义点。",
-                "编写业务错误码操作的幂等性验证。",
-                "比较命令/查询分离在小规模与大规模下的表现。",
-                "设计工具输入 JSON Schema异常时的人工处置步骤。"
+                "为 get_invoice 查询与 charge_invoice 命令执行命令/查询分离，列出前者不得产生的数据库写入。",
+                "编写 charge_invoice 的工具输入 JSON Schema，要求 invoice_id 与 amount 必填并拒绝未知字段。",
+                "给 dry_run=true 的扣款请求返回预览，验证结果包含 side_effect=CHARGE 且实际扣款次数为零。",
+                "定义 INVOICE_NOT_FOUND、LIMIT_EXCEEDED 两个业务错误码，判断 Agent 对哪一个可改参重试。",
+                "检查工具输出 DTO 只暴露 invoice_id、status 与 total，说明为何不得回传数据库内部 version 字段。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4450,11 +4450,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "计算或推导意图分类置信度案例的最终结果。",
-                "定位结构化执行计划配置中的歧义点。",
-                "编写参数差异预览操作的幂等性验证。",
-                "比较意图分类置信度在小规模与大规模下的表现。",
-                "设计结构化执行计划异常时的人工处置步骤。"
+                "读取 refund 意图的 confidence=0.62，按自动执行阈值 0.85 判断应澄清还是继续生成预览。",
+                "为结构化执行计划写出 tool、arguments、risk_level 与意图分类置信度字段，并校验 JSON 类型。",
+                "比较用户原文与规范化参数，生成 amount 100→1000 的参数差异预览并标为高风险。",
+                "确认时冻结 snapshot_hash=sha256:a91，验证后续重新解析文本不会替换已审批参数。",
+                "设计低风险查询与高风险退款两条分支，说明用户确认快照在哪个状态成为不可变。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4492,11 +4492,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "计算或推导RBAC 角色权限案例的最终结果。",
-                "定位ABAC 属性策略配置中的歧义点。",
-                "编写策略决策点 PDP操作的幂等性验证。",
-                "比较RBAC 角色权限在小规模与大规模下的表现。",
-                "设计ABAC 属性策略异常时的人工处置步骤。"
+                "给 subject.role=agent_operator 配置 RBAC 角色权限，判断其能否调用 refund 工具而不能调用 grant_role。",
+                "用 ABAC 属性策略校验 resource.owner_id=user-42 与当前 subject id，写出跨用户访问的拒绝原因。",
+                "在策略决策点 PDP 同时输入 tool scope、租户和资源归属，构造明确的 DENY 决策记录。",
+                "撤销 refund scope 后重放旧 token，验证资源级授权拒绝且审批审计仍保留 token 版本。",
+                "比较角色允许但资源属性不匹配的请求，说明最终拒绝为何遵循最小权限交集。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4533,11 +4533,11 @@
                 "description": "提交受控业务工具集；pytest 覆盖 JSON Schema、RBAC/ABAC、dry-run 和拒绝审计。"
               },
               "quizBlueprint": [
-                "计算或推导dry-run immutable snapshot案例的最终结果。",
-                "定位policy decision配置中的歧义点。",
-                "编写RBAC/ABAC操作的幂等性验证。",
-                "比较dry-run immutable snapshot在小规模与大规模下的表现。",
-                "设计policy decision异常时的人工处置步骤。"
+                "执行 dry-run immutable snapshot，记录参数摘要、预期副作用和 snapshot hash，再验证数据库未改变。",
+                "对跨租户 invoice 运行 RBAC/ABAC，要求审计事件写入 policy_decision=DENY 与规则 id。",
+                "批准预览后携带 Idempotency-Key=order-731 实际执行两次，断言只产生一笔业务写入。",
+                "篡改 snapshot 中的 amount 后重新计算 hash，设计 policy decision 在授权前拒绝不一致请求。",
+                "检查 allow 与 deny 两条 audit 记录均含主体、资源、幂等键和 correlationId，且敏感字段已脱敏。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4583,11 +4583,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "计算或推导幂等键案例的最终结果。",
-                "定位请求指纹配置中的歧义点。",
-                "编写执行状态机操作的幂等性验证。",
-                "比较幂等键在小规模与大规模下的表现。",
-                "设计请求指纹异常时的人工处置步骤。"
+                "把幂等键 refund-82 绑定 fingerprint=POST:/refund:9b7，说明请求指纹必须覆盖哪些规范化参数。",
+                "两个线程同时提交同一 key，推演执行状态机从 NEW 到 RUNNING 时只有一个线程获得执行权。",
+                "首次调用完成为 state=SUCCEEDED 但响应丢失，验证重试执行结果重放且副作用次数仍为一。",
+                "同一 key 携带不同 amount 到达时，设计冲突响应而不是返回旧业务结果。",
+                "比较可重试超时与永久校验失败，列出失败补偿何时进入状态机而何时直接终止。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4624,11 +4624,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查DAG topological order输入是否满足前置条件。",
-                "实现precondition并输出便于排错的证据。",
-                "分析budget accounting被跳过时的连锁影响。",
-                "写出DAG topological order的代码审查清单。",
-                "验证precondition升级后仍兼容budget accounting。"
+                "给依赖 A→C、B→C 的计划写出 DAG topological order，并判断 C 在何时满足 precondition。",
+                "在计划中加入 C→A，使用环检测拒绝该 DAG，输出参与环的节点而不是开始执行。",
+                "配置 token_budget=6000、step_budget=8 与 amount_budget=500，设计 budget accounting 每步扣减事件。",
+                "第 4 步工具永久失败时，比较 termination 与 replan 分支，要求重规划也消耗剩余预算。",
+                "检查每个计划节点的输入都来自已完成前驱输出，写出缺失字段时不可执行的原因。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4665,11 +4665,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查Saga 补偿输入是否满足前置条件。",
-                "实现重试边界并输出便于排错的证据。",
-                "分析死信队列被跳过时的连锁影响。",
-                "写出Saga 补偿的代码审查清单。",
-                "验证重试边界升级后仍兼容死信队列。"
+                "给已成功扣款 charge_id=ch_82 但出票失败的流程设计 Saga 补偿，确保重复退款返回原结果。",
+                "区分网络超时、参数无效与资源已关闭三类错误，为每类写出重试边界与最大次数。",
+                "补偿连续失败后写入死信队列并标注 dead_letter reason=TICKET_TIMEOUT，保留 correlationId、原步骤和最后错误。",
+                "从 checkpoint 断点续跑时检查已完成扣款步骤不再执行，只恢复待补偿状态。",
+                "设计人工接管操作：认领死信、记录处置原因、执行幂等补偿并关闭事件。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4707,11 +4707,11 @@
                 "description": "提交业务 Agent 状态机；端到端测试证明幂等执行、补偿、死信与人工接管。"
               },
               "quizBlueprint": [
-                "检查意图到工具闭环输入是否满足前置条件。",
-                "实现审批与授权并输出便于排错的证据。",
-                "分析事务边界被跳过时的连锁影响。",
-                "写出意图到工具闭环的代码审查清单。",
-                "验证审批与授权升级后仍兼容事务边界。"
+                "用 trace_id=ba-204 串起意图到工具闭环，列出预览、审批与授权、执行五个 span 的父子关系。",
+                "构造高风险退款从参数预览到用户批准的状态流，验证审批 hash 与执行输入一致。",
+                "在事务边界提交失败时禁止先返回成功，设计回滚后进入失败补偿的断言。",
+                "补偿也失败时写入 compensation_status=MANUAL_REVIEW，并验证人工队列收到原 correlationId。",
+                "重复发送同一端到端请求，检查幂等结果、审计事件和业务写入三者可以按 key 对齐。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4765,11 +4765,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查ripgrep glob/type输入是否满足前置条件。",
-                "实现文件树并输出便于排错的证据。",
-                "分析符号引用被跳过时的连锁影响。",
-                "写出ripgrep glob/type的代码审查清单。",
-                "验证文件树升级后仍兼容符号引用。"
+                "运行 rg --files --glob '!vendor/**' 建立文件树，说明 ripgrep glob/type 如何排除构建产物与二进制文件。",
+                "用 rg -n 'createInvoice' 定位定义与符号引用，列出修改公共签名前必须阅读的调用点。",
+                "比较 rg --files 结果与 .gitignore，检查被忽略的密钥文件不会进入 Agent 上下文。",
+                "从 Controller 入口沿 Service 到 Repository 读取最小调用链，计算纳入上下文的文件数量。",
+                "当搜索结果超过上下文窗口时，设计按入口相关度裁剪的规则并保留命中文件路径。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4806,11 +4806,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查call graph输入是否满足前置条件。",
-                "实现symbol references并输出便于排错的证据。",
-                "分析blast radius被跳过时的连锁影响。",
-                "写出call graph的代码审查清单。",
-                "验证symbol references升级后仍兼容blast radius。"
+                "从 createInvoice 构建 call graph，区分必须修改的实现文件与只需运行验证的调用方。",
+                "检查 symbol references 中三个直接调用点，以 blast radius 记录 blast_radius=3_files 并解释遗漏一个调用点的风险。",
+                "写出 acceptance criteria：目标测试、错误响应与保持兼容的公共 API，各自对应可观察证据。",
+                "把 must_not_touch=V24__create.sql 加入 risk list，验证计划中的每个补丁文件都不命中保护项。",
+                "在 context budget 只剩 8k tokens 时，选择保留入口、实现、测试还是无关配置并说明顺序。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4847,11 +4847,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析diff hunk @@数据流中的信任边界。",
-                "设计上下文行的超时、取消和重试策略。",
-                "实现新增/删除标记并证明没有泄露敏感信息。",
-                "判断diff hunk @@结果能否安全缓存。",
-                "编写集成测试覆盖上下文行的依赖故障。"
+                "阅读 diff hunk @@ -18,3 +18,4 @@，计算旧文件与新文件各覆盖几行并定位新增行。",
+                "检查 unified diff 的上下文行只包围目标方法，删除无关格式化后比较补丁大小。",
+                "区分 +、- 与空格三种新增/删除标记，判断哪一行会改变程序行为。",
+                "基线移动后出现 context mismatch at line 42，设计重新读取文件并生成新补丁的步骤。",
+                "运行补丁应用检查，验证任何 hunk 冲突时都停止整体提交并报告失败文件。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4888,11 +4888,11 @@
                 "description": "提交仓库修改 Agent；在样例仓库运行搜索、生成 diff，并由测试证明未改无关文件。"
               },
               "quizBlueprint": [
-                "分析rg --files/-n数据流中的信任边界。",
-                "设计git diff的超时、取消和重试策略。",
-                "实现focused test并证明没有泄露敏感信息。",
-                "判断rg --files/-n结果能否安全缓存。",
-                "编写集成测试覆盖git diff的依赖故障。"
+                "运行 rg --files -g '*.java' 后再用 rg --files/-n 定位目标类与测试，记录搜索命令和命中路径。",
+                "基于搜索结果生成只改两个文件的 git diff，逐个 hunk 对照 acceptance criteria。",
+                "先执行 focused test 并保存退出码，再运行相关模块回归，说明两层验证各捕获什么风险。",
+                "执行 git diff --check，构造尾随空格使检查失败，再修正并确认输出为空。",
+                "生成 change summary，列出修改文件、验证命令和保护文件未改变的 git diff 证据。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4938,11 +4938,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析测试选择器数据流中的信任边界。",
-                "设计构建超时的超时、取消和重试策略。",
-                "实现stdout/stderr 截断并证明没有泄露敏感信息。",
-                "判断测试选择器结果能否安全缓存。",
-                "编写集成测试覆盖构建超时的依赖故障。"
+                "执行只匹配 InvoiceServiceTest 的测试选择器，验证实际启动用例数不为零并完整传播 exit_code=1。",
+                "设计 120 秒构建超时，模拟超时后终止子进程并保留最后一个测试名。",
+                "实现 stdout/stderr 截断，把输出限制为 64KiB 并记录 stdout_truncated_bytes=4096，同时保留 stderr 摘要。",
+                "阅读 JUnit XML 的失败报告，输出 suite、case 与 message，而不是仅搜索日志中的 FAILED 字样。",
+                "比较测试进程正常失败、超时和被信号终止的退出码传播，设计互斥状态字段。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4980,11 +4980,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析status/diff 安全读取数据流中的信任边界。",
-                "设计分支 allowlist的超时、取消和重试策略。",
-                "实现提交身份并证明没有泄露敏感信息。",
-                "判断status/diff 安全读取结果能否安全缓存。",
-                "编写集成测试覆盖分支 allowlist的依赖故障。"
+                "先执行 status/diff 安全读取，列出未跟踪 .env 与目标源码，验证后续暂存不会包含密钥文件。",
+                "执行 git add -- src/A.java 显式暂存单个文件，再检查 cached diff 只有该路径。",
+                "实现把 refs/heads/codex/quiz-fix 纳入分支 allowlist，并拒绝对 main 的 force push 请求。",
+                "检查提交身份来自受控配置且邮箱非空，设计缺失身份时停止 commit 的错误。",
+                "模拟非交互 rebase 冲突，读取冲突路径并要求人工选择，不自动覆盖任一侧内容。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5021,11 +5021,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "分析locator strict mode数据流中的信任边界。",
-                "设计auto-wait的超时、取消和重试策略。",
-                "实现role selector并证明没有泄露敏感信息。",
-                "判断locator strict mode结果能否安全缓存。",
-                "编写集成测试覆盖auto-wait的依赖故障。"
+                "使用 getByRole('button', {name:'保存'}) 构造 role selector，验证页面只有一个可见匹配项。",
+                "分析两个按钮共享名称时触发的 locator strict mode，并用所在表单或对话框缩小语义范围。",
+                "点击后等待 /api/invoices 响应，比较 auto-wait 与固定 sleep 对慢速环境的稳定性。",
+                "测试超时时保存 trace.zip，定位 network expect 已完成但 DOM 按钮仍 disabled 的时间点。",
+                "用 trace viewer 检查请求、控制台和 DOM 快照，写出不把授权 token 放进失败摘要的规则。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5063,11 +5063,11 @@
                 "description": "提交开发自动化工具链；构建命令和 Playwright 测试通过，附 strict mode 失败 trace。"
               },
               "quizBlueprint": [
-                "实现ARIA 可访问名称后用具体命令验收。",
-                "说明键盘焦点顺序的错误如何传播到调用方。",
-                "比较WCAG 对比度开启前后的资源消耗。",
-                "定位ARIA 可访问名称中的竞态或顺序问题。",
-                "设计键盘焦点顺序与WCAG 对比度组合的恢复演练。"
+                "仅用 Tab、Shift+Tab 与 Enter 完成保存流程，记录键盘焦点顺序与焦点序列 1→2→3→4。",
+                "检查图标按钮的 ARIA 可访问名称为“关闭”，验证读屏定位不依赖视觉图标。",
+                "对正文与按钮运行 WCAG 对比度扫描，计算 4.2:1 是否满足普通文本门槛。",
+                "在 scaleFactor=1.5 下把逻辑坐标换算为屏幕坐标，验证缩放后仍点击同一可访问元素。",
+                "模拟桌面辅助权限未授予，设计清晰的权限提示与键盘可达重试入口。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -5121,11 +5121,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现cgroup CPU/内存限制后用具体命令验收。",
-                "说明seccomp 系统调用过滤的错误如何传播到调用方。",
-                "比较只读文件系统开启前后的资源消耗。",
-                "定位cgroup CPU/内存限制中的竞态或顺序问题。",
-                "设计seccomp 系统调用过滤与只读文件系统组合的恢复演练。"
+                "配置 cgroup CPU/内存限制，其中 memory.max=268435456，并验证超限任务被标记 OOM 而不影响其他租户。",
+                "设置 pids.max=64 后运行只创建受控子进程的测试，检查第 65 个进程被内核拒绝。",
+                "使用 seccomp 系统调用过滤阻止未授权系统调用，断言执行器返回策略拒绝而不是宿主错误。",
+                "把工作区挂载为只读文件系统，仅允许 /workspace/out 写入，验证源码目录写入被拒绝。",
+                "触发 3 秒超时后清理完整进程树，检查父子 pid 均退出且临时输出目录按策略保留。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5162,11 +5162,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现API key 模式后用具体命令验收。",
-                "说明Shannon entropy的错误如何传播到调用方。",
-                "比较日志 redaction开启前后的资源消耗。",
-                "定位API key 模式中的竞态或顺序问题。",
-                "设计Shannon entropy与日志 redaction组合的恢复演练。"
+                "用 API key 模式检测测试日志中的受控假凭据，并验证输出只保留 sk-live-****7Qp2。",
+                "给无前缀样本计算 Shannon entropy，判断 entropy=4.71 是否超过告警阈值并记录规则 id。",
+                "执行日志 redaction 后比较原文与脱敏结果，确保内存、文件和测试报告都没有完整 secret。",
+                "验证允许列表命中固定测试 token 时只降低误报，不得跳过真实凭据模式或审计计数。",
+                "模拟已暴露凭据事件，列出撤销、凭据轮换、缓存清理和访问审计四个防御步骤。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5203,11 +5203,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现egress allowlist后用具体命令验收。",
-                "说明代理审计的错误如何传播到调用方。",
-                "验证代理拒绝访问 169.254.169.254、回环地址与解析到私网的域名，并记录 SSRF 防护审计结果。",
-                "定位egress allowlist中的竞态或顺序问题。",
-                "设计代理审计与SSRF组合的恢复演练。"
+                "配置 egress allowlist 只允许 api.example.com:443，验证其他域名与非 443 端口均在代理前被拒绝。",
+                "记录代理审计中的原始域名、resolved_ip=10.0.0.8 与拒绝规则，且不保存 Authorization 值。",
+                "验证防护层拒绝 169.254.169.254、回环地址和私网地址段，并生成 SSRF 审计事件。",
+                "模拟允许域名发生 DNS rebinding，检查连接前二次解析仍会拦截变为私网的目标 IP。",
+                "跟随一次 HTTPS 重定向时重新执行域名与 IP 校验，证明初始允许不会授权新的目标。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5244,11 +5244,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "实现shell AST后用具体命令验收。",
-                "说明argv normalization的错误如何传播到调用方。",
-                "比较path canonicalization开启前后的资源消耗。",
-                "定位shell AST中的竞态或顺序问题。",
-                "设计argv normalization与path canonicalization组合的恢复演练。"
+                "解析受控 git status 请求的 shell AST，检查其中没有管道、重定向或命令替换节点。",
+                "执行 argv normalization 后验证 argv[0]=git、argv[1]=status，再按 executable 与参数 allowlist 决策。",
+                "验证输出路径经过 path canonicalization 后，canonical_path=/workspace/out.txt 位于允许目录内。",
+                "符号链接解析到工作区外时返回 DENY，记录原路径与规范路径而不尝试写入目标。",
+                "构造包含未批准管道节点的 AST，仅验证策略拒绝、deny audit 与执行次数为零。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5285,11 +5285,11 @@
                 "description": "提交受限执行器；攻击测试验证 OOM、超时、密钥脱敏、SSRF 和 DNS rebinding 均被阻断。"
               },
               "quizBlueprint": [
-                "验证seccomp在边界输入下返回什么。",
-                "编写cgroup的错误处理分支。",
-                "解释read-only mount为何是该主题的关键约束。",
-                "分析seccomp配置变更的兼容性风险。",
-                "实现一个综合cgroup和read-only mount的实践任务。"
+                "运行受控系统调用拒绝用例，验证 seccomp_action=SCMP_ACT_ERRNO 且执行器返回安全错误。",
+                "给 cgroup 设置 CPU、内存与进程数上限，检查任一超限只终止当前任务的进程树。",
+                "在 read-only mount 上尝试测试写入，断言策略拒绝并确认源文件 hash 未改变。",
+                "代理对解析到私网的请求记录 egress_decision=BLOCK，验证 SSRF defense 在重定向后仍生效。",
+                "扫描受控假密钥并检查 secret entropy 与脱敏结果，确保安全报告没有暴露完整样本。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -5335,11 +5335,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "验证run_id 全链路在边界输入下返回什么。",
-                "编写结构化事件的错误处理分支。",
-                "解释checkpoint 恢复为何是该主题的关键约束。",
-                "分析run_id 全链路配置变更的兼容性风险。",
-                "实现一个综合结构化事件和checkpoint 恢复的实践任务。"
+                "用 run_id=run-204 串联 run_id 全链路的日志、span 与工具事件，按时间戳重建执行顺序。",
+                "定义结构化事件字段 event_type、node、attempt、outcome 与 parent_span，检查失败事件可聚合。",
+                "从 checkpoint=cp-88 执行 checkpoint 恢复，验证已完成的收费副作用不会再次运行。",
+                "设计每次重试创建新 child span 并扣减重试预算，避免复用旧 span 混淆因果关系。",
+                "预算耗尽时转入人工接管，记录最后 checkpoint、错误分类和可安全展示的输入摘要。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5376,11 +5376,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "验证金丝雀流量阶梯在边界输入下返回什么。",
-                "编写蓝绿切换的错误处理分支。",
-                "解释feature flag为何是该主题的关键约束。",
-                "分析金丝雀流量阶梯配置变更的兼容性风险。",
-                "实现一个综合蓝绿切换和feature flag的实践任务。"
+                "按 1%→10%→50%→100% 执行金丝雀流量阶梯，写出每一级需要满足的观察窗口。",
+                "10% 阶段观测 p95_ms=920 超过 800ms 门槛，判断应暂停放量、回退还是继续。",
+                "比较蓝绿切换前后的健康检查与业务错误率，验证旧环境在稳定窗口内仍可接管流量。",
+                "关闭 feature flag 后检查新代码仍部署但功能入口不可达，证明紧急关闭无需重新发版。",
+                "错误预算在观察窗口内消耗 35%，设计自动停止条件与对应发布审计事件。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5417,11 +5417,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "验证RTO 恢复时间在边界输入下返回什么。",
-                "编写RPO 数据窗口的错误处理分支。",
-                "解释备份校验为何是该主题的关键约束。",
-                "分析RTO 恢复时间配置变更的兼容性风险。",
-                "实现一个综合RPO 数据窗口和备份校验的实践任务。"
+                "计算 RTO 恢复时间：从故障宣布到服务恢复测得 RTO=23m，比较 30 分钟目标并判断是否达标。",
+                "检查 RPO 数据窗口：最后可用备份落后故障点 RPO=5m，列出需要向业务确认的数据范围。",
+                "执行备份校验并从副本恢复到隔离环境，比较行数、校验和与关键业务查询。",
+                "旧应用遇到新增 nullable 列时验证向后兼容迁移，说明为何先删列会阻断回滚。",
+                "填写演练记录：时间线、实际 RTO/RPO、未恢复对象、负责人和后续修复项。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -5459,11 +5459,11 @@
                 "description": "提交发布恢复演练；烟测通过，金丝雀阈值触发回滚，并记录实测 RTO、RPO 与 SLO。"
               },
               "quizBlueprint": [
-                "验证供应链 SBOM在边界输入下返回什么。",
-                "编写镜像签名的错误处理分支。",
-                "解释灰度发布为何是该主题的关键约束。",
-                "分析供应链 SBOM配置变更的兼容性风险。",
-                "实现一个综合镜像签名和灰度发布的实践任务。"
+                "生成供应链 SBOM 并校验 sbom_digest=sha256:7ac 与发布镜像标签绑定，检查依赖清单可追溯。",
+                "验证镜像签名的主体、证书链与 digest，设计签名不匹配时阻止部署的断言。",
+                "在灰度发布环境运行授权拒绝、密钥脱敏和网络阻断三类安全回归，记录每类结果。",
+                "分析监控中 slo_burn_rate=3.2 且 P95 超阈值的信号，触发回滚演练并冻结后续放量。",
+                "恢复兼容的应用与数据库版本后执行烟测，记录实际 RTO、RPO 和 SLO 恢复时间。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,

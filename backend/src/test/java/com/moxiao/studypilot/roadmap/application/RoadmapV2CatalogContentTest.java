@@ -478,6 +478,45 @@ class RoadmapV2CatalogContentTest {
         });
     }
 
+    @Test
+    void stageTenToTwelveQuizzesContainHandcraftedNodeSpecificEvidence() {
+        Map<String, List<String>> expected = Map.ofEntries(
+                Map.entry("business-tool-contracts", List.of("dry_run=true", "side_effect=CHARGE")),
+                Map.entry("intent-preview", List.of("confidence=0.62", "snapshot_hash=sha256:a91")),
+                Map.entry("authorization-governance", List.of("subject.role=agent_operator", "resource.owner_id=user-42")),
+                Map.entry("business-tools-project", List.of("policy_decision=DENY", "Idempotency-Key=order-731")),
+                Map.entry("idempotent-execution", List.of("fingerprint=POST:/refund:9b7", "state=SUCCEEDED")),
+                Map.entry("business-agent-planning", List.of("A→C、B→C", "token_budget=6000")),
+                Map.entry("business-agent-recovery", List.of("charge_id=ch_82", "dead_letter reason=TICKET_TIMEOUT")),
+                Map.entry("business-agent-e2e", List.of("trace_id=ba-204", "compensation_status=MANUAL_REVIEW")),
+                Map.entry("repo-read-search", List.of("rg -n 'createInvoice'", "--glob '!vendor/**'")),
+                Map.entry("code-context-planning", List.of("blast_radius=3_files", "must_not_touch=V24__create.sql")),
+                Map.entry("patch-diff", List.of("@@ -18,3 +18,4 @@", "context mismatch at line 42")),
+                Map.entry("repository-agent-project", List.of("rg --files -g '*.java'", "git diff --check")),
+                Map.entry("test-build-tools", List.of("exit_code=1", "stdout_truncated_bytes=4096")),
+                Map.entry("git-tools", List.of("git add -- src/A.java", "refs/heads/codex/quiz-fix")),
+                Map.entry("playwright-dom", List.of("getByRole('button'", "trace.zip")),
+                Map.entry("accessibility-desktop", List.of("焦点序列 1→2→3→4", "scaleFactor=1.5")),
+                Map.entry("runner-sandbox", List.of("memory.max=268435456", "pids.max=64")),
+                Map.entry("secret-redaction", List.of("sk-live-****7Qp2", "entropy=4.71")),
+                Map.entry("network-firewall", List.of("resolved_ip=10.0.0.8", "169.254.169.254")),
+                Map.entry("runner-policy-engine", List.of("argv[0]=git", "canonical_path=/workspace/out.txt")),
+                Map.entry("runner-security-project", List.of("seccomp_action=SCMP_ACT_ERRNO", "egress_decision=BLOCK")),
+                Map.entry("observability-recovery", List.of("run_id=run-204", "checkpoint=cp-88")),
+                Map.entry("release-strategy", List.of("1%→10%→50%→100%", "p95_ms=920")),
+                Map.entry("rollback-drill", List.of("RTO=23m", "RPO=5m")),
+                Map.entry("release-e2e", List.of("sbom_digest=sha256:7ac", "slo_burn_rate=3.2")));
+        assertThat(expected).hasSize(25);
+        assertThat(expected.values()).allSatisfy(fragments -> assertThat(fragments).hasSize(2));
+        assertThat(expected.values().stream().flatMap(List::stream).toList()).doesNotHaveDuplicates();
+        expected.forEach((code, fragments) -> {
+            JsonNode node = nodes().stream().filter(it -> code.equals(it.get("code").asString()))
+                    .findFirst().orElseThrow();
+            assertThat(node.get("quizBlueprint").toString()).as(code)
+                    .contains(fragments.toArray(String[]::new));
+        });
+    }
+
     private static List<String> row(String code, String title, int order) {
         return List.of(code, title, Integer.toString(order));
     }
