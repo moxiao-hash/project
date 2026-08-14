@@ -25,9 +25,10 @@ public class InternalRoadmapQuizJobController {
     @PostMapping("/{jobId}/heartbeat")
     public RoadmapQuizJobPayload heartbeat(
             @PathVariable String jobId,
-            @Valid @RequestBody ClaimRoadmapQuizJobRequest request
+            @Valid @RequestBody RenewRoadmapQuizJobLeaseRequest request
     ) {
-        return service.heartbeatQuizJob(jobId, request.workerId(), request.leaseSeconds());
+        return service.heartbeatQuizJob(
+                jobId, request.workerId(), request.leaseToken(), request.leaseSeconds());
     }
 
     @PostMapping("/{jobId}/fail")
@@ -35,7 +36,7 @@ public class InternalRoadmapQuizJobController {
             @PathVariable String jobId,
             @Valid @RequestBody FailRoadmapQuizJobRequest request
     ) {
-        return service.failQuizJob(jobId, request.workerId(), request.error());
+        return service.failQuizJob(jobId, request.workerId(), request.leaseToken(), request.error());
     }
 
     @PostMapping("/{jobId}/complete")
@@ -43,6 +44,7 @@ public class InternalRoadmapQuizJobController {
             @PathVariable String jobId,
             @Valid @RequestBody CompleteRoadmapQuizJobRequest request
     ) {
-        return service.completeQuizJob(jobId, request.workerId(), request.quizId());
+        return service.completeQuizJob(
+                jobId, request.workerId(), request.leaseToken(), request.quizId());
     }
 }

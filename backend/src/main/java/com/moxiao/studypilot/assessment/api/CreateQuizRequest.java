@@ -19,6 +19,8 @@ public record CreateQuizRequest(
         String taskId,
         String lessonId,
         String roadmapNodeId,
+        String userRoadmapId,
+        String roadmapStageId,
         RoadmapQuizPurpose purpose,
         @NotBlank @Size(max = 160) String title,
         @NotBlank @Size(max = 100) String modelName,

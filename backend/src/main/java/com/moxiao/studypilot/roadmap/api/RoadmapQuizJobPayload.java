@@ -8,14 +8,14 @@ import java.time.Instant;
 public record RoadmapQuizJobPayload(
         String id, String ownerId, String nodeId, String checkInId,
         String checkInSummary, String purpose, String status, int retrySequence,
-        int attemptCount, String quizId, String lastError, Instant leaseUntil
+        int attemptCount, String leaseToken, String quizId, String lastError, Instant leaseUntil
 ) {
     public static RoadmapQuizJobPayload from(
             RoadmapQuizGenerationJobEntity job, RoadmapNodeCheckInEntity checkIn
     ) {
         return new RoadmapQuizJobPayload(job.getId(), job.getOwnerId(), job.getNodeId(),
                 job.getCheckInId(), checkIn.getSummary(), job.getPurpose().name(),
-                job.getStatus().name(), job.getRetrySequence(), job.getAttemptCount(),
+                job.getStatus().name(), job.getRetrySequence(), job.getAttemptCount(), job.getLeaseToken(),
                 job.getQuizId(), job.getLastError(), job.getLeaseUntil());
     }
 }

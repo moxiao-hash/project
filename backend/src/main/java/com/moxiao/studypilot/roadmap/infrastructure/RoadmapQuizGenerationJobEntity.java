@@ -10,6 +10,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "roadmap_quiz_generation_jobs")
@@ -41,6 +42,8 @@ public class RoadmapQuizGenerationJobEntity {
     private String workerId;
     @Column(name = "lease_until")
     private Instant leaseUntil;
+    @Column(name = "lease_token", length = 36)
+    private String leaseToken;
     @Column(name = "attempt_count", nullable = false)
     private int attemptCount;
     @Column(name = "last_error", length = 1000)
@@ -96,31 +99,39 @@ public class RoadmapQuizGenerationJobEntity {
         }
         status = RoadmapQuizGenerationStatus.LEASED;
         this.workerId = workerId;
+        leaseToken = UUID.randomUUID().toString();
         leaseUntil = now.plusSeconds(leaseSeconds);
         attemptCount++;
         updatedAt = now;
     }
 
-    public void heartbeat(String workerId, int leaseSeconds, Instant now) {
-        requireActiveLease(workerId, now);
+    public void heartbeat(String workerId, String leaseToken, int leaseSeconds, Instant now) {
+        requireActiveLease(workerId, leaseToken, now);
         leaseUntil = now.plusSeconds(leaseSeconds);
         updatedAt = now;
     }
 
-    public void complete(String workerId, String quizId, Instant now) {
-        requireActiveLease(workerId, now);
+    public void complete(String workerId, String leaseToken, String quizId, Instant now) {
+        if (status == RoadmapQuizGenerationStatus.COMPLETED) {
+            if (workerId.equals(this.workerId) && leaseToken.equals(this.leaseToken)
+                    && quizId.equals(this.quizId)) {
+                return;
+            }
+            throw new IllegalArgumentException("路线测验生成任务已由其他结果完成");
+        }
+        requireActiveLease(workerId, leaseToken, now);
         status = RoadmapQuizGenerationStatus.COMPLETED;
         this.quizId = quizId;
-        this.workerId = null;
         leaseUntil = null;
         lastError = null;
         updatedAt = now;
     }
 
-    public void fail(String workerId, String error, Instant now) {
-        requireActiveLease(workerId, now);
+    public void fail(String workerId, String leaseToken, String error, Instant now) {
+        requireActiveLease(workerId, leaseToken, now);
         lastError = error;
         this.workerId = null;
+        this.leaseToken = null;
         leaseUntil = null;
         status = attemptCount >= 3
                 ? RoadmapQuizGenerationStatus.FAILED
@@ -128,9 +139,24 @@ public class RoadmapQuizGenerationJobEntity {
         updatedAt = now;
     }
 
-    private void requireActiveLease(String workerId, Instant now) {
+    public boolean expireExhaustedLease(Instant now) {
+        if (status != RoadmapQuizGenerationStatus.LEASED || attemptCount < 3
+                || leaseUntil == null || leaseUntil.isAfter(now)) {
+            return false;
+        }
+        status = RoadmapQuizGenerationStatus.FAILED;
+        lastError = "生成任务租约连续三次过期";
+        workerId = null;
+        leaseToken = null;
+        leaseUntil = null;
+        updatedAt = now;
+        return true;
+    }
+
+    private void requireActiveLease(String workerId, String leaseToken, Instant now) {
         if (status != RoadmapQuizGenerationStatus.LEASED
                 || !workerId.equals(this.workerId)
+                || !leaseToken.equals(this.leaseToken)
                 || leaseUntil == null || !leaseUntil.isAfter(now)) {
             throw new IllegalArgumentException("路线测验生成任务租约无效");
         }
@@ -148,6 +174,7 @@ public class RoadmapQuizGenerationJobEntity {
     public RoadmapQuizGenerationStatus getStatus() { return status; }
     public String getWorkerId() { return workerId; }
     public Instant getLeaseUntil() { return leaseUntil; }
+    public String getLeaseToken() { return leaseToken; }
     public int getAttemptCount() { return attemptCount; }
     public String getLastError() { return lastError; }
     public String getQuizId() { return quizId; }

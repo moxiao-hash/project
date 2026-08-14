@@ -93,11 +93,14 @@ public class QuizService {
         if (request.taskId() != null && request.lessonId() != null) {
             throw new IllegalArgumentException("taskId 与 lessonId 只能提供一个");
         }
-        boolean roadmapQuiz = request.roadmapNodeId() != null || request.purpose() != null;
-        if (roadmapQuiz && (request.roadmapNodeId() == null
-                || request.purpose() != RoadmapQuizPurpose.NODE
-                || request.materialId() != null || request.taskId() != null || request.lessonId() != null)) {
-            throw new IllegalArgumentException("节点测验必须使用 NODE purpose 且只绑定 roadmapNodeId");
+        boolean routeOrigin = request.roadmapNodeId() != null
+                || request.userRoadmapId() != null || request.roadmapStageId() != null;
+        if (request.purpose() == null && routeOrigin) {
+            throw new IllegalArgumentException("路线来源必须提供明确的测验 purpose");
+        }
+        boolean roadmapQuiz = request.purpose() != null;
+        if (roadmapQuiz) {
+            validateRoadmapOrigin(request);
         }
         if (roadmapQuiz) {
             Set<String> signatures = new java.util.HashSet<>();
@@ -121,6 +124,8 @@ public class QuizService {
                 request.taskId(),
                 request.lessonId(),
                 request.roadmapNodeId(),
+                request.userRoadmapId(),
+                request.roadmapStageId(),
                 request.purpose(),
                 request.title().trim(),
                 request.modelName(),
@@ -161,6 +166,22 @@ public class QuizService {
             ));
         }
         return new QuizBundle(quiz, questionRepository.saveAll(questions));
+    }
+
+    private void validateRoadmapOrigin(CreateQuizRequest request) {
+        boolean legacyOrigin = request.materialId() != null
+                || request.taskId() != null || request.lessonId() != null;
+        boolean valid = switch (request.purpose()) {
+            case NODE -> request.roadmapNodeId() != null
+                    && request.userRoadmapId() == null && request.roadmapStageId() == null;
+            case DIAGNOSTIC -> request.roadmapNodeId() == null
+                    && request.userRoadmapId() != null && request.roadmapStageId() == null;
+            case STAGE_GRADUATION -> request.roadmapNodeId() == null
+                    && request.userRoadmapId() != null && request.roadmapStageId() != null;
+        };
+        if (!valid || legacyOrigin) {
+            throw new IllegalArgumentException("测验 purpose 必须匹配唯一的路线来源");
+        }
     }
 
     private void validateQuestion(CreateQuizRequest.QuestionInput input) {

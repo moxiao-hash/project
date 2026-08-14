@@ -38,19 +38,22 @@ public class RoadmapLearningLoopService {
     private final RoadmapNodeCheckInJpaRepository checkInRepository;
     private final RoadmapQuizGenerationJobJpaRepository jobRepository;
     private final QuizJpaRepository quizRepository;
+    private final RoadmapQuizLeaseReaper leaseReaper;
 
     public RoadmapLearningLoopService(
             UserRoadmapJpaRepository enrollmentRepository,
             UserRoadmapNodeJpaRepository stateRepository,
             RoadmapNodeCheckInJpaRepository checkInRepository,
             RoadmapQuizGenerationJobJpaRepository jobRepository,
-            QuizJpaRepository quizRepository
+            QuizJpaRepository quizRepository,
+            RoadmapQuizLeaseReaper leaseReaper
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
         this.checkInRepository = checkInRepository;
         this.jobRepository = jobRepository;
         this.quizRepository = quizRepository;
+        this.leaseReaper = leaseReaper;
     }
 
     @Transactional
@@ -59,13 +62,17 @@ public class RoadmapLearningLoopService {
             String nodeId,
             CreateRoadmapNodeCheckInRequest request
     ) {
+        String summary = request.summary().trim();
+        if (summary.length() < 10 || summary.length() > 2000) {
+            throw new IllegalArgumentException("打卡总结去除首尾空白后必须为 10 到 2000 字符");
+        }
         UserRoadmapEntity enrollment = currentEnrollmentForUpdate(ownerId);
         UserRoadmapNodeEntity state = currentNodeForUpdate(enrollment.getId(), nodeId);
         RoadmapNodeCheckInEntity existing = checkInRepository
                 .findByUserRoadmapNodeId(state.getId()).orElse(null);
         if (existing != null) {
             if (!existing.getIdempotencyKey().equals(request.idempotencyKey())
-                    || !existing.getSummary().equals(request.summary().trim())) {
+                    || !existing.getSummary().equals(summary)) {
                 throw new ConflictException("该路线节点已经提交过不同的打卡内容");
             }
             return response(existing);
@@ -81,7 +88,7 @@ public class RoadmapLearningLoopService {
         Instant now = Instant.now();
         RoadmapNodeCheckInEntity checkIn = checkInRepository.save(new RoadmapNodeCheckInEntity(
                 UUID.randomUUID().toString(), ownerId, enrollment.getId(), state.getId(), nodeId,
-                request.summary().trim(), request.idempotencyKey(), now));
+                summary, request.idempotencyKey(), now));
         RoadmapQuizGenerationJobEntity job = jobRepository.save(
                 new RoadmapQuizGenerationJobEntity(
                         UUID.randomUUID().toString(), ownerId, enrollment.getId(), state.getId(),
@@ -151,6 +158,7 @@ public class RoadmapLearningLoopService {
     @Transactional
     public RoadmapQuizJobPayload claimQuizJob(String workerId, int leaseSeconds) {
         Instant now = Instant.now();
+        leaseReaper.reapExhausted(now);
         RoadmapQuizGenerationJobEntity job = jobRepository.findClaimable(now, PageRequest.of(0, 1))
                 .stream().findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("暂无待生成路线测验"));
@@ -160,11 +168,11 @@ public class RoadmapLearningLoopService {
 
     @Transactional
     public RoadmapQuizJobPayload heartbeatQuizJob(
-            String jobId, String workerId, int leaseSeconds
+            String jobId, String workerId, String leaseToken, int leaseSeconds
     ) {
         RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
         try {
-            job.heartbeat(workerId, leaseSeconds, Instant.now());
+            job.heartbeat(workerId, leaseToken, leaseSeconds, Instant.now());
         } catch (IllegalArgumentException exception) {
             throw new ConflictException(exception.getMessage());
         }
@@ -172,11 +180,13 @@ public class RoadmapLearningLoopService {
     }
 
     @Transactional
-    public RoadmapQuizJobPayload failQuizJob(String jobId, String workerId, String error) {
+    public RoadmapQuizJobPayload failQuizJob(
+            String jobId, String workerId, String leaseToken, String error
+    ) {
         RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
         Instant now = Instant.now();
         try {
-            job.fail(workerId, error, now);
+            job.fail(workerId, leaseToken, error, now);
         } catch (IllegalArgumentException exception) {
             throw new ConflictException(exception.getMessage());
         }
@@ -190,7 +200,7 @@ public class RoadmapLearningLoopService {
 
     @Transactional
     public RoadmapQuizJobPayload completeQuizJob(
-            String jobId, String workerId, String quizId
+            String jobId, String workerId, String leaseToken, String quizId
     ) {
         RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
         QuizEntity quiz = quizRepository.findById(quizId)
@@ -202,7 +212,7 @@ public class RoadmapLearningLoopService {
         }
         Instant now = Instant.now();
         try {
-            job.complete(workerId, quizId, now);
+            job.complete(workerId, leaseToken, quizId, now);
         } catch (IllegalArgumentException exception) {
             throw new ConflictException(exception.getMessage());
         }

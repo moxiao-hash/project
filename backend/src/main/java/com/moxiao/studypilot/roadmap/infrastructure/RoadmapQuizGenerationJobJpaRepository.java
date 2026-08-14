@@ -28,6 +28,15 @@ public interface RoadmapQuizGenerationJobJpaRepository
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
             select job from RoadmapQuizGenerationJobEntity job
+            where job.status = com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus.LEASED
+              and job.attemptCount >= 3
+            order by job.createdAt
+            """)
+    List<RoadmapQuizGenerationJobEntity> findExpiredExhausted();
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select job from RoadmapQuizGenerationJobEntity job
             where job.attemptCount < 3
               and (job.status = com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus.PENDING
                 or (job.status = com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus.LEASED

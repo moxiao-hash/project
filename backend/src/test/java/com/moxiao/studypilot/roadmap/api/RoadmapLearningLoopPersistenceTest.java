@@ -109,7 +109,7 @@ class RoadmapLearningLoopPersistenceTest {
         Registration foreign = register("check-in-foreign");
         enrollV2(owner.token());
 
-        for (String summary : new String[]{"不足十字", "x".repeat(2001)}) {
+        for (String summary : new String[]{"不足十字", "   一二三四五六七八九   ", "x".repeat(2001)}) {
             mockMvc.perform(post("/api/roadmap-nodes/{nodeId}/check-ins", availableNodeId)
                             .header("Authorization", bearer(owner.token()))
                             .contentType(MediaType.APPLICATION_JSON)
@@ -118,6 +118,17 @@ class RoadmapLearningLoopPersistenceTest {
                                     "summary", summary))))
                     .andExpect(status().isBadRequest());
         }
+        MvcResult trimmedMaximum = mockMvc.perform(
+                post("/api/roadmap-nodes/{nodeId}/check-ins", availableNodeId)
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "idempotencyKey", "trimmed-maximum",
+                                "summary", " " + "x".repeat(2000) + " "))))
+                .andExpect(status().isCreated())
+                .andReturn();
+        assertThat(objectMapper.readTree(trimmedMaximum.getResponse().getContentAsString())
+                .get("summary").asText()).hasSize(2000);
         mockMvc.perform(post("/api/roadmap-nodes/{nodeId}/check-ins", lockedNodeId)
                         .header("Authorization", bearer(owner.token()))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -151,6 +162,7 @@ class RoadmapLearningLoopPersistenceTest {
                 .andExpect(jsonPath("$.generation.status").value("PENDING"));
 
         String jobId = null;
+        var leaseTokens = new java.util.HashSet<String>();
         for (int attempt = 1; attempt <= 3; attempt++) {
             MvcResult claimed = mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/claim")
                             .header("X-Internal-Service-Token", "test-internal-token")
@@ -160,33 +172,46 @@ class RoadmapLearningLoopPersistenceTest {
                                     """))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.attemptCount").value(attempt))
+                    .andExpect(jsonPath("$.leaseToken").isNotEmpty())
                     .andExpect(jsonPath("$.checkInSummary").value(
                             "我掌握了 javac 编译与 java 运行的区别，并记录了类路径疑问。"))
                     .andReturn();
             jobId = objectMapper.readTree(claimed.getResponse().getContentAsString()).get("id").asText();
+            String leaseToken = objectMapper.readTree(claimed.getResponse().getContentAsString())
+                    .get("leaseToken").asText();
+            assertThat(leaseTokens.add(leaseToken)).isTrue();
 
             mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/heartbeat", jobId)
                             .header("X-Internal-Service-Token", "test-internal-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"workerId":"another-worker","leaseSeconds":60}
+                                    {"workerId":"quiz-worker","leaseToken":"stale-token","leaseSeconds":60}
                                     """))
                     .andExpect(status().isConflict());
             mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/heartbeat", jobId)
                             .header("X-Internal-Service-Token", "test-internal-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"workerId":"quiz-worker","leaseSeconds":60}
-                                    """))
+                                    {"workerId":"quiz-worker","leaseToken":"%s","leaseSeconds":60}
+                                    """.formatted(leaseToken)))
                     .andExpect(status().isOk());
+            if (attempt == 3) {
+                jdbcTemplate.update("""
+                        UPDATE roadmap_quiz_generation_jobs
+                        SET lease_until = DATEADD('SECOND', -1, CURRENT_TIMESTAMP)
+                        WHERE id = ?
+                        """, jobId);
+                break;
+            }
             mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/fail", jobId)
                             .header("X-Internal-Service-Token", "test-internal-token")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"workerId":"quiz-worker","error":"Python service unavailable"}
-                                    """))
+                                    {"workerId":"quiz-worker","leaseToken":"%s",
+                                     "error":"Python service unavailable"}
+                                    """.formatted(leaseToken)))
                     .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.status").value(attempt == 3 ? "FAILED" : "PENDING"));
+                    .andExpect(jsonPath("$.status").value("PENDING"));
         }
 
         mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/claim")
@@ -205,6 +230,14 @@ class RoadmapLearningLoopPersistenceTest {
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
+        mockMvc.perform(post("/api/roadmap-nodes/{nodeId}/quiz-retries", availableNodeId)
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"idempotencyKey":"retry-after-expired-lease"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
     }
 
     @Test
@@ -258,6 +291,8 @@ class RoadmapLearningLoopPersistenceTest {
                                 """))
                 .andExpect(status().isOk()).andReturn();
         String jobId = objectMapper.readTree(claim.getResponse().getContentAsString()).get("id").asText();
+        String leaseToken = objectMapper.readTree(claim.getResponse().getContentAsString())
+                .get("leaseToken").asText();
 
         MvcResult createdQuiz = mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
@@ -281,10 +316,31 @@ class RoadmapLearningLoopPersistenceTest {
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workerId":"quiz-worker","quizId":"%s"}
-                                """.formatted(quizId)))
+                                {"workerId":"quiz-worker","leaseToken":"%s","quizId":"%s"}
+                                """.formatted(leaseToken, quizId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
+        mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workerId":"quiz-worker","leaseToken":"%s","quizId":"%s"}
+                                """.formatted(leaseToken, quizId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quizId").value(quizId));
+        String differentQuizId = java.util.UUID.randomUUID().toString();
+        jdbcTemplate.update("""
+                INSERT INTO quizzes
+                    (id, owner_id, roadmap_node_id, purpose, title, model_name, created_at)
+                VALUES (?, ?, ?, 'NODE', '不同测验', 'test-model', CURRENT_TIMESTAMP)
+                """, differentQuizId, owner.userId(), availableNodeId);
+        mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workerId":"quiz-worker","leaseToken":"%s","quizId":"%s"}
+                                """.formatted(leaseToken, differentQuizId)))
+                .andExpect(status().isConflict());
         mockMvc.perform(get("/api/roadmap-nodes/{nodeId}/quiz", availableNodeId)
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk())
@@ -316,6 +372,16 @@ class RoadmapLearningLoopPersistenceTest {
                                  "title":"缺少签名","modelName":"test-model","questions":[%s]}
                                 """.formatted(owner.userId(), availableNodeId, question)))
                 .andExpect(status().isBadRequest());
+        String signedQuestion = question.substring(0, question.lastIndexOf('}'))
+                + ",\"questionSignature\":\"origin-signature\"}";
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":"%s","roadmapNodeId":"%s",
+                                 "title":"缺少 purpose","modelName":"test-model","questions":[%s]}
+                                """.formatted(owner.userId(), availableNodeId, signedQuestion)))
+                .andExpect(status().isBadRequest());
         mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -323,6 +389,49 @@ class RoadmapLearningLoopPersistenceTest {
                                 {"ownerId":"%s","taskId":"task-1","roadmapNodeId":"%s","purpose":"NODE",
                                  "title":"混合来源","modelName":"test-model","questions":[%s]}
                                 """.formatted(owner.userId(), availableNodeId, question)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void reservesDistinctEnrollmentAndStageOriginsForFutureQuizPurposes() throws Exception {
+        Registration owner = register("future-quiz-origins");
+        enrollV2(owner.token());
+        String enrollmentId = jdbcTemplate.queryForObject("""
+                SELECT id FROM user_roadmaps WHERE owner_id = ? AND active_slot = 'CURRENT'
+                """, String.class, owner.userId());
+        String stageId = jdbcTemplate.queryForObject(
+                "SELECT stage_id FROM roadmap_nodes WHERE id = ?", String.class, availableNodeId);
+        String question = """
+                {"type":"SINGLE_CHOICE","knowledgePoint":"路线诊断",
+                 "questionText":"哪项结果表示仍需复习当前阶段？","options":["未达标","已达标"],
+                 "correctAnswers":["未达标"],"explanation":"诊断用于定位薄弱点。",
+                 "questionSignature":"future-origin-signature"}
+                """;
+
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":"%s","userRoadmapId":"%s","purpose":"DIAGNOSTIC",
+                                 "title":"路线诊断","modelName":"test-model","questions":[%s]}
+                                """.formatted(owner.userId(), enrollmentId, question)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":"%s","userRoadmapId":"%s","roadmapStageId":"%s",
+                                 "purpose":"STAGE_GRADUATION","title":"阶段毕业测验",
+                                 "modelName":"test-model","questions":[%s]}
+                                """.formatted(owner.userId(), enrollmentId, stageId, question)))
+                .andExpect(status().isCreated());
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":"%s","userRoadmapId":"%s","purpose":"STAGE_GRADUATION",
+                                 "title":"缺少阶段","modelName":"test-model","questions":[%s]}
+                                """.formatted(owner.userId(), enrollmentId, question)))
                 .andExpect(status().isBadRequest());
     }
 
