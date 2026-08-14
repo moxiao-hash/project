@@ -3653,7 +3653,7 @@
               },
               "quizBlueprint": [
                 "在转账节点调用工具之前执行 interrupt 前保存 transfer_amount=800 与收款人快照，标出副作用边界。",
-                "使用 Command(resume={\"approved\":false}) 恢复图，推演为什么拒绝分支不得调用 transfer。",
+                "使用 Command(resume={\"approved\": False}) 恢复图，推演为什么拒绝分支不得调用 transfer。",
                 "审批响应把 amount 改为 8000，设计摘要 hash 比对并返回参数被篡改错误。",
                 "给出审批超时状态机，使 deadline 到期后持久化 rejected_timeout 而不是自动批准。",
                 "验证只有 snapshot 中的 approver_id 可以批准，并记录批准主体、时间和原始参数摘要。"
@@ -3911,7 +3911,7 @@
                 "实现 initialize 后让 tools/list 返回 get_invoice 及其 schema，验证响应 id 与客户端请求一致。",
                 "模拟授权用户发送 tools/call 调用 get_invoice，写出 content 结果与审计 correlationId 的关联断言。",
                 "验证普通用户的 tools/call 请求 delete_invoice 时返回 JSON-RPC permission error，且工具实现调用次数为零。",
-                "模拟 stdio 收到两条连续请求，按 Content-Length 或逐行协议拆帧并证明响应不会粘连。",
+                "模拟 stdio 收到两条连续 UTF-8 JSON-RPC 请求，按换行边界拆帧，并验证 stdout 不含任何非协议日志。",
                 "设计服务端只支持另一 protocol version 时的握手失败响应，确保客户端不会继续调用未协商 capability。"
               ],
               "estimatedMinutes": 60,

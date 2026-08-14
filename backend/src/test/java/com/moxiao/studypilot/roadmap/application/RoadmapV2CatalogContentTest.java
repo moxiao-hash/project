@@ -178,7 +178,9 @@ class RoadmapV2CatalogContentTest {
                 Pattern.compile("hashable key.*缺失字段"),
                 Pattern.compile("hashable key.*降级"),
                 Pattern.compile("LangGraph.*off-by-one"),
-                Pattern.compile("tool schema.*off-by-one"));
+                Pattern.compile("tool schema.*off-by-one"),
+                Pattern.compile("Command\\(resume=.*approved.*false"),
+                Pattern.compile("stdio.*Content-Length"));
         for (JsonNode node : nodes()) {
             for (JsonNode quiz : node.get("quizBlueprint")) {
                 forbidden.forEach(pattern -> assertThat(pattern.matcher(quiz.asString()).find())
