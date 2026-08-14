@@ -3168,11 +3168,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "选择消息角色与上下文窗口适用的数据或请求样例。",
-                "定位temperature/top_p引起的不一致并给出修复顺序。",
-                "实现流式 delta的监控或审计记录。",
-                "说明消息角色与上下文窗口如何处理重复输入。",
-                "设计压力场景验证temperature/top_p容量上限。"
+                "给定 system 消息为“只返回整数”、user 消息为“解释 2+2”，写出应发送的 messages JSON，并说明哪个角色约束输出格式。",
+                "同一提示在 temperature=0.1 与 1.2 下各采样五次，选择能衡量答案稳定性的比较记录。",
+                "阅读 usage={prompt_tokens:128, completion_tokens=37}，计算总 token，并标出成本统计应取的两个字段。",
+                "把三段流式 delta 按顺序拼接；若 finish_reason=length，判断客户端能否把结果当完整答案。",
+                "解释上下文窗口只剩 300 tokens 时，为什么应先裁剪旧对话而不是删除当前 user 请求。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3210,11 +3210,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "选择system/user 消息分层适用的数据或请求样例。",
-                "定位few-shot 示例引起的不一致并给出修复顺序。",
-                "实现提示词变量模板的监控或审计记录。",
-                "说明system/user 消息分层如何处理重复输入。",
-                "设计压力场景验证few-shot 示例容量上限。"
+                "把角色规则、两个 few-shot 示例和本次问题分别放入 system/user 消息，写出不会混淆示例与真实输入的排列。",
+                "分析外部网页包含 IGNORE PREVIOUS INSTRUCTIONS 时，为什么必须把网页标为不可信数据而不能拼入 system 消息。",
+                "为变量 {{customer_note}} 设计转义与边界标记，并给出包含伪指令的防御性测试。",
+                "在 2,400-token 上限内为规则、示例、检索文本和回答预留预算，计算四部分 token 分配总和。",
+                "比较零样本与三条 few-shot 提示在固定二十题评测集上的准确率，说明只看一次漂亮回答为何不足。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3252,11 +3252,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "选择DeepSeek structured output适用的数据或请求样例。",
-                "定位JSON Schema引起的不一致并给出修复顺序。",
-                "实现Pydantic model_validate_json的监控或审计记录。",
-                "说明DeepSeek structured output如何处理重复输入。",
-                "设计压力场景验证JSON Schema容量上限。"
+                "为订单分类结果编写含 required=[category,confidence]、enum 和 additionalProperties=false 的 JSON Schema。",
+                "模型返回 {\"category\":\"refund\",\"confidence\":\"high\"}，定位类型错误并写出 Pydantic model_validate_json 的失败断言。",
+                "当 finish_reason=length 且 JSON 少一个右花括号时，判断应报告截断还是自动补括号，并解释依据。",
+                "设计 schema_version=1 到 v2 新增可选 reason 字段的兼容读取规则，列出旧客户端必须保持的行为。",
+                "区分模型明确 refusal、空内容和字段缺失三种响应，为每种给出可观测的错误码。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3293,11 +3293,11 @@
                 "description": "提交结构化模型客户端；pytest 验证 JSON Schema、截断响应和 token 预算。"
               },
               "quizBlueprint": [
-                "推演finish_reason在一次完整调用中的生命周期。",
-                "编写usage token配置错误的复现步骤。",
-                "分析stream delta对可测试性的影响。",
-                "验证finish_reason失败时资源是否正确释放。",
-                "比较usage token同步与异步处理的差异。"
+                "实现客户端事件处理顺序：缓存 stream delta、收到结束事件、delta 拼接后再解析、执行 JSON Schema 校验。",
+                "构造 finish_reason=length 与半截 JSON 的响应，写出禁止进入业务处理器的测试断言。",
+                "给定 usage 中 prompt=900、completion=180、预算=1000，计算超额 token 并选择停止重试的分支。",
+                "读取 schema_version=2 的响应而客户端只支持 v1，设计错误对象使日志能区分版本不兼容和语法错误。",
+                "验证解析重试不会把上一轮 assistant 残片追加到 messages，并记录每次请求的 prompt 版本。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3343,11 +3343,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "推演token 预算在一次完整调用中的生命周期。",
-                "编写429 Retry-After配置错误的复现步骤。",
-                "分析指数退避加 jitter对可测试性的影响。",
-                "验证token 预算失败时资源是否正确释放。",
-                "比较429 Retry-After同步与异步处理的差异。"
+                "阅读 429 响应头 Retry-After: 3，计算最早重试时刻，并说明为何不能立即循环请求。",
+                "为 1s、2s、4s 指数退避加入 0–250ms jitter，写出可注入时钟与随机源的测试边界。",
+                "一次生成预计输入 8k、输出 2k tokens，比较两个模型单价并计算路由后的预算余额。",
+                "携带 idempotency_key=req-9f2 重试收费请求，解释服务端如何返回首次结果而不重复扣费。",
+                "判断 400、429、503 三个响应中哪些可重试；熔断打开后给出降级模型与失败返回的选择条件。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3384,11 +3384,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "推演TTFT 与 tokens/sec在一次完整调用中的生命周期。",
-                "编写端到端 trace配置错误的复现步骤。",
-                "分析token 成本标签对可测试性的影响。",
-                "验证TTFT 与 tokens/sec失败时资源是否正确释放。",
-                "比较端到端 trace同步与异步处理的差异。"
+                "某版本的 TTFT 与 tokens/sec 指标显示 TTFT 从 420ms 升至 1.8s 而生成速率不变，分析故障更可能发生在首 token 前还是生成阶段。",
+                "给定请求开始、首 delta、末 delta 三个时间戳，计算 TTFT 与总延迟并写入同一端到端 trace。",
+                "按 prompt_version=v17 聚合 200 次调用的 schema_success，计算成功率并与 v16 做回归判断。",
+                "设计 token 成本标签，只保留模型、租户等级和结果码，避免把完整 user_id 变成高基数标签。",
+                "将 timeout、refusal、invalid_json、rate_limit 分类到互斥错误桶，验证一次调用只增加一个失败计数。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3426,11 +3426,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "推演prompt injection在一次完整调用中的生命周期。",
-                "编写输出内容过滤配置错误的复现步骤。",
-                "分析工具参数 allowlist对可测试性的影响。",
-                "验证prompt injection失败时资源是否正确释放。",
-                "比较输出内容过滤同步与异步处理的差异。"
+                "改写提示边界，使 document_text 只能作为数据，并验证文档中的伪 system 指令不能改变既定任务。",
+                "给定模型请求读取 /admin/payroll，检查工具 allowlist 与 resource scope 应在哪一步拒绝越权调用。",
+                "实现将日志里的 customer_id=938274821 脱敏为 customer_id=***4821，同时保留排障所需的关联能力。",
+                "设计仅含防御断言的 prompt injection 回归集，覆盖外部文档、工具结果和用户输入三个不可信来源。",
+                "分析输出含邮箱与手机号时的 PII 过滤顺序，并说明为什么过滤后仍要记录安全拒绝指标。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3467,11 +3467,11 @@
                 "description": "提交限流模型网关；pytest 验证 429 重试、成本指标和提示注入拒绝。"
               },
               "quizBlueprint": [
-                "推演Retry-After在一次完整调用中的生命周期。",
-                "编写指数退避 jitter配置错误的复现步骤。",
-                "分析TTFT对可测试性的影响。",
-                "验证Retry-After失败时资源是否正确释放。",
-                "比较指数退避 jitter同步与异步处理的差异。"
+                "模拟第 4 次 429 后达到 max_attempts，写出网关停止重试、触发熔断并返回可识别错误的状态转换。",
+                "检查 Retry-After 与指数退避 jitter 同时存在的调度日志，选择不会早于服务端期限的等待值。",
+                "给定 prompt/completion token 单价与用量，计算 usd_cost=0.0047 应携带的 model_version 和 tenant 标签。",
+                "当主模型熔断时，设计降级路由：只有 schema 能力兼容且剩余预算充足才转发备用模型。",
+                "构造提示注入被过滤、正常请求成功和安全拒绝三类样本，验证 TTFT、成本与拒绝指标不会互相重复计数。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3526,11 +3526,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复 LangGraph StateGraph 节点遗漏终止路由导致的重复执行，并断言最终到达 END。",
-                "设计TypedDict state的可重复故障实验。",
-                "说明Annotated reducer 合并并行更新输出中哪些字段可用于诊断。",
-                "实现防止LangGraph StateGraph重复执行的措施。",
-                "判断TypedDict state是否满足Annotated reducer 合并并行更新约束。"
+                "定义包含 messages 与 route 的 TypedDict state，并为 messages 标注 Annotated[list[str], operator.add] 合并规则。",
+                "两个并行节点分别返回 [\"research\"] 与 [\"review\"]，推演 reducer 合并后的 messages，说明直接覆盖会丢什么。",
+                "编写 classify 节点只返回 {route: review} 的状态更新，检查它没有原地修改传入 state。",
+                "为条件边映射 review→human、answer→END，构造 route=review 和未知 route 的两个断言。",
+                "设置 recursion_limit=6 运行含回环的 StateGraph，解释第七步前应怎样暴露可诊断错误。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3568,11 +3568,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复 checkpointer thread_id 使用错误导致会话状态串线的问题。",
-                "设计短期消息记忆的可重复故障实验。",
-                "说明长期 store namespace输出中哪些字段可用于诊断。",
-                "实现消息摘要后，验证旧 checkpoint 仍能按相同 thread_id 恢复。",
-                "判断短期消息记忆是否满足长期 store namespace约束。"
+                "用 thread_id=user-a:case-17 连续调用两次图，列出 checkpointer 应恢复的消息与新写入的状态。",
+                "给 user-a 与 user-b 使用不同 thread_id，设计并发测试证明短期消息记忆没有串线。",
+                "当消息超过 6k tokens 时生成摘要，说明原始最近两轮为何仍应保留在 checkpoint。",
+                "把长期偏好写入 namespace=(tenant-7,user-a)，判断 user-b 查询同一 key 时应得到什么结果。",
+                "模拟进程重启后从 checkpoint 恢复，验证 node 不会因缺少临时内存而重放已完成副作用。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3610,11 +3610,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复 tool schema 中 required 字段与 properties 不一致的问题，并验证非法参数被拒绝。",
-                "设计参数 JSON Schema的可重复故障实验。",
-                "说明并行 tool_calls输出中哪些字段可用于诊断。",
-                "实现防止tool schema重复执行的措施。",
-                "判断参数 JSON Schema是否满足并行 tool_calls约束。"
+                "修正 transfer 工具的 tool schema：amount 必填且大于 0，并用 additionalProperties 拒绝 debug 未知字段。",
+                "模型给出 amount=\"100\"，判断参数 JSON Schema 应拒绝还是隐式转换，并写出错误路径。",
+                "并行执行 weather 与 calendar 两个 tool_calls，把 weather 结果按 tool_call_id=call_82 回传给模型。",
+                "一个工具 800ms 成功、另一个 2s 超时，设计结果数组使成功项保留且失败项带可分类错误。",
+                "检查模型请求 account_id=other-user 时，说明 schema 校验之外还必须执行哪一层资源授权。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3652,11 +3652,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "修复 LangGraph interrupt 恢复时重复执行副作用节点的问题，并验证 resume 后只执行一次。",
-                "设计Command resume的可重复故障实验。",
-                "说明审批状态持久化输出中哪些字段可用于诊断。",
-                "实现防止LangGraph interrupt重复执行的措施。",
-                "判断Command resume是否满足审批状态持久化约束。"
+                "在转账节点调用工具之前执行 interrupt 前保存 transfer_amount=800 与收款人快照，标出副作用边界。",
+                "使用 Command(resume={\"approved\":false}) 恢复图，推演为什么拒绝分支不得调用 transfer。",
+                "审批响应把 amount 改为 8000，设计摘要 hash 比对并返回参数被篡改错误。",
+                "给出审批超时状态机，使 deadline 到期后持久化 rejected_timeout 而不是自动批准。",
+                "验证只有 snapshot 中的 approver_id 可以批准，并记录批准主体、时间和原始参数摘要。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3693,11 +3693,11 @@
                 "description": "提交可中断 LangGraph；pytest 覆盖 checkpoint、interrupt、resume 与工具失败恢复。"
               },
               "quizBlueprint": [
-                "修复 checkpointer 复用错误 thread_id 导致状态串线的问题，并用两个会话隔离验证。",
-                "设计state reducer的可重复故障实验。",
-                "说明interrupt/resume输出中哪些字段可用于诊断。",
-                "实现防止checkpointer thread_id重复执行的措施。",
-                "判断state reducer是否满足interrupt/resume约束。"
+                "从 checkpoint_id=cp-104 加载消息和审批快照，检查 state reducer 合并恢复输入后没有重复消息。",
+                "构造高风险 tool_call_id，验证 StateGraph 必须先进入 interrupt 而不是直接执行工具。",
+                "进程重启后从 pending_approval 恢复同一 thread_id，断言已完成的规划节点不再运行。",
+                "分别用批准、拒绝两种 Command resume 输入，推演最终状态与工具调用次数。",
+                "损坏 checkpoint 中的参数 hash，设计状态回放失败日志使其包含 checkpoint id 而不泄露完整参数。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3742,11 +3742,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "观察JSON Schema required/enum示例的输出并解释反直觉之处。",
-                "比较输入规范化两种实现的性能和语义。",
-                "编写deadline的负向测试。",
-                "定位JSON Schema required/enum与预期不符的最小输入。",
-                "实现同时覆盖输入规范化和deadline的验收任务。"
+                "为 cancel_order 定义 required order_id 与 reason enum，并用 additionalProperties=false 拒绝额外参数。",
+                "输入 order_id 周围有空格，说明输入规范化应发生在 JSON Schema 格式校验前还是后，并保持审计原值。",
+                "当 deadline_ms=1500 到期时取消下游请求，编写断言区分 TIMEOUT 与业务 NOT_FOUND。",
+                "工具首次已成功但响应丢失，使用同一幂等键重试并选择 DUPLICATE_REQUEST 返回中的原结果。",
+                "把 503、权限拒绝、参数 enum 错误分为 retryable、permanent 与 validation 三类，给出 Agent 的后续动作。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3783,11 +3783,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "观察least privilege示例的输出并解释反直觉之处。",
-                "比较allowlist两种实现的性能和语义。",
-                "编写resource scope的负向测试。",
-                "定位least privilege与预期不符的最小输入。",
-                "实现同时覆盖allowlist和resource scope的验收任务。"
+                "主体 user-17 有 read_invoice 权限，检查 resource=invoice/2026-081 的 owner scope 后再决定允许或拒绝。",
+                "为 delete_invoice 建立显式 allowlist，验证通配工具名不会意外包含管理员操作。",
+                "敏感操作获得确认后，把 approval snapshot 的参数 hash 与实际执行参数进行一致性校验。",
+                "写出 correlationId=corr-73 的审计事件字段：主体、工具、资源、策略结果和脱敏参数摘要。",
+                "审计链上一条 hash 与当前 prev_hash 不符，说明告警与隔离步骤且不得重写原日志。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3825,11 +3825,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "观察MCP tools/resources/prompts示例的输出并解释反直觉之处。",
-                "比较stdio 与 Streamable HTTP两种实现的性能和语义。",
-                "编写capabilities 握手的负向测试。",
-                "定位MCP tools/resources/prompts与预期不符的最小输入。",
-                "实现同时覆盖stdio 与 Streamable HTTP和capabilities 握手的验收任务。"
+                "构造 initialize 请求协商 protocolVersion=2025-06-18，并检查服务端 capabilities 后才发送 initialized 通知。",
+                "使用 tools/list 读取工具 schema，选择调用参数能通过 required 与 enum 校验的 get_weather 请求。",
+                "发送 JSON-RPC id=12 的 tools/call，并验证成功或错误响应都回显同一个 id。",
+                "比较 stdio 换行 framing 与 Streamable HTTP 会话标识，定位把调试日志写到 stdout 会破坏哪种传输。",
+                "未授权客户端读取 resources 时，设计 JSON-RPC 错误 data 供审计定位但不泄露资源内容。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3867,11 +3867,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "观察Spring AI ChatClient示例的输出并解释反直觉之处。",
-                "比较ToolCallback两种实现的性能和语义。",
-                "编写Advisor 链的负向测试。",
-                "定位Spring AI ChatClient与预期不符的最小输入。",
-                "实现同时覆盖ToolCallback和Advisor 链的验收任务。"
+                "编写使用注入的 ChatClient.Builder 构建客户端并发送 user 消息的代码，说明为何不要在业务类中硬编码 Provider 密钥。",
+                "实现为查询库存注册 ToolCallback，验证模型参数经过 Java Bean 校验后才进入工具方法。",
+                "设计 Advisor 链安排安全过滤、ChatMemory、日志三个职责，选择不记录原始敏感提示的执行顺序。",
+                "编写使用 conversationId=alice-3 与 bob-4 的并发测试，证明 ChatMemory 不共享可变会话状态。",
+                "检查切换测试 Provider 时的模型能力与结构化输出配置，给出不支持 tool calling 时的明确失败。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3908,11 +3908,11 @@
                 "description": "提交 MCP server；协议检查验证 initialize、tools/list、tools/call 及未授权拒绝。"
               },
               "quizBlueprint": [
-                "观察MCP capabilities示例的输出并解释反直觉之处。",
-                "比较protocol version两种实现的性能和语义。",
-                "编写JSON-RPC id/error的负向测试。",
-                "定位MCP capabilities与预期不符的最小输入。",
-                "实现同时覆盖protocol version和JSON-RPC id/error的验收任务。"
+                "实现 initialize 后让 tools/list 返回 get_invoice 及其 schema，验证响应 id 与客户端请求一致。",
+                "模拟授权用户发送 tools/call 调用 get_invoice，写出 content 结果与审计 correlationId 的关联断言。",
+                "验证普通用户的 tools/call 请求 delete_invoice 时返回 JSON-RPC permission error，且工具实现调用次数为零。",
+                "模拟 stdio 收到两条连续请求，按 Content-Length 或逐行协议拆帧并证明响应不会粘连。",
+                "设计服务端只支持另一 protocol version 时的握手失败响应，确保客户端不会继续调用未协商 capability。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -3967,11 +3967,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读PDF/DOCX 解析配置，预测启动或执行结果。",
-                "分析标题层级切分的一个真实错误现象。",
-                "设计滑动窗口 overlap的权限、容量或范围边界。",
-                "编写命令检查PDF/DOCX 解析是否生效。",
-                "比较修复标题层级切分前后的观测指标。"
+                "编写解析一份含目录与二级标题的 PDF 的任务，写出 chunk 的 heading_path、page_start 和 page_end 元数据。",
+                "设计第 7 页跨页表格的表头重复与 cell 坐标记录，使引用能回到原始页码。",
+                "检查抽取文本出现连续乱码字符时，应选择切换字体映射、OCR 还是直接丢页，并说明判据。",
+                "给出某扫描页 OCR confidence=0.61 的处理结果，设置人工复核标记以免低置信文本静默进入索引。",
+                "设计为代码块前后设置 overlap 的断言，证明分块没有从 fenced code 中间截断。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4008,11 +4008,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读semantic chunk配置，预测启动或执行结果。",
-                "分析token size的一个真实错误现象。",
-                "设计overlap的权限、容量或范围边界。",
-                "编写命令检查semantic chunk是否生效。",
-                "比较修复token size前后的观测指标。"
+                "把 documentId=handbook-42 的两个标题段落按 token size=400 分块，计算 60-token overlap 后第二块起点。",
+                "为每个 semantic chunk 定义 documentId、page、heading_path、owner_id 与 content_hash 元数据。",
+                "原文只改排版且 content_hash 未变化，判断重建任务应跳过 upsert 还是创建新 chunk。",
+                "比较固定字符切分与 parent-child 分块对表格问答的影响，指定检索返回子块时携带的父级信息。",
+                "删除文档后列出按 documentId 清理所有 chunk 的校验查询，防止孤儿向量仍被召回。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4050,11 +4050,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读embedding 维度配置，预测启动或执行结果。",
-                "分析Qdrant collection的一个真实错误现象。",
-                "设计payload filter的权限、容量或范围边界。",
-                "编写命令检查embedding 维度是否生效。",
-                "比较修复Qdrant collection前后的观测指标。"
+                "为 embedding 维度 size=1024 的模型创建 Qdrant collection，判断向量 size 配成 768 时 upsert 的结果。",
+                "批量 upsert 三个 chunk，写出 payload 中 source_id、page 和 content_hash 与 point id 的对应关系。",
+                "用户检索时加入 owner_id=tenant-7 的 payload filter，验证 tenant-8 的高相似向量也不会返回。",
+                "比较 HNSW ef=32 与 128 的延迟和召回记录，选择满足 P95 与 Recall@10 门槛的配置。",
+                "文档重建后旧 chunk 集合减少，设计先 upsert 新点再删除过期 point id 的一致性检查。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4092,11 +4092,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "阅读BM25 与向量召回配置，预测启动或执行结果。",
-                "分析RRF 融合的一个真实错误现象。",
-                "设计cross-encoder rerank的权限、容量或范围边界。",
-                "编写命令检查BM25 与向量召回是否生效。",
-                "比较修复RRF 融合前后的观测指标。"
+                "某文档 dense 排名第 2、BM25 排名第 8，按 k=60 计算它的两项 RRF 得分与总分。",
+                "给定向量相似度 0.84 与 BM25 分数 12.7，解释为何不能直接相加而应按排名融合。",
+                "并行召回 dense、sparse 各 top-20 后去重，写出同一 chunk_id 只保留一次的合并规则。",
+                "用 cross-encoder 重排融合后的前十项，比较 rerank 前后 Recall@5 并决定是否上线。",
+                "查询包含精确错误码 ERR-429 时，分析 BM25 与向量召回各自贡献并选择合理 top-k。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4133,11 +4133,11 @@
                 "description": "提交 Qdrant 混合检索管线；pytest 通过并报告 BM25、向量与重排 Recall@k。"
               },
               "quizBlueprint": [
-                "阅读Qdrant collection/payload配置，预测启动或执行结果。",
-                "分析embedding dimension的一个真实错误现象。",
-                "设计BM25的权限、容量或范围边界。",
-                "编写命令检查Qdrant collection/payload是否生效。",
-                "比较修复embedding dimension前后的观测指标。"
+                "导入新版文档后查找过期 chunk_id=old-19，验证 Qdrant 点与 BM25 文档都已同步删除。",
+                "embedding dimension 从 768 升级到 1024，设计新 Qdrant collection/payload 建索引和原子切换流程。",
+                "为 tenant-7 的问题同时执行 owner payload filter 与 BM25 owner 字段过滤，检查两路权限一致。",
+                "计算标注集上 Recall@5 从 0.68 到重排后 0.79 的提升，并列出至少一个仍漏召回的 query id。",
+                "交付检索结果记录：原始 dense/sparse 排名、RRF 总分、reranker 分数和最终 chunk 来源。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -4183,11 +4183,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出Tavily Search API的失败案例并解释根因。",
-                "实现search_depth的最小安全版本。",
-                "检查域名 include/exclude是否遗漏清理或回滚。",
-                "设计Tavily Search API的属性或契约测试。",
-                "说明search_depth如何改变域名 include/exclude风险。"
+                "构造 Tavily 请求 include_domains=[\"docs.python.org\"] 与 search_depth=advanced，检查结果域名全部属于官方文档。",
+                "用户询问最近版本时设置时间过滤，判断缓存的 2024 来源是否应参与 2026 年答案。",
+                "对相同 canonical URL 的三个搜索结果去重，保留发布日期、抓取时间与最高质量摘要。",
+                "模拟 Tavily 超时，设计降级为已有可信索引或明确说明无法联网的分支，禁止编造搜索结果。",
+                "同时配置 include 与 exclude 冲突域名，写出请求前校验错误而不是静默采用不确定优先级。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4225,11 +4225,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出引用 chunk_id的失败案例并解释根因。",
-                "实现claim-evidence 对齐的最小安全版本。",
-                "检查无证据拒答是否遗漏清理或回滚。",
-                "设计引用 chunk_id的属性或契约测试。",
-                "说明claim-evidence 对齐如何改变无证据拒答风险。"
+                "把回答拆成四个可核验 claim，并为每个绑定支持它的 chunk_id 与原文页码。",
+                "claim-3 同时引用 chunk-8 与 chunk-11，但两者日期冲突，设计答案显式呈现分歧而非任选其一。",
+                "四个断言只有三个有直接证据，计算 coverage=3/4，并决定未覆盖断言应删除还是拒答。",
+                "引用 URL 可访问但片段没有支持结论，写出 claim-evidence 校验失败的原因字段。",
+                "面对证据不足问题，生成包含缺失信息说明的拒答，并验证没有补写任何未检索事实。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4266,11 +4266,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出Recall@k 漏召回的失败案例并解释根因。",
-                "实现MRR 首个命中的最小安全版本。",
-                "检查nDCG 分级相关是否遗漏清理或回滚。",
-                "设计Recall@k 漏召回的属性或契约测试。",
-                "说明MRR 首个命中如何改变nDCG 分级相关风险。"
+                "十个问题中八个在 top-5 找到任一黄金 chunk，计算 Recall@5 查询成功率并列出漏召回 id。",
+                "首个相关结果排名依次为 1、2、无命中，计算这三题的 MRR，规定无命中倒数排名为 0。",
+                "对相关等级 [3,0,2] 的排序计算 DCG，并说明交换第一个与第三个结果为何改变 nDCG。",
+                "按无答案、实体混淆、时间敏感三类输出 Recall@k，定位总体均值掩盖的薄弱类别。",
+                "对新旧检索器的逐题 MRR 差值做 bootstrap 95% CI，判断区间跨 0 时能否宣称提升。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4308,11 +4308,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "给出IRT 难度思想的失败案例并解释根因。",
-                "实现掌握度状态的最小安全版本。",
-                "检查题目标签是否遗漏清理或回滚。",
-                "设计IRT 难度思想的属性或契约测试。",
-                "说明掌握度状态如何改变题目标签风险。"
+                "学习者答对中等难度的 RRF 题后，将 mastery 从 0.46 更新到 0.58，并记录前后状态与证据。",
+                "在候选题中选择难度最接近当前掌握度且覆盖薄弱标签的下一题，解释为何不只按总分排序。",
+                "同题 24 小时内不再出现，设计去重窗口避免记忆效应被误判为知识点提升。",
+                "错误答案带有 confusing_dense_sparse 标签，生成针对错因的反馈且不直接泄露下一题答案。",
+                "连续两次答错后计算新的间隔复习时间，写出状态事件供之后重放 mastery 变化。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -4349,11 +4349,11 @@
                 "description": "提交带引用的评估助手；离线评测输出 MRR、引用命中率和拒答案例。"
               },
               "quizBlueprint": [
-                "给出claim-evidence alignment的失败案例并解释根因。",
-                "实现citation的最小安全版本。",
-                "检查MRR/Recall是否遗漏清理或回滚。",
-                "设计claim-evidence alignment的属性或契约测试。",
-                "说明citation如何改变MRR/Recall风险。"
+                "对搜索回答逐条检查 citation_url 指向官方文档，且引用片段直接支持相邻 claim。",
+                "构造两个权威来源结论冲突的查询，验证输出标注日期与分歧而不是合并成单一事实。",
+                "运行黄金集得到 MRR、Recall@5 与 citation coverage，列出指标最差的三个 query id。",
+                "统计无证据问题的拒答率，并抽查拒答文本没有出现模型自行补全的具体数字。",
+                "把自适应测验的 assessment mastery 变化关联到题目标签，生成可复查的误答样本报告。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,

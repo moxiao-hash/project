@@ -189,7 +189,7 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void everyQuizEntryIsACompleteQuestionOrExecutableTask() {
-        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|修正|列出|阅读|改正|改为|观察|模拟|写出|检查|查找|运行|给出|画出|校验|断言|构造|交付|配置|定义|记录|捕获|加载|注入|挂载|传递|生成|执行|测量|处理|确保|保持|清理|转换|区分|标注");
+        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|修正|列出|阅读|改正|改为|观察|模拟|写出|检查|查找|运行|给出|画出|校验|断言|构造|交付|配置|定义|记录|捕获|加载|注入|挂载|传递|生成|执行|测量|处理|确保|保持|清理|转换|区分|标注|设置|去重|保留|绑定|统计");
         for (JsonNode node : nodes()) {
             for (JsonNode quiz : node.get("quizBlueprint")) {
                 assertThat(quiz.asString().length()).as(node.get("code").asString()).isGreaterThanOrEqualTo(12);
@@ -249,10 +249,12 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void everyNodeQuizCoversAtLeastThreeOfItsSpecificConcepts() {
-        List<JsonNode> laterStageNodes = nodes().stream().skip(72).toList();
+        // Stage 1-9 quizzes are protected by independent, hand-authored fragment maps below.
+        // Keep this legacy concept-presence heuristic only for the remaining Stage 10-12 nodes.
+        List<JsonNode> laterStageNodes = nodes().stream().skip(100).toList();
         Map<String, List<String>> quizConceptTerms = laterStageNodes.stream().collect(Collectors.toMap(
                 node -> node.get("code").asString(), node -> conceptTerms(node).stream().limit(3).toList()));
-        assertThat(quizConceptTerms).hasSize(53).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
+        assertThat(quizConceptTerms).hasSize(25).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
         quizConceptTerms.forEach((code, terms) -> {
             String quizzes = laterStageNodes.stream().filter(node -> code.equals(node.get("code").asString()))
                     .findFirst().orElseThrow().get("quizBlueprint").toString();
@@ -422,6 +424,48 @@ class RoadmapV2CatalogContentTest {
                 Map.entry("java-python-contract", List.of("2026-08-14T03:20:00Z", "Java 的 userId 与 Python 的 user_id")),
                 Map.entry("fastapi-integration-project", List.of("OpenAPI schema diff 删除必填字段", "correlationId 原样回传")));
         assertThat(expected).hasSize(27);
+        assertThat(expected.values()).allSatisfy(fragments -> assertThat(fragments).hasSize(2));
+        assertThat(expected.values().stream().flatMap(List::stream).toList()).doesNotHaveDuplicates();
+        expected.forEach((code, fragments) -> {
+            JsonNode node = nodes().stream().filter(it -> code.equals(it.get("code").asString()))
+                    .findFirst().orElseThrow();
+            assertThat(node.get("quizBlueprint").toString()).as(code)
+                    .contains(fragments.toArray(String[]::new));
+        });
+    }
+
+    @Test
+    void stageSevenToNineQuizzesContainHandcraftedNodeSpecificEvidence() {
+        Map<String, List<String>> expected = Map.ofEntries(
+                Map.entry("llm-api-basics", List.of("system 消息为“只返回整数”", "completion_tokens=37")),
+                Map.entry("prompt-engineering", List.of("IGNORE PREVIOUS INSTRUCTIONS", "2,400-token 上限")),
+                Map.entry("structured-output", List.of("additionalProperties=false", "finish_reason=length")),
+                Map.entry("llm-foundations-project", List.of("delta 拼接后再解析", "schema_version=2")),
+                Map.entry("model-cost-retry", List.of("Retry-After: 3", "idempotency_key=req-9f2")),
+                Map.entry("model-observability", List.of("TTFT 从 420ms 升至 1.8s", "prompt_version=v17")),
+                Map.entry("llm-security", List.of("document_text 只能作为数据", "customer_id=***4821")),
+                Map.entry("model-engineering-project", List.of("第 4 次 429", "usd_cost=0.0047")),
+                Map.entry("langgraph-state", List.of("Annotated[list[str], operator.add]", "route=review")),
+                Map.entry("langgraph-memory", List.of("thread_id=user-a:case-17", "namespace=(tenant-7,user-a)")),
+                Map.entry("tool-calling", List.of("tool_call_id=call_82", "additionalProperties 拒绝 debug")),
+                Map.entry("human-in-loop", List.of("interrupt 前保存 transfer_amount=800", "使用 Command(resume=")),
+                Map.entry("langgraph-agent-project", List.of("checkpoint_id=cp-104", "进程重启后从 pending_approval")),
+                Map.entry("tool-contract-validation", List.of("deadline_ms=1500", "DUPLICATE_REQUEST")),
+                Map.entry("tool-permission-audit", List.of("resource=invoice/2026-081", "correlationId=corr-73")),
+                Map.entry("mcp", List.of("protocolVersion=2025-06-18", "JSON-RPC id=12")),
+                Map.entry("spring-ai-elective", List.of("ChatClient.Builder", "conversationId=alice-3")),
+                Map.entry("mcp-governance-project", List.of("tools/list 返回 get_invoice", "tools/call 请求 delete_invoice")),
+                Map.entry("document-parsing", List.of("第 7 页跨页表格", "OCR confidence=0.61")),
+                Map.entry("chunking-metadata", List.of("documentId=handbook-42", "content_hash 未变化")),
+                Map.entry("embedding-qdrant", List.of("size=1024", "owner_id=tenant-7")),
+                Map.entry("hybrid-retrieval", List.of("dense 排名第 2", "RRF 得分")),
+                Map.entry("rag-retrieval-project", List.of("过期 chunk_id=old-19", "Recall@5 从 0.68")),
+                Map.entry("tavily-search", List.of("include_domains=", "缓存的 2024 来源")),
+                Map.entry("grounded-answer", List.of("claim-3 同时引用 chunk-8", "coverage=3/4")),
+                Map.entry("retrieval-evaluation", List.of("相关等级 [3,0,2]", "bootstrap 95% CI")),
+                Map.entry("adaptive-assessment", List.of("mastery 从 0.46 更新", "同题 24 小时内不再出现")),
+                Map.entry("search-assessment-project", List.of("citation_url 指向官方文档", "无证据问题的拒答率")));
+        assertThat(expected).hasSize(28);
         assertThat(expected.values()).allSatisfy(fragments -> assertThat(fragments).hasSize(2));
         assertThat(expected.values().stream().flatMap(List::stream).toList()).doesNotHaveDuplicates();
         expected.forEach((code, fragments) -> {
