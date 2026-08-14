@@ -212,13 +212,14 @@ public class RoadmapLearningLoopService {
         }
         Instant now = Instant.now();
         try {
-            job.complete(workerId, leaseToken, quizId, now);
+            if (job.complete(workerId, leaseToken, quizId, now)) {
+                stateRepository.findById(job.getUserRoadmapNodeId())
+                        .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"))
+                        .markQuizReady(now);
+            }
         } catch (IllegalArgumentException exception) {
             throw new ConflictException(exception.getMessage());
         }
-        stateRepository.findById(job.getUserRoadmapNodeId())
-                .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"))
-                .markQuizReady(now);
         return payload(job);
     }
 

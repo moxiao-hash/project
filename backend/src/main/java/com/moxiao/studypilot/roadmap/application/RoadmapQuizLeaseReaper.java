@@ -7,11 +7,13 @@ import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
 
 @Service
 public class RoadmapQuizLeaseReaper {
+    private static final int REAP_BATCH_SIZE = 100;
     private final RoadmapQuizGenerationJobJpaRepository jobRepository;
     private final UserRoadmapNodeJpaRepository stateRepository;
 
@@ -25,7 +27,8 @@ public class RoadmapQuizLeaseReaper {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reapExhausted(Instant now) {
-        for (RoadmapQuizGenerationJobEntity expired : jobRepository.findExpiredExhausted()) {
+        for (RoadmapQuizGenerationJobEntity expired
+                : jobRepository.findExpiredExhausted(now, PageRequest.of(0, REAP_BATCH_SIZE))) {
             if (expired.expireExhaustedLease(now)) {
                 stateRepository.findById(expired.getUserRoadmapNodeId())
                         .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"))

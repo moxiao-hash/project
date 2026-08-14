@@ -111,11 +111,11 @@ public class RoadmapQuizGenerationJobEntity {
         updatedAt = now;
     }
 
-    public void complete(String workerId, String leaseToken, String quizId, Instant now) {
+    public boolean complete(String workerId, String leaseToken, String quizId, Instant now) {
         if (status == RoadmapQuizGenerationStatus.COMPLETED) {
             if (workerId.equals(this.workerId) && leaseToken.equals(this.leaseToken)
                     && quizId.equals(this.quizId)) {
-                return;
+                return false;
             }
             throw new IllegalArgumentException("路线测验生成任务已由其他结果完成");
         }
@@ -125,6 +125,7 @@ public class RoadmapQuizGenerationJobEntity {
         leaseUntil = null;
         lastError = null;
         updatedAt = now;
+        return true;
     }
 
     public void fail(String workerId, String leaseToken, String error, Instant now) {

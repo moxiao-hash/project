@@ -3,6 +3,7 @@ package com.moxiao.studypilot.roadmap.api;
 import com.moxiao.studypilot.course.application.CourseCatalogImporter;
 import com.moxiao.studypilot.roadmap.application.RoadmapCatalogImporter;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapQuizGenerationJobJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,11 +11,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+
+import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -33,6 +38,7 @@ class RoadmapLearningLoopPersistenceTest {
     @Autowired RoadmapCatalogImporter catalogImporter;
     @Autowired RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
+    @Autowired RoadmapQuizGenerationJobJpaRepository jobRepository;
 
     private String availableNodeId;
     private String lockedNodeId;
@@ -320,6 +326,12 @@ class RoadmapLearningLoopPersistenceTest {
                                 """.formatted(leaseToken, quizId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("COMPLETED"));
+        Instant preservedAt = Instant.parse("2025-01-02T03:04:05Z");
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET quiz_status = 'PASSED', updated_at = ?, row_version = 17
+                WHERE owner_id = ? AND node_id = ?
+                """, preservedAt, owner.userId(), availableNodeId);
         mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -328,6 +340,14 @@ class RoadmapLearningLoopPersistenceTest {
                                 """.formatted(leaseToken, quizId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quizId").value(quizId));
+        var preservedState = jdbcTemplate.queryForMap("""
+                SELECT quiz_status, updated_at, row_version FROM user_roadmap_nodes
+                WHERE owner_id = ? AND node_id = ?
+                """, owner.userId(), availableNodeId);
+        assertThat(preservedState.get("QUIZ_STATUS")).isEqualTo("PASSED");
+        assertThat(((java.time.OffsetDateTime) preservedState.get("UPDATED_AT")).toInstant())
+                .isEqualTo(preservedAt);
+        assertThat(((Number) preservedState.get("ROW_VERSION")).longValue()).isEqualTo(17L);
         String differentQuizId = java.util.UUID.randomUUID().toString();
         jdbcTemplate.update("""
                 INSERT INTO quizzes
@@ -344,7 +364,7 @@ class RoadmapLearningLoopPersistenceTest {
         mockMvc.perform(get("/api/roadmap-nodes/{nodeId}/quiz", availableNodeId)
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.status").value("PASSED"))
                 .andExpect(jsonPath("$.quizId").value(quizId));
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT purpose FROM quizzes WHERE id = ?", String.class, quizId)).isEqualTo("NODE");
@@ -401,6 +421,8 @@ class RoadmapLearningLoopPersistenceTest {
                 """, String.class, owner.userId());
         String stageId = jdbcTemplate.queryForObject(
                 "SELECT stage_id FROM roadmap_nodes WHERE id = ?", String.class, availableNodeId);
+        String enrollmentTemplateId = jdbcTemplate.queryForObject(
+                "SELECT template_id FROM user_roadmaps WHERE id = ?", String.class, enrollmentId);
         String question = """
                 {"type":"SINGLE_CHOICE","knowledgePoint":"路线诊断",
                  "questionText":"哪项结果表示仍需复习当前阶段？","options":["未达标","已达标"],
@@ -421,9 +443,11 @@ class RoadmapLearningLoopPersistenceTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"ownerId":"%s","userRoadmapId":"%s","roadmapStageId":"%s",
+                                 "roadmapTemplateId":"%s",
                                  "purpose":"STAGE_GRADUATION","title":"阶段毕业测验",
                                  "modelName":"test-model","questions":[%s]}
-                                """.formatted(owner.userId(), enrollmentId, stageId, question)))
+                                """.formatted(owner.userId(), enrollmentId, stageId,
+                                enrollmentTemplateId, question)))
                 .andExpect(status().isCreated());
         mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
@@ -433,6 +457,54 @@ class RoadmapLearningLoopPersistenceTest {
                                  "title":"缺少阶段","modelName":"test-model","questions":[%s]}
                                 """.formatted(owner.userId(), enrollmentId, question)))
                 .andExpect(status().isBadRequest());
+
+        String v1TemplateId = templateRepository.findByRoadmapCodeAndTemplateVersion(
+                "studypilot-java-ai", 1).orElseThrow().getId();
+        String foreignTemplateStageId = jdbcTemplate.queryForObject("""
+                SELECT id FROM roadmap_stages WHERE template_id = ? ORDER BY stage_order LIMIT 1
+                """, String.class, v1TemplateId);
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ownerId":"%s","userRoadmapId":"%s",
+                                 "roadmapStageId":"%s","roadmapTemplateId":"%s",
+                                 "purpose":"STAGE_GRADUATION","title":"跨模板阶段毕业测验",
+                                 "modelName":"test-model","questions":[%s]}
+                                """.formatted(owner.userId(), enrollmentId,
+                                foreignTemplateStageId, v1TemplateId, question)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @Transactional
+    void reaperQuerySelectsOnlyExpiredExhaustedLeasesAndHonorsThePageLimit() throws Exception {
+        Registration first = register("expired-reaper-first");
+        Registration second = register("expired-reaper-second");
+        Registration active = register("active-reaper");
+        for (Registration registration : java.util.List.of(first, second, active)) {
+            enrollV2(registration.token());
+            submitCheckIn(registration.token(), "reaper-" + registration.userId());
+        }
+        Instant now = Instant.now();
+        jdbcTemplate.update("""
+                UPDATE roadmap_quiz_generation_jobs
+                SET status = 'LEASED', attempt_count = 3, worker_id = 'worker',
+                    lease_token = RANDOM_UUID(), lease_until = ?
+                WHERE owner_id IN (?, ?)
+                """, now.minusSeconds(1), first.userId(), second.userId());
+        jdbcTemplate.update("""
+                UPDATE roadmap_quiz_generation_jobs
+                SET status = 'LEASED', attempt_count = 3, worker_id = 'worker',
+                    lease_token = RANDOM_UUID(), lease_until = ?
+                WHERE owner_id = ?
+                """, now.plusSeconds(60), active.userId());
+
+        var expired = jobRepository.findExpiredExhausted(now, PageRequest.of(0, 1));
+
+        assertThat(expired).hasSize(1);
+        assertThat(expired.get(0).getOwnerId()).isIn(first.userId(), second.userId());
+        assertThat(expired).noneMatch(job -> job.getOwnerId().equals(active.userId()));
     }
 
     private Registration register(String label) throws Exception {

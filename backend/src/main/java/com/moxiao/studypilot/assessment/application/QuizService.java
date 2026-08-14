@@ -26,6 +26,8 @@ import com.moxiao.studypilot.assessment.domain.QuizAttemptStatus;
 import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import com.moxiao.studypilot.learning.infrastructure.LearningTaskJpaRepository;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressEntity;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressJpaRepository;
@@ -56,6 +58,8 @@ public class QuizService {
     private final ReviewTaskCandidateService reviewTaskCandidateService;
     private final LessonJpaRepository lessonRepository;
     private final LessonProgressJpaRepository lessonProgressRepository;
+    private final UserRoadmapJpaRepository userRoadmapRepository;
+    private final RoadmapStageJpaRepository roadmapStageRepository;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -69,7 +73,9 @@ public class QuizService {
             LearningTaskJpaRepository learningTaskRepository,
             ReviewTaskCandidateService reviewTaskCandidateService,
             LessonJpaRepository lessonRepository,
-            LessonProgressJpaRepository lessonProgressRepository
+            LessonProgressJpaRepository lessonProgressRepository,
+            UserRoadmapJpaRepository userRoadmapRepository,
+            RoadmapStageJpaRepository roadmapStageRepository
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -83,6 +89,8 @@ public class QuizService {
         this.reviewTaskCandidateService = reviewTaskCandidateService;
         this.lessonRepository = lessonRepository;
         this.lessonProgressRepository = lessonProgressRepository;
+        this.userRoadmapRepository = userRoadmapRepository;
+        this.roadmapStageRepository = roadmapStageRepository;
     }
 
     @Transactional
@@ -126,6 +134,7 @@ public class QuizService {
                 request.roadmapNodeId(),
                 request.userRoadmapId(),
                 request.roadmapStageId(),
+                request.roadmapTemplateId(),
                 request.purpose(),
                 request.title().trim(),
                 request.modelName(),
@@ -173,14 +182,28 @@ public class QuizService {
                 || request.taskId() != null || request.lessonId() != null;
         boolean valid = switch (request.purpose()) {
             case NODE -> request.roadmapNodeId() != null
-                    && request.userRoadmapId() == null && request.roadmapStageId() == null;
+                    && request.userRoadmapId() == null && request.roadmapStageId() == null
+                    && request.roadmapTemplateId() == null;
             case DIAGNOSTIC -> request.roadmapNodeId() == null
-                    && request.userRoadmapId() != null && request.roadmapStageId() == null;
+                    && request.userRoadmapId() != null && request.roadmapStageId() == null
+                    && request.roadmapTemplateId() == null;
             case STAGE_GRADUATION -> request.roadmapNodeId() == null
-                    && request.userRoadmapId() != null && request.roadmapStageId() != null;
+                    && request.userRoadmapId() != null && request.roadmapStageId() != null
+                    && request.roadmapTemplateId() != null;
         };
         if (!valid || legacyOrigin) {
             throw new IllegalArgumentException("测验 purpose 必须匹配唯一的路线来源");
+        }
+        if (request.purpose() == RoadmapQuizPurpose.STAGE_GRADUATION) {
+            var enrollment = userRoadmapRepository.findById(request.userRoadmapId())
+                    .orElseThrow(() -> new IllegalArgumentException("路线报名不存在"));
+            boolean matchingScope = enrollment.getOwnerId().equals(request.ownerId())
+                    && enrollment.getTemplateId().equals(request.roadmapTemplateId())
+                    && roadmapStageRepository.findByIdAndTemplateId(
+                            request.roadmapStageId(), request.roadmapTemplateId()).isPresent();
+            if (!matchingScope) {
+                throw new IllegalArgumentException("阶段毕业测验必须属于报名路线模板");
+            }
         }
     }
 

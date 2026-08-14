@@ -38,6 +38,9 @@ public class QuizEntity {
     @Column(name = "roadmap_stage_id", length = 80)
     private String roadmapStageId;
 
+    @Column(name = "roadmap_template_id", length = 36)
+    private String roadmapTemplateId;
+
     @Enumerated(EnumType.STRING)
     @Column(length = 30)
     private RoadmapQuizPurpose purpose;
@@ -75,14 +78,14 @@ public class QuizEntity {
             String modelName,
             Instant createdAt
     ) {
-        this(id, ownerId, materialId, taskId, lessonId, null, null, null, null,
+        this(id, ownerId, materialId, taskId, lessonId, null, null, null, null, null,
                 title, modelName, createdAt);
     }
 
     public QuizEntity(
             String id, String ownerId, String materialId, String taskId, String lessonId,
             String roadmapNodeId, String userRoadmapId, String roadmapStageId,
-            RoadmapQuizPurpose purpose, String title,
+            String roadmapTemplateId, RoadmapQuizPurpose purpose, String title,
             String modelName, Instant createdAt
     ) {
         this.id = id;
@@ -93,6 +96,7 @@ public class QuizEntity {
         this.roadmapNodeId = roadmapNodeId;
         this.userRoadmapId = userRoadmapId;
         this.roadmapStageId = roadmapStageId;
+        this.roadmapTemplateId = roadmapTemplateId;
         this.purpose = purpose;
         this.title = title;
         this.modelName = modelName;
@@ -122,6 +126,7 @@ public class QuizEntity {
     public String getRoadmapNodeId() { return roadmapNodeId; }
     public String getUserRoadmapId() { return userRoadmapId; }
     public String getRoadmapStageId() { return roadmapStageId; }
+    public String getRoadmapTemplateId() { return roadmapTemplateId; }
     public RoadmapQuizPurpose getPurpose() { return purpose; }
 
     public String getTitle() {

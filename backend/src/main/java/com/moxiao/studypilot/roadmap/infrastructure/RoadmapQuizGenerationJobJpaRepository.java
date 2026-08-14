@@ -30,9 +30,10 @@ public interface RoadmapQuizGenerationJobJpaRepository
             select job from RoadmapQuizGenerationJobEntity job
             where job.status = com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus.LEASED
               and job.attemptCount >= 3
+              and job.leaseUntil <= :now
             order by job.createdAt
             """)
-    List<RoadmapQuizGenerationJobEntity> findExpiredExhausted();
+    List<RoadmapQuizGenerationJobEntity> findExpiredExhausted(Instant now, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
