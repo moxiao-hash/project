@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Optional;
 
 public interface RoadmapModuleJpaRepository extends JpaRepository<RoadmapModuleEntity, String> {
+    List<RoadmapModuleEntity> findAllByTemplateIdOrderByStageIdAscModuleOrderAsc(String templateId);
+
     List<RoadmapModuleEntity> findAllByStageIdAndTemplateIdOrderByModuleOrderAsc(
             String stageId,
             String templateId

@@ -6,11 +6,17 @@ import com.moxiao.studypilot.roadmap.domain.CompletionStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
 import com.moxiao.studypilot.roadmap.domain.UpgradeStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapUpgradeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapUpgradeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapEntity;
@@ -48,6 +54,9 @@ public class RoadmapUpgradeService {
     private final RoadmapTemplateJpaRepository templateRepository;
     private final RoadmapNodeJpaRepository nodeRepository;
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
+    private final RoadmapModuleJpaRepository moduleRepository;
+    private final RoadmapStageJpaRepository stageRepository;
+    private final LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
     private final UserRoadmapJpaRepository enrollmentRepository;
     private final UserRoadmapNodeJpaRepository stateRepository;
     private final RoadmapUpgradeJpaRepository upgradeRepository;
@@ -59,6 +68,9 @@ public class RoadmapUpgradeService {
             RoadmapTemplateJpaRepository templateRepository,
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
+            RoadmapModuleJpaRepository moduleRepository,
+            RoadmapStageJpaRepository stageRepository,
+            LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository,
             UserRoadmapJpaRepository enrollmentRepository,
             UserRoadmapNodeJpaRepository stateRepository,
             RoadmapUpgradeJpaRepository upgradeRepository,
@@ -69,6 +81,9 @@ public class RoadmapUpgradeService {
         this.templateRepository = templateRepository;
         this.nodeRepository = nodeRepository;
         this.prerequisiteRepository = prerequisiteRepository;
+        this.moduleRepository = moduleRepository;
+        this.stageRepository = stageRepository;
+        this.legacyMappingRepository = legacyMappingRepository;
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
         this.upgradeRepository = upgradeRepository;
@@ -180,6 +195,12 @@ public class RoadmapUpgradeService {
                 .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(targetTemplateId);
         Map<String, RoadmapNodeEntity> sourceByCode = byCode(sourceNodes);
         Map<String, RoadmapNodeEntity> targetByCode = byCode(targetNodes);
+        Map<String, RoadmapNodeEntity> sourceById = sourceNodes.stream().collect(Collectors.toMap(
+                RoadmapNodeEntity::getId, node -> node));
+        Map<String, RoadmapNodeEntity> targetById = targetNodes.stream().collect(Collectors.toMap(
+                RoadmapNodeEntity::getId, node -> node));
+        ExplicitMappings mappings = explicitMappings(
+                sourceTemplateId, targetTemplateId, sourceById, targetById);
         Map<String, Set<String>> sourcePrerequisites = prerequisitesByNodeCode(sourceNodes,
                 prerequisiteRepository.findAllByTemplateId(sourceTemplateId));
         Map<String, Set<String>> targetPrerequisites = prerequisitesByNodeCode(targetNodes,
@@ -188,33 +209,171 @@ public class RoadmapUpgradeService {
         List<String> unchanged = new ArrayList<>();
         List<String> added = new ArrayList<>();
         List<String> manualReview = new ArrayList<>();
+        Map<String, String> inheritedNodeMappings = new LinkedHashMap<>();
+        Set<String> matchedSourceIds = new HashSet<>();
         for (RoadmapNodeEntity target : targetNodes) {
-            RoadmapNodeEntity source = sourceByCode.get(target.getNodeCode());
+            String sourceId = mappings.sourceIdByTargetId().get(target.getId());
+            RoadmapNodeEntity source = sourceId == null ? null : sourceById.get(sourceId);
             if (source == null) {
-                added.add(target.getNodeCode());
+                if (mappings.ambiguousTargetIds().contains(target.getId())) {
+                    manualReview.add(target.getNodeCode());
+                } else {
+                    added.add(target.getNodeCode());
+                }
             } else if (equivalentCompletionContract(source, target)
-                    && sourcePrerequisites.getOrDefault(source.getNodeCode(), Set.of())
-                    .equals(targetPrerequisites.getOrDefault(target.getNodeCode(), Set.of()))) {
+                    && equivalentPrerequisites(source, target, sourcePrerequisites,
+                    targetPrerequisites, sourceByCode, targetByCode, mappings)) {
                 unchanged.add(target.getNodeCode());
+                inheritedNodeMappings.put(target.getNodeCode(), source.getNodeCode());
+                matchedSourceIds.add(source.getId());
             } else {
                 manualReview.add(target.getNodeCode());
+                matchedSourceIds.add(source.getId());
             }
         }
         List<String> removed = sourceNodes.stream()
+                .filter(node -> !matchedSourceIds.contains(node.getId()))
                 .map(RoadmapNodeEntity::getNodeCode)
-                .filter(code -> !targetByCode.containsKey(code))
                 .toList();
-        return new UpgradeDiff(unchanged, added, removed, manualReview);
+        ModuleDiff moduleDiff = compareModules(sourceTemplateId, targetTemplateId);
+        return new UpgradeDiff(unchanged, added, removed, manualReview, inheritedNodeMappings,
+                moduleDiff.added(), moduleDiff.removed(), moduleDiff.changed());
     }
 
     private boolean equivalentCompletionContract(RoadmapNodeEntity left, RoadmapNodeEntity right) {
         return left.isRequiredNode() == right.isRequiredNode()
+                && left.getTitle().equals(right.getTitle())
+                && semanticallyEqualJson(canonicalJson(left.getObjectivesJson()),
+                        canonicalJson(right.getObjectivesJson()))
+                && semanticallyEqualJson(canonicalJson(left.getHighFrequencyJson()),
+                        canonicalJson(right.getHighFrequencyJson()))
+                && semanticallyEqualJson(canonicalJson(left.getCommonMistakesJson()),
+                        canonicalJson(right.getCommonMistakesJson()))
+                && semanticallyEqualJson(canonicalJson(left.getSearchKeywordsJson()),
+                        canonicalJson(right.getSearchKeywordsJson()))
                 && semanticallyEqualJson(
                         canonicalJson(left.getArtifactRequirementJson()),
                         canonicalJson(right.getArtifactRequirementJson()))
                 && semanticallyEqualJson(
                         canonicalJson(left.getQuizBlueprintJson()),
                         canonicalJson(right.getQuizBlueprintJson()));
+    }
+
+    private ExplicitMappings explicitMappings(
+            String sourceTemplateId,
+            String targetTemplateId,
+            Map<String, RoadmapNodeEntity> sourceById,
+            Map<String, RoadmapNodeEntity> targetById
+    ) {
+        Map<String, String> sourceNodeByLesson = legacyMappingRepository
+                .findAllByTemplateId(sourceTemplateId).stream().collect(Collectors.toMap(
+                        LegacyLessonRoadmapMappingEntity::getLessonId,
+                        LegacyLessonRoadmapMappingEntity::getNodeId));
+        Map<String, String> targetNodeByLesson = legacyMappingRepository
+                .findAllByTemplateId(targetTemplateId).stream().collect(Collectors.toMap(
+                        LegacyLessonRoadmapMappingEntity::getLessonId,
+                        LegacyLessonRoadmapMappingEntity::getNodeId));
+        Map<String, Set<String>> targetsBySource = new HashMap<>();
+        Map<String, Set<String>> sourcesByTarget = new HashMap<>();
+        for (Map.Entry<String, String> entry : sourceNodeByLesson.entrySet()) {
+            String targetId = targetNodeByLesson.get(entry.getKey());
+            if (targetId == null) {
+                continue;
+            }
+            String sourceId = entry.getValue();
+            if (!sourceById.containsKey(sourceId) || !targetById.containsKey(targetId)) {
+                throw new IllegalStateException("旧课程映射引用了模板外节点");
+            }
+            targetsBySource.computeIfAbsent(sourceId, ignored -> new HashSet<>()).add(targetId);
+            sourcesByTarget.computeIfAbsent(targetId, ignored -> new HashSet<>()).add(sourceId);
+        }
+        Map<String, String> sourceIdByTargetId = new HashMap<>();
+        Set<String> ambiguousTargetIds = new HashSet<>();
+        for (Map.Entry<String, Set<String>> entry : sourcesByTarget.entrySet()) {
+            String targetId = entry.getKey();
+            Set<String> sourceIds = entry.getValue();
+            if (sourceIds.size() != 1) {
+                ambiguousTargetIds.add(targetId);
+                continue;
+            }
+            String sourceId = sourceIds.iterator().next();
+            if (targetsBySource.getOrDefault(sourceId, Set.of()).size() != 1) {
+                ambiguousTargetIds.add(targetId);
+                continue;
+            }
+            sourceIdByTargetId.put(targetId, sourceId);
+        }
+        return new ExplicitMappings(sourceIdByTargetId, ambiguousTargetIds);
+    }
+
+    private boolean equivalentPrerequisites(
+            RoadmapNodeEntity source,
+            RoadmapNodeEntity target,
+            Map<String, Set<String>> sourcePrerequisites,
+            Map<String, Set<String>> targetPrerequisites,
+            Map<String, RoadmapNodeEntity> sourceByCode,
+            Map<String, RoadmapNodeEntity> targetByCode,
+            ExplicitMappings mappings
+    ) {
+        Set<String> expectedTargetPrerequisiteCodes = new HashSet<>();
+        for (String sourceCode : sourcePrerequisites.getOrDefault(source.getNodeCode(), Set.of())) {
+            RoadmapNodeEntity sourcePrerequisite = sourceByCode.get(sourceCode);
+            if (sourcePrerequisite == null) {
+                return false;
+            }
+            String targetId = mappings.targetIdBySourceId().get(sourcePrerequisite.getId());
+            RoadmapNodeEntity mappedTarget = targetByCode.values().stream()
+                    .filter(node -> node.getId().equals(targetId)).findFirst().orElse(null);
+            if (mappedTarget == null) {
+                return false;
+            }
+            expectedTargetPrerequisiteCodes.add(mappedTarget.getNodeCode());
+        }
+        return expectedTargetPrerequisiteCodes.equals(
+                targetPrerequisites.getOrDefault(target.getNodeCode(), Set.of()));
+    }
+
+    private ModuleDiff compareModules(String sourceTemplateId, String targetTemplateId) {
+        Map<String, String> sourceStageCodes = stageRepository
+                .findAllByTemplateIdOrderByStageOrderAsc(sourceTemplateId).stream()
+                .collect(Collectors.toMap(RoadmapStageEntity::getId, RoadmapStageEntity::getStageCode));
+        Map<String, String> targetStageCodes = stageRepository
+                .findAllByTemplateIdOrderByStageOrderAsc(targetTemplateId).stream()
+                .collect(Collectors.toMap(RoadmapStageEntity::getId, RoadmapStageEntity::getStageCode));
+        Map<String, RoadmapModuleEntity> source = modulesByCode(sourceTemplateId);
+        Map<String, RoadmapModuleEntity> target = modulesByCode(targetTemplateId);
+        int added = (int) target.keySet().stream().filter(code -> !source.containsKey(code)).count();
+        int removed = (int) source.keySet().stream().filter(code -> !target.containsKey(code)).count();
+        int changed = (int) target.entrySet().stream()
+                .filter(entry -> source.containsKey(entry.getKey()))
+                .filter(entry -> moduleChanged(source.get(entry.getKey()), entry.getValue(),
+                        sourceStageCodes, targetStageCodes))
+                .count();
+        return new ModuleDiff(added, removed, changed);
+    }
+
+    private Map<String, RoadmapModuleEntity> modulesByCode(String templateId) {
+        Map<String, RoadmapModuleEntity> result = new LinkedHashMap<>();
+        for (RoadmapModuleEntity module : moduleRepository
+                .findAllByTemplateIdOrderByStageIdAscModuleOrderAsc(templateId)) {
+            if (result.put(module.getModuleCode(), module) != null) {
+                throw new IllegalStateException("路线模板中存在重复模块编码: " + module.getModuleCode());
+            }
+        }
+        return result;
+    }
+
+    private boolean moduleChanged(
+            RoadmapModuleEntity source,
+            RoadmapModuleEntity target,
+            Map<String, String> sourceStageCodes,
+            Map<String, String> targetStageCodes
+    ) {
+        return source.getModuleOrder() != target.getModuleOrder()
+                || !source.getTitle().equals(target.getTitle())
+                || !source.getDescription().equals(target.getDescription())
+                || !java.util.Objects.equals(sourceStageCodes.get(source.getStageId()),
+                targetStageCodes.get(target.getStageId()));
     }
 
     /** Objects are unordered, arrays remain ordered, and JSON numbers compare by numeric value. */
@@ -320,7 +479,6 @@ public class RoadmapUpgradeService {
                 .filter(state -> sourceNodesById.containsKey(state.getNodeId()))
                 .collect(Collectors.toMap(
                         state -> sourceNodesById.get(state.getNodeId()).getNodeCode(), state -> state));
-        Set<String> unchanged = Set.copyOf(diff.unchangedNodeCodes());
 
         List<UserRoadmapNodeEntity> targetStates = targetNodes.stream().map(node -> {
             UserRoadmapNodeEntity state = new UserRoadmapNodeEntity(
@@ -329,8 +487,9 @@ public class RoadmapUpgradeService {
                     nodesWithPrerequisites.contains(node.getId())
                             ? AvailabilityStatus.LOCKED : AvailabilityStatus.AVAILABLE,
                     artifactRequired(node), now);
-            UserRoadmapNodeEntity sourceState = completedSourceByCode.get(node.getNodeCode());
-            if (unchanged.contains(node.getNodeCode()) && sourceState != null) {
+            String sourceCode = diff.inheritedNodeMappings().get(node.getNodeCode());
+            UserRoadmapNodeEntity sourceState = completedSourceByCode.get(sourceCode);
+            if (sourceState != null) {
                 state.carryCompletedFromUpgrade(sourceState, now);
             }
             return state;
@@ -361,7 +520,8 @@ public class RoadmapUpgradeService {
         return new RoadmapUpgradeResponse(
                 upgrade.getId(), source.getTemplateVersion(), target.getTemplateVersion(),
                 upgrade.getStatus().name(), diff.unchangedNodeCodes(), diff.addedNodeCodes(),
-                diff.removedNodeCodes(), diff.manualReviewNodeCodes());
+                diff.removedNodeCodes(), diff.manualReviewNodeCodes(), diff.addedModuleCount(),
+                diff.removedModuleCount(), diff.changedModuleCount());
     }
 
     private String writeDiff(UpgradeDiff diff) {
@@ -403,6 +563,26 @@ public class RoadmapUpgradeService {
             List<String> unchangedNodeCodes,
             List<String> addedNodeCodes,
             List<String> removedNodeCodes,
-            List<String> manualReviewNodeCodes
-    ) { }
+            List<String> manualReviewNodeCodes,
+            Map<String, String> inheritedNodeMappings,
+            int addedModuleCount,
+            int removedModuleCount,
+            int changedModuleCount
+    ) {
+        private UpgradeDiff {
+            inheritedNodeMappings = inheritedNodeMappings == null ? Map.of() : inheritedNodeMappings;
+        }
+    }
+
+    private record ExplicitMappings(
+            Map<String, String> sourceIdByTargetId,
+            Set<String> ambiguousTargetIds
+    ) {
+        private Map<String, String> targetIdBySourceId() {
+            return sourceIdByTargetId.entrySet().stream().collect(Collectors.toMap(
+                    Map.Entry::getValue, Map.Entry::getKey));
+        }
+    }
+
+    private record ModuleDiff(int added, int removed, int changed) { }
 }

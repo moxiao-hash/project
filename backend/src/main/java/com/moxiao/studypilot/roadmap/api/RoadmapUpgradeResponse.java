@@ -10,5 +10,8 @@ public record RoadmapUpgradeResponse(
         List<String> unchangedNodeCodes,
         List<String> addedNodeCodes,
         List<String> removedNodeCodes,
-        List<String> manualReviewNodeCodes
+        List<String> manualReviewNodeCodes,
+        int addedModuleCount,
+        int removedModuleCount,
+        int changedModuleCount
 ) { }

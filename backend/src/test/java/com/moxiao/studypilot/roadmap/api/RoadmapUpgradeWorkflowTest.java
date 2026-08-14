@@ -2,6 +2,10 @@ package com.moxiao.studypilot.roadmap.api;
 
 import com.moxiao.studypilot.roadmap.domain.RoadmapPublicationStatus;
 import com.moxiao.studypilot.roadmap.application.RoadmapUpgradeService;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.LegacyLessonRoadmapMappingJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleEntity;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapModuleJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteEntity;
@@ -65,6 +69,8 @@ class RoadmapUpgradeWorkflowTest {
     @Autowired JdbcTemplate jdbcTemplate;
     @MockitoSpyBean RoadmapTemplateJpaRepository templateRepository;
     @Autowired RoadmapStageJpaRepository stageRepository;
+    @Autowired RoadmapModuleJpaRepository moduleRepository;
+    @Autowired LegacyLessonRoadmapMappingJpaRepository legacyMappingRepository;
     @Autowired RoadmapNodeJpaRepository nodeRepository;
     @Autowired RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     @Autowired RoadmapUpgradeJpaRepository upgradeRepository;
@@ -93,6 +99,9 @@ class RoadmapUpgradeWorkflowTest {
                 .andExpect(jsonPath("$[0].removedNodeCodes[0]").value("removed-node"))
                 .andExpect(jsonPath("$[0].manualReviewNodeCodes[0]").value("split-node"))
                 .andExpect(jsonPath("$[0].manualReviewNodeCodes[1]").value("contract-node"))
+                .andExpect(jsonPath("$[0].addedModuleCount").value(1))
+                .andExpect(jsonPath("$[0].removedModuleCount").value(1))
+                .andExpect(jsonPath("$[0].changedModuleCount").value(1))
                 .andReturn();
         String upgradeId = objectMapper.readTree(result.getResponse().getContentAsString())
                 .get(0).get("id").asText();
@@ -191,7 +200,135 @@ class RoadmapUpgradeWorkflowTest {
         assertThat(states).filteredOn(state -> state.getNodeId().equals(addedId))
                 .singleElement().extracting(state -> state.getCompletionStatus().name())
                 .isEqualTo("INCOMPLETE");
-        assertThat(stateRepository.findAllByUserRoadmapId(oldEnrollmentId)).hasSize(4);
+        assertThat(states).filteredOn(state -> targetNodes.stream()
+                        .filter(node -> node.getNodeCode().equals("split-node"))
+                        .anyMatch(node -> node.getId().equals(state.getNodeId())))
+                .singleElement().extracting(state -> state.getAvailabilityStatus().name())
+                .isEqualTo("AVAILABLE");
+        assertThat(stateRepository.findAllByUserRoadmapId(oldEnrollmentId))
+                .hasSize(4)
+                .filteredOn(state -> state.getNodeId().equals(oldStableId))
+                .singleElement().satisfies(state -> {
+                    assertThat(state.getCompletionStatus().name()).isEqualTo("COMPLETED");
+                    assertThat(state.getCheckInStatus().name()).isEqualTo("SUBMITTED");
+                    assertThat(state.getQuizStatus().name()).isEqualTo("PASSED");
+                    assertThat(state.getCompletedAt()).isNotNull();
+                });
+    }
+
+    @Test
+    void carriesCompletionOnlyAcrossAnExplicitLessonMappingWithFullyEquivalentContent()
+            throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("explicit-mapping-owner");
+        JsonNode enrollment = enroll(token, fixture.roadmapCode(), 1);
+        String enrollmentId = enrollment.get("id").asText();
+        RoadmapNodeEntity oldStable = node(fixture.v1TemplateId(), "stable-node");
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollmentId, oldStable.getId());
+
+        // Same code and assessment are insufficient when the teaching content has changed.
+        jdbcTemplate.update("""
+                UPDATE roadmap_nodes SET objectives_json = '["new objective"]'
+                WHERE template_id = ? AND node_code = 'contract-node'
+                """, fixture.v2TemplateId());
+
+        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].unchangedNodeCodes[0]").value("stable-node"))
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes").value(
+                        org.hamcrest.Matchers.hasItem("contract-node")));
+    }
+
+    @Test
+    void doesNotFanOutACompletedBroadNodeToGranularV2Nodes() throws Exception {
+        GranularFixture fixture = granularFixture();
+        String token = register("granular-owner");
+        JsonNode enrollment = enroll(token, fixture.roadmapCode(), 1);
+        String oldEnrollmentId = enrollment.get("id").asText();
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ?
+                """, oldEnrollmentId);
+
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        upgradeService.confirm(ownerId, upgradeId);
+
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT").orElseThrow();
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId()))
+                .allSatisfy(state -> assertThat(state.getCompletionStatus())
+                        .isEqualTo(com.moxiao.studypilot.roadmap.domain.CompletionStatus.INCOMPLETE));
+        assertThat(stateRepository.findAllByUserRoadmapId(oldEnrollmentId))
+                .singleElement().satisfies(state -> {
+                    assertThat(state.getCompletionStatus())
+                            .isEqualTo(com.moxiao.studypilot.roadmap.domain.CompletionStatus.COMPLETED);
+                    assertThat(state.getQuizStatus().name()).isEqualTo("PASSED");
+                });
+    }
+
+    @Test
+    void carriesAnEquivalentRenamedNodeOnlyWhenOneLegacyLessonMapsThePair() throws Exception {
+        GranularFixture fixture = equivalentRenameFixture();
+        String token = register("renamed-mapping-owner");
+        JsonNode enrollment = enroll(token, fixture.roadmapCode(), 1);
+        String oldEnrollmentId = enrollment.get("id").asText();
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ?
+                """, oldEnrollmentId);
+
+        String ownerId = ownerId(token);
+        var preview = upgradeService.previews(ownerId).get(0);
+        assertThat(preview.unchangedNodeCodes()).containsExactly("renamed-equivalent");
+        upgradeService.confirm(ownerId, preview.id());
+
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT").orElseThrow();
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId()))
+                .singleElement().satisfies(state -> {
+                    assertThat(state.getCompletionStatus())
+                            .isEqualTo(com.moxiao.studypilot.roadmap.domain.CompletionStatus.COMPLETED);
+                    assertThat(state.getQuizStatus().name()).isEqualTo("PASSED");
+                });
+    }
+
+    @Test
+    void flagsAmbiguousLegacyMappingsInsteadOfFanningOutOneSourceCompletion() throws Exception {
+        GranularFixture fixture = granularFixture();
+        RoadmapNodeEntity source = node(fixture.v1TemplateId(), "java-syntax-oop");
+        RoadmapNodeEntity firstTarget = node(fixture.v2TemplateId(), "variables-types-conversion");
+        RoadmapNodeEntity secondTarget = node(fixture.v2TemplateId(), "conditions-if-switch");
+        String suffix = UUID.randomUUID().toString();
+        mapLesson("ambiguous-a-" + suffix, fixture.v1TemplateId(), source.getId());
+        mapLesson("ambiguous-a-" + suffix, fixture.v2TemplateId(), firstTarget.getId());
+        mapLesson("ambiguous-b-" + suffix, fixture.v1TemplateId(), source.getId());
+        mapLesson("ambiguous-b-" + suffix, fixture.v2TemplateId(), secondTarget.getId());
+        String token = register("ambiguous-mapping-owner");
+        enroll(token, fixture.roadmapCode(), 1);
+
+        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].unchangedNodeCodes.length()").value(0))
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes[0]")
+                        .value("variables-types-conversion"))
+                .andExpect(jsonPath("$[0].manualReviewNodeCodes[1]")
+                        .value("conditions-if-switch"));
     }
 
     @Test
@@ -540,15 +677,34 @@ class RoadmapUpgradeWorkflowTest {
         stageRepository.save(new RoadmapStageEntity(s1, v1, "stage", 1, "阶段", "描述", "项目"));
         stageRepository.save(new RoadmapStageEntity(s2, v2, "stage", 1, "阶段", "描述", "项目"));
 
-        saveNode(v1, s1, "old-stable-" + suffix, "stable-node", 1, false, "[]");
-        saveNode(v1, s1, "old-split-" + suffix, "split-node", 2, false, "[]");
-        saveNode(v1, s1, "old-contract-" + suffix, "contract-node", 3, false, "[]");
-        saveNode(v1, s1, "old-removed-" + suffix, "removed-node", 4, false, "[]");
-        saveNode(v2, s2, "new-stable-" + suffix, "stable-node", 1, false, "[]");
-        saveNode(v2, s2, "new-split-" + suffix, "split-node", 2, false, "[]");
-        saveNode(v2, s2, "new-contract-" + suffix, "contract-node", 3,
+        String oldCommonModule = "old-common-module-" + suffix;
+        String oldRemovedModule = "old-removed-module-" + suffix;
+        String newCommonModule = "new-common-module-" + suffix;
+        String newAddedModule = "new-added-module-" + suffix;
+        moduleRepository.save(new RoadmapModuleEntity(
+                oldCommonModule, v1, s1, "common-module", 1, "旧标题", "共同描述"));
+        moduleRepository.save(new RoadmapModuleEntity(
+                oldRemovedModule, v1, s1, "removed-module", 2, "删除模块", "删除描述"));
+        moduleRepository.save(new RoadmapModuleEntity(
+                newCommonModule, v2, s2, "common-module", 1, "新标题", "共同描述"));
+        moduleRepository.save(new RoadmapModuleEntity(
+                newAddedModule, v2, s2, "added-module", 2, "新增模块", "新增描述"));
+
+        saveNode(v1, s1, oldCommonModule, "old-stable-" + suffix, "stable-node", 1, false, "[]");
+        saveNode(v1, s1, oldCommonModule, "old-split-" + suffix, "split-node", 2, false, "[]");
+        saveNode(v1, s1, oldCommonModule, "old-contract-" + suffix, "contract-node", 3, false, "[]");
+        saveNode(v1, s1, oldRemovedModule, "old-removed-" + suffix, "removed-node", 4, false, "[]");
+        saveNode(v2, s2, newCommonModule, "new-stable-" + suffix, "stable-node", 1, false, "[]");
+        saveNode(v2, s2, newCommonModule, "new-split-" + suffix, "split-node", 2, false, "[]");
+        saveNode(v2, s2, newCommonModule, "new-contract-" + suffix, "contract-node", 3,
                 contractChange, contractChange ? "[{\"type\":\"CODING\"}]" : "[]");
-        saveNode(v2, s2, "new-added-" + suffix, "added-node", 4, false, "[]");
+        saveNode(v2, s2, newAddedModule, "new-added-" + suffix, "added-node", 4, false, "[]");
+        mapLesson("lesson-stable-" + suffix, v1, "old-stable-" + suffix);
+        mapLesson("lesson-stable-" + suffix, v2, "new-stable-" + suffix);
+        mapLesson("lesson-split-" + suffix, v1, "old-split-" + suffix);
+        mapLesson("lesson-split-" + suffix, v2, "new-split-" + suffix);
+        mapLesson("lesson-contract-" + suffix, v1, "old-contract-" + suffix);
+        mapLesson("lesson-contract-" + suffix, v2, "new-contract-" + suffix);
         prerequisiteRepository.save(new RoadmapNodePrerequisiteEntity(
                 "old-edge-" + suffix, v1, "old-split-" + suffix, "old-stable-" + suffix));
         prerequisiteRepository.save(new RoadmapNodePrerequisiteEntity(
@@ -558,14 +714,82 @@ class RoadmapUpgradeWorkflowTest {
     }
 
     private void saveNode(
-            String templateId, String stageId, String id, String code, int order,
+            String templateId, String stageId, String moduleId, String id, String code, int order,
             boolean artifactRequired, String quizBlueprint
     ) {
         nodeRepository.save(new RoadmapNodeEntity(
-                id, templateId, stageId, code, order, code,
+                id, templateId, stageId, moduleId, code, order, code,
                 "[]", "[]", "[]", "[]",
                 "{\"required\":" + artifactRequired + "}", quizBlueprint,
                 30, 15, "EASY", true));
+    }
+
+    private GranularFixture granularFixture() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String code = "granular-" + suffix;
+        String v1 = "broad-v1-" + suffix;
+        String v2 = "fine-v2-" + suffix;
+        Instant now = Instant.now();
+        templateRepository.save(new RoadmapTemplateEntity(v1, code, 1, "v1", "v1",
+                RoadmapPublicationStatus.PUBLISHED, "a".repeat(64), now));
+        templateRepository.save(new RoadmapTemplateEntity(v2, code, 2, "v2", "v2",
+                RoadmapPublicationStatus.PUBLISHED, "b".repeat(64), now));
+        String s1 = "broad-stage-" + suffix;
+        String s2 = "fine-stage-" + suffix;
+        stageRepository.save(new RoadmapStageEntity(s1, v1, "java", 1, "Java", "描述", "项目"));
+        stageRepository.save(new RoadmapStageEntity(s2, v2, "java", 1, "Java", "描述", "项目"));
+        String oldModule = "broad-module-" + suffix;
+        String newModule = "fine-module-" + suffix;
+        moduleRepository.save(new RoadmapModuleEntity(
+                oldModule, v1, s1, "java-basics", 1, "Java 综合", "宽泛内容"));
+        moduleRepository.save(new RoadmapModuleEntity(
+                newModule, v2, s2, "java-basics", 1, "Java 基础", "细粒度内容"));
+        saveNode(v1, s1, oldModule, "broad-node-" + suffix, "java-syntax-oop", 1, false, "[]");
+        saveNode(v2, s2, newModule, "fine-a-" + suffix, "variables-types-conversion", 1, false, "[]");
+        saveNode(v2, s2, newModule, "fine-b-" + suffix, "conditions-if-switch", 2, false, "[]");
+        prerequisiteRepository.save(new RoadmapNodePrerequisiteEntity(
+                "fine-edge-" + suffix, v2, "fine-b-" + suffix, "fine-a-" + suffix));
+        // A legacy lesson may select one candidate, but unequal content must not transfer completion.
+        mapLesson("lesson-java-broad-" + suffix, v1, "broad-node-" + suffix);
+        return new GranularFixture(code, v1, v2);
+    }
+
+    private GranularFixture equivalentRenameFixture() {
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String code = "rename-" + suffix;
+        String v1 = "rename-v1-" + suffix;
+        String v2 = "rename-v2-" + suffix;
+        Instant now = Instant.now();
+        templateRepository.save(new RoadmapTemplateEntity(v1, code, 1, "v1", "v1",
+                RoadmapPublicationStatus.PUBLISHED, "c".repeat(64), now));
+        templateRepository.save(new RoadmapTemplateEntity(v2, code, 2, "v2", "v2",
+                RoadmapPublicationStatus.PUBLISHED, "d".repeat(64), now));
+        String s1 = "rename-stage-v1-" + suffix;
+        String s2 = "rename-stage-v2-" + suffix;
+        stageRepository.save(new RoadmapStageEntity(s1, v1, "java", 1, "Java", "描述", "项目"));
+        stageRepository.save(new RoadmapStageEntity(s2, v2, "java", 1, "Java", "描述", "项目"));
+        String m1 = "rename-module-v1-" + suffix;
+        String m2 = "rename-module-v2-" + suffix;
+        moduleRepository.save(new RoadmapModuleEntity(m1, v1, s1, "java", 1, "Java", "描述"));
+        moduleRepository.save(new RoadmapModuleEntity(m2, v2, s2, "java", 1, "Java", "描述"));
+        String oldNode = "old-equivalent-" + suffix;
+        String newNode = "new-equivalent-" + suffix;
+        saveNode(v1, s1, m1, oldNode, "legacy-equivalent", 1, false, "[]");
+        saveNode(v2, s2, m2, newNode, "renamed-equivalent", 1, false, "[]");
+        jdbcTemplate.update("UPDATE roadmap_nodes SET title = '等价节点' WHERE id IN (?, ?)",
+                oldNode, newNode);
+        mapLesson("lesson-equivalent-" + suffix, v1, oldNode);
+        mapLesson("lesson-equivalent-" + suffix, v2, newNode);
+        return new GranularFixture(code, v1, v2);
+    }
+
+    private RoadmapNodeEntity node(String templateId, String code) {
+        return nodeRepository.findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(templateId).stream()
+                .filter(node -> node.getNodeCode().equals(code)).findFirst().orElseThrow();
+    }
+
+    private void mapLesson(String lessonId, String templateId, String nodeId) {
+        legacyMappingRepository.save(new LegacyLessonRoadmapMappingEntity(lessonId, templateId, nodeId));
     }
 
     private String register(String label) throws Exception {
@@ -606,4 +830,5 @@ class RoadmapUpgradeWorkflowTest {
     }
 
     private record Fixture(String roadmapCode, String v1TemplateId, String v2TemplateId) { }
+    private record GranularFixture(String roadmapCode, String v1TemplateId, String v2TemplateId) { }
 }
