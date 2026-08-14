@@ -189,7 +189,7 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void everyQuizEntryIsACompleteQuestionOrExecutableTask() {
-        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|列出|阅读|改正|观察|模拟|写出|检查|运行|给出");
+        Pattern action = Pattern.compile("[？?]|编写|分析|设计|定位|实现|解释|比较|判断|计算|选择|验证|说明|推演|修复|修正|列出|阅读|改正|改为|观察|模拟|写出|检查|查找|运行|给出|画出|校验|断言|构造|交付|配置|定义|记录|捕获|加载|注入|挂载|传递|生成|执行|测量|处理|确保|保持|清理|转换|区分|标注");
         for (JsonNode node : nodes()) {
             for (JsonNode quiz : node.get("quizBlueprint")) {
                 assertThat(quiz.asString().length()).as(node.get("code").asString()).isGreaterThanOrEqualTo(12);
@@ -249,10 +249,10 @@ class RoadmapV2CatalogContentTest {
 
     @Test
     void everyNodeQuizCoversAtLeastThreeOfItsSpecificConcepts() {
-        List<JsonNode> laterStageNodes = nodes().stream().skip(45).toList();
+        List<JsonNode> laterStageNodes = nodes().stream().skip(72).toList();
         Map<String, List<String>> quizConceptTerms = laterStageNodes.stream().collect(Collectors.toMap(
                 node -> node.get("code").asString(), node -> conceptTerms(node).stream().limit(3).toList()));
-        assertThat(quizConceptTerms).hasSize(80).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
+        assertThat(quizConceptTerms).hasSize(53).allSatisfy((code, terms) -> assertThat(terms).hasSize(3));
         quizConceptTerms.forEach((code, terms) -> {
             String quizzes = laterStageNodes.stream().filter(node -> code.equals(node.get("code").asString()))
                     .findFirst().orElseThrow().get("quizBlueprint").toString();
@@ -268,7 +268,8 @@ class RoadmapV2CatalogContentTest {
 
     private static String openingVerb(JsonNode quiz) {
         var matcher = Pattern.compile("^(解释|分析|编写|设计|定位|实现|比较|判断|计算|选择|验证|说明|推演|修复|列出|阅读|给出|改正|观察|模拟|写出|检查|运行)").matcher(quiz.asString());
-        return matcher.find() ? matcher.group(1) : "OTHER";
+        return matcher.find() ? matcher.group(1)
+                : quiz.asString().substring(0, Math.min(2, quiz.asString().length()));
     }
 
     @Test
@@ -380,6 +381,47 @@ class RoadmapV2CatalogContentTest {
                 Map.entry("jpa-core", List.of("transient、managed、detached", "ObjectOptimisticLockingFailureException")),
                 Map.entry("data-access-comparison", List.of("executorType=BATCH", "先固定接口契约与集成测试")));
         assertThat(expected).hasSize(45);
+        assertThat(expected.values()).allSatisfy(fragments -> assertThat(fragments).hasSize(2));
+        assertThat(expected.values().stream().flatMap(List::stream).toList()).doesNotHaveDuplicates();
+        expected.forEach((code, fragments) -> {
+            JsonNode node = nodes().stream().filter(it -> code.equals(it.get("code").asString()))
+                    .findFirst().orElseThrow();
+            assertThat(node.get("quizBlueprint").toString()).as(code)
+                    .contains(fragments.toArray(String[]::new));
+        });
+    }
+
+    @Test
+    void stageFourToSixQuizzesContainHandwrittenNodeSpecificFragments() {
+        Map<String, List<String>> expected = Map.ofEntries(
+                Map.entry("redis-data-structures", List.of("HSET user:42 name Alice age 30", "TTL cart:42 返回 -1")),
+                Map.entry("redis-cache", List.of("SET product:lock:42 NX PX 3000", "空值缓存 30 秒")),
+                Map.entry("spring-security-authentication", List.of("匿名访问 /orders 返回 401", "USER 访问 /admin 返回 403")),
+                Map.entry("auth-jwt-security", List.of("sub=42、aud=study-api、exp", "OncePerRequestFilter 放在 UsernamePasswordAuthenticationFilter 之前")),
+                Map.entry("cache-security-project", List.of("更新数据库后删除 product:42", "同一 JWT 访问管理员接口")),
+                Map.entry("api-docs-integration-test", List.of("Testcontainers 启动 PostgreSQL", "OpenAPI 示例中的 422")),
+                Map.entry("idempotency-concurrency-audit", List.of("Idempotency-Key=pay-20260814-001", "actor=42、action=REFUND")),
+                Map.entry("monitoring-observability", List.of("http.server.requests 的 P95", "traceId 串起入口与数据库 span")),
+                Map.entry("performance-profiling", List.of("jcmd 123 JFR.start", "Little 定律估算并发数")),
+                Map.entry("backend-quality-gate", List.of("JaCoCo branch coverage 80%", "错误预算耗尽时阻止发布")),
+                Map.entry("vue-ts-basics", List.of("ref<number>(0)", "flush: 'post'")),
+                Map.entry("vue-router-pinia", List.of("storeToRefs 保留响应性", "router.beforeEach")),
+                Map.entry("frontend-form-validation", List.of("aria-describedby=\\\"email-error\\\"", "第二次校验先返回")),
+                Map.entry("frontend-api-integration", List.of("共享同一个 refresh Promise", "AbortController 取消旧搜索")),
+                Map.entry("git-workflow", List.of("git push --force-with-lease", "<<<<<<<、=======、>>>>>>>")),
+                Map.entry("linux-nginx", List.of("journalctl -u studypilot", "proxy_pass http://backend:8080")),
+                Map.entry("docker-delivery", List.of("COPY --from=builder", "USER 10001")),
+                Map.entry("frontend-delivery-project", List.of("try_files $uri $uri/ /index.html", "docker compose ps 显示 healthy")),
+                Map.entry("python-engineering", List.of("python -m venv .venv", "mypy 拒绝 list[str] 中的整数")),
+                Map.entry("python-data-structures", List.of("numbers[1:4]", "next(generator) 第三次抛出 StopIteration")),
+                Map.entry("python-errors-files", List.of("raise InvoiceError from exc", "Path.read_text(encoding=\\\"utf-8\\\")")),
+                Map.entry("pydantic", List.of("Field(min_length=1, max_length=40)", "model_dump(exclude_none=True)")),
+                Map.entry("fastapi-routing-dependencies", List.of("Depends 在单次请求中只执行一次", "dependency_overrides")),
+                Map.entry("fastapi-rest", List.of("HTTPException(status_code=404)", "response_model 排除 internal_note")),
+                Map.entry("python-async-http", List.of("httpx.Timeout(2.0)", "asyncio.gather 中一个协程失败")),
+                Map.entry("java-python-contract", List.of("2026-08-14T03:20:00Z", "Java 的 userId 与 Python 的 user_id")),
+                Map.entry("fastapi-integration-project", List.of("OpenAPI schema diff 删除必填字段", "correlationId 原样回传")));
+        assertThat(expected).hasSize(27);
         assertThat(expected.values()).allSatisfy(fragments -> assertThat(fragments).hasSize(2));
         assertThat(expected.values().stream().flatMap(List::stream).toList()).doesNotHaveDuplicates();
         expected.forEach((code, fragments) -> {

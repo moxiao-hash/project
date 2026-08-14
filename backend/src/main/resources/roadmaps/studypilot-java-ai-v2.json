@@ -1981,11 +1981,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查一份HASH HSET/HGET方案，列出安全或正确性漏洞。",
-                "编写ZSET ZADD/ZRANGE的单元测试与期望结果。",
-                "推演TTL/EXPIRE失败后的状态恢复过程。",
-                "选择HASH HSET/HGET参数值并给出量化依据。",
-                "解释ZSET ZADD/ZRANGE与TTL/EXPIRE的协作边界。"
+                "执行 HSET user:42 name Alice age 30 后，分别写出 HGET user:42 name 与 HGETALL user:42 的预期结果。",
+                "向 leaderboard 用 ZADD 写入 alice=90、bob=75、carol=90，设计 ZREVRANGE WITHSCORES 断言并说明同分排序不能承诺什么。",
+                "发现 TTL cart:42 返回 -1，给出补设 EXPIRE 1800 的命令，并区分 -1 与 -2 的含义。",
+                "比较一次写入后宕机时 RDB 快照与 appendfsync everysec 的潜在数据丢失窗口，选择订单草稿的持久化策略。",
+                "在 maxmemory 已满的压测中观察到写命令报错，检查 noeviction 配置并说明切到 allkeys-lru 会淘汰哪些键。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2023,11 +2023,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查一份缓存穿透与空值缓存方案，列出安全或正确性漏洞。",
-                "编写缓存击穿与互斥锁的单元测试与期望结果。",
-                "推演TTL 抖动失败后的状态恢复过程。",
-                "选择缓存穿透与空值缓存参数值并给出量化依据。",
-                "解释缓存击穿与互斥锁与TTL 抖动的协作边界。"
+                "为不存在的商品 9999 设计空值缓存 30 秒的 Cache Aside 流程，并断言第二次查询不再访问数据库。",
+                "热门商品 42 过期时，使用 SET product:lock:42 NX PX 3000 争抢重建锁；推演持锁者超时与其他线程回源的边界。",
+                "给一万件商品的基础 TTL=600 秒加入正负 60 秒抖动，计算最短和最长过期时间并解释它如何缓解缓存雪崩。",
+                "商品改价事务提交后应更新数据库再删除缓存；分析先删 product:42 再写库时并发读可能留下的旧值。",
+                "RedisTemplate 写入后出现 JdkSerializationRedisSerializer 字节而命令行无法阅读，选择 JSON 序列化并写出兼容旧键的迁移验证。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2064,11 +2064,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查一份AuthenticationEntryPoint 401方案，列出安全或正确性漏洞。",
-                "编写AccessDeniedHandler 403的单元测试与期望结果。",
-                "推演SecurityContext失败后的状态恢复过程。",
-                "选择AuthenticationEntryPoint 401参数值并给出量化依据。",
-                "解释AccessDeniedHandler 403与SecurityContext的协作边界。"
+                "用 MockMvc 验证匿名访问 /orders 返回 401 且由 AuthenticationEntryPoint 输出 problem+json，而不是跳转登录页。",
+                "已认证的 USER 访问 /admin 返回 403；说明为什么此时应进入 AccessDeniedHandler 而非再次要求登录。",
+                "在两个连续请求间检查 SecurityContextHolder，定位线程池复用导致前一用户身份泄漏的清理缺陷。",
+                "BCrypt cost 从 10 调到 14 后登录 P95 上升，设计一次基准测试选择既抗破解又满足延迟预算的参数。",
+                "登录前后比较 session id，判断 changeSessionId 是否阻止 session fixation，并写出失败断言。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2106,11 +2106,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "检查一份SecurityFilterChain方案，列出安全或正确性漏洞。",
-                "编写JWT 签名与过期的单元测试与期望结果。",
-                "推演OncePerRequestFilter失败后的状态恢复过程。",
-                "选择SecurityFilterChain参数值并给出量化依据。",
-                "解释JWT 签名与过期与OncePerRequestFilter的协作边界。"
+                "签发含 sub=42、aud=study-api、exp 的 JWT，分别验证正确受众、过期时间和错误 aud 的结果。",
+                "把 token 负载中的 role 从 USER 改成 ADMIN 但保留原签名，说明验签为何必须返回 401 而不是信任 claims。",
+                "将 JWT OncePerRequestFilter 放在 UsernamePasswordAuthenticationFilter 之前，画出解析 Bearer token 到写入 SecurityContext 的调用顺序。",
+                "为 /admin/** 与 @PreAuthorize(\"hasRole('ADMIN')\") 编写两组授权测试，区分缺少认证的 401 和权限不足的 403。",
+                "用户密码用 BCrypt 存储而 JWT 只保存必要 claims；检查把 passwordHash 放入 token 会造成的泄露风险。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2147,11 +2147,11 @@
                 "description": "提交 Redis 与 JWT 安全服务；redis-cli 验证 TTL，./mvnw test 覆盖 401、403 和缓存失效。"
               },
               "quizBlueprint": [
-                "检查一份Cache Aside 删除顺序方案，列出安全或正确性漏洞。",
-                "编写TTL 抖动的单元测试与期望结果。",
-                "推演JWT exp/aud失败后的状态恢复过程。",
-                "选择Cache Aside 删除顺序参数值并给出量化依据。",
-                "解释TTL 抖动与JWT exp/aud的协作边界。"
+                "商品改价接口更新数据库后删除 product:42，构造并发读测试证明 Cache Aside 不会长期保留旧价格。",
+                "让 500 个商品键的 TTL 在 540 到 660 秒分布，写出断言避免它们在同一秒集中回源。",
+                "同一 JWT 访问管理员接口时，分别用 exp 已过期、aud 错误和 USER 角色验证 401、401、403。",
+                "对不存在的商品写 30 秒空值缓存，并统计数据库查询次数以验证缓存穿透保护真正生效。",
+                "交付一个登录后读取商品的集成测试：校验 BCrypt 密码、JWT claims、缓存 miss 回源以及响应不暴露内部缓存键。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2197,11 +2197,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "模拟OpenAPI 3 注解的正常请求和恶意请求。",
-                "定位springdoc 接口文档指标异常对应的代码位置。",
-                "设计MockMvc 集成测试的回滚或补偿步骤。",
-                "实现OpenAPI 3 注解时如何验证输入合法性？",
-                "比较springdoc 接口文档在开发与生产环境的配置差异。"
+                "为 POST /orders 的 201、400 响应补全 OpenAPI 3 注解，并检查必填 quantity 与示例 JSON 是否一致。",
+                "Testcontainers 启动 PostgreSQL 后插入订单，再通过 MockMvc 查询；说明这比 H2 更能发现哪类方言差异。",
+                "将控制器返回字段重命名却未更新 springdoc，设计契约测试比较运行时响应与生成的 schema。",
+                "OpenAPI 示例中的 422 与 Spring 实际校验返回 400 冲突，定位并统一文档、ProblemDetail 和测试断言。",
+                "在生产 profile 关闭 /v3/api-docs、测试环境保持开放，写出配置验证以免接口文档意外暴露。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2239,11 +2239,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "模拟Idempotency-Key的正常请求和恶意请求。",
-                "定位数据库唯一约束指标异常对应的代码位置。",
-                "设计乐观锁与悲观锁的回滚或补偿步骤。",
-                "实现Idempotency-Key时如何验证输入合法性？",
-                "比较数据库唯一约束在开发与生产环境的配置差异。"
+                "连续两次携带 Idempotency-Key=pay-20260814-001 创建支付，断言只扣款一次且第二次返回首次结果。",
+                "两个实例同时处理相同幂等键时，让数据库唯一约束裁决竞争，并说明捕获冲突后应读取哪条记录。",
+                "库存 version=7 的两个更新同时提交，推演乐观锁成功者与失败者的响应，不允许静默覆盖。",
+                "批处理长期占用悲观锁造成超时，比较缩短事务与改用乐观锁的适用条件。",
+                "退款成功后写入 actor=42、action=REFUND、target=order-9 的审计事件，检查日志不包含银行卡号且不可被普通用户修改。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2281,11 +2281,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "模拟Micrometer 指标的正常请求和恶意请求。",
-                "定位Actuator health指标异常对应的代码位置。",
-                "设计OpenTelemetry trace的回滚或补偿步骤。",
-                "实现Micrometer 指标时如何验证输入合法性？",
-                "比较Actuator health在开发与生产环境的配置差异。"
+                "按 uri 模板与 status 统计 http.server.requests 的 P95，解释为什么不能把原始 userId 作为 Micrometer tag。",
+                "数据库不可达时让 readiness 为 DOWN、liveness 仍为 UP，写出 Kubernetes 是否应摘流量或重启进程的判断。",
+                "一次下单跨 HTTP 与 JDBC，检查 traceId 串起入口与数据库 span，并定位缺失上下文传播的异步任务。",
+                "给可用性 SLO=99.9% 配置错误率告警，计算 30 天允许的错误预算分钟数。",
+                "从一条 500 日志回查 traceId，同时验证 MDC 在线程结束时清理且日志中没有 Authorization header。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2322,11 +2322,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "模拟JFR recording的正常请求和恶意请求。",
-                "定位async-profiler 火焰图指标异常对应的代码位置。",
-                "设计连接池排队的回滚或补偿步骤。",
-                "实现JFR recording时如何验证输入合法性？",
-                "比较async-profiler 火焰图在开发与生产环境的配置差异。"
+                "对 PID 123 执行 jcmd 123 JFR.start name=checkout settings=profile duration=60s filename=checkout.jfr，并列出应检查的 CPU 与锁事件。",
+                "async-profiler 火焰图显示 JSON 序列化占 42% CPU，设计一次只替换序列化器的对照压测。",
+                "请求 P99 突增但数据库执行时间稳定，结合 Hikari pending 指标判断连接池排队是否是瓶颈。",
+                "吞吐 200 req/s、平均响应 0.25 秒时，用 Little 定律估算并发数并给出容量预留后的目标。",
+                "比较采样 JFR 与持续高频 profiler 的线上开销，选择生产诊断方式并写出停止 recording 的命令。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2363,11 +2363,11 @@
                 "description": "提交后端质量门禁；./mvnw verify 生成覆盖率报告，并提供一次压测与告警证据。"
               },
               "quizBlueprint": [
-                "模拟JaCoCo branch coverage的正常请求和恶意请求。",
-                "定位mutation testing指标异常对应的代码位置。",
-                "设计SLO/error budget的回滚或补偿步骤。",
-                "实现JaCoCo branch coverage时如何验证输入合法性？",
-                "比较mutation testing在开发与生产环境的配置差异。"
+                "将 JaCoCo branch coverage 80% 设为 verify 门槛，构造漏测 if 分支使 Maven 以非零退出码失败。",
+                "mutation testing 把 amount > 0 改成 amount >= 0 后仍存活，补哪条边界测试才能杀死该 mutant？",
+                "发布前错误预算耗尽时阻止发布，说明紧急安全修复如何走有审计记录的例外流程。",
+                "质量流水线中单元测试通过但契约测试失败，判断是否允许生成可发布镜像并解释门禁顺序。",
+                "汇总覆盖率、mutation score 与 SLO 检查结果，设计一个任何项失败都返回退出码 1 的验收场景。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2422,11 +2422,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "列出Composition API setup执行前必须满足的三个条件。",
-                "改正一段违反ref/reactive 响应式契约的实现。",
-                "观察TypeScript Props 类型开启前后的日志差异。",
-                "分析Composition API setup失败是否适合重试。",
-                "编写脚本自动验证ref/reactive 响应式和TypeScript Props 类型。"
+                "在 setup 中声明 ref<number>(0)，实现加一按钮并用 Vitest 断言 DOM 从 0 更新为 1。",
+                "解构 reactive({ name: 'Ada' }) 后页面不更新，改用 toRefs 并解释丢失响应性的原因。",
+                "为 UserCard 的 props 定义 { user: User; compact?: boolean }，让 TypeScript 拒绝缺少 user 的调用。",
+                "搜索词变化会触发请求，比较 computed 与 watch 的职责，并用 flush: 'post' 验证读取的是更新后的 DOM。",
+                "组件卸载后定时器仍运行，使用 onUnmounted 清理并编写 fake timers 测试证明没有额外调用。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2464,11 +2464,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "列出Pinia defineStore执行前必须满足的三个条件。",
-                "改正一段违反Vue Router 导航守卫契约的实现。",
-                "观察持久化状态开启前后的日志差异。",
-                "分析Pinia defineStore失败是否适合重试。",
-                "编写脚本自动验证Vue Router 导航守卫和持久化状态。"
+                "用 defineStore 建立 auth store，从 storeToRefs 保留响应性后断言登出会同步更新导航栏。",
+                "在 router.beforeEach 中处理 requiresAuth：未登录访问 /settings 应携带 redirect 跳到 /login，登录后能返回原页。",
+                "刷新页面只持久化 theme 而不持久化 access token，说明最小化 localStorage 数据可降低什么风险。",
+                "后端返回角色后再 addRoute 管理页，设计测试确保 USER 输入 /admin 仍落到 403 页面。",
+                "导航守卫重复调用 next() 造成警告，改为每条分支直接 return 路由位置并覆盖三个分支。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2505,11 +2505,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "列出touched/dirty 状态执行前必须满足的三个条件。",
-                "改正一段违反异步校验竞态契约的实现。",
-                "检查输入无效时 aria-invalid=\"true\" 与 aria-describedby 指向的错误消息是否同时存在。",
-                "分析 touched/dirty 状态应在 blur、输入或提交哪个事件更新，并写出表单断言。",
-                "编写脚本自动验证异步校验竞态和aria-invalid。"
+                "邮箱输入 blur 后才显示错误，分别断言 touched 与 dirty 的状态变化，避免用户尚未操作就看到红字。",
+                "用户名连续输入 ada 与 ada2，第二次校验先返回；用请求序号或 AbortController 防止旧响应覆盖新结果。",
+                "提交空邮箱时检查 aria-invalid=\"true\"、aria-describedby=\"email-error\" 且该错误节点可被屏幕阅读器关联。",
+                "用户按 Enter 连续提交两次，禁用按钮并复用幂等键，验证只产生一个创建请求且焦点移到错误摘要。",
+                "后端返回字段级错误与全局错误时，设计表单映射测试，确保未知字段不会导致页面崩溃。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2547,11 +2547,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "列出Axios 拦截器执行前必须满足的三个条件。",
-                "改正一段违反Bearer token 刷新契约的实现。",
-                "观察CORS 预检开启前后的日志差异。",
-                "分析Axios 拦截器失败是否适合重试。",
-                "编写脚本自动验证Bearer token 刷新和CORS 预检。"
+                "三个请求同时收到 401 时让它们共享同一个 refresh Promise，断言只发起一次刷新并各自重放一次。",
+                "刷新接口本身返回 401，修正 Axios 响应拦截器避免无限循环，并清除凭据跳转登录页。",
+                "浏览器对带 Authorization 的跨域请求发送 OPTIONS，写出允许 origin、method、header 的最小 CORS 响应。",
+                "搜索框快速输入时用 AbortController 取消旧搜索，区分主动取消与真正网络错误，保证界面不弹错误提示。",
+                "把后端 { code, message, correlationId } 映射为类型化 ApiError，验证 403 不会被误当成 token 过期刷新。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2588,11 +2588,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "列出rebase 重放执行前必须满足的三个条件。",
-                "改正一段违反merge commit契约的实现。",
-                "观察冲突标记开启前后的日志差异。",
-                "分析rebase 重放失败是否适合重试。",
-                "编写脚本自动验证merge commit和冲突标记。"
+                "功能分支落后 main 三个提交，写出 fetch 后 rebase 的命令顺序，并说明何时不应改写共享分支历史。",
+                "解决文件中的 <<<<<<<、=======、>>>>>>> 冲突后，使用 git diff --check 验证没有残留标记。",
+                "rebase 已推送的个人分支后执行 git push --force-with-lease，解释它比 --force 多保护哪种远端更新。",
+                "比较保留 merge commit 与线性 rebase 对审查历史的影响，为多人发布分支选择策略。",
+                "只审查本次提交相对 main 的变更，给出 git diff main...HEAD 命令并检查意外生成文件。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2629,11 +2629,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "写出systemd Restart/on-failure操作的输入、输出和副作用。",
-                "验证journalctl遇到空值或缺失字段的行为。",
-                "比较Nginx location/proxy_pass不同策略对结果的影响。",
-                "定位systemd Restart/on-failure性能退化的观测证据。",
-                "设计journalctl故障时的降级方案。"
+                "服务异常退出三次后不再拉起，检查 Restart=on-failure、RestartSec 与 StartLimitBurst 的组合并给出修复配置。",
+                "使用 journalctl -u studypilot --since '10 min ago' 查找启动失败，按时间关联 8080 端口占用日志。",
+                "location /api/ 配置 proxy_pass http://backend:8080/ 时请求路径如何改写？与缺少末尾斜杠的结果作比较。",
+                "TLS 握手提示 unable to get local issuer certificate，检查证书链文件顺序而不是关闭客户端校验。",
+                "Nginx 返回 502 时分别用 ss、curl localhost 与 error.log 判断是进程未监听、超时还是上游拒绝连接。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2671,11 +2671,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "写出多阶段 Dockerfile操作的输入、输出和副作用。",
-                "验证Compose healthcheck遇到空值或缺失字段的行为。",
-                "比较镜像层缓存不同策略对结果的影响。",
-                "定位多阶段 Dockerfile性能退化的观测证据。",
-                "设计Compose healthcheck故障时的降级方案。"
+                "在多阶段 Dockerfile 中 COPY --from=builder 只复制 jar，检查最终镜像不包含 Maven 缓存与源码。",
+                "容器改为 USER 10001 后无法写 /tmp/app，修正目录权限并验证进程不是 root。",
+                "先复制 pom.xml 下载依赖、再复制 src 构建，说明这种层顺序如何提高仅改源码时的缓存命中。",
+                "Compose healthcheck 连续失败时让依赖服务不接流量，设计 start_period、interval 与 retries 的验收测试。",
+                "发布新镜像后健康检查失败，写出滚动发布停止扩容并回滚上一 digest 的操作证据。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2712,11 +2712,11 @@
                 "description": "提交 Vue 全栈控制台；npm test、npm run build 与 docker compose up --wait 均成功。"
               },
               "quizBlueprint": [
-                "写出Vite production build操作的输入、输出和副作用。",
-                "验证Nginx SPA fallback遇到空值或缺失字段的行为。",
-                "比较Cypress/Playwright不同策略对结果的影响。",
-                "定位Vite production build性能退化的观测证据。",
-                "设计Nginx SPA fallback故障时的降级方案。"
+                "运行 Vite production build 后检查 dist 不含开发 sourcemap 与错误 API base URL，并记录构建退出码。",
+                "为 SPA 配置 try_files $uri $uri/ /index.html，同时验证 /api/orders 不会被 fallback 成 HTML 200。",
+                "用 Playwright 完成登录、创建订单、刷新后查看订单的主路径，并断言失败响应显示 correlationId。",
+                "启动全栈后检查 docker compose ps 显示 healthy，再故意停掉后端验证前端错误页与健康状态变化。",
+                "以不可变镜像 digest 执行一次发布和回滚演练，比较回滚前后首页版本标识及 Nginx access log。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2771,11 +2771,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "写出venv 与 pyproject.toml操作的输入、输出和副作用。",
-                "验证类型提示与 mypy遇到空值或缺失字段的行为。",
-                "比较pytest fixture不同策略对结果的影响。",
-                "定位venv 与 pyproject.toml性能退化的观测证据。",
-                "设计类型提示与 mypy故障时的降级方案。"
+                "执行 python -m venv .venv 并激活环境，验证 python 与 pip 都指向项目目录而非系统解释器。",
+                "在 pyproject.toml 固定依赖范围后重新创建环境，说明锁文件如何让 CI 与本地安装结果一致。",
+                "给函数标注 names: list[str]，让 mypy 拒绝 list[str] 中的整数，并修正调用处而非使用 Any。",
+                "将数据库连接做成 pytest fixture，比较 function 与 session scope 对隔离性和执行时间的影响。",
+                "运行 ruff check 与 pytest 时从包根目录导入失败，检查 src 布局和可编辑安装，禁止用临时 sys.path.append 掩盖问题。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2812,11 +2812,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "写出list/dict/set 复杂度操作的输入、输出和副作用。",
-                "验证字典读取缺失字段时 get(key, default) 与直接下标访问的返回值或 KeyError。",
-                "比较iterator/generator不同策略对结果的影响。",
-                "定位list/dict/set 复杂度性能退化的观测证据。",
-                "改正可变 list 作为 hashable key 的错误，转换为 tuple 后断言能够稳定查找。"
+                "给 numbers=[0,1,2,3,4] 写出 numbers[1:4] 的结果，并说明切片创建新 list 的空间代价。",
+                "读取缺失的 profile['email'] 与 profile.get('email', '')，分别断言 KeyError 和默认值，选择适合必填字段的写法。",
+                "一百万个 id 去重时比较 list membership 与 set membership 的时间复杂度，并设计不依赖固定毫秒数的性能测试。",
+                "生成器只 yield 两个值，验证 next(generator) 第三次抛出 StopIteration，并说明 for 循环如何消费该信号。",
+                "尝试把 [2026,8,14] 作为 dict key 会报 TypeError，转换成 tuple 后检查相同日期能稳定命中。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2853,11 +2853,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释context manager __enter__/__exit__内部状态如何随操作变化。",
-                "实现pathlib并处理一次明确的错误场景。",
-                "阅读异常链 __cause__结果，判断是否满足验收标准。",
-                "分析context manager __enter__/__exit__与业务边界不一致的后果。",
-                "编写参数化测试覆盖pathlib关键分支。"
+                "自定义 context manager 在业务代码抛错时仍应关闭文件，记录 __enter__、__exit__ 的调用顺序并断言异常未被误吞。",
+                "使用 Path.read_text(encoding=\"utf-8\") 读取中文配置，分别测试文件不存在与非法编码字节。",
+                "捕获底层 OSError 后 raise InvoiceError from exc，检查 traceback 与 __cause__ 是否保留原始路径。",
+                "写临时文件时先落盘到同目录再 replace，推演进程在写到一半崩溃时如何避免留下截断的正式文件。",
+                "用 pytest tmp_path 参数化空文件、尾随换行与只读路径，验证清理不依赖开发机的固定目录。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2895,11 +2895,11 @@
                 "description": "提交带 pyproject.toml 的 Pydantic 包；pytest 与类型检查通过，覆盖无效模型输入。"
               },
               "quizBlueprint": [
-                "解释BaseModel 字段约束内部状态如何随操作变化。",
-                "实现field_validator并处理一次明确的错误场景。",
-                "阅读model_validator结果，判断是否满足验收标准。",
-                "分析BaseModel 字段约束与业务边界不一致的后果。",
-                "编写参数化测试覆盖field_validator关键分支。"
+                "定义 Product(name: str = Field(min_length=1, max_length=40), price: Decimal = Field(gt=0))，验证空名称和零价格的错误位置。",
+                "用 field_validator 将 email 去除首尾空格并小写，说明校验发生在类型转换前还是后。",
+                "model_validator 检查 start_at 早于 end_at，构造跨时区输入并断言错误关联到模型而非伪造字段。",
+                "调用 model_dump(exclude_none=True) 生成补丁负载，验证未提供的 nickname 不会覆盖数据库旧值。",
+                "SettingsConfigDict(env_prefix=\"APP_\") 加载配置时缺少密钥，写测试确保启动失败且错误文本不泄露密钥内容。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
@@ -2944,11 +2944,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释FastAPI Depends 缓存内部状态如何随操作变化。",
-                "实现yield 清理并处理一次明确的错误场景。",
-                "阅读APIRouter结果，判断是否满足验收标准。",
-                "分析FastAPI Depends 缓存与业务边界不一致的后果。",
-                "编写参数化测试覆盖yield 清理关键分支。"
+                "同一路由的两个参数依赖 get_user，验证 Depends 在单次请求中只执行一次，再用 use_cache=False 对比计数。",
+                "数据库 session 依赖在 yield 后关闭连接，构造处理函数抛异常的请求并断言清理代码仍执行。",
+                "把 /users 与 /orders 拆进 APIRouter，检查 prefix、tags 和重复 route name 是否按预期出现在 OpenAPI。",
+                "在 lifespan 启动阶段加载模型失败，设计测试确认应用拒绝接收请求且已创建资源得到释放。",
+                "通过 app.dependency_overrides 替换真实鉴权依赖，验证测试结束后清空覆盖以免污染下一用例。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -2986,11 +2986,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释FastAPI Depends内部状态如何随操作变化。",
-                "实现Pydantic 请求响应模型并处理一次明确的错误场景。",
-                "实现 APIRouter 响应模型并判断返回字段是否满足 OpenAPI 契约。",
-                "分析FastAPI Depends与业务边界不一致的后果。",
-                "编写参数化测试覆盖Pydantic 请求响应模型关键分支。"
+                "为 GET /products/{id} 注入仓库 Depends，使用 dependency override 返回固定商品并断言依赖只在请求内共享。",
+                "找不到商品时抛 HTTPException(status_code=404)，检查 detail 与 OpenAPI 声明的错误响应一致。",
+                "响应模型只公开 id 与 name，验证 response_model 排除 internal_note，即使处理函数返回了该字段。",
+                "请求体 quantity=0 触发 Pydantic 校验时，用 TestClient 检查 422 的 loc 指向 body.quantity。",
+                "将版本化 APIRouter 挂载到 /api/v1，比较路由表与生成文档，确保未意外暴露内部调试端点。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3027,11 +3027,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "解释event loop内部状态如何随操作变化。",
-                "实现coroutine/task并处理一次明确的错误场景。",
-                "阅读httpx timeout结果，判断是否满足验收标准。",
-                "分析event loop与业务边界不一致的后果。",
-                "编写参数化测试覆盖coroutine/task关键分支。"
+                "在 async 路由中直接调用阻塞 time.sleep，观察 event loop 停顿并改用异步客户端或线程池边界。",
+                "三个下游请求用 asyncio.gather 并发执行；当 asyncio.gather 中一个协程失败时，明确其他任务的取消与结果收集策略。",
+                "为外部评分服务设置 httpx.Timeout(2.0)，分别模拟 connect timeout 与 read timeout 并映射成不同日志字段。",
+                "AsyncClient 连接池 max_connections=20 时有 100 个并发请求，测量 pool wait 而不是盲目增加总超时。",
+                "客户端断开后取消长任务，捕获 CancelledError 做资源清理并重新抛出，测试没有孤儿 task 残留。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3069,11 +3069,11 @@
                 "description": "本节点无需提交里程碑成果；保留练习代码与自检结果供复习"
               },
               "quizBlueprint": [
-                "选择OpenAPI 契约适用的数据或请求样例。",
-                "定位JSON 字段命名引起的不一致并给出修复顺序。",
-                "实现时区与 ISO-8601的监控或审计记录。",
-                "说明OpenAPI 契约如何处理重复输入。",
-                "设计压力场景验证JSON 字段命名容量上限。"
+                "定位 Java 的 userId 与 Python 的 user_id 命名差异，选择 alias 策略并写契约测试保证双方序列化字段都是 userId。",
+                "传递 2026-08-14T03:20:00Z，验证 Java Instant 与 Python aware datetime 往返后仍代表同一时刻。",
+                "Python 新增必填字段 locale 后 Java 旧客户端失败，利用 OpenAPI diff 判断这是 breaking change 并给出兼容迁移。",
+                "将 Java 的 ORDER_NOT_FOUND 映射为 Python 404 ProblemDetail，检查 code、message、correlationId 不因语言实现不同而漂移。",
+                "生成 Java client 调用 FastAPI 测试容器，覆盖正常订单、额外未知字段与 Decimal 金额精度，记录请求响应样本。"
               ],
               "estimatedMinutes": 45,
               "practiceMinutes": 30,
@@ -3110,11 +3110,11 @@
                 "description": "提交 Java-FastAPI 双端服务；pytest 与契约测试通过，并附超时调用日志。"
               },
               "quizBlueprint": [
-                "选择OpenAPI schema diff适用的数据或请求样例。",
-                "定位client generation引起的不一致并给出修复顺序。",
-                "实现correlationId的监控或审计记录。",
-                "说明OpenAPI schema diff如何处理重复输入。",
-                "设计压力场景验证client generation容量上限。"
+                "CI 中 OpenAPI schema diff 删除必填字段后仍通过，修正 breaking-change 规则并用失败退出码验证门禁。",
+                "根据 FastAPI schema 重新 client generation，检查 Java 生成器没有把 nullable Decimal 错写成必填 double。",
+                "Java 请求携带 correlationId 到 Python，验证下游日志和响应头都将 correlationId 原样回传。",
+                "用 httpx 模拟评分服务超过 2 秒，确认 Python 返回约定错误码、Java 不无限重试且日志包含同一关联标识。",
+                "完成双端集成验收：Testcontainers 启动依赖，Java 发起成功与校验失败请求，并保存可复现的 OpenAPI 契约报告。"
               ],
               "estimatedMinutes": 60,
               "practiceMinutes": 45,
