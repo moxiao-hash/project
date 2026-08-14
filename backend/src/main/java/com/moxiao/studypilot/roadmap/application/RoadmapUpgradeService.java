@@ -142,7 +142,8 @@ public class RoadmapUpgradeService {
         RoadmapUpgradeEntity upgrade = upgradeRepository
                 .findByOwnerIdAndIdForUpdate(ownerId, upgradeId)
                 .orElseThrow(() -> new ResourceNotFoundException("路线升级预览不存在"));
-        UpgradeDiff diff = readDiff(upgrade.getDiffJson());
+        String persistedDiffJson = upgrade.getDiffJson();
+        UpgradeDiff diff = readDiff(persistedDiffJson);
         if (upgrade.getStatus() == UpgradeStatus.COMPLETED) {
             return response(upgrade, diff);
         }
@@ -157,10 +158,22 @@ public class RoadmapUpgradeService {
                 || !publishedVersions.get(0).getId().equals(target.getId())) {
             throw new ConflictException("路线升级预览已过期，请重新生成");
         }
-        if (!diff.manualReviewNodeCodes().isEmpty()) {
+        UpgradeDiff currentDiff = compare(source.getId(), target.getId());
+        if (!currentDiff.manualReviewNodeCodes().isEmpty()) {
             throw new ConflictException("路线升级包含需要人工映射的节点，当前版本不能确认");
         }
-        diff = restoreLegacyInheritanceMappings(source.getId(), target.getId(), diff);
+        boolean hasPersistedInheritanceMappings = canonicalJson(persistedDiffJson)
+                .has("inheritedNodeMappings");
+        if (!diff.manualReviewNodeCodes().isEmpty()
+                && (!hasPersistedInheritanceMappings
+                || !onlyUniqueNonEquivalentMappings(
+                source.getId(), target.getId(), diff.manualReviewNodeCodes(), currentDiff))) {
+            throw new ConflictException("路线升级包含需要人工映射的节点，当前版本不能确认");
+        }
+        diff = hasPersistedInheritanceMappings
+                ? currentDiff
+                : restoreLegacyInheritanceMappings(source.getId(), target.getId(), diff);
+        upgrade.replaceDiffJson(writeDiff(diff));
 
         Instant now = Instant.now();
         sourceEnrollment.supersede(now);
@@ -494,6 +507,41 @@ public class RoadmapUpgradeService {
                 diff.unchangedNodeCodes(), diff.addedNodeCodes(), diff.removedNodeCodes(),
                 diff.manualReviewNodeCodes(), restored, diff.addedModuleCount(),
                 diff.removedModuleCount(), diff.changedModuleCount());
+    }
+
+    private boolean onlyUniqueNonEquivalentMappings(
+            String sourceTemplateId,
+            String targetTemplateId,
+            List<String> persistedManualReviewCodes,
+            UpgradeDiff currentDiff
+    ) {
+        if (persistedManualReviewCodes.isEmpty()
+                || new HashSet<>(persistedManualReviewCodes).size()
+                != persistedManualReviewCodes.size()) {
+            return false;
+        }
+        List<RoadmapNodeEntity> sourceNodes = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(sourceTemplateId);
+        List<RoadmapNodeEntity> targetNodes = nodeRepository
+                .findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(targetTemplateId);
+        Map<String, RoadmapNodeEntity> sourceById = sourceNodes.stream().collect(Collectors.toMap(
+                RoadmapNodeEntity::getId, node -> node));
+        Map<String, RoadmapNodeEntity> targetById = targetNodes.stream().collect(Collectors.toMap(
+                RoadmapNodeEntity::getId, node -> node));
+        Map<String, RoadmapNodeEntity> targetByCode = byCode(targetNodes);
+        ExplicitMappings mappings = explicitMappings(
+                sourceTemplateId, targetTemplateId, sourceById, targetById);
+        Set<String> currentlyAdded = Set.copyOf(currentDiff.addedNodeCodes());
+        Set<String> currentlyRemoved = Set.copyOf(currentDiff.removedNodeCodes());
+        return persistedManualReviewCodes.stream().allMatch(code -> {
+            RoadmapNodeEntity target = targetByCode.get(code);
+            if (target == null || !currentlyAdded.contains(code)) {
+                return false;
+            }
+            String sourceId = mappings.sourceIdByTargetId().get(target.getId());
+            RoadmapNodeEntity source = sourceById.get(sourceId);
+            return source != null && currentlyRemoved.contains(source.getNodeCode());
+        });
     }
 
     private Map<String, Set<String>> prerequisitesByNodeCode(

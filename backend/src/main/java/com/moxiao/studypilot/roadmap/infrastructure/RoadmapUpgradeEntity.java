@@ -79,6 +79,16 @@ public class RoadmapUpgradeEntity {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getCompletedAt() { return completedAt; }
 
+    public void replaceDiffJson(String normalizedDiffJson) {
+        if (status != UpgradeStatus.PREVIEW) {
+            throw new IllegalStateException("Only a preview diff can be replaced");
+        }
+        if (normalizedDiffJson == null || normalizedDiffJson.isBlank()) {
+            throw new IllegalArgumentException("normalizedDiffJson must not be blank");
+        }
+        this.diffJson = normalizedDiffJson;
+    }
+
     public void complete(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
         if (status == UpgradeStatus.COMPLETED) {

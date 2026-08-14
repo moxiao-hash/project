@@ -17,6 +17,7 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapTemplateJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapUpgradeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapUpgradeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import jakarta.persistence.EntityManager;
@@ -345,14 +346,24 @@ class RoadmapUpgradeWorkflowTest {
         String token = register("ambiguous-mapping-owner");
         enroll(token, fixture.roadmapCode(), 1);
 
-        mockMvc.perform(get("/api/roadmaps/current/upgrades")
+        MvcResult previewResult = mockMvc.perform(get("/api/roadmaps/current/upgrades")
                         .header("Authorization", bearer(token)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].unchangedNodeCodes.length()").value(0))
                 .andExpect(jsonPath("$[0].manualReviewNodeCodes[0]")
                         .value("variables-types-conversion"))
                 .andExpect(jsonPath("$[0].manualReviewNodeCodes[1]")
-                        .value("conditions-if-switch"));
+                        .value("conditions-if-switch"))
+                .andReturn();
+        String upgradeId = objectMapper.readTree(previewResult.getResponse().getContentAsString())
+                .get(0).get("id").asText();
+
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isConflict());
+        assertThat(enrollmentRepository.findAllByOwnerIdAndStatus(
+                ownerId(token), com.moxiao.studypilot.roadmap.domain.UserRoadmapStatus.ACTIVE))
+                .hasSize(1);
     }
 
     @Test
@@ -481,6 +492,104 @@ class RoadmapUpgradeWorkflowTest {
                 .filteredOn(state -> state.getNodeId().equals(newStableId))
                 .singleElement().extracting(state -> state.getCompletionStatus().name())
                 .isEqualTo("INCOMPLETE");
+    }
+
+    @Test
+    void rejectsLegacyPreviewConfirmationWhenMappingsBecomeAmbiguous() throws Exception {
+        Fixture fixture = fixture(false);
+        String token = register("legacy-preview-ambiguous");
+        JsonNode enrollment = enroll(token, fixture.roadmapCode(), 1);
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        RoadmapNodeEntity oldStable = node(fixture.v1TemplateId(), "stable-node");
+        RoadmapNodeEntity newSplit = node(fixture.v2TemplateId(), "split-node");
+        String ambiguousLesson = "late-ambiguous-" + UUID.randomUUID();
+        mapLesson(ambiguousLesson, fixture.v1TemplateId(), oldStable.getId());
+        mapLesson(ambiguousLesson, fixture.v2TemplateId(), newSplit.getId());
+        jdbcTemplate.update("""
+                UPDATE roadmap_upgrades SET diff_json = ? WHERE id = ?
+                """, """
+                {"unchangedNodeCodes":["stable-node"],"addedNodeCodes":[],
+                 "removedNodeCodes":[],"manualReviewNodeCodes":[]}
+                """, upgradeId);
+
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isConflict());
+
+        assertThat(enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT"))
+                .get().extracting(current -> current.getId())
+                .isEqualTo(enrollment.get("id").asText());
+        assertThat(enrollmentRepository.findAllByOwnerIdAndStatus(
+                ownerId, com.moxiao.studypilot.roadmap.domain.UserRoadmapStatus.ACTIVE))
+                .hasSize(1);
+        assertThat(upgradeRepository.findByOwnerIdAndId(ownerId, upgradeId))
+                .get().extracting(upgrade -> upgrade.getStatus().name()).isEqualTo("PREVIEW");
+    }
+
+    @Test
+    void confirmsPersisted9a14RealCatalogPreviewAfterReclassifyingUniqueNonEquivalentMapping()
+            throws Exception {
+        courseCatalogImporter.importCatalog();
+        roadmapCatalogImporter.importCatalog();
+        String token = register("persisted-9a14-preview");
+        JsonNode enrollment = enroll(token, "studypilot-java-ai", 1);
+        String v1TemplateId = templateRepository.findByRoadmapCodeAndTemplateVersion(
+                "studypilot-java-ai", 1).orElseThrow().getId();
+        RoadmapNodeEntity oldRest = node(v1TemplateId, "spring-mvc-rest");
+        jdbcTemplate.update("""
+                UPDATE user_roadmap_nodes
+                SET availability_status = 'AVAILABLE', learning_status = 'IN_PROGRESS',
+                    check_in_status = 'SUBMITTED', quiz_status = 'PASSED',
+                    artifact_status = 'NOT_REQUIRED', completion_status = 'COMPLETED',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE user_roadmap_id = ? AND node_id = ?
+                """, enrollment.get("id").asText(), oldRest.getId());
+        String ownerId = ownerId(token);
+        String upgradeId = upgradeService.previews(ownerId).get(0).id();
+        jdbcTemplate.update("""
+                UPDATE roadmap_upgrades SET diff_json = ? WHERE id = ?
+                """, """
+                {"unchangedNodeCodes":[],"addedNodeCodes":[],"removedNodeCodes":[],
+                 "manualReviewNodeCodes":["spring-mvc-rest"],
+                 "inheritedNodeMappings":{},"addedModuleCount":24,
+                 "removedModuleCount":0,"changedModuleCount":0}
+                """, upgradeId);
+
+        MvcResult confirmed = mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.manualReviewNodeCodes.length()").value(0))
+                .andReturn();
+        mockMvc.perform(post("/api/roadmaps/current/upgrades/{id}/confirm", upgradeId)
+                        .header("Authorization", bearer(token)))
+                .andExpect(status().isOk())
+                .andExpect(result -> assertThat(result.getResponse().getContentAsString())
+                        .isEqualTo(confirmed.getResponse().getContentAsString()));
+
+        var current = enrollmentRepository.findByOwnerIdAndActiveSlot(ownerId, "CURRENT").orElseThrow();
+        RoadmapNodeEntity newRest = node(current.getTemplateId(), "spring-mvc-rest");
+        assertThat(stateRepository.findAllByUserRoadmapId(current.getId()))
+                .filteredOn(state -> state.getNodeId().equals(newRest.getId()))
+                .singleElement().extracting(state -> state.getCompletionStatus().name())
+                .isEqualTo("INCOMPLETE");
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() ->
+                upgradeRepository.findByOwnerIdAndId(ownerId, upgradeId).orElseThrow()
+                        .replaceDiffJson("{}")))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void rejectsBlankDiffReplacementWhilePreviewIsMutable() {
+        RoadmapUpgradeEntity preview = new RoadmapUpgradeEntity(
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(),
+                UUID.randomUUID().toString(), UUID.randomUUID().toString(),
+                com.moxiao.studypilot.roadmap.domain.UpgradeStatus.PREVIEW, "{}", "key",
+                Instant.now(), null);
+
+        assertThat(org.assertj.core.api.Assertions.catchThrowable(() ->
+                preview.replaceDiffJson("   "))).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
