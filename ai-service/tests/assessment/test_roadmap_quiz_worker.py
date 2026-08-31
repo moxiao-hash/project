@@ -4,6 +4,7 @@ import pytest
 
 import app.assessment.models as assessment_models
 import app.assessment.service as assessment_service
+from app.clients.java_backend import JavaBackendError
 from app.search.models import WebSearchOutcome, WebSearchResult
 
 
@@ -103,6 +104,11 @@ class FakeGenerator:
                     sourceIndexes=[1 if node_id == "node-prereq" else 0],
                     coverageNodeId=node_id,
                     practical=concept in {"equals", "索引边界", "null"},
+                    highFrequencyRef={
+                        "equals": "equals 与 ==",
+                        "索引边界": "索引边界",
+                        "null": "null 安全比较",
+                    }.get(concept),
                     points=20,
                     questionSignature=f"signature-{index}",
                 )
@@ -151,6 +157,10 @@ async def test_worker_persists_exact_grounded_mix_without_searching_stable_basic
         "node-prereq",
     }
     assert sum(question["practical"] for question in payload["questions"]) >= 3
+    assert all(
+        not question["practical"] or question["highFrequencyRef"]
+        for question in payload["questions"]
+    )
     assert all(
         question["questionSignature"] != "old-signature"
         for question in payload["questions"]
@@ -255,7 +265,10 @@ async def test_worker_heartbeats_during_generation_and_retries_uncertain_complet
         async def complete_roadmap_quiz_job(self, *args):
             self.complete_calls += 1
             if self.complete_calls == 1:
-                raise TimeoutError("response lost after commit")
+                raise JavaBackendError(
+                    "response lost after commit",
+                    path="/internal/roadmap-quiz-generation-jobs/job-1/complete",
+                )
             await super().complete_roadmap_quiz_job(*args)
 
     backend = UncertainCompleteBackend()
@@ -272,6 +285,46 @@ async def test_worker_heartbeats_during_generation_and_retries_uncertain_complet
 
     assert len(backend.heartbeats) >= 2
     assert backend.complete_calls == 2
+    assert backend.failed is None
+
+
+@pytest.mark.anyio
+async def test_stale_heartbeat_cancels_generation_before_quiz_is_created() -> None:
+    class SlowGenerator(FakeGenerator):
+        def __init__(self) -> None:
+            self.cancelled = False
+
+        async def generate_node_quiz(self, **kwargs):
+            try:
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                self.cancelled = True
+                raise
+            return await super().generate_node_quiz(**kwargs)
+
+    class StaleLeaseBackend(FakeBackend):
+        async def heartbeat_roadmap_quiz_job(self, *_args):
+            raise JavaBackendError(
+                "stale lease",
+                path="/internal/roadmap-quiz-generation-jobs/job-1/heartbeat",
+                status_code=409,
+            )
+
+    backend = StaleLeaseBackend()
+    generator = SlowGenerator()
+    worker = assessment_service.RoadmapQuizWorker(
+        backend,
+        generator,
+        NoWeb(),
+        worker_id="roadmap-worker",
+        model_name="deepseek-test",
+        heartbeat_interval_seconds=0.001,
+    )
+
+    assert await worker.process_once() is True
+    assert generator.cancelled is True
+    assert backend.created is None
+    assert backend.completed is None
     assert backend.failed is None
 
 
@@ -337,3 +390,25 @@ async def test_coverage_must_match_the_referenced_catalog_node() -> None:
 
     assert backend.created is None
     assert "InvalidGeneratedQuizError" in backend.failed[3]
+
+
+@pytest.mark.anyio
+async def test_practical_question_requires_exact_catalog_high_frequency_reference() -> None:
+    class ShortSubstringGrounding(FakeGenerator):
+        async def generate_node_quiz(self, **kwargs):
+            quiz = await super().generate_node_quiz(**kwargs)
+            quiz.questions[0].high_frequency_ref = "="
+            return quiz
+
+    backend = FakeBackend()
+    worker = assessment_service.RoadmapQuizWorker(
+        backend,
+        ShortSubstringGrounding(),
+        NoWeb(),
+        worker_id="roadmap-worker",
+        model_name="deepseek-test",
+    )
+
+    assert await worker.process_once() is True
+    assert backend.created is None
+    assert backend.failed is not None

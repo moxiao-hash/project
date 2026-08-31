@@ -137,6 +137,9 @@ class GeneratedQuiz(BaseModel):
 class RoadmapGeneratedQuestion(GeneratedQuestion):
     coverage_node_id: str = Field(alias="coverageNodeId", min_length=1)
     practical: bool
+    high_frequency_ref: str | None = Field(
+        default=None, alias="highFrequencyRef", min_length=2, max_length=200
+    )
     points: int = Field(gt=0, le=100)
     question_signature: str = Field(alias="questionSignature", min_length=1, max_length=64)
 

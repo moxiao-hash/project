@@ -238,6 +238,17 @@ public class QuizService {
             prerequisiteRepository.findAllByTemplateIdAndNodeId(
                     request.roadmapTemplateId(), request.roadmapNodeId())
                     .forEach(edge -> allowedCoverage.add(edge.getPrerequisiteNodeId()));
+            Map<String, Set<String>> highFrequencyByNode = new HashMap<>();
+            for (String nodeId : allowedCoverage) {
+                var node = roadmapNodeRepository.findByIdAndTemplateId(
+                                nodeId, request.roadmapTemplateId())
+                        .orElseThrow(() -> new IllegalArgumentException("题目覆盖节点不存在"));
+                List<String> items = objectMapper.readValue(
+                        node.getHighFrequencyJson(),
+                        objectMapper.getTypeFactory().constructCollectionType(List.class, String.class)
+                );
+                highFrequencyByNode.put(nodeId, Set.copyOf(items));
+            }
             long currentCoverage = request.questions().stream()
                     .filter(question -> request.roadmapNodeId().equals(question.coverageNodeId()))
                     .count();
@@ -247,6 +258,12 @@ public class QuizService {
                     && request.questions().stream().allMatch(question ->
                     Integer.valueOf(20).equals(question.points())
                             && allowedCoverage.contains(question.coverageNodeId())
+                            && (!Boolean.TRUE.equals(question.practical())
+                            || (question.highFrequencyRef() != null
+                            && !question.highFrequencyRef().isBlank()
+                            && highFrequencyByNode
+                            .getOrDefault(question.coverageNodeId(), Set.of())
+                            .contains(question.highFrequencyRef())))
                             && question.sources() != null && !question.sources().isEmpty()
                             && question.sources().stream().anyMatch(source ->
                             ("roadmap-node:" + question.coverageNodeId())
@@ -479,18 +496,14 @@ public class QuizService {
                 .orElseThrow(() -> new ResourceNotFoundException("测验作答不存在"));
         List<QuestionEntity> questions =
                 questionRepository.findAllByQuizIdOrderByPosition(attempt.getQuizId());
-        long choiceCount = questions.stream()
-                .filter(question -> question.getType() != QuestionType.CODING).count();
-        double codingTotal = evaluations.stream()
-                .mapToDouble(item -> ((Number) item.get("score")).doubleValue()).sum();
-        double finalScore = (
-                attempt.getObjectiveScore() * choiceCount + codingTotal * 0.3
-        ) / (choiceCount + evaluations.size() * 0.3);
+        QuizEntity quiz = quizRepository.findById(attempt.getQuizId()).orElseThrow();
+        double finalScore = quiz.getPurpose() == RoadmapQuizPurpose.NODE
+                ? calculateNodeQuizScore(attempt, questions, evaluations)
+                : calculateAdaptiveQuizScore(attempt, questions, evaluations);
         Instant now = Instant.now();
         attempt.complete(finalScore, objectMapper.writeValueAsString(evaluations), now);
         job.complete(now);
         recordCompletedAttemptMastery(attempt, questions, evaluations, now);
-        QuizEntity quiz = quizRepository.findById(attempt.getQuizId()).orElseThrow();
         recordAssociatedTaskMastery(quiz, now);
         Set<String> weakCodingPoints = evaluations.stream()
                 .filter(item -> ((Number) item.get("score")).doubleValue() < 70)
@@ -541,16 +554,30 @@ public class QuizService {
             List<QuestionEntity> questions
     ) {
         List<QuizAttemptResponse.QuestionResult> results = new ArrayList<>();
-        if (attempt.getEvaluationJson() != null) {
-            List<Map<String, Object>> evaluations = objectMapper.readValue(
-                    attempt.getEvaluationJson(), List.class
-            );
-            for (Map<String, Object> evaluation : evaluations) {
-                String questionId = String.valueOf(evaluation.get("questionId"));
-                QuestionEntity question = questions.stream()
-                        .filter(item -> item.getId().equals(questionId)).findFirst().orElseThrow();
+        SubmitQuizAttemptRequest submitted = objectMapper.readValue(
+                attempt.getAnswersJson(), SubmitQuizAttemptRequest.class);
+        Map<String, Set<String>> selected = submitted.answers().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        SubmitQuizAttemptRequest.AnswerInput::questionId,
+                        answer -> answer.selectedAnswers() == null
+                                ? Set.of() : answer.selectedAnswers()));
+        Map<String, Map<String, Object>> evaluations = attempt.getEvaluationJson() == null
+                ? Map.of()
+                : ((List<Map<String, Object>>) objectMapper.readValue(
+                        attempt.getEvaluationJson(), List.class)).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        item -> String.valueOf(item.get("questionId")), item -> item));
+        for (QuestionEntity question : questions) {
+            if (question.getType() == QuestionType.CODING) {
+                Map<String, Object> evaluation = evaluations.get(question.getId());
+                if (evaluation == null) {
+                    results.add(new QuizAttemptResponse.QuestionResult(
+                            question.getId(), false, question.getKnowledgePoint(),
+                            question.getExplanation(), "PENDING_AI_EVALUATION", null, null));
+                    continue;
+                }
                 results.add(new QuizAttemptResponse.QuestionResult(
-                        questionId,
+                        question.getId(),
                         ((Number) evaluation.get("score")).doubleValue() >= 70,
                         question.getKnowledgePoint(),
                         question.getExplanation(),
@@ -558,31 +585,57 @@ public class QuizService {
                         ((Number) evaluation.get("score")).doubleValue(),
                         evaluation
                 ));
+                continue;
             }
-        } else {
-            SubmitQuizAttemptRequest submitted = objectMapper.readValue(
-                    attempt.getAnswersJson(), SubmitQuizAttemptRequest.class);
-            Map<String, Set<String>> selected = submitted.answers().stream()
-                    .collect(java.util.stream.Collectors.toMap(
-                            SubmitQuizAttemptRequest.AnswerInput::questionId,
-                            answer -> answer.selectedAnswers() == null
-                                    ? Set.of() : answer.selectedAnswers()));
-            for (QuestionEntity question : questions) {
-                if (question.getType() == QuestionType.CODING) {
-                    continue;
-                }
-                boolean correct = selected.getOrDefault(question.getId(), Set.of())
-                        .equals(question.getCorrectAnswers());
-                results.add(new QuizAttemptResponse.QuestionResult(
-                        question.getId(), correct, question.getKnowledgePoint(),
-                        question.getExplanation(), "DETERMINISTIC",
-                        correct ? 100.0 : 0.0, null));
-            }
+            boolean correct = selected.getOrDefault(question.getId(), Set.of())
+                    .equals(question.getCorrectAnswers());
+            results.add(new QuizAttemptResponse.QuestionResult(
+                    question.getId(), correct, question.getKnowledgePoint(),
+                    question.getExplanation(), "DETERMINISTIC",
+                    correct ? 100.0 : 0.0, null));
         }
         return new QuizAttemptResponse(
                 attempt.getId(), attempt.getScore(), attempt.getStatus().name(),
                 attempt.getWarning(), results
         );
+    }
+
+    private double calculateAdaptiveQuizScore(
+            QuizAttemptEntity attempt,
+            List<QuestionEntity> questions,
+            List<Map<String, Object>> evaluations
+    ) {
+        long choiceCount = questions.stream()
+                .filter(question -> question.getType() != QuestionType.CODING).count();
+        double codingTotal = evaluations.stream()
+                .mapToDouble(item -> ((Number) item.get("score")).doubleValue()).sum();
+        return (attempt.getObjectiveScore() * choiceCount + codingTotal * 0.3)
+                / (choiceCount + evaluations.size() * 0.3);
+    }
+
+    private double calculateNodeQuizScore(
+            QuizAttemptEntity attempt,
+            List<QuestionEntity> questions,
+            List<Map<String, Object>> evaluations
+    ) {
+        SubmitQuizAttemptRequest submitted = objectMapper.readValue(
+                attempt.getAnswersJson(), SubmitQuizAttemptRequest.class);
+        Map<String, Set<String>> selected = submitted.answers().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        SubmitQuizAttemptRequest.AnswerInput::questionId,
+                        answer -> answer.selectedAnswers() == null
+                                ? Set.of() : answer.selectedAnswers()));
+        Map<String, Double> codingScores = evaluations.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        item -> String.valueOf(item.get("questionId")),
+                        item -> ((Number) item.get("score")).doubleValue()));
+        return questions.stream().mapToDouble(question -> {
+            double questionScore = question.getType() == QuestionType.CODING
+                    ? codingScores.getOrDefault(question.getId(), 0.0)
+                    : (selected.getOrDefault(question.getId(), Set.of())
+                    .equals(question.getCorrectAnswers()) ? 100.0 : 0.0);
+            return question.getPoints() * questionScore / 100.0;
+        }).sum();
     }
 
     public record CodingJobPayload(

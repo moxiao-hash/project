@@ -179,6 +179,14 @@ public class UserRoadmapNodeEntity {
         this.updatedAt = now;
     }
 
+    boolean completionRequirementsSatisfied() {
+        return availabilityStatus == AvailabilityStatus.AVAILABLE
+                && checkInStatus == CheckInStatus.SUBMITTED
+                && quizStatus == QuizStatus.PASSED
+                && (artifactStatus == ArtifactStatus.NOT_REQUIRED
+                || artifactStatus == ArtifactStatus.ACCEPTED);
+    }
+
     /** Restores verified completion evidence while moving between equivalent immutable nodes. */
     public void carryCompletedFromUpgrade(UserRoadmapNodeEntity source, Instant now) {
         Objects.requireNonNull(source, "source must not be null");

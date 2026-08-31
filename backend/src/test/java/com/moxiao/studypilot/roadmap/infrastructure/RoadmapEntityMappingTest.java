@@ -63,6 +63,24 @@ class RoadmapEntityMappingTest {
     }
 
     @Test
+    void passingQuizDoesNotCompleteMilestoneUntilArtifactIsAccepted() {
+        Instant now = Instant.parse("2026-08-31T00:00:00Z");
+        UserRoadmapNodeEntity milestone = new UserRoadmapNodeEntity(
+                "state-1", "roadmap-1", "node-1", "owner-1", "template-1",
+                AvailabilityStatus.AVAILABLE, true, now
+        );
+
+        milestone.submitCheckInAndQueueQuiz(now.plusSeconds(1));
+        milestone.markQuizReady(now.plusSeconds(2));
+        milestone.recordQuizResult(80, now.plusSeconds(3));
+
+        assertThat(milestone.getQuizStatus()).isEqualTo(QuizStatus.PASSED);
+        assertThat(milestone.getArtifactStatus()).isEqualTo(ArtifactStatus.MISSING);
+        assertThat(milestone.completionRequirementsSatisfied()).isFalse();
+        assertThat(milestone.getCompletionStatus()).isEqualTo(CompletionStatus.INCOMPLETE);
+    }
+
+    @Test
     void createsOnlyActiveCurrentUserRoadmapAndSupersedesOnce() {
         Instant enrolledAt = Instant.parse("2026-08-09T00:00:00Z");
         Instant supersededAt = enrolledAt.plusSeconds(60);

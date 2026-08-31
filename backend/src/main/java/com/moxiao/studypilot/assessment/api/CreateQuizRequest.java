@@ -45,6 +45,7 @@ public record CreateQuizRequest(
             Integer points,
             @Size(max = 100) String coverageNodeId,
             Boolean practical,
+            @Size(max = 200) String highFrequencyRef,
             @Size(max = 64) String questionSignature
     ) {
     }

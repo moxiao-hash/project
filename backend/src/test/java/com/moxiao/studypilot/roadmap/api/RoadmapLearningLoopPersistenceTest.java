@@ -312,6 +312,10 @@ class RoadmapLearningLoopPersistenceTest {
             question.put("points", 20);
             question.put("coverageNodeId", availableNodeId);
             question.put("practical", true);
+            question.put(
+                    "highFrequencyRef",
+                    "JDK/JRE/JVM 分工；源文件名与 public class 一致"
+            );
             question.put("sources", java.util.List.of(java.util.Map.of(
                     "sourceType", "ROADMAP_CATALOG", "title", "Java 环境",
                     "locator", "roadmap-node:" + availableNodeId,
@@ -630,6 +634,8 @@ class RoadmapLearningLoopPersistenceTest {
             question.put("points", 20);
             question.put("coverageNodeId", availableNodeId);
             question.put("practical", index < 3);
+            question.put("highFrequencyRef", index < 3
+                    ? "JDK/JRE/JVM 分工；源文件名与 public class 一致" : null);
             question.put("sources", java.util.List.of(java.util.Map.of(
                     "sourceType", "ROADMAP_CATALOG", "title", "Java 环境",
                     "locator", "roadmap-node:" + availableNodeId,
@@ -645,6 +651,25 @@ class RoadmapLearningLoopPersistenceTest {
                 String.class, enrollmentId, availableNodeId);
         String templateId = jdbcTemplate.queryForObject(
                 "SELECT template_id FROM user_roadmaps WHERE id = ?", String.class, enrollmentId);
+        questions.get(0).put("highFrequencyRef", "=");
+        mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "ownerId", owner.userId(),
+                                "roadmapNodeId", availableNodeId,
+                                "userRoadmapId", enrollmentId,
+                                "userRoadmapNodeId", stateId,
+                                "roadmapTemplateId", templateId,
+                                "purpose", "NODE",
+                                "title", "伪造高频依据的测验",
+                                "modelName", "test-model",
+                                "questions", questions))))
+                .andExpect(status().isBadRequest());
+        questions.get(0).put(
+                "highFrequencyRef",
+                "JDK/JRE/JVM 分工；源文件名与 public class 一致"
+        );
         MvcResult created = mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -707,6 +732,140 @@ class RoadmapLearningLoopPersistenceTest {
                 JOIN user_roadmaps roadmap ON roadmap.id = state.user_roadmap_id
                 WHERE roadmap.owner_id = ? AND roadmap.active_slot = 'CURRENT'
                   AND state.completion_status = 'COMPLETED'
+                """, Integer.class, owner.userId())).isZero();
+    }
+
+    @Test
+    void gradesBoundMixedQuizByQuestionPointsAndKeepsAllHistoricalResults() throws Exception {
+        Registration owner = register("roadmap-bound-coding");
+        enrollV2(owner.token());
+        submitCheckIn(owner.token(), "bound-coding-check-in");
+        JsonNode claimed = objectMapper.readTree(mockMvc.perform(
+                        post("/internal/roadmap-quiz-generation-jobs/claim")
+                                .header("X-Internal-Service-Token", "test-internal-token")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"workerId\":\"bound-worker\",\"leaseSeconds\":60}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+        String enrollmentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_roadmaps WHERE owner_id = ? AND active_slot = 'CURRENT'",
+                String.class, owner.userId());
+        String stateId = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_roadmap_nodes WHERE user_roadmap_id = ? AND node_id = ?",
+                String.class, enrollmentId, availableNodeId);
+        String templateId = jdbcTemplate.queryForObject(
+                "SELECT template_id FROM user_roadmaps WHERE id = ?", String.class, enrollmentId);
+        java.util.List<java.util.Map<String, Object>> questions = new java.util.ArrayList<>();
+        for (int index = 0; index < 5; index++) {
+            java.util.Map<String, Object> question = new java.util.HashMap<>();
+            boolean coding = index == 4;
+            question.put("type", coding ? "CODING" : "SINGLE_CHOICE");
+            question.put("difficulty", "EASY");
+            question.put("knowledgePoint", "Java 启动实践 " + index);
+            question.put("questionText", coding ? "编写 main 方法" : "选择正确的 Java 命令");
+            question.put("options", coding ? java.util.List.of() : java.util.List.of("A", "B"));
+            question.put("correctAnswers", coding ? java.util.List.of() : java.util.List.of("A"));
+            question.put("explanation", "根据 JDK 命令与程序入口判断。");
+            question.put("points", 20);
+            question.put("coverageNodeId", availableNodeId);
+            question.put("practical", index < 3);
+            question.put("highFrequencyRef", index < 3
+                    ? "JDK/JRE/JVM 分工；源文件名与 public class 一致" : null);
+            question.put("questionSignature", "bound-coding-signature-" + index);
+            question.put("sources", java.util.List.of(java.util.Map.of(
+                    "sourceType", "ROADMAP_CATALOG", "title", "Java 环境",
+                    "locator", "roadmap-node:" + availableNodeId,
+                    "snippet", "JDK/JRE/JVM 与 javac/java 命令")));
+            if (coding) {
+                question.put("codingKind", "CODE_COMPLETION");
+                question.put("language", "JAVA");
+                question.put("starterCode", "public static void main(String[] args) {} ");
+                question.put("rubric", java.util.Map.of(
+                        "correctness", 40, "completeness", 25,
+                        "edgeCases", 20, "clarityEfficiency", 15));
+                question.put("referenceAnswer", "public static void main(String[] args) {}");
+            }
+            questions.add(question);
+        }
+        JsonNode quiz = objectMapper.readTree(mockMvc.perform(post("/internal/quizzes")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "ownerId", owner.userId(), "roadmapNodeId", availableNodeId,
+                                "userRoadmapId", enrollmentId, "userRoadmapNodeId", stateId,
+                                "roadmapTemplateId", templateId, "purpose", "NODE",
+                                "title", "绑定路线的混合测验", "modelName", "test-model",
+                                "questions", questions))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString());
+        mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete",
+                        claimed.get("id").asText())
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "workerId", "bound-worker",
+                                "leaseToken", claimed.get("leaseToken").asText(),
+                                "quizId", quiz.get("id").asText()))))
+                .andExpect(status().isOk());
+
+        jdbcTemplate.update("""
+                UPDATE user_roadmaps SET status = 'SUPERSEDED', active_slot = NULL WHERE id = ?
+                """, enrollmentId);
+        enrollV1(owner.token());
+
+        java.util.List<java.util.Map<String, Object>> answers = new java.util.ArrayList<>();
+        for (int index = 0; index < 4; index++) {
+            answers.add(java.util.Map.of(
+                    "questionId", quiz.get("questions").get(index).get("id").asText(),
+                    "selectedAnswers", java.util.List.of("A")));
+        }
+        answers.add(java.util.Map.of(
+                "questionId", quiz.get("questions").get(4).get("id").asText(),
+                "codeAnswer", "public static void main(String[] args) {}"));
+        JsonNode attempt = objectMapper.readTree(mockMvc.perform(
+                        post("/api/quizzes/{quizId}/attempts", quiz.get("id").asText())
+                                .header("Authorization", bearer(owner.token()))
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                        "idempotencyKey", "bound-coding-attempt",
+                                        "answers", answers))))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("EVALUATING"))
+                .andReturn().getResponse().getContentAsString());
+        JsonNode codingJob = objectMapper.readTree(mockMvc.perform(
+                        post("/internal/coding-evaluation-jobs/claim")
+                                .header("X-Internal-Service-Token", "test-internal-token")
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"workerId\":\"coding-worker\",\"leaseSeconds\":60}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        mockMvc.perform(post("/internal/coding-evaluation-jobs/{id}/complete",
+                        codingJob.get("jobId").asText())
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "workerId", "coding-worker",
+                                "evaluations", java.util.List.of(java.util.Map.of(
+                                        "questionId", quiz.get("questions").get(4).get("id").asText(),
+                                        "score", 0, "correctness", 0, "completeness", 0,
+                                        "edgeCases", 0, "clarityEfficiency", 0,
+                                        "issues", java.util.List.of("缺少实现"),
+                                        "feedback", "请实现方法。", "suggestedCode", ""))))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.score").value(80.0))
+                .andExpect(jsonPath("$.results.length()").value(5));
+        mockMvc.perform(get("/api/quiz-attempts/{attemptId}", attempt.get("id").asText())
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.score").value(80.0))
+                .andExpect(jsonPath("$.results.length()").value(5))
+                .andExpect(jsonPath("$.results[0].explanation").isNotEmpty());
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT quiz_status FROM user_roadmap_nodes WHERE id = ?
+                """, String.class, stateId)).isEqualTo("PASSED");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM user_roadmap_nodes state
+                JOIN user_roadmaps roadmap ON roadmap.id = state.user_roadmap_id
+                WHERE roadmap.owner_id = ? AND roadmap.active_slot = 'CURRENT'
+                  AND state.quiz_status = 'PASSED'
                 """, Integer.class, owner.userId())).isZero();
     }
 

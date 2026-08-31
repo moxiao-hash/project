@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import date
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -14,11 +15,16 @@ from app.assessment.models import (
     QuizSource,
     WebSearchPolicy,
 )
+from app.clients.java_backend import JavaBackendError
 from app.retrieval.models import RetrievedEvidence
 from app.schemas.learning import LearningContext, LearningTask
 from app.search.models import WebSearchOutcome
 
 logger = logging.getLogger(__name__)
+
+
+class RoadmapQuizLeaseLostError(RuntimeError):
+    """Java 已明确拒绝当前租约，Worker 必须停止昂贵的生成流程。"""
 
 
 class QuizMix(dict[QuestionType, int]):
@@ -284,8 +290,9 @@ class RoadmapQuizWorker:
         job_id = job["id"]
         lease_token = job["leaseToken"]
         stop_heartbeat = asyncio.Event()
+        lease_lost = asyncio.Event()
         heartbeat = asyncio.create_task(
-            self._heartbeat(job_id, lease_token, stop_heartbeat)
+            self._heartbeat(job_id, lease_token, stop_heartbeat, lease_lost)
         )
         try:
             context = await self._backend.get_roadmap_quiz_context(
@@ -298,10 +305,13 @@ class RoadmapQuizWorker:
             generator = self._generator
             if self._generator_factory is not None:
                 generator = await self._generator_factory(job["ownerId"])
-            generated = await generator.generate_node_quiz(
-                context=context,
-                sources=sources,
-                recent_signatures=recent,
+            generated = await self._while_lease_is_active(
+                generator.generate_node_quiz(
+                    context=context,
+                    sources=sources,
+                    recent_signatures=recent,
+                ),
+                lease_lost,
             )
             self._validate_node_quiz(generated, context, recent, sources)
             questions = []
@@ -337,10 +347,14 @@ class RoadmapQuizWorker:
                 await self._backend.complete_roadmap_quiz_job(
                     job_id, self._worker_id, lease_token, quiz["id"]
                 )
-            except (TimeoutError, ConnectionError):
+            except JavaBackendError as exc:
+                if exc.status_code is not None:
+                    raise
                 await self._backend.complete_roadmap_quiz_job(
                     job_id, self._worker_id, lease_token, quiz["id"]
                 )
+        except RoadmapQuizLeaseLostError:
+            logger.info("路线测验任务租约已失效，停止生成: %s", job_id)
         except Exception as exc:
             try:
                 await self._backend.fail_roadmap_quiz_job(
@@ -357,7 +371,11 @@ class RoadmapQuizWorker:
         return True
 
     async def _heartbeat(
-        self, job_id: str, lease_token: str, stopped: asyncio.Event
+        self,
+        job_id: str,
+        lease_token: str,
+        stopped: asyncio.Event,
+        lease_lost: asyncio.Event,
     ) -> None:
         while True:
             try:
@@ -370,10 +388,34 @@ class RoadmapQuizWorker:
                     await self._backend.heartbeat_roadmap_quiz_job(
                         job_id, self._worker_id, lease_token
                     )
+                except JavaBackendError as exc:
+                    if exc.status_code in {404, 409}:
+                        lease_lost.set()
+                        return
+                    logger.warning("路线测验任务心跳失败", exc_info=True)
                 except Exception:
                     # 心跳失败可能只是短暂的网络故障；最终 complete/fail 仍由
                     # Java 的 leaseToken fencing 决定该 Worker 是否有写权限。
                     logger.warning("路线测验任务心跳失败", exc_info=True)
+
+    @staticmethod
+    async def _while_lease_is_active(awaitable, lease_lost: asyncio.Event):
+        generation = asyncio.create_task(awaitable)
+        lost = asyncio.create_task(lease_lost.wait())
+        try:
+            await asyncio.wait(
+                {generation, lost}, return_when=asyncio.FIRST_COMPLETED
+            )
+            if lease_lost.is_set():
+                generation.cancel()
+                with suppress(asyncio.CancelledError):
+                    await generation
+                raise RoadmapQuizLeaseLostError
+            return await generation
+        finally:
+            lost.cancel()
+            with suppress(asyncio.CancelledError):
+                await lost
 
     @staticmethod
     def _catalog_sources(context: dict[str, Any]) -> list[QuizSource]:
@@ -459,11 +501,10 @@ class RoadmapQuizWorker:
             )
             for index, source in enumerate(sources)
         }
-        high_frequency = " ".join(
-            item
+        high_frequency_by_node = {
+            node["id"]: set(node.get("highFrequency", []))
             for node in [context["node"], *context.get("directPrerequisites", [])]
-            for item in node.get("highFrequency", [])
-        ).lower()
+        }
         for question in generated.questions:
             if not question.source_indexes or any(
                 index < 0 or index >= len(sources) for index in question.source_indexes
@@ -472,9 +513,8 @@ class RoadmapQuizWorker:
             referenced_nodes = {node_by_source[index] for index in question.source_indexes}
             if question.coverage_node_id not in referenced_nodes:
                 raise InvalidGeneratedQuizError("题目覆盖节点与目录来源不匹配")
-            if question.practical and not any(
-                token.lower() in high_frequency
-                for token in (question.knowledge_point, question.question_text)
+            if question.practical and question.high_frequency_ref not in (
+                high_frequency_by_node.get(question.coverage_node_id) or set()
             ):
                 raise InvalidGeneratedQuizError("实用题缺少高频内容依据")
         if len(set(signatures)) != 5 or recent.intersection(signatures):

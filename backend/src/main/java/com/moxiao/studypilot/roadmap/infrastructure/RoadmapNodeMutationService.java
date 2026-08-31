@@ -73,7 +73,7 @@ public class RoadmapNodeMutationService {
             throw new IllegalStateException("节点测验路线绑定不一致");
         }
         state.recordQuizResult(score, now);
-        if (score >= 70) {
+        if (score >= 70 && state.completionRequirementsSatisfied()) {
             state.completeAfterRequirements(now);
             enrollmentService.recalculateAvailability(enrollment.getId());
         }
