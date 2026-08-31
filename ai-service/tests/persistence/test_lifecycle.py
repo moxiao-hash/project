@@ -71,6 +71,7 @@ async def test_lifespan_releases_process_lock_when_scheduler_start_fails(
 
     monkeypatch.setattr(main_module, "get_settings", lambda: settings)
     monkeypatch.setattr(main_module, "AsyncIOScheduler", BrokenScheduler)
+    monkeypatch.setattr(main_module, "_roadmap_quiz_worker", object())
 
     with pytest.raises(RuntimeError, match="scheduler failed"):
         async with main_module.lifespan(main_module.FastAPI()):
@@ -78,6 +79,7 @@ async def test_lifespan_releases_process_lock_when_scheduler_start_fails(
 
     reopened = await open_agent_persistence(settings)
     await reopened.close()
+    assert main_module._roadmap_quiz_worker is None
 
 
 async def test_lifespan_releases_process_lock_when_registry_construction_fails(

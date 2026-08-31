@@ -210,6 +210,7 @@ async def run_roadmap_quiz_job() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    global _roadmap_quiz_worker
     # Uvicorn 可能在导入 app 后重建 handler；启动阶段再次幂等安装，确保生产日志
     # 也经过敏感字段脱敏。
     install_secret_redaction()
@@ -282,6 +283,7 @@ async def lifespan(application: FastAPI):
         original_error = exc
         raise
     finally:
+        _roadmap_quiz_worker = None
         cleanup_errors: list[Exception] = []
         if scheduler_started and scheduler is not None:
             try:

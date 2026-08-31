@@ -146,11 +146,13 @@ public class RoadmapLearningLoopService {
     }
 
     @Transactional(readOnly = true)
-    public RoadmapQuizContextResponse quizJobContext(String jobId) {
+    public RoadmapQuizContextResponse quizJobContext(
+            String jobId, String workerId, String leaseToken
+    ) {
         RoadmapQuizGenerationJobEntity job = jobRepository.findById(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("路线测验生成任务不存在"));
-        if (job.getStatus() != RoadmapQuizGenerationStatus.LEASED) {
-            throw new ConflictException("仅已领取的路线测验任务可以读取上下文");
+        if (!job.hasActiveLease(workerId, leaseToken, Instant.now())) {
+            throw new ConflictException("路线测验生成任务租约无效");
         }
         RoadmapNodeEntity node = nodeRepository.findById(job.getNodeId())
                 .orElseThrow(() -> new ResourceNotFoundException("路线节点不存在"));
@@ -164,15 +166,17 @@ public class RoadmapLearningLoopService {
                         .map(this::nodeContext).toList();
         List<String> quizIds = quizRepository
                 .findAllByOwnerIdAndRoadmapNodeIdOrderByCreatedAtDesc(
-                        job.getOwnerId(), job.getNodeId()).stream()
-                .limit(5).map(QuizEntity::getId).toList();
+                        job.getOwnerId(), job.getNodeId(), PageRequest.of(0, 5)).stream()
+                .map(QuizEntity::getId).toList();
         List<String> recentSignatures = quizIds.isEmpty() ? List.of()
                 : questionRepository.findAllByQuizIdIn(quizIds).stream()
                 .map(question -> question.getQuestionSignature())
                 .filter(signature -> signature != null && !signature.isBlank())
                 .distinct().limit(25).toList();
         return new RoadmapQuizContextResponse(
-                jobId, job.getOwnerId(), nodeContext(node), prerequisites,
+                jobId, job.getOwnerId(), job.getUserRoadmapId(),
+                job.getUserRoadmapNodeId(), node.getTemplateId(),
+                nodeContext(node), prerequisites,
                 recentSignatures, officialDomains(node));
     }
 
@@ -276,6 +280,10 @@ public class RoadmapLearningLoopService {
     public RoadmapQuizJobPayload failQuizJob(
             String jobId, String workerId, String leaseToken, String error
     ) {
+        enrollmentRepository.findBoundRoadmapForQuizJobForUpdate(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线报名不存在"));
+        UserRoadmapNodeEntity state = stateRepository.findBoundStateForQuizJobForUpdate(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"));
         RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
         Instant now = Instant.now();
         try {
@@ -284,9 +292,7 @@ public class RoadmapLearningLoopService {
             throw new ConflictException(exception.getMessage());
         }
         if (job.getStatus() == RoadmapQuizGenerationStatus.FAILED) {
-            stateRepository.findById(job.getUserRoadmapNodeId())
-                    .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"))
-                    .markQuizGenerationFailed(now);
+            state.markQuizGenerationFailed(now);
         }
         return payload(job);
     }
@@ -295,13 +301,11 @@ public class RoadmapLearningLoopService {
     public RoadmapQuizJobPayload completeQuizJob(
             String jobId, String workerId, String leaseToken, String quizId
     ) {
-        RoadmapQuizGenerationJobEntity candidate = jobRepository.findById(jobId)
-                .orElseThrow(() -> new ResourceNotFoundException("路线测验生成任务不存在"));
         UserRoadmapEntity enrollment = enrollmentRepository
-                .findByIdForUpdate(candidate.getUserRoadmapId())
+                .findBoundRoadmapForQuizJobForUpdate(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("路线报名不存在"));
         UserRoadmapNodeEntity state = stateRepository
-                .findByUserRoadmapIdAndNodeIdForUpdate(enrollment.getId(), candidate.getNodeId())
+                .findBoundStateForQuizJobForUpdate(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"));
         RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
         if (!job.getUserRoadmapId().equals(enrollment.getId())
@@ -310,8 +314,13 @@ public class RoadmapLearningLoopService {
         }
         QuizEntity quiz = quizRepository.findById(quizId)
                 .orElseThrow(() -> new ResourceNotFoundException("节点测验不存在"));
+        if (quiz.getUserRoadmapId() == null) {
+            quiz.bindLegacyNodeQuiz(enrollment.getId(), state.getId(), enrollment.getTemplateId());
+        }
         if (!job.getOwnerId().equals(quiz.getOwnerId())
                 || !job.getNodeId().equals(quiz.getRoadmapNodeId())
+                || !job.getUserRoadmapId().equals(quiz.getUserRoadmapId())
+                || !job.getUserRoadmapNodeId().equals(quiz.getUserRoadmapNodeId())
                 || quiz.getPurpose() != RoadmapQuizPurpose.NODE) {
             throw new ConflictException("测验与路线生成任务不匹配");
         }

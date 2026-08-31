@@ -84,6 +84,15 @@ public class QuestionEntity {
     @Column(name = "question_signature", length = 64)
     private String questionSignature;
 
+    @Column
+    private Integer points;
+
+    @Column(name = "coverage_node_id", length = 100)
+    private String coverageNodeId;
+
+    @Column
+    private Boolean practical;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "quiz_question_sources",
             joinColumns = @JoinColumn(name = "question_id"))
@@ -106,7 +115,7 @@ public class QuestionEntity {
         this(
                 id, quizId, position, type, Difficulty.EASY, null, null,
                 knowledgePoint, questionText, options, correctAnswers, explanation,
-                null, null, null, List.of(), null
+                null, null, null, List.of(), null, null, null, null
         );
     }
 
@@ -127,7 +136,10 @@ public class QuestionEntity {
             String rubricJson,
             String referenceAnswer,
             List<QuestionSourceEmbeddable> sources,
-            String questionSignature
+            String questionSignature,
+            Integer points,
+            String coverageNodeId,
+            Boolean practical
     ) {
         this.id = id;
         this.quizId = quizId;
@@ -146,6 +158,9 @@ public class QuestionEntity {
         this.referenceAnswer = referenceAnswer;
         this.sources = new ArrayList<>(sources);
         this.questionSignature = questionSignature;
+        this.points = points;
+        this.coverageNodeId = coverageNodeId;
+        this.practical = practical;
     }
 
     public String getId() {
@@ -184,4 +199,7 @@ public class QuestionEntity {
     public String getReferenceAnswer() { return referenceAnswer; }
     public List<QuestionSourceEmbeddable> getSources() { return List.copyOf(sources); }
     public String getQuestionSignature() { return questionSignature; }
+    public Integer getPoints() { return points; }
+    public String getCoverageNodeId() { return coverageNodeId; }
+    public Boolean getPractical() { return practical; }
 }

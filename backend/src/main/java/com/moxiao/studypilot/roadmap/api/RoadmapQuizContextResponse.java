@@ -5,6 +5,9 @@ import java.util.List;
 public record RoadmapQuizContextResponse(
         String jobId,
         String ownerId,
+        String userRoadmapId,
+        String userRoadmapNodeId,
+        String roadmapTemplateId,
         NodeContext node,
         List<NodeContext> directPrerequisites,
         List<String> recentQuestionSignatures,

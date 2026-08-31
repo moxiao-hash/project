@@ -1,11 +1,7 @@
 package com.moxiao.studypilot.roadmap.application;
 
-import com.moxiao.studypilot.roadmap.infrastructure.RoadmapQuizGenerationJobEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapQuizGenerationJobJpaRepository;
-import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
-import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.PageRequest;
 
@@ -15,25 +11,21 @@ import java.time.Instant;
 public class RoadmapQuizLeaseReaper {
     private static final int REAP_BATCH_SIZE = 100;
     private final RoadmapQuizGenerationJobJpaRepository jobRepository;
-    private final UserRoadmapNodeJpaRepository stateRepository;
+    private final RoadmapQuizLeaseExpiryService expiryService;
 
     public RoadmapQuizLeaseReaper(
             RoadmapQuizGenerationJobJpaRepository jobRepository,
-            UserRoadmapNodeJpaRepository stateRepository
+            RoadmapQuizLeaseExpiryService expiryService
     ) {
         this.jobRepository = jobRepository;
-        this.stateRepository = stateRepository;
+        this.expiryService = expiryService;
     }
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(readOnly = true)
     public void reapExhausted(Instant now) {
-        for (RoadmapQuizGenerationJobEntity expired
-                : jobRepository.findExpiredExhausted(now, PageRequest.of(0, REAP_BATCH_SIZE))) {
-            if (expired.expireExhaustedLease(now)) {
-                stateRepository.findById(expired.getUserRoadmapNodeId())
-                        .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"))
-                        .markQuizGenerationFailed(now);
-            }
+        for (String jobId : jobRepository.findExpiredExhaustedIds(
+                now, PageRequest.of(0, REAP_BATCH_SIZE))) {
+            expiryService.expireOne(jobId, now);
         }
     }
 }

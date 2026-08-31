@@ -31,11 +31,14 @@ async def test_maps_tavily_results_without_provider_generated_answer() -> None:
         transport=httpx.MockTransport(handler),
     )
 
-    result = await client.search("Spring Boot 当前 Java 版本")
+    result = await client.search(
+        "Spring Boot 当前 Java 版本", include_domains=("docs.spring.io",)
+    )
 
     assert captured["search_depth"] == "basic"
     assert captured["include_answer"] is False
     assert captured["include_raw_content"] is False
+    assert captured["include_domains"] == ["docs.spring.io"]
     assert result.provider_request_id == "request-1"
     assert result.results[0].url == "https://docs.spring.io/spring-boot/"
 

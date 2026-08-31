@@ -302,21 +302,40 @@ class RoadmapLearningLoopPersistenceTest {
 
         java.util.List<java.util.Map<String, Object>> completionQuestions = new java.util.ArrayList<>();
         for (int index = 0; index < 5; index++) {
-            completionQuestions.add(java.util.Map.of(
-                    "type", "SINGLE_CHOICE",
-                    "knowledgePoint", "javac 与 java " + index,
-                    "questionText", "第 " + (index + 1) + " 个命令场景应如何判断？",
-                    "options", java.util.List.of("javac Main.java", "java Main.java"),
-                    "correctAnswers", java.util.List.of("javac Main.java"),
-                    "explanation", "javac 生成字节码，java 启动 JVM。",
-                    "questionSignature", "java-env-command-v" + (index + 1)));
+            java.util.Map<String, Object> question = new java.util.HashMap<>();
+            question.put("type", "SINGLE_CHOICE");
+            question.put("knowledgePoint", "javac 与 java " + index);
+            question.put("questionText", "第 " + (index + 1) + " 个命令场景应如何判断？");
+            question.put("options", java.util.List.of("javac Main.java", "java Main.java"));
+            question.put("correctAnswers", java.util.List.of("javac Main.java"));
+            question.put("explanation", "javac 生成字节码，java 启动 JVM。");
+            question.put("points", 20);
+            question.put("coverageNodeId", availableNodeId);
+            question.put("practical", true);
+            question.put("sources", java.util.List.of(java.util.Map.of(
+                    "sourceType", "ROADMAP_CATALOG", "title", "Java 环境",
+                    "locator", "roadmap-node:" + availableNodeId,
+                    "snippet", "javac 与 java 命令")));
+            question.put("questionSignature", "java-env-command-v" + (index + 1));
+            completionQuestions.add(question);
         }
+        String enrollmentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_roadmaps WHERE owner_id = ? AND active_slot = 'CURRENT'",
+                String.class, owner.userId());
+        String stateId = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_roadmap_nodes WHERE user_roadmap_id = ? AND node_id = ?",
+                String.class, enrollmentId, availableNodeId);
+        String templateId = jdbcTemplate.queryForObject(
+                "SELECT template_id FROM user_roadmaps WHERE id = ?", String.class, enrollmentId);
         MvcResult createdQuiz = mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(java.util.Map.of(
                                 "ownerId", owner.userId(),
                                 "roadmapNodeId", availableNodeId,
+                                "userRoadmapId", enrollmentId,
+                                "userRoadmapNodeId", stateId,
+                                "roadmapTemplateId", templateId,
                                 "purpose", "NODE",
                                 "title", "Java 环境节点测验",
                                 "modelName", "test-model",
@@ -348,6 +367,19 @@ class RoadmapLearningLoopPersistenceTest {
                                 """.formatted(leaseToken, quizId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quizId").value(quizId));
+        assertThat(jdbcTemplate.queryForMap(
+                "SELECT user_roadmap_id, user_roadmap_node_id, roadmap_template_id "
+                        + "FROM quizzes WHERE id = ?", quizId))
+                .containsEntry("USER_ROADMAP_ID", enrollmentId)
+                .containsEntry("USER_ROADMAP_NODE_ID", stateId)
+                .containsEntry("ROADMAP_TEMPLATE_ID", templateId);
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT points, coverage_node_id, practical FROM quiz_questions WHERE quiz_id = ?",
+                quizId)).allSatisfy(row -> {
+                    assertThat(row.get("POINTS")).isEqualTo(20);
+                    assertThat(row.get("COVERAGE_NODE_ID")).isEqualTo(availableNodeId);
+                    assertThat(row.get("PRACTICAL")).isEqualTo(true);
+                });
         var preservedState = jdbcTemplate.queryForMap("""
                 SELECT quiz_status, updated_at, row_version FROM user_roadmap_nodes
                 WHERE owner_id = ? AND node_id = ?
@@ -516,11 +548,12 @@ class RoadmapLearningLoopPersistenceTest {
                 WHERE owner_id = ?
                 """, now.plusSeconds(60), active.userId());
 
-        var expired = jobRepository.findExpiredExhausted(now, PageRequest.of(0, 1));
+        var expired = jobRepository.findExpiredExhaustedIds(now, PageRequest.of(0, 1));
 
         assertThat(expired).hasSize(1);
-        assertThat(expired.get(0).getOwnerId()).isIn(first.userId(), second.userId());
-        assertThat(expired).noneMatch(job -> job.getOwnerId().equals(active.userId()));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT owner_id FROM roadmap_quiz_generation_jobs WHERE id = ?",
+                String.class, expired.get(0))).isIn(first.userId(), second.userId());
     }
 
     @Test
@@ -548,8 +581,16 @@ class RoadmapLearningLoopPersistenceTest {
                 .andExpect(status().isOk()).andReturn();
         String jobId = objectMapper.readTree(claim.getResponse().getContentAsString())
                 .get("id").asText();
+        String contextLeaseToken = objectMapper.readTree(claim.getResponse().getContentAsString())
+                .get("leaseToken").asText();
 
         mockMvc.perform(get("/internal/roadmap-quiz-generation-jobs/{jobId}/context", jobId)
+                        .header("X-Internal-Service-Token", "test-internal-token"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/internal/roadmap-quiz-generation-jobs/{jobId}/context", jobId)
+                        .param("workerId", "roadmap-worker")
+                        .param("leaseToken", contextLeaseToken)
                         .header("X-Internal-Service-Token", "test-internal-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.ownerId").value(owner.userId()))
@@ -579,21 +620,40 @@ class RoadmapLearningLoopPersistenceTest {
 
         java.util.List<java.util.Map<String, Object>> questions = new java.util.ArrayList<>();
         for (int index = 0; index < 5; index++) {
-            questions.add(java.util.Map.of(
-                    "type", "SINGLE_CHOICE",
-                    "knowledgePoint", "Java 环境实践 " + index,
-                    "questionText", "第 " + (index + 1) + " 题应选择哪个编译命令？",
-                    "options", java.util.List.of("A", "B"),
-                    "correctAnswers", java.util.List.of("A"),
-                    "explanation", "A 是正确命令。",
-                    "questionSignature", "node-attempt-signature-" + index));
+            java.util.Map<String, Object> question = new java.util.HashMap<>();
+            question.put("type", "SINGLE_CHOICE");
+            question.put("knowledgePoint", "Java 环境实践 " + index);
+            question.put("questionText", "第 " + (index + 1) + " 题应选择哪个编译命令？");
+            question.put("options", java.util.List.of("A", "B"));
+            question.put("correctAnswers", java.util.List.of("A"));
+            question.put("explanation", "A 是正确命令。");
+            question.put("points", 20);
+            question.put("coverageNodeId", availableNodeId);
+            question.put("practical", index < 3);
+            question.put("sources", java.util.List.of(java.util.Map.of(
+                    "sourceType", "ROADMAP_CATALOG", "title", "Java 环境",
+                    "locator", "roadmap-node:" + availableNodeId,
+                    "snippet", "javac 与 java 命令")));
+            question.put("questionSignature", "node-attempt-signature-" + index);
+            questions.add(question);
         }
+        String enrollmentId = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_roadmaps WHERE owner_id = ? AND active_slot = 'CURRENT'",
+                String.class, owner.userId());
+        String stateId = jdbcTemplate.queryForObject(
+                "SELECT id FROM user_roadmap_nodes WHERE user_roadmap_id = ? AND node_id = ?",
+                String.class, enrollmentId, availableNodeId);
+        String templateId = jdbcTemplate.queryForObject(
+                "SELECT template_id FROM user_roadmaps WHERE id = ?", String.class, enrollmentId);
         MvcResult created = mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(java.util.Map.of(
                                 "ownerId", owner.userId(),
                                 "roadmapNodeId", availableNodeId,
+                                "userRoadmapId", enrollmentId,
+                                "userRoadmapNodeId", stateId,
+                                "roadmapTemplateId", templateId,
                                 "purpose", "NODE",
                                 "title", "五题节点测验",
                                 "modelName", "test-model",
@@ -611,6 +671,12 @@ class RoadmapLearningLoopPersistenceTest {
                                 "quizId", quizId))))
                 .andExpect(status().isOk());
 
+        jdbcTemplate.update("""
+                UPDATE user_roadmaps SET status = 'SUPERSEDED', active_slot = NULL
+                WHERE id = ?
+                """, enrollmentId);
+        enrollV1(owner.token());
+
         String failedAttemptId = submitQuizAttempt(owner.token(), quiz, 3, "score-60")
                 .get("id").asText();
         assertThat(jdbcTemplate.queryForObject("""
@@ -625,7 +691,23 @@ class RoadmapLearningLoopPersistenceTest {
         mockMvc.perform(get("/api/quiz-attempts/{attemptId}", failedAttemptId)
                         .header("Authorization", bearer(owner.token())))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.score").value(60.0));
+                .andExpect(jsonPath("$.score").value(60.0))
+                .andExpect(jsonPath("$.results.length()").value(5))
+                .andExpect(jsonPath("$.results[0].explanation").value("A 是正确命令。"));
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT completion_status FROM user_roadmap_nodes
+                WHERE owner_id = ? AND node_id = ?
+                """, String.class, owner.userId(), availableNodeId)).isEqualTo("COMPLETED");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT availability_status FROM user_roadmap_nodes
+                WHERE owner_id = ? AND node_id = ?
+                """, String.class, owner.userId(), lockedNodeId)).isEqualTo("AVAILABLE");
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM user_roadmap_nodes state
+                JOIN user_roadmaps roadmap ON roadmap.id = state.user_roadmap_id
+                WHERE roadmap.owner_id = ? AND roadmap.active_slot = 'CURRENT'
+                  AND state.completion_status = 'COMPLETED'
+                """, Integer.class, owner.userId())).isZero();
     }
 
     private JsonNode submitQuizAttempt(
@@ -665,6 +747,16 @@ class RoadmapLearningLoopPersistenceTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"roadmapCode":"studypilot-java-ai","templateVersion":2}
+                                """))
+                .andExpect(status().isCreated());
+    }
+
+    private void enrollV1(String token) throws Exception {
+        mockMvc.perform(post("/api/roadmap-enrollments")
+                        .header("Authorization", bearer(token))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roadmapCode":"studypilot-java-ai","templateVersion":1}
                                 """))
                 .andExpect(status().isCreated());
     }

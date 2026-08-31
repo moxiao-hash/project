@@ -27,6 +27,9 @@ import com.moxiao.studypilot.learning.domain.LearningTaskStatus;
 import com.moxiao.studypilot.learning.infrastructure.LearningTaskJpaRepository;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapStageJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.application.RoadmapQuizProgressService;
 import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
@@ -61,6 +64,9 @@ public class QuizService {
     private final LessonProgressJpaRepository lessonProgressRepository;
     private final UserRoadmapJpaRepository userRoadmapRepository;
     private final RoadmapStageJpaRepository roadmapStageRepository;
+    private final UserRoadmapNodeJpaRepository userRoadmapNodeRepository;
+    private final RoadmapNodeJpaRepository roadmapNodeRepository;
+    private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     private final RoadmapQuizProgressService roadmapQuizProgressService;
 
     public QuizService(
@@ -78,6 +84,9 @@ public class QuizService {
             LessonProgressJpaRepository lessonProgressRepository,
             UserRoadmapJpaRepository userRoadmapRepository,
             RoadmapStageJpaRepository roadmapStageRepository,
+            UserRoadmapNodeJpaRepository userRoadmapNodeRepository,
+            RoadmapNodeJpaRepository roadmapNodeRepository,
+            RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
             RoadmapQuizProgressService roadmapQuizProgressService
     ) {
         this.userRepository = userRepository;
@@ -94,6 +103,9 @@ public class QuizService {
         this.lessonProgressRepository = lessonProgressRepository;
         this.userRoadmapRepository = userRoadmapRepository;
         this.roadmapStageRepository = roadmapStageRepository;
+        this.userRoadmapNodeRepository = userRoadmapNodeRepository;
+        this.roadmapNodeRepository = roadmapNodeRepository;
+        this.prerequisiteRepository = prerequisiteRepository;
         this.roadmapQuizProgressService = roadmapQuizProgressService;
     }
 
@@ -140,6 +152,7 @@ public class QuizService {
                 request.lessonId(),
                 request.roadmapNodeId(),
                 request.userRoadmapId(),
+                request.userRoadmapNodeId(),
                 request.roadmapStageId(),
                 request.roadmapTemplateId(),
                 request.purpose(),
@@ -179,6 +192,7 @@ public class QuizService {
                             ))
                             .toList(),
                     input.questionSignature()
+                    , input.points(), input.coverageNodeId(), input.practical()
             ));
         }
         return new QuizBundle(quiz, questionRepository.saveAll(questions));
@@ -189,8 +203,10 @@ public class QuizService {
                 || request.taskId() != null || request.lessonId() != null;
         boolean valid = switch (request.purpose()) {
             case NODE -> request.roadmapNodeId() != null
-                    && request.userRoadmapId() == null && request.roadmapStageId() == null
-                    && request.roadmapTemplateId() == null;
+                    && request.userRoadmapId() != null
+                    && request.userRoadmapNodeId() != null
+                    && request.roadmapStageId() == null
+                    && request.roadmapTemplateId() != null;
             case DIAGNOSTIC -> request.roadmapNodeId() == null
                     && request.userRoadmapId() != null && request.roadmapStageId() == null
                     && request.roadmapTemplateId() == null;
@@ -200,6 +216,44 @@ public class QuizService {
         };
         if (!valid || legacyOrigin) {
             throw new IllegalArgumentException("测验 purpose 必须匹配唯一的路线来源");
+        }
+        if (request.purpose() == RoadmapQuizPurpose.NODE) {
+            var enrollment = userRoadmapRepository.findById(request.userRoadmapId())
+                    .orElseThrow(() -> new IllegalArgumentException("路线报名不存在"));
+            var state = userRoadmapNodeRepository.findById(request.userRoadmapNodeId())
+                    .orElseThrow(() -> new IllegalArgumentException("路线节点状态不存在"));
+            boolean matchingScope = enrollment.getOwnerId().equals(request.ownerId())
+                    && enrollment.getTemplateId().equals(request.roadmapTemplateId())
+                    && state.getOwnerId().equals(request.ownerId())
+                    && state.getUserRoadmapId().equals(request.userRoadmapId())
+                    && state.getNodeId().equals(request.roadmapNodeId())
+                    && state.getTemplateId().equals(request.roadmapTemplateId())
+                    && roadmapNodeRepository.findByIdAndTemplateId(
+                            request.roadmapNodeId(), request.roadmapTemplateId()).isPresent();
+            if (!matchingScope) {
+                throw new IllegalArgumentException("节点测验必须绑定原路线节点状态");
+            }
+            var allowedCoverage = new java.util.HashSet<String>();
+            allowedCoverage.add(request.roadmapNodeId());
+            prerequisiteRepository.findAllByTemplateIdAndNodeId(
+                    request.roadmapTemplateId(), request.roadmapNodeId())
+                    .forEach(edge -> allowedCoverage.add(edge.getPrerequisiteNodeId()));
+            long currentCoverage = request.questions().stream()
+                    .filter(question -> request.roadmapNodeId().equals(question.coverageNodeId()))
+                    .count();
+            long practical = request.questions().stream()
+                    .filter(question -> Boolean.TRUE.equals(question.practical())).count();
+            boolean validQuestions = currentCoverage >= 3 && practical >= 3
+                    && request.questions().stream().allMatch(question ->
+                    Integer.valueOf(20).equals(question.points())
+                            && allowedCoverage.contains(question.coverageNodeId())
+                            && question.sources() != null && !question.sources().isEmpty()
+                            && question.sources().stream().anyMatch(source ->
+                            ("roadmap-node:" + question.coverageNodeId())
+                                    .equals(source.locator())));
+            if (!validQuestions) {
+                throw new IllegalArgumentException("节点测验题目分值、覆盖或来源不合法");
+            }
         }
         if (request.purpose() == RoadmapQuizPurpose.STAGE_GRADUATION) {
             var enrollment = userRoadmapRepository.findById(request.userRoadmapId())
@@ -249,6 +303,7 @@ public class QuizService {
             String quizId,
             SubmitQuizAttemptRequest request
     ) {
+        userRoadmapRepository.findBoundRoadmapForQuizForUpdate(quizId, ownerId);
         QuizBundle bundle = get(ownerId, quizId);
         String idempotencyKey = request.idempotencyKey() == null
                 ? UUID.randomUUID().toString()
@@ -418,6 +473,7 @@ public class QuizService {
             String workerId,
             List<Map<String, Object>> evaluations
     ) {
+        userRoadmapRepository.findBoundRoadmapForCodingJobForUpdate(jobId);
         CodingEvaluationJobEntity job = requireOwnedJob(jobId, workerId);
         QuizAttemptEntity attempt = attemptRepository.findById(job.getAttemptId())
                 .orElseThrow(() -> new ResourceNotFoundException("测验作答不存在"));
@@ -502,6 +558,25 @@ public class QuizService {
                         ((Number) evaluation.get("score")).doubleValue(),
                         evaluation
                 ));
+            }
+        } else {
+            SubmitQuizAttemptRequest submitted = objectMapper.readValue(
+                    attempt.getAnswersJson(), SubmitQuizAttemptRequest.class);
+            Map<String, Set<String>> selected = submitted.answers().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            SubmitQuizAttemptRequest.AnswerInput::questionId,
+                            answer -> answer.selectedAnswers() == null
+                                    ? Set.of() : answer.selectedAnswers()));
+            for (QuestionEntity question : questions) {
+                if (question.getType() == QuestionType.CODING) {
+                    continue;
+                }
+                boolean correct = selected.getOrDefault(question.getId(), Set.of())
+                        .equals(question.getCorrectAnswers());
+                results.add(new QuizAttemptResponse.QuestionResult(
+                        question.getId(), correct, question.getKnowledgePoint(),
+                        question.getExplanation(), "DETERMINISTIC",
+                        correct ? 100.0 : 0.0, null));
             }
         }
         return new QuizAttemptResponse(

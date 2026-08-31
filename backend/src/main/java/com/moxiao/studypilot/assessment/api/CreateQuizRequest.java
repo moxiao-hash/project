@@ -20,6 +20,7 @@ public record CreateQuizRequest(
         String lessonId,
         String roadmapNodeId,
         String userRoadmapId,
+        String userRoadmapNodeId,
         String roadmapStageId,
         String roadmapTemplateId,
         RoadmapQuizPurpose purpose,
@@ -41,6 +42,9 @@ public record CreateQuizRequest(
             RubricInput rubric,
             String referenceAnswer,
             List<@Valid SourceInput> sources,
+            Integer points,
+            @Size(max = 100) String coverageNodeId,
+            Boolean practical,
             @Size(max = 64) String questionSignature
     ) {
     }

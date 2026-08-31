@@ -163,6 +163,13 @@ public class RoadmapQuizGenerationJobEntity {
         }
     }
 
+    public boolean hasActiveLease(String workerId, String leaseToken, Instant now) {
+        return status == RoadmapQuizGenerationStatus.LEASED
+                && workerId != null && workerId.equals(this.workerId)
+                && leaseToken != null && leaseToken.equals(this.leaseToken)
+                && leaseUntil != null && leaseUntil.isAfter(now);
+    }
+
     public String getId() { return id; }
     public String getOwnerId() { return ownerId; }
     public String getUserRoadmapId() { return userRoadmapId; }

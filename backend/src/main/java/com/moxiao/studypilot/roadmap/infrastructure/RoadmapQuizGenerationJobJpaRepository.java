@@ -25,15 +25,14 @@ public interface RoadmapQuizGenerationJobJpaRepository
     @Query("select job from RoadmapQuizGenerationJobEntity job where job.id = :id")
     Optional<RoadmapQuizGenerationJobEntity> findByIdForUpdate(String id);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-            select job from RoadmapQuizGenerationJobEntity job
+            select job.id from RoadmapQuizGenerationJobEntity job
             where job.status = com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus.LEASED
               and job.attemptCount >= 3
               and job.leaseUntil <= :now
             order by job.createdAt
             """)
-    List<RoadmapQuizGenerationJobEntity> findExpiredExhausted(Instant now, Pageable pageable);
+    List<String> findExpiredExhaustedIds(Instant now, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

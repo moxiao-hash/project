@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -24,8 +25,12 @@ public class InternalRoadmapQuizJobController {
     }
 
     @GetMapping("/{jobId}/context")
-    public RoadmapQuizContextResponse context(@PathVariable String jobId) {
-        return service.quizJobContext(jobId);
+    public RoadmapQuizContextResponse context(
+            @PathVariable String jobId,
+            @RequestParam String workerId,
+            @RequestParam String leaseToken
+    ) {
+        return service.quizJobContext(jobId, workerId, leaseToken);
     }
 
     @PostMapping("/{jobId}/heartbeat")

@@ -35,6 +35,9 @@ public class QuizEntity {
     @Column(name = "user_roadmap_id", length = 36)
     private String userRoadmapId;
 
+    @Column(name = "user_roadmap_node_id", length = 36)
+    private String userRoadmapNodeId;
+
     @Column(name = "roadmap_stage_id", length = 80)
     private String roadmapStageId;
 
@@ -78,13 +81,14 @@ public class QuizEntity {
             String modelName,
             Instant createdAt
     ) {
-        this(id, ownerId, materialId, taskId, lessonId, null, null, null, null, null,
+        this(id, ownerId, materialId, taskId, lessonId, null, null, null, null, null, null,
                 title, modelName, createdAt);
     }
 
     public QuizEntity(
             String id, String ownerId, String materialId, String taskId, String lessonId,
-            String roadmapNodeId, String userRoadmapId, String roadmapStageId,
+            String roadmapNodeId, String userRoadmapId, String userRoadmapNodeId,
+            String roadmapStageId,
             String roadmapTemplateId, RoadmapQuizPurpose purpose, String title,
             String modelName, Instant createdAt
     ) {
@@ -95,6 +99,7 @@ public class QuizEntity {
         this.lessonId = lessonId;
         this.roadmapNodeId = roadmapNodeId;
         this.userRoadmapId = userRoadmapId;
+        this.userRoadmapNodeId = userRoadmapNodeId;
         this.roadmapStageId = roadmapStageId;
         this.roadmapTemplateId = roadmapTemplateId;
         this.purpose = purpose;
@@ -125,6 +130,7 @@ public class QuizEntity {
 
     public String getRoadmapNodeId() { return roadmapNodeId; }
     public String getUserRoadmapId() { return userRoadmapId; }
+    public String getUserRoadmapNodeId() { return userRoadmapNodeId; }
     public String getRoadmapStageId() { return roadmapStageId; }
     public String getRoadmapTemplateId() { return roadmapTemplateId; }
     public RoadmapQuizPurpose getPurpose() { return purpose; }
@@ -135,5 +141,17 @@ public class QuizEntity {
 
     public String getModelName() {
         return modelName;
+    }
+
+    public void bindLegacyNodeQuiz(
+            String userRoadmapId, String userRoadmapNodeId, String roadmapTemplateId
+    ) {
+        if (purpose != RoadmapQuizPurpose.NODE || this.userRoadmapId != null
+                || this.userRoadmapNodeId != null || this.roadmapTemplateId != null) {
+            throw new IllegalStateException("只能绑定未绑定的旧节点测验");
+        }
+        this.userRoadmapId = userRoadmapId;
+        this.userRoadmapNodeId = userRoadmapNodeId;
+        this.roadmapTemplateId = roadmapTemplateId;
     }
 }

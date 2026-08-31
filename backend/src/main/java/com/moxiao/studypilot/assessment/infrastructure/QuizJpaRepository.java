@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.assessment.infrastructure;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.domain.Pageable;
 
 import java.util.List;
 import java.util.Optional;
@@ -12,5 +13,5 @@ public interface QuizJpaRepository extends JpaRepository<QuizEntity, String> {
     List<QuizEntity> findAllByOwnerIdOrderByCreatedAtDesc(String ownerId);
 
     List<QuizEntity> findAllByOwnerIdAndRoadmapNodeIdOrderByCreatedAtDesc(
-            String ownerId, String roadmapNodeId);
+            String ownerId, String roadmapNodeId, Pageable pageable);
 }

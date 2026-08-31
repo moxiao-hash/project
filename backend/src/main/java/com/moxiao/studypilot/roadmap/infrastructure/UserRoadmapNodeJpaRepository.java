@@ -11,6 +11,19 @@ import java.util.List;
 import java.util.Optional;
 
 public interface UserRoadmapNodeJpaRepository extends JpaRepository<UserRoadmapNodeEntity, String> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select state from UserRoadmapNodeEntity state where state.id = :id")
+    Optional<UserRoadmapNodeEntity> findByIdForUpdate(@Param("id") String id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select state from UserRoadmapNodeEntity state,
+              RoadmapQuizGenerationJobEntity job
+            where job.id = :jobId and job.userRoadmapNodeId = state.id
+            """)
+    Optional<UserRoadmapNodeEntity> findBoundStateForQuizJobForUpdate(
+            @Param("jobId") String jobId);
+
     List<UserRoadmapNodeEntity> findAllByUserRoadmapId(String userRoadmapId);
 
     Optional<UserRoadmapNodeEntity> findByUserRoadmapIdAndNodeId(

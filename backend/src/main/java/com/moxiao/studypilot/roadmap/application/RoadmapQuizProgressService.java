@@ -6,6 +6,7 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeMutationService;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,13 +19,16 @@ public class RoadmapQuizProgressService {
 
     private final UserRoadmapJpaRepository enrollmentRepository;
     private final UserRoadmapNodeJpaRepository stateRepository;
+    private final RoadmapNodeMutationService mutationService;
 
     public RoadmapQuizProgressService(
             UserRoadmapJpaRepository enrollmentRepository,
-            UserRoadmapNodeJpaRepository stateRepository
+            UserRoadmapNodeJpaRepository stateRepository,
+            RoadmapNodeMutationService mutationService
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
+        this.mutationService = mutationService;
     }
 
     @Transactional
@@ -34,7 +38,7 @@ public class RoadmapQuizProgressService {
 
     @Transactional
     public void recordResult(QuizEntity quiz, double score, Instant now) {
-        stateForUpdate(quiz).recordQuizResult(score, now);
+        mutationService.recordNodeQuizResult(quiz, score, now);
     }
 
     private UserRoadmapNodeEntity stateForUpdate(QuizEntity quiz) {

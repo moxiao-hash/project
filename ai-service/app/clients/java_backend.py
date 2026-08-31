@@ -134,11 +134,24 @@ class JavaBackendClient:
             raise
         return response.json()
 
-    async def get_roadmap_quiz_context(self, job_id: str) -> dict[str, Any]:
+    async def get_roadmap_quiz_context(
+        self, job_id: str, worker_id: str, lease_token: str
+    ) -> dict[str, Any]:
         response = await self._request(
-            "GET", f"/internal/roadmap-quiz-generation-jobs/{job_id}/context"
+            "GET",
+            f"/internal/roadmap-quiz-generation-jobs/{job_id}/context",
+            params={"workerId": worker_id, "leaseToken": lease_token},
         )
         return response.json()
+
+    async def heartbeat_roadmap_quiz_job(
+        self, job_id: str, worker_id: str, lease_token: str
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/roadmap-quiz-generation-jobs/{job_id}/heartbeat",
+            json={"workerId": worker_id, "leaseToken": lease_token, "leaseSeconds": 120},
+        )
 
     async def complete_roadmap_quiz_job(
         self, job_id: str, worker_id: str, lease_token: str, quiz_id: str

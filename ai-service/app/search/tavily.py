@@ -21,7 +21,9 @@ class TavilySearchClient:
         self._transport = transport
         self._timeout = timeout_seconds
 
-    async def search(self, query: str) -> WebSearchOutcome:
+    async def search(
+        self, query: str, *, include_domains: tuple[str, ...] = ()
+    ) -> WebSearchOutcome:
         if not self._api_key:
             return WebSearchOutcome(
                 query=query,
@@ -45,6 +47,11 @@ class TavilySearchClient:
                         "include_answer": False,
                         "include_raw_content": False,
                         "max_results": 5,
+                        **(
+                            {"include_domains": list(include_domains)}
+                            if include_domains
+                            else {}
+                        ),
                     },
                 )
                 response.raise_for_status()

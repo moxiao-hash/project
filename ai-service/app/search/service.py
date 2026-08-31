@@ -6,7 +6,9 @@ from app.search.models import WebSearchOutcome
 
 
 class SearchProvider(Protocol):
-    async def search(self, query: str) -> WebSearchOutcome: ...
+    async def search(
+        self, query: str, *, include_domains: tuple[str, ...] = ()
+    ) -> WebSearchOutcome: ...
 
 
 class SearchRecorder(Protocol):
@@ -26,8 +28,14 @@ class WebSearchService:
         self._provider = provider
         self._recorder = recorder
 
-    async def search(self, owner_id: str, query: str) -> WebSearchOutcome:
-        outcome = await self._provider.search(query)
+    async def search(
+        self, owner_id: str, query: str, *, include_domains: tuple[str, ...] = ()
+    ) -> WebSearchOutcome:
+        outcome = (
+            await self._provider.search(query, include_domains=include_domains)
+            if include_domains
+            else await self._provider.search(query)
+        )
         if not outcome.results:
             return outcome
         return await self._recorder.record_web_search(owner_id, outcome)

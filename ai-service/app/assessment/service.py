@@ -1,5 +1,7 @@
 """自适应题目配比和测验生成编排。"""
 
+import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import date
 from typing import Any, Protocol
@@ -15,6 +17,8 @@ from app.assessment.models import (
 from app.retrieval.models import RetrievedEvidence
 from app.schemas.learning import LearningContext, LearningTask
 from app.search.models import WebSearchOutcome
+
+logger = logging.getLogger(__name__)
 
 
 class QuizMix(dict[QuestionType, int]):
@@ -74,7 +78,9 @@ class AssessmentRetriever(Protocol):
 
 
 class AssessmentWebSearch(Protocol):
-    async def search(self, owner_id: str, query: str) -> WebSearchOutcome: ...
+    async def search(
+        self, owner_id: str, query: str, *, include_domains: tuple[str, ...] = ()
+    ) -> WebSearchOutcome: ...
 
 
 class QuizGenerator(Protocol):
@@ -260,6 +266,7 @@ class RoadmapQuizWorker:
         web_search_factory: Callable[[str], Awaitable[Any]] | None = None,
         worker_id: str,
         model_name: str,
+        heartbeat_interval_seconds: float = 30,
     ) -> None:
         self._backend = backend
         self._generator = generator
@@ -268,6 +275,7 @@ class RoadmapQuizWorker:
         self._web_search_factory = web_search_factory
         self._worker_id = worker_id
         self._model_name = model_name
+        self._heartbeat_interval_seconds = heartbeat_interval_seconds
 
     async def process_once(self) -> bool:
         job = await self._backend.claim_roadmap_quiz_job(self._worker_id)
@@ -275,8 +283,14 @@ class RoadmapQuizWorker:
             return False
         job_id = job["id"]
         lease_token = job["leaseToken"]
+        stop_heartbeat = asyncio.Event()
+        heartbeat = asyncio.create_task(
+            self._heartbeat(job_id, lease_token, stop_heartbeat)
+        )
         try:
-            context = await self._backend.get_roadmap_quiz_context(job_id)
+            context = await self._backend.get_roadmap_quiz_context(
+                job_id, self._worker_id, lease_token
+            )
             sources = self._catalog_sources(context)
             if self._is_explicitly_time_sensitive(context):
                 sources.extend(await self._official_web_sources(context))
@@ -289,7 +303,7 @@ class RoadmapQuizWorker:
                 sources=sources,
                 recent_signatures=recent,
             )
-            self._validate_node_quiz(generated, context, recent)
+            self._validate_node_quiz(generated, context, recent, sources)
             questions = []
             for question in generated.questions:
                 payload = question.model_dump(
@@ -307,26 +321,59 @@ class RoadmapQuizWorker:
                 {
                     "ownerId": job["ownerId"],
                     "roadmapNodeId": job["nodeId"],
+                    # 绑定信息来自已领取的持久化任务，而不是模型上下文。
+                    # 这样即使上下文 DTO 以后精简字段，测验仍然绑定到创建
+                    # 任务时的原路线，升级路线后也不会误写当前路线。
+                    "userRoadmapId": job["userRoadmapId"],
+                    "userRoadmapNodeId": job["userRoadmapNodeId"],
+                    "roadmapTemplateId": job["roadmapTemplateId"],
                     "purpose": "NODE",
                     "title": generated.title,
                     "modelName": self._model_name,
                     "questions": questions,
                 }
             )
-            await self._backend.complete_roadmap_quiz_job(
-                job_id,
-                self._worker_id,
-                lease_token,
-                quiz["id"],
-            )
+            try:
+                await self._backend.complete_roadmap_quiz_job(
+                    job_id, self._worker_id, lease_token, quiz["id"]
+                )
+            except (TimeoutError, ConnectionError):
+                await self._backend.complete_roadmap_quiz_job(
+                    job_id, self._worker_id, lease_token, quiz["id"]
+                )
         except Exception as exc:
-            await self._backend.fail_roadmap_quiz_job(
-                job_id,
-                self._worker_id,
-                lease_token,
-                f"路线测验生成失败: {type(exc).__name__}",
-            )
+            try:
+                await self._backend.fail_roadmap_quiz_job(
+                    job_id,
+                    self._worker_id,
+                    lease_token,
+                    f"路线测验生成失败: {type(exc).__name__}",
+                )
+            except Exception:
+                logger.warning("路线测验失败回报被租约 fencing 拒绝", exc_info=True)
+        finally:
+            stop_heartbeat.set()
+            await heartbeat
         return True
+
+    async def _heartbeat(
+        self, job_id: str, lease_token: str, stopped: asyncio.Event
+    ) -> None:
+        while True:
+            try:
+                await asyncio.wait_for(
+                    stopped.wait(), timeout=self._heartbeat_interval_seconds
+                )
+                return
+            except TimeoutError:
+                try:
+                    await self._backend.heartbeat_roadmap_quiz_job(
+                        job_id, self._worker_id, lease_token
+                    )
+                except Exception:
+                    # 心跳失败可能只是短暂的网络故障；最终 complete/fail 仍由
+                    # Java 的 leaseToken fencing 决定该 Worker 是否有写权限。
+                    logger.warning("路线测验任务心跳失败", exc_info=True)
 
     @staticmethod
     def _catalog_sources(context: dict[str, Any]) -> list[QuizSource]:
@@ -363,11 +410,12 @@ class RoadmapQuizWorker:
             web_search = await self._web_search_factory(context["ownerId"])
         if web_search is None:
             return []
+        allowed = tuple(context.get("officialDomains", []))
         outcome = await web_search.search(
             context["ownerId"],
             context["node"]["title"],
+            include_domains=allowed,
         )
-        allowed = tuple(context.get("officialDomains", []))
         return [
             QuizSource(
                 source_type="WEB",
@@ -386,7 +434,9 @@ class RoadmapQuizWorker:
         return any(host == domain or host.endswith("." + domain) for domain in allowed)
 
     @staticmethod
-    def _validate_node_quiz(generated, context: dict[str, Any], recent: set[str]) -> None:
+    def _validate_node_quiz(
+        generated, context: dict[str, Any], recent: set[str], sources: list[QuizSource]
+    ) -> None:
         current = context["node"]["id"]
         allowed = {current} | {
             node["id"] for node in context.get("directPrerequisites", [])
@@ -395,9 +445,37 @@ class RoadmapQuizWorker:
         signatures = [question.question_signature for question in generated.questions]
         if len(generated.questions) != 5 or sum(q.points for q in generated.questions) != 100:
             raise InvalidGeneratedQuizError("路线节点测验必须恰好五题且总分为100")
+        if any(question.points != 20 for question in generated.questions):
+            raise InvalidGeneratedQuizError("路线节点测验每题必须为20分")
         if coverage.count(current) < 3 or not set(coverage) <= allowed:
             raise InvalidGeneratedQuizError("题目超出当前节点或直接前置范围")
         if sum(question.practical for question in generated.questions) < 3:
             raise InvalidGeneratedQuizError("高频实用题不足三题")
+        node_by_source = {
+            index: (
+                source.locator.removeprefix("roadmap-node:")
+                if source.source_type == "ROADMAP_CATALOG"
+                else current
+            )
+            for index, source in enumerate(sources)
+        }
+        high_frequency = " ".join(
+            item
+            for node in [context["node"], *context.get("directPrerequisites", [])]
+            for item in node.get("highFrequency", [])
+        ).lower()
+        for question in generated.questions:
+            if not question.source_indexes or any(
+                index < 0 or index >= len(sources) for index in question.source_indexes
+            ):
+                raise InvalidGeneratedQuizError("题目来源索引为空或越界")
+            referenced_nodes = {node_by_source[index] for index in question.source_indexes}
+            if question.coverage_node_id not in referenced_nodes:
+                raise InvalidGeneratedQuizError("题目覆盖节点与目录来源不匹配")
+            if question.practical and not any(
+                token.lower() in high_frequency
+                for token in (question.knowledge_point, question.question_text)
+            ):
+                raise InvalidGeneratedQuizError("实用题缺少高频内容依据")
         if len(set(signatures)) != 5 or recent.intersection(signatures):
             raise InvalidGeneratedQuizError("题目签名与近期测验重复")
