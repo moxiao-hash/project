@@ -106,9 +106,9 @@
 - Create a dedicated roadmap schedule migration, entities, repository, service, controller and tests.
 - Extend user settings defaults without creating a second roadmap truth model.
 
-- [ ] Write failing tests for `GET /api/roadmaps/current/schedule` and refresh, default Asia/Shanghai/60 minutes/weekends enabled, capacity, prerequisites, deterministic priority and idempotency.
-- [ ] Roll overdue incomplete nodes forward and reschedule only future unstarted projections; never rewrite started/completed history.
-- [ ] Trigger debounced refresh after completion/failure/settings changes; commit `feat: schedule rolling roadmap learning`.
+- [x] Write failing tests for `GET /api/roadmaps/current/schedule` and refresh, default Asia/Shanghai/60 minutes/weekends enabled, capacity, prerequisites, deterministic priority and idempotency.
+- [x] Roll overdue incomplete nodes forward and reschedule only future unstarted projections; never rewrite started/completed history.
+- [x] Trigger debounced refresh after completion/failure/settings changes; commit `feat: schedule rolling roadmap learning`.
 
 ### Task 9: Add diagnostic quick verification and stage graduation
 
