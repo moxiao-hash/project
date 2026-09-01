@@ -189,6 +189,42 @@ class RoadmapScheduleWorkflowTest {
     }
 
     @Test
+    void firstScheduleReflectsACheckInThatHappenedBeforeProjectionExisted() throws Exception {
+        Registration owner = register("schedule-late-projection");
+        enrollV2(owner.token());
+        String nodeId = jdbcTemplate.queryForObject("""
+                SELECT node_id FROM user_roadmap_nodes
+                WHERE owner_id = ? AND availability_status = 'AVAILABLE'
+                ORDER BY node_id LIMIT 1
+                """, String.class, owner.userId());
+        mockMvc.perform(post("/api/roadmap-nodes/{nodeId}/check-ins", nodeId)
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"summary":"我先完成了环境搭建和命令验证，随后才打开今日学习页面。",
+                                 "idempotencyKey":"before-schedule-check-in"}
+                                """))
+                .andExpect(status().isCreated());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT learning_status FROM user_roadmap_nodes WHERE owner_id = ? AND node_id = ?",
+                String.class, owner.userId(), nodeId)).isEqualTo("IN_PROGRESS");
+
+        JsonNode schedule = objectMapper.readTree(mockMvc.perform(
+                        get("/api/roadmaps/current/schedule")
+                                .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+        var matching = new java.util.ArrayList<JsonNode>();
+        schedule.get("days").forEach(day -> day.get("items").forEach(item -> {
+            if (item.get("nodeId").asText().equals(nodeId)) {
+                matching.add(item);
+            }
+        }));
+        assertThat(matching).singleElement()
+                .satisfies(item -> assertThat(item.get("status").asText()).isEqualTo("STARTED"));
+    }
+
+    @Test
     void readingHistoricalWindowDoesNotMoveCurrentPlannedItems() throws Exception {
         Registration owner = register("schedule-history-read");
         enrollV2(owner.token());

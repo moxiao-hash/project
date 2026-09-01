@@ -162,7 +162,10 @@ public class RoadmapScheduleService {
                         UUID.randomUUID().toString(), schedule.getId(), ownerId,
                         enrollment.getId(), nodeState.getId(), node.getId(), date,
                         node.getEstimatedMinutes(), now);
-                itemRepository.save(item);
+                if (nodeState.getLearningStatus() == LearningStatus.IN_PROGRESS) {
+                    item.start(now);
+                }
+                item = itemRepository.save(item);
                 byState.put(nodeState.getId(), item);
             } else {
                 item.reschedule(date, node.getEstimatedMinutes(), now);
@@ -230,11 +233,16 @@ public class RoadmapScheduleService {
             LocalDate start,
             LocalDate end
     ) {
+        List<RoadmapNodeEntity> catalogOrder = nodeRepository
+                .findAllByTemplateIdInRoadmapOrder(enrollment.getTemplateId());
         return response(
                 schedule, start, end,
                 itemRepository.findAllByOwnerIdAndUserRoadmapId(
                         enrollment.getOwnerId(), enrollment.getId()),
-                nodeRepository.findAllByTemplateIdInRoadmapOrder(enrollment.getTemplateId()));
+                stableTopologicalOrder(
+                        catalogOrder,
+                        prerequisiteRepository.findAllByTemplateId(enrollment.getTemplateId()),
+                        Set.of()));
     }
 
     private RoadmapScheduleResponse response(
