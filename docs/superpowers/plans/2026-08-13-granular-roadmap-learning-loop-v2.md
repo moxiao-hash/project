@@ -85,9 +85,9 @@
 - Add roadmap check-in API/service/entity and generation-job claim/heartbeat/complete/fail internal APIs.
 - Extend assessment quiz entities/DTOs without breaking task/lesson quizzes.
 
-- [ ] Write failing tests for authenticated owner isolation, 10–2000 character summaries, idempotent check-in, and atomic check-in plus generation-job creation.
-- [ ] Enforce exactly one quiz origin and purposes `NODE`, `DIAGNOSTIC`, `STAGE_GRADUATION`.
-- [ ] Keep check-in successful while generation remains retriable; commit `feat: create roadmap check-ins and quiz jobs`.
+- [x] Write failing tests for authenticated owner isolation, 10–2000 character summaries, idempotent check-in, and atomic check-in plus generation-job creation.
+- [x] Enforce exactly one quiz origin and purposes `NODE`, `DIAGNOSTIC`, `STAGE_GRADUATION`.
+- [x] Keep check-in successful while generation remains retriable; commit `feat: create roadmap check-ins and quiz jobs`.
 
 ### Task 7: Generate grounded five-question node quizzes
 
@@ -95,10 +95,10 @@
 - Extend Python assessment models/service/API and Java internal roadmap context/completion endpoints.
 - Add Python and Java contract/integration tests.
 
-- [ ] Write failing tests for exactly five questions totaling 100 points, pass threshold 70, at least three current-node questions, direct-prerequisite-only spillover, and practical/high-frequency weighting.
-- [ ] Use Tavily only for explicitly time-sensitive blueprints, restricted to official domains; stable basics must not call Tavily.
-- [ ] Persist model/source/signature snapshots; retries must avoid recent signatures and retain old attempts/explanations.
-- [ ] Update roadmap quiz status and completion atomically under enrollment-first locking; commit `feat: generate roadmap node quizzes`.
+- [x] Write failing tests for exactly five questions totaling 100 points, pass threshold 70, at least three current-node questions, direct-prerequisite-only spillover, and practical/high-frequency weighting.
+- [x] Use Tavily only for explicitly time-sensitive blueprints, restricted to official domains; stable basics must not call Tavily.
+- [x] Persist model/source/signature snapshots; retries must avoid recent signatures and retain old attempts/explanations.
+- [x] Update roadmap quiz status and completion atomically under enrollment-first locking; commit `feat: generate roadmap node quizzes`.
 
 ### Task 8: Add rolling seven-day roadmap schedules
 
