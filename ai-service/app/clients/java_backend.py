@@ -154,13 +154,14 @@ class JavaBackendClient:
         )
 
     async def complete_roadmap_quiz_job(
-        self, job_id: str, worker_id: str, lease_token: str, quiz_id: str
-    ) -> None:
-        await self._request(
+        self, job_id: str, worker_id: str, lease_token: str, quiz_payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        response = await self._request(
             "POST",
             f"/internal/roadmap-quiz-generation-jobs/{job_id}/complete",
-            json={"workerId": worker_id, "leaseToken": lease_token, "quizId": quiz_id},
+            json={"workerId": worker_id, "leaseToken": lease_token, "quiz": quiz_payload},
         )
+        return response.json()
 
     async def fail_roadmap_quiz_job(
         self, job_id: str, worker_id: str, lease_token: str, error: str

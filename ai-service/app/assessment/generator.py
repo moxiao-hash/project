@@ -125,7 +125,12 @@ class DeepSeekQuizGenerator:
                 generated = RoadmapGeneratedQuiz.model_validate(
                     await model.ainvoke(messages)
                 )
-                self._validate_node_high_frequency_refs(generated, context)
+                self._validate_node_quiz(
+                    generated,
+                    context=context,
+                    sources=sources,
+                    recent_signatures=recent_signatures,
+                )
                 return generated
             except Exception as exc:
                 if attempt == 1:
@@ -134,6 +139,10 @@ class DeepSeekQuizGenerator:
                     HumanMessage(
                         content=(
                             "按五题、100分、覆盖范围和签名约束修复JSON。"
+                            "coverageNodeId 只能是当前节点或直接前置节点，并且必须"
+                            "与 sourceIndexes 引用的目录来源一致；至少三题覆盖当前节点，"
+                            "每题必须20分，至少三题 practical=true；"
+                            "questionSignature 必须五题互不重复且不能命中近期签名。"
                             "特别注意：每道 practical=true 题目的 highFrequencyRef "
                             "必须与 coverageNodeId 对应节点 highFrequency 数组中的一个"
                             "完整条目精确一致，不得缩写或改写。"
@@ -143,15 +152,48 @@ class DeepSeekQuizGenerator:
         raise AssertionError("unreachable")
 
     @staticmethod
-    def _validate_node_high_frequency_refs(
+    def _validate_node_quiz(
         generated: RoadmapGeneratedQuiz,
+        *,
         context: dict[str, Any],
+        sources: list[QuizSource],
+        recent_signatures: set[str],
     ) -> None:
         nodes = [context["node"], *context.get("directPrerequisites", [])]
+        current_node_id = str(context["node"]["id"])
+        allowed_node_ids = {str(node["id"]) for node in nodes}
+        coverage = [question.coverage_node_id for question in generated.questions]
+        signatures = [question.question_signature for question in generated.questions]
+        if any(question.points != 20 for question in generated.questions):
+            raise ValueError("路线节点测验每题必须为20分")
+        if coverage.count(current_node_id) < 3 or not set(coverage) <= allowed_node_ids:
+            raise ValueError("coverageNodeId 超出当前节点或直接前置范围")
+        if sum(question.practical for question in generated.questions) < 3:
+            raise ValueError("路线节点测验至少需要三道 practical 实用题")
+        if len(set(signatures)) != 5 or recent_signatures.intersection(signatures):
+            raise ValueError("questionSignature 重复或命中近期签名")
+        node_by_source = {
+            index: (
+                source.locator.removeprefix("roadmap-node:")
+                if source.source_type == "ROADMAP_CATALOG" and source.locator
+                else current_node_id
+            )
+            for index, source in enumerate(sources)
+        }
         allowed_by_node = {
             str(node["id"]): set(node.get("highFrequency", [])) for node in nodes
         }
         for question in generated.questions:
+            if any(
+                index < 0 or index >= len(sources)
+                for index in question.source_indexes
+            ):
+                raise ValueError("sourceIndexes 包含不存在的来源")
+            referenced_nodes = {
+                node_by_source[index] for index in question.source_indexes
+            }
+            if question.coverage_node_id not in referenced_nodes:
+                raise ValueError("coverageNodeId 与 sourceIndexes 目录来源不匹配")
             if not question.practical:
                 continue
             allowed = allowed_by_node.get(question.coverage_node_id, set())

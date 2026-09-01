@@ -55,6 +55,13 @@ public class InternalRoadmapQuizJobController {
             @PathVariable String jobId,
             @Valid @RequestBody CompleteRoadmapQuizJobRequest request
     ) {
+        if (request.quiz() != null) {
+            return service.createAndCompleteQuizJob(
+                    jobId, request.workerId(), request.leaseToken(), request.quiz());
+        }
+        if (request.quizId() == null || request.quizId().isBlank()) {
+            throw new IllegalArgumentException("quiz 与 quizId 必须提供一个");
+        }
         return service.completeQuizJob(
                 jobId, request.workerId(), request.leaseToken(), request.quizId());
     }

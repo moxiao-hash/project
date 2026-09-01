@@ -73,3 +73,40 @@ async def test_semantic_high_frequency_error_enters_model_correction_loop() -> N
     assert generated.questions[0].high_frequency_ref == "equals 与 =="
     assert len(model.messages) == 2
     assert "highFrequencyRef" in model.messages[1][-1].content
+
+
+@pytest.mark.anyio
+async def test_all_node_semantic_errors_enter_model_correction_loop() -> None:
+    invalid = quiz_payload("equals 与 ==")
+    invalid["questions"][0]["coverageNodeId"] = "outside-node"
+    invalid["questions"][1]["questionSignature"] = "signature-0"
+    valid = quiz_payload("equals 与 ==")
+    model = SequencedModel([invalid, valid])
+    generator = DeepSeekQuizGenerator(model)
+    context = {
+        "node": {
+            "id": "node-current",
+            "title": "String 内容比较",
+            "highFrequency": ["equals 与 =="],
+        },
+        "directPrerequisites": [],
+    }
+    sources = [
+        QuizSource(
+            sourceType="ROADMAP_CATALOG",
+            title="String 内容比较",
+            locator="roadmap-node:node-current",
+            snippet="equals 与 ==",
+        )
+    ]
+
+    generated = await generator.generate_node_quiz(
+        context=context,
+        sources=sources,
+        recent_signatures=set(),
+    )
+
+    assert generated.questions[0].coverage_node_id == "node-current"
+    assert len(model.messages) == 2
+    assert "coverageNodeId" in model.messages[1][-1].content
+    assert "questionSignature" in model.messages[1][-1].content

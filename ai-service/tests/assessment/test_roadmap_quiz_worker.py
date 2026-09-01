@@ -65,13 +65,14 @@ class FakeBackend:
         }
 
     async def create_quiz(self, payload):
-        self.created = payload
-        return {"id": "quiz-1"}
+        raise AssertionError("路线测验不得通过非原子的通用创建接口保存")
 
     async def complete_roadmap_quiz_job(
-        self, job_id: str, worker_id: str, lease_token: str, quiz_id: str
+        self, job_id: str, worker_id: str, lease_token: str, quiz_payload: dict
     ):
-        self.completed = (job_id, worker_id, lease_token, quiz_id)
+        self.created = quiz_payload
+        self.completed = (job_id, worker_id, lease_token, "quiz-1")
+        return {"quizId": "quiz-1"}
 
     async def heartbeat_roadmap_quiz_job(
         self, job_id: str, worker_id: str, lease_token: str
@@ -137,8 +138,7 @@ async def test_worker_persists_exact_grounded_mix_without_searching_stable_basic
     assert await worker.process_once() is True
 
     payload = backend.created
-    assert payload["purpose"] == "NODE"
-    assert payload["roadmapNodeId"] == "node-current"
+    assert set(payload) == {"title", "modelName", "questions"}
     assert payload["modelName"] == "deepseek-test"
     assert len(payload["questions"]) == 5
     assert sum(question["points"] for question in payload["questions"]) == 100
@@ -264,12 +264,13 @@ async def test_worker_heartbeats_during_generation_and_retries_uncertain_complet
 
         async def complete_roadmap_quiz_job(self, *args):
             self.complete_calls += 1
+            result = await super().complete_roadmap_quiz_job(*args)
             if self.complete_calls == 1:
                 raise JavaBackendError(
                     "response lost after commit",
                     path="/internal/roadmap-quiz-generation-jobs/job-1/complete",
                 )
-            await super().complete_roadmap_quiz_job(*args)
+            return result
 
     backend = UncertainCompleteBackend()
     worker = assessment_service.RoadmapQuizWorker(

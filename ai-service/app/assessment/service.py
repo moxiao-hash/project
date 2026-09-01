@@ -327,31 +327,22 @@ class RoadmapQuizWorker:
                     if index in question.source_indexes
                 ]
                 questions.append(payload)
-            quiz = await self._backend.create_quiz(
-                {
-                    "ownerId": job["ownerId"],
-                    "roadmapNodeId": job["nodeId"],
-                    # 绑定信息来自已领取的持久化任务，而不是模型上下文。
-                    # 这样即使上下文 DTO 以后精简字段，测验仍然绑定到创建
-                    # 任务时的原路线，升级路线后也不会误写当前路线。
-                    "userRoadmapId": job["userRoadmapId"],
-                    "userRoadmapNodeId": job["userRoadmapNodeId"],
-                    "roadmapTemplateId": job["roadmapTemplateId"],
-                    "purpose": "NODE",
-                    "title": generated.title,
-                    "modelName": self._model_name,
-                    "questions": questions,
-                }
-            )
+            quiz_payload = {
+                # 所有归属和路线绑定都由 Java 根据已加锁的 job 注入，
+                # Python 只提交模型生成的内容，不能伪造 owner 或节点范围。
+                "title": generated.title,
+                "modelName": self._model_name,
+                "questions": questions,
+            }
             try:
                 await self._backend.complete_roadmap_quiz_job(
-                    job_id, self._worker_id, lease_token, quiz["id"]
+                    job_id, self._worker_id, lease_token, quiz_payload
                 )
             except JavaBackendError as exc:
                 if exc.status_code is not None:
                     raise
                 await self._backend.complete_roadmap_quiz_job(
-                    job_id, self._worker_id, lease_token, quiz["id"]
+                    job_id, self._worker_id, lease_token, quiz_payload
                 )
         except RoadmapQuizLeaseLostError:
             logger.info("路线测验任务租约已失效，停止生成: %s", job_id)

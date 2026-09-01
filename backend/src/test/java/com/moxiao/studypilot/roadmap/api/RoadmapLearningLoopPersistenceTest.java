@@ -331,32 +331,34 @@ class RoadmapLearningLoopPersistenceTest {
                 String.class, enrollmentId, availableNodeId);
         String templateId = jdbcTemplate.queryForObject(
                 "SELECT template_id FROM user_roadmaps WHERE id = ?", String.class, enrollmentId);
-        MvcResult createdQuiz = mockMvc.perform(post("/internal/quizzes")
+        String atomicCompletionBody = objectMapper.writeValueAsString(java.util.Map.of(
+                "workerId", "quiz-worker",
+                "leaseToken", leaseToken,
+                "quiz", java.util.Map.of(
+                        "title", "Java 环境节点测验",
+                        "modelName", "test-model",
+                        "questions", completionQuestions)));
+        mockMvc.perform(post(
+                        "/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(java.util.Map.of(
-                                "ownerId", owner.userId(),
-                                "roadmapNodeId", availableNodeId,
-                                "userRoadmapId", enrollmentId,
-                                "userRoadmapNodeId", stateId,
-                                "roadmapTemplateId", templateId,
-                                "purpose", "NODE",
-                                "title", "Java 环境节点测验",
-                                "modelName", "test-model",
-                                "questions", completionQuestions))))
-                .andExpect(status().isCreated())
-                .andReturn();
-        String quizId = objectMapper.readTree(createdQuiz.getResponse().getContentAsString())
-                .get("id").asText();
-
-        mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
+                        .content(atomicCompletionBody.replace(leaseToken, java.util.UUID.randomUUID().toString())))
+                .andExpect(status().isConflict());
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM quizzes WHERE owner_id = ?", Integer.class, owner.userId()))
+                .isZero();
+        MvcResult completed = mockMvc.perform(post(
+                        "/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"workerId":"quiz-worker","leaseToken":"%s","quizId":"%s"}
-                                """.formatted(leaseToken, quizId)))
+                        .content(atomicCompletionBody))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("COMPLETED"));
+                .andExpect(jsonPath("$.status").value("COMPLETED"))
+                .andReturn();
+        String quizId = objectMapper.readTree(completed.getResponse().getContentAsString())
+                .get("quizId").asText();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM quizzes WHERE id = ?", Integer.class, quizId)).isEqualTo(1);
         Instant preservedAt = Instant.parse("2025-01-02T03:04:05Z");
         jdbcTemplate.update("""
                 UPDATE user_roadmap_nodes
@@ -366,11 +368,11 @@ class RoadmapLearningLoopPersistenceTest {
         mockMvc.perform(post("/internal/roadmap-quiz-generation-jobs/{jobId}/complete", jobId)
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"workerId":"quiz-worker","leaseToken":"%s","quizId":"%s"}
-                                """.formatted(leaseToken, quizId)))
+                        .content(atomicCompletionBody))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.quizId").value(quizId));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM quizzes WHERE id = ?", Integer.class, quizId)).isEqualTo(1);
         assertThat(jdbcTemplate.queryForMap(
                 "SELECT user_roadmap_id, user_roadmap_node_id, roadmap_template_id "
                         + "FROM quizzes WHERE id = ?", quizId))

@@ -3,6 +3,9 @@ package com.moxiao.studypilot.roadmap.application;
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuestionJpaRepository;
+import com.moxiao.studypilot.assessment.api.CreateQuizRequest;
+import com.moxiao.studypilot.assessment.application.QuizService;
+import com.moxiao.studypilot.roadmap.api.CompleteRoadmapQuizJobRequest;
 import com.moxiao.studypilot.roadmap.api.CreateRoadmapNodeCheckInRequest;
 import com.moxiao.studypilot.roadmap.api.RoadmapNodeCheckInResponse;
 import com.moxiao.studypilot.roadmap.api.RetryRoadmapQuizRequest;
@@ -51,6 +54,7 @@ public class RoadmapLearningLoopService {
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     private final QuestionJpaRepository questionRepository;
     private final ObjectMapper objectMapper;
+    private final QuizService quizService;
 
     public RoadmapLearningLoopService(
             UserRoadmapJpaRepository enrollmentRepository,
@@ -62,7 +66,8 @@ public class RoadmapLearningLoopService {
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
             QuestionJpaRepository questionRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            QuizService quizService
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
@@ -74,6 +79,7 @@ public class RoadmapLearningLoopService {
         this.prerequisiteRepository = prerequisiteRepository;
         this.questionRepository = questionRepository;
         this.objectMapper = objectMapper;
+        this.quizService = quizService;
     }
 
     @Transactional
@@ -293,6 +299,47 @@ public class RoadmapLearningLoopService {
         }
         if (job.getStatus() == RoadmapQuizGenerationStatus.FAILED) {
             state.markQuizGenerationFailed(now);
+        }
+        return payload(job);
+    }
+
+    @Transactional
+    public RoadmapQuizJobPayload createAndCompleteQuizJob(
+            String jobId,
+            String workerId,
+            String leaseToken,
+            CompleteRoadmapQuizJobRequest.QuizDraft draft
+    ) {
+        UserRoadmapEntity enrollment = enrollmentRepository
+                .findBoundRoadmapForQuizJobForUpdate(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线报名不存在"));
+        UserRoadmapNodeEntity state = stateRepository.findBoundStateForQuizJobForUpdate(jobId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"));
+        RoadmapQuizGenerationJobEntity job = lockedJob(jobId);
+        Instant now = Instant.now();
+        if (job.getStatus() == RoadmapQuizGenerationStatus.COMPLETED) {
+            try {
+                job.complete(workerId, leaseToken, job.getQuizId(), now);
+            } catch (IllegalArgumentException exception) {
+                throw new ConflictException(exception.getMessage());
+            }
+            return payload(job);
+        }
+        if (!job.hasActiveLease(workerId, leaseToken, now)) {
+            throw new ConflictException("路线测验生成任务租约无效");
+        }
+        CreateQuizRequest request = new CreateQuizRequest(
+                job.getOwnerId(), null, null, null, job.getNodeId(),
+                job.getUserRoadmapId(), job.getUserRoadmapNodeId(), null,
+                enrollment.getTemplateId(), RoadmapQuizPurpose.NODE,
+                draft.title(), draft.modelName(), draft.questions());
+        QuizService.QuizBundle bundle = quizService.create(request);
+        try {
+            if (job.complete(workerId, leaseToken, bundle.quiz().getId(), now)) {
+                state.markQuizReady(now);
+            }
+        } catch (IllegalArgumentException exception) {
+            throw new ConflictException(exception.getMessage());
         }
         return payload(job);
     }
