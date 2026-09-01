@@ -9,6 +9,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
+import java.util.UUID;
 
 @Entity
 @Table(name = "roadmap_diagnostics")
@@ -41,6 +42,11 @@ public class RoadmapDiagnosticEntity {
     private Instant createdAt;
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+    @Column(name = "worker_id", length = 100) private String workerId;
+    @Column(name = "lease_token", length = 36) private String leaseToken;
+    @Column(name = "lease_until") private Instant leaseUntil;
+    @Column(name = "attempt_count", nullable = false) private int attemptCount;
+    @Column(name = "last_error", length = 1000) private String lastError;
 
     protected RoadmapDiagnosticEntity() { }
 
@@ -74,13 +80,58 @@ public class RoadmapDiagnosticEntity {
     public String getMasteredNodeIdsJson() { return masteredNodeIdsJson; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+    public String getWorkerId() { return workerId; }
+    public String getLeaseToken() { return leaseToken; }
+    public Instant getLeaseUntil() { return leaseUntil; }
+    public int getAttemptCount() { return attemptCount; }
+    public String getLastError() { return lastError; }
+
+    public void claim(String workerId, int leaseSeconds, Instant now) {
+        boolean expired = status == RoadmapDiagnosticStatus.LEASED
+                && leaseUntil != null && leaseUntil.isBefore(now);
+        if (status != RoadmapDiagnosticStatus.PENDING && !expired) {
+            throw new IllegalStateException("路线诊断任务不可领取");
+        }
+        status = RoadmapDiagnosticStatus.LEASED;
+        this.workerId = workerId;
+        this.leaseToken = UUID.randomUUID().toString();
+        this.leaseUntil = now.plusSeconds(leaseSeconds);
+        this.attemptCount++;
+        this.updatedAt = now;
+    }
+
+    public void heartbeat(String workerId, String leaseToken, int leaseSeconds, Instant now) {
+        requireLease(workerId, leaseToken, now);
+        leaseUntil = now.plusSeconds(leaseSeconds);
+        updatedAt = now;
+    }
+
+    public void fail(String workerId, String leaseToken, String error, Instant now) {
+        requireLease(workerId, leaseToken, now);
+        lastError = error;
+        status = attemptCount >= 3 ? RoadmapDiagnosticStatus.FAILED : RoadmapDiagnosticStatus.PENDING;
+        this.workerId = null;
+        this.leaseToken = null;
+        this.leaseUntil = null;
+        this.updatedAt = now;
+    }
+
+    public void requireLease(String workerId, String leaseToken, Instant now) {
+        if (status != RoadmapDiagnosticStatus.LEASED
+                || !workerId.equals(this.workerId) || !leaseToken.equals(this.leaseToken)
+                || leaseUntil == null || !leaseUntil.isAfter(now)) {
+            throw new IllegalStateException("路线诊断任务租约无效");
+        }
+    }
 
     public void bindQuiz(String quizId, Instant now) {
-        if (status != RoadmapDiagnosticStatus.PENDING) {
+        if (status != RoadmapDiagnosticStatus.LEASED) {
             throw new IllegalStateException("路线诊断当前不能绑定测验");
         }
         this.quizId = quizId;
         this.status = RoadmapDiagnosticStatus.READY;
+        this.leaseUntil = null;
+        this.lastError = null;
         this.updatedAt = now;
     }
 

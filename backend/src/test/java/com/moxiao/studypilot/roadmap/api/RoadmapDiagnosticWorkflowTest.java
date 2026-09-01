@@ -113,15 +113,26 @@ class RoadmapDiagnosticWorkflowTest {
                     "coverageNodeId", nodeId,
                     "questionSignature", "diagnostic-result-signature-" + index));
         }
-        MvcResult quiz = mockMvc.perform(post("/internal/quizzes")
+        MvcResult claimed = mockMvc.perform(post("/internal/roadmap-diagnostic-jobs/claim")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workerId\":\"diagnostic-worker\",\"leaseSeconds\":60}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nodeSnapshot.length()").value(10))
+                .andReturn();
+        JsonNode claim = objectMapper.readTree(claimed.getResponse().getContentAsString());
+        MvcResult quiz = mockMvc.perform(post(
+                        "/internal/roadmap-diagnostic-jobs/{id}/complete", claim.get("id").asText())
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(java.util.Map.of(
-                                "ownerId", owner.userId(), "userRoadmapId", enrollmentId,
-                                "purpose", "DIAGNOSTIC", "title", "路线诊断",
-                                "modelName", "test-model", "questions", questions))))
-                .andExpect(status().isCreated()).andReturn();
-        String quizId = objectMapper.readTree(quiz.getResponse().getContentAsString()).get("id").asText();
+                                "workerId", "diagnostic-worker",
+                                "leaseToken", claim.get("leaseToken").asText(),
+                                "quiz", java.util.Map.of("title", "路线诊断",
+                                        "modelName", "test-model", "questions", questions)))))
+                .andExpect(status().isOk()).andReturn();
+        String quizId = objectMapper.readTree(quiz.getResponse().getContentAsString())
+                .get("quizId").asText();
         var answers = jdbcTemplate.queryForList(
                         "SELECT id FROM quiz_questions WHERE quiz_id = ? ORDER BY question_position",
                         String.class, quizId).stream()
@@ -197,14 +208,28 @@ class RoadmapDiagnosticWorkflowTest {
                         .content(graduationQuizBody(
                                 owner.userId(), enrollmentId, templateId, stageId, nineQuestions)))
                 .andExpect(status().isBadRequest());
-        MvcResult quizResult = mockMvc.perform(post("/internal/quizzes")
+        MvcResult graduationClaim = mockMvc.perform(post("/internal/roadmap-graduation-jobs/claim")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graduationQuizBody(owner.userId(), enrollmentId, templateId,
-                                stageId, graduationQuestions(10))))
-                .andExpect(status().isCreated()).andReturn();
+                        .content("{\"workerId\":\"graduation-worker\",\"leaseSeconds\":60}"))
+                .andExpect(status().isOk()).andReturn();
+        JsonNode graduationJob = objectMapper.readTree(
+                graduationClaim.getResponse().getContentAsString());
+        MvcResult quizResult = mockMvc.perform(post(
+                        "/internal/roadmap-graduation-jobs/{id}/complete",
+                        graduationJob.get("id").asText())
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(java.util.Map.of(
+                                "workerId", "graduation-worker",
+                                "leaseToken", graduationJob.get("leaseToken").asText(),
+                                "quiz", java.util.Map.of("title", "阶段毕业测验",
+                                        "modelName", "test-model",
+                                        "questions", groundedGraduationQuestions(
+                                                graduationJob.get("nodeSnapshot")))))))
+                .andExpect(status().isOk()).andReturn();
         String quizId = objectMapper.readTree(quizResult.getResponse().getContentAsString())
-                .get("id").asText();
+                .get("quizId").asText();
         java.util.List<String> questionIds = jdbcTemplate.queryForList(
                 "SELECT id FROM quiz_questions WHERE quiz_id = ? ORDER BY question_position",
                 String.class, quizId);
@@ -290,6 +315,30 @@ class RoadmapDiagnosticWorkflowTest {
                     "questionSignature", "graduation-signature-" + count + "-" + index));
         }
         return objectMapper.writeValueAsString(questions);
+    }
+
+    private java.util.List<java.util.Map<String, Object>> groundedGraduationQuestions(
+            JsonNode nodes
+    ) {
+        var questions = new java.util.ArrayList<java.util.Map<String, Object>>();
+        for (int index = 0; index < nodes.size(); index++) {
+            String nodeId = nodes.get(index).get("nodeId").asText();
+            questions.add(java.util.Map.ofEntries(
+                    java.util.Map.entry("type", "SINGLE_CHOICE"),
+                    java.util.Map.entry("knowledgePoint", "阶段知识点 " + index),
+                    java.util.Map.entry("questionText", "阶段题 " + index),
+                    java.util.Map.entry("options", java.util.List.of("A", "B")),
+                    java.util.Map.entry("correctAnswers", java.util.List.of("A")),
+                    java.util.Map.entry("explanation", "A 正确。"),
+                    java.util.Map.entry("coverageNodeId", nodeId),
+                    java.util.Map.entry("points", 10),
+                    java.util.Map.entry("practical", false),
+                    java.util.Map.entry("questionSignature", "graduation-grounded-" + index),
+                    java.util.Map.entry("sources", java.util.List.of(java.util.Map.of(
+                            "sourceType", "ROADMAP_CATALOG", "title", "路线目录",
+                            "locator", "roadmap-node:" + nodeId, "snippet", "目录快照")))));
+        }
+        return questions;
     }
 
     private String graduationQuizBody(

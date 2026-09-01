@@ -510,3 +510,106 @@ class RoadmapQuizWorker:
                 raise InvalidGeneratedQuizError("实用题缺少高频内容依据")
         if len(set(signatures)) != 5 or recent.intersection(signatures):
             raise InvalidGeneratedQuizError("题目签名与近期测验重复")
+
+
+class RoadmapDiagnosticWorker:
+    """把 Java 持久化的诊断任务转换成十道有目录来源的测验。"""
+
+    def __init__(
+        self,
+        backend: Any,
+        generator: Any,
+        *,
+        generator_factory: Callable[[str], Awaitable[Any]] | None = None,
+        worker_id: str,
+        model_name: str,
+        job_kind: str = "diagnostic",
+    ) -> None:
+        self._backend = backend
+        self._generator = generator
+        self._generator_factory = generator_factory
+        self._worker_id = worker_id
+        self._model_name = model_name
+        self._job_kind = job_kind
+
+    async def process_once(self) -> bool:
+        claim = getattr(self._backend, f"claim_roadmap_{self._job_kind}_job")
+        job = await claim(self._worker_id)
+        if job is None:
+            return False
+        job_id = job["id"]
+        lease_token = job["leaseToken"]
+        try:
+            sources = [
+                QuizSource(
+                    source_type="ROADMAP_CATALOG",
+                    title=node["title"],
+                    locator=f"roadmap-node:{node['nodeId']}",
+                    snippet=f"{node['nodeCode']} / {node['title']}",
+                )
+                for node in job["nodeSnapshot"]
+            ]
+            generator = self._generator
+            if self._generator_factory is not None:
+                generator = await self._generator_factory(job["ownerId"])
+            generated = await generator.generate_diagnostic_quiz(
+                context=job, sources=sources
+            )
+            node_by_source = {
+                index: source.locator.removeprefix("roadmap-node:")
+                for index, source in enumerate(sources)
+            }
+            coverage = [question.coverage_node_id for question in generated.questions]
+            expected_nodes = set(node_by_source.values())
+            fallback = bool(job.get("insufficientQuestionFallback", False))
+            if set(coverage) != expected_nodes or (not fallback and len(set(coverage)) != 10):
+                raise ValueError("诊断题没有一对一覆盖快照节点")
+            questions = []
+            for question in generated.questions:
+                if any(
+                    node_by_source[index] != question.coverage_node_id
+                    for index in question.source_indexes
+                ):
+                    raise ValueError("诊断题引用与覆盖节点不一致")
+                payload = question.model_dump(
+                    by_alias=True, mode="json", exclude={"source_indexes"}
+                )
+                payload["sources"] = [
+                    sources[index].model_dump(
+                        by_alias=True, mode="json", exclude_none=True
+                    )
+                    for index in question.source_indexes
+                ]
+                questions.append(payload)
+            complete = getattr(
+                self._backend, f"complete_roadmap_{self._job_kind}_job"
+            )
+            await complete(
+                job_id,
+                self._worker_id,
+                lease_token,
+                {
+                    "title": generated.title,
+                    "modelName": self._model_name,
+                    "questions": questions,
+                },
+            )
+        except Exception as exc:
+            try:
+                fail = getattr(self._backend, f"fail_roadmap_{self._job_kind}_job")
+                await fail(
+                    job_id,
+                    self._worker_id,
+                    lease_token,
+                    f"路线诊断生成失败: {type(exc).__name__}",
+                )
+            except Exception:
+                logger.warning("路线诊断失败回报被租约 fencing 拒绝", exc_info=True)
+        return True
+
+
+class RoadmapGraduationWorker(RoadmapDiagnosticWorker):
+    """复用十题目录生成约束，处理已通过资格门槛的阶段毕业任务。"""
+
+    def __init__(self, backend: Any, generator: Any, **kwargs: Any) -> None:
+        super().__init__(backend, generator, job_kind="graduation", **kwargs)

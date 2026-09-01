@@ -142,7 +142,8 @@ public class UserRoadmapNodeEntity {
 
     public void queueQuickVerification(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
-        if (!diagnosticMastered || artifactStatus != ArtifactStatus.NOT_REQUIRED) {
+        if (!diagnosticMastered || artifactStatus != ArtifactStatus.NOT_REQUIRED
+                || availabilityStatus != AvailabilityStatus.AVAILABLE) {
             throw new IllegalStateException("该节点不满足快速验证条件");
         }
         quizStatus = QuizStatus.GENERATING;

@@ -39,7 +39,11 @@ from app.api.teaching_conversations import OwnerScopedTeachingServices
 from app.api.teaching_conversations import router as teaching_conversations_router
 from app.assessment.evaluation import CodingEvaluationWorker, DeepSeekCodingEvaluator
 from app.assessment.generator import DeepSeekQuizGenerator
-from app.assessment.service import RoadmapQuizWorker
+from app.assessment.service import (
+    RoadmapDiagnosticWorker,
+    RoadmapGraduationWorker,
+    RoadmapQuizWorker,
+)
 from app.clients.java_backend import JavaBackendClient
 from app.core.request_context import (
     REQUEST_ID_HEADER,
@@ -65,6 +69,8 @@ install_secret_redaction()
 _material_processing_service: MaterialProcessingService | None = None
 _coding_evaluation_worker: CodingEvaluationWorker | None = None
 _roadmap_quiz_worker: RoadmapQuizWorker | None = None
+_roadmap_diagnostic_worker: RoadmapDiagnosticWorker | None = None
+_roadmap_graduation_worker: RoadmapGraduationWorker | None = None
 
 
 async def build_owner_material_analyzer(
@@ -175,7 +181,7 @@ async def run_roadmap_quiz_job() -> None:
     """领取至多一个持久化路线节点测验任务。"""
 
     settings = get_settings()
-    global _roadmap_quiz_worker
+    global _roadmap_quiz_worker, _roadmap_diagnostic_worker, _roadmap_graduation_worker
     try:
         if _roadmap_quiz_worker is None:
             java = JavaBackendClient(settings)
@@ -202,6 +208,42 @@ async def run_roadmap_quiz_job() -> None:
                 model_name=settings.model_name,
             )
         await _roadmap_quiz_worker.process_once()
+        if _roadmap_diagnostic_worker is None:
+            diagnostic_java = JavaBackendClient(settings)
+            diagnostic_resolver = CredentialResolver(diagnostic_java, settings)
+
+            async def diagnostic_generator_for(owner_id: str):
+                key = await diagnostic_resolver.resolve(
+                    owner_id, CredentialProvider.DEEPSEEK
+                )
+                return DeepSeekQuizGenerator(create_chat_model(settings, key))
+
+            _roadmap_diagnostic_worker = RoadmapDiagnosticWorker(
+                diagnostic_java,
+                None,
+                generator_factory=diagnostic_generator_for,
+                worker_id=settings.roadmap_quiz_worker_id + "-diagnostic",
+                model_name=settings.model_name,
+            )
+        await _roadmap_diagnostic_worker.process_once()
+        if _roadmap_graduation_worker is None:
+            graduation_java = JavaBackendClient(settings)
+            graduation_resolver = CredentialResolver(graduation_java, settings)
+
+            async def graduation_generator_for(owner_id: str):
+                key = await graduation_resolver.resolve(
+                    owner_id, CredentialProvider.DEEPSEEK
+                )
+                return DeepSeekQuizGenerator(create_chat_model(settings, key))
+
+            _roadmap_graduation_worker = RoadmapGraduationWorker(
+                graduation_java,
+                None,
+                generator_factory=graduation_generator_for,
+                worker_id=settings.roadmap_quiz_worker_id + "-graduation",
+                model_name=settings.model_name,
+            )
+        await _roadmap_graduation_worker.process_once()
     except ModelConfigurationError:
         logger.warning("未配置模型，暂不生成路线节点测验")
     except Exception:
@@ -210,7 +252,7 @@ async def run_roadmap_quiz_job() -> None:
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    global _roadmap_quiz_worker
+    global _roadmap_quiz_worker, _roadmap_diagnostic_worker, _roadmap_graduation_worker
     # Uvicorn 可能在导入 app 后重建 handler；启动阶段再次幂等安装，确保生产日志
     # 也经过敏感字段脱敏。
     install_secret_redaction()
@@ -284,6 +326,8 @@ async def lifespan(application: FastAPI):
         raise
     finally:
         _roadmap_quiz_worker = None
+        _roadmap_diagnostic_worker = None
+        _roadmap_graduation_worker = None
         cleanup_errors: list[Exception] = []
         if scheduler_started and scheduler is not None:
             try:

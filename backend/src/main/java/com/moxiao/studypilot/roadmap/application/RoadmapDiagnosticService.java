@@ -63,6 +63,7 @@ public class RoadmapDiagnosticService {
         diagnosticRepository.findFirstByOwnerIdAndUserRoadmapIdOrderByCreatedAtDesc(
                         ownerId, enrollment.getId())
                 .filter(item -> item.getStatus() == com.moxiao.studypilot.roadmap.domain.RoadmapDiagnosticStatus.PENDING
+                        || item.getStatus() == com.moxiao.studypilot.roadmap.domain.RoadmapDiagnosticStatus.LEASED
                         || item.getStatus() == com.moxiao.studypilot.roadmap.domain.RoadmapDiagnosticStatus.READY)
                 .ifPresent(item -> {
                     throw new ConflictException("当前已有未完成的路线诊断");
@@ -151,6 +152,14 @@ public class RoadmapDiagnosticService {
                 .findFirstByOwnerIdAndUserRoadmapIdOrderByCreatedAtDesc(ownerId, enrollment.getId())
                 .map(this::response)
                 .orElseThrow(() -> new ResourceNotFoundException("路线诊断不存在"));
+    }
+
+    @Transactional(readOnly = true)
+    public RoadmapDiagnosticResponse getById(String ownerId, String id) {
+        RoadmapDiagnosticEntity entity = diagnosticRepository.findById(id)
+                .filter(item -> item.getOwnerId().equals(ownerId))
+                .orElseThrow(() -> new ResourceNotFoundException("路线诊断不存在"));
+        return response(entity);
     }
 
     private UserRoadmapEntity current(String ownerId) {

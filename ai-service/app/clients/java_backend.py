@@ -134,6 +134,78 @@ class JavaBackendClient:
             raise
         return response.json()
 
+    async def claim_roadmap_diagnostic_job(self, worker_id: str) -> dict[str, Any] | None:
+        try:
+            response = await self._request(
+                "POST",
+                "/internal/roadmap-diagnostic-jobs/claim",
+                json={"workerId": worker_id, "leaseSeconds": 120},
+            )
+        except JavaBackendError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return response.json()
+
+    async def complete_roadmap_diagnostic_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        lease_token: str,
+        quiz_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            f"/internal/roadmap-diagnostic-jobs/{job_id}/complete",
+            json={"workerId": worker_id, "leaseToken": lease_token, "quiz": quiz_payload},
+        )
+        return response.json()
+
+    async def fail_roadmap_diagnostic_job(
+        self, job_id: str, worker_id: str, lease_token: str, error: str
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/roadmap-diagnostic-jobs/{job_id}/fail",
+            json={"workerId": worker_id, "leaseToken": lease_token, "error": error},
+        )
+
+    async def claim_roadmap_graduation_job(self, worker_id: str) -> dict[str, Any] | None:
+        try:
+            response = await self._request(
+                "POST",
+                "/internal/roadmap-graduation-jobs/claim",
+                json={"workerId": worker_id, "leaseSeconds": 120},
+            )
+        except JavaBackendError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        return response.json()
+
+    async def complete_roadmap_graduation_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        lease_token: str,
+        quiz_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            f"/internal/roadmap-graduation-jobs/{job_id}/complete",
+            json={"workerId": worker_id, "leaseToken": lease_token, "quiz": quiz_payload},
+        )
+        return response.json()
+
+    async def fail_roadmap_graduation_job(
+        self, job_id: str, worker_id: str, lease_token: str, error: str
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/roadmap-graduation-jobs/{job_id}/fail",
+            json={"workerId": worker_id, "leaseToken": lease_token, "error": error},
+        )
+
     async def get_roadmap_quiz_context(
         self, job_id: str, worker_id: str, lease_token: str
     ) -> dict[str, Any]:

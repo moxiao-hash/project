@@ -116,10 +116,10 @@
 - Add diagnostic/stage-graduation persistence, APIs and services; reuse Quiz/Attempt with explicit purpose.
 - Add Java/Python tests for generation and gate transitions.
 
-- [ ] Write failing tests for diagnostic creation/query, insufficient-question fallback, quick-verification rules, and immutable snapshots.
-- [ ] A mastered ordinary node may skip check-in/practice but must pass a fresh five-question node quiz; milestones never skip.
-- [ ] Require all required modules, accepted project evidence, and a ten-question 70-point graduation quiz before stage graduation.
-- [ ] Commit `feat: verify roadmap placement and graduation`.
+- [x] Write failing tests for diagnostic creation/query, insufficient-question fallback, quick-verification rules, and immutable snapshots.
+- [x] A mastered ordinary node may skip check-in/practice but must pass a fresh five-question node quiz; milestones never skip.
+- [x] Require all required modules, accepted project evidence, and a ten-question 70-point graduation quiz before stage graduation.
+- [x] Commit `feat: verify roadmap placement and graduation`.
 
 ### Task 10: Build the single-page learning workflow and Today integration
 

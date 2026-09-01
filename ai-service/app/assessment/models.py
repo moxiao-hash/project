@@ -163,6 +163,19 @@ class RoadmapGeneratedQuiz(BaseModel):
         return self
 
 
+class RoadmapDiagnosticQuiz(BaseModel):
+    """固定十题的路线诊断；每题十分并绑定一个目录节点。"""
+
+    title: str = Field(min_length=1, max_length=160)
+    questions: list[RoadmapGeneratedQuestion] = Field(min_length=10, max_length=10)
+
+    @model_validator(mode="after")
+    def require_one_hundred_points(self):
+        if sum(question.points for question in self.questions) != 100:
+            raise ValueError("路线诊断总分必须为 100")
+        return self
+
+
 class GenerateQuizRequest(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 

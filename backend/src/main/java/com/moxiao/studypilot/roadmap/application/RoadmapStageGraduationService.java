@@ -101,6 +101,14 @@ public class RoadmapStageGraduationService {
                 .orElseThrow(() -> new ResourceNotFoundException("阶段毕业记录不存在"));
     }
 
+    @Transactional(readOnly = true)
+    public RoadmapStageGraduationResponse getById(String ownerId, String id) {
+        return graduationRepository.findById(id)
+                .filter(item -> item.getOwnerId().equals(ownerId))
+                .map(this::response)
+                .orElseThrow(() -> new ResourceNotFoundException("阶段毕业记录不存在"));
+    }
+
     @Transactional
     public void bindQuiz(QuizEntity quiz, Instant now) {
         if (quiz.getPurpose() != com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose.STAGE_GRADUATION) {
