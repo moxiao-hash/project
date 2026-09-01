@@ -54,7 +54,8 @@ public class RoadmapNodeMutationService {
 
         state.completeAfterRequirements(Instant.now());
         enrollmentService.recalculateAvailability(enrollmentId);
-        scheduleRefreshService.request(enrollment.getOwnerId(), Instant.now());
+        scheduleRefreshService.markCompleted(
+                enrollment.getOwnerId(), state.getId(), Instant.now());
     }
 
     /**
@@ -81,7 +82,9 @@ public class RoadmapNodeMutationService {
         if (score >= 70 && state.completionRequirementsSatisfied()) {
             state.completeAfterRequirements(now);
             enrollmentService.recalculateAvailability(enrollment.getId());
+            scheduleRefreshService.markCompleted(enrollment.getOwnerId(), state.getId(), now);
+        } else {
+            scheduleRefreshService.request(enrollment.getOwnerId(), now);
         }
-        scheduleRefreshService.request(enrollment.getOwnerId(), now);
     }
 }

@@ -8,4 +8,7 @@ public interface RoadmapScheduleItemJpaRepository
         extends JpaRepository<RoadmapScheduleItemEntity, String> {
     List<RoadmapScheduleItemEntity> findAllByOwnerIdAndUserRoadmapId(
             String ownerId, String userRoadmapId);
+
+    java.util.Optional<RoadmapScheduleItemEntity> findByUserRoadmapNodeId(
+            String userRoadmapNodeId);
 }

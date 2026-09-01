@@ -123,6 +123,7 @@ public class RoadmapLearningLoopService {
                         UUID.randomUUID().toString(), ownerId, enrollment.getId(), state.getId(),
                         nodeId, checkIn.getId(), RoadmapQuizPurpose.NODE, 0, now));
         state.submitCheckInAndQueueQuiz(now);
+        scheduleRefreshService.markStarted(ownerId, state.getId(), now);
         return RoadmapNodeCheckInResponse.from(checkIn, job);
     }
 

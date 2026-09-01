@@ -15,20 +15,23 @@ public class RoadmapQuizLeaseExpiryService {
     private final UserRoadmapJpaRepository roadmapRepository;
     private final UserRoadmapNodeJpaRepository stateRepository;
     private final RoadmapQuizGenerationJobJpaRepository jobRepository;
+    private final RoadmapScheduleRefreshService scheduleRefreshService;
 
     public RoadmapQuizLeaseExpiryService(
             UserRoadmapJpaRepository roadmapRepository,
             UserRoadmapNodeJpaRepository stateRepository,
-            RoadmapQuizGenerationJobJpaRepository jobRepository
+            RoadmapQuizGenerationJobJpaRepository jobRepository,
+            RoadmapScheduleRefreshService scheduleRefreshService
     ) {
         this.roadmapRepository = roadmapRepository;
         this.stateRepository = stateRepository;
         this.jobRepository = jobRepository;
+        this.scheduleRefreshService = scheduleRefreshService;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void expireOne(String jobId, Instant now) {
-        roadmapRepository.findBoundRoadmapForQuizJobForUpdate(jobId)
+        var roadmap = roadmapRepository.findBoundRoadmapForQuizJobForUpdate(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("路线报名不存在"));
         var state = stateRepository.findBoundStateForQuizJobForUpdate(jobId)
                 .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"));
@@ -36,6 +39,7 @@ public class RoadmapQuizLeaseExpiryService {
                 .orElseThrow(() -> new ResourceNotFoundException("路线测验生成任务不存在"));
         if (job.expireExhaustedLease(now)) {
             state.markQuizGenerationFailed(now);
+            scheduleRefreshService.request(roadmap.getOwnerId(), now);
         }
     }
 }

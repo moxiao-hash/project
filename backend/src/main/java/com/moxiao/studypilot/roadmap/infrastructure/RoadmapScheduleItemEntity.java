@@ -68,6 +68,20 @@ public class RoadmapScheduleItemEntity {
         updatedAt = now;
     }
 
+    public void start(Instant now) {
+        if (status == RoadmapScheduleItemStatus.PLANNED) {
+            status = RoadmapScheduleItemStatus.STARTED;
+            updatedAt = now;
+        }
+    }
+
+    public void complete(Instant now) {
+        if (status != RoadmapScheduleItemStatus.COMPLETED) {
+            status = RoadmapScheduleItemStatus.COMPLETED;
+            updatedAt = now;
+        }
+    }
+
     public String getId() { return id; }
     public String getScheduleId() { return scheduleId; }
     public String getOwnerId() { return ownerId; }
