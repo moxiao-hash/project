@@ -5,19 +5,19 @@ UPDATE quizzes
 SET user_roadmap_id = (
         SELECT jobs.user_roadmap_id FROM roadmap_quiz_generation_jobs jobs
         WHERE jobs.quiz_id = quizzes.id
-        ORDER BY jobs.created_at DESC LIMIT 1
+        ORDER BY jobs.created_at DESC, jobs.id DESC LIMIT 1
     ),
     user_roadmap_node_id = (
         SELECT jobs.user_roadmap_node_id FROM roadmap_quiz_generation_jobs jobs
         WHERE jobs.quiz_id = quizzes.id
-        ORDER BY jobs.created_at DESC LIMIT 1
+        ORDER BY jobs.created_at DESC, jobs.id DESC LIMIT 1
     ),
     roadmap_template_id = (
         SELECT roadmaps.template_id FROM user_roadmaps roadmaps
         WHERE roadmaps.id = (
             SELECT jobs.user_roadmap_id FROM roadmap_quiz_generation_jobs jobs
             WHERE jobs.quiz_id = quizzes.id
-            ORDER BY jobs.created_at DESC LIMIT 1
+            ORDER BY jobs.created_at DESC, jobs.id DESC LIMIT 1
         )
     )
 WHERE purpose = 'NODE'

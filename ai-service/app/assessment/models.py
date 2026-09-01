@@ -143,6 +143,14 @@ class RoadmapGeneratedQuestion(GeneratedQuestion):
     points: int = Field(gt=0, le=100)
     question_signature: str = Field(alias="questionSignature", min_length=1, max_length=64)
 
+    @model_validator(mode="after")
+    def require_high_frequency_reference_for_practical_question(self):
+        """实践题必须声明它考查的目录高频点，便于后续确定性校验。"""
+
+        if self.practical and self.high_frequency_ref is None:
+            raise ValueError("实践题必须提供 highFrequencyRef")
+        return self
+
 
 class RoadmapGeneratedQuiz(BaseModel):
     title: str = Field(min_length=1, max_length=160)

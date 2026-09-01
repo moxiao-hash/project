@@ -21,7 +21,9 @@ class RoadmapQuizBindingMigrationTest {
 
         assertThat(drop).isGreaterThanOrEqualTo(0).isLessThan(update);
         assertThat(recreate).isGreaterThan(update);
-        assertThat(migration).contains("ORDER BY jobs.created_at DESC LIMIT 1");
+        assertThat(migration).contains(
+                "ORDER BY jobs.created_at DESC, jobs.id DESC LIMIT 1"
+        );
         assertThat(migration).contains("user_roadmap_node_id IS NOT NULL");
     }
 
