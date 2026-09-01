@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.user.application;
 
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
+import com.moxiao.studypilot.roadmap.application.RoadmapScheduleRefreshService;
 import com.moxiao.studypilot.user.api.UpdateUserSettingsRequest;
 import com.moxiao.studypilot.user.infrastructure.AvailabilitySlotEmbeddable;
 import com.moxiao.studypilot.user.infrastructure.UserSettingsEntity;
@@ -15,9 +16,14 @@ import java.time.ZoneId;
 public class UserSettingsService {
 
     private final UserSettingsJpaRepository repository;
+    private final RoadmapScheduleRefreshService scheduleRefreshService;
 
-    public UserSettingsService(UserSettingsJpaRepository repository) {
+    public UserSettingsService(
+            UserSettingsJpaRepository repository,
+            RoadmapScheduleRefreshService scheduleRefreshService
+    ) {
         this.repository = repository;
+        this.scheduleRefreshService = scheduleRefreshService;
     }
 
     @Transactional
@@ -38,7 +44,9 @@ public class UserSettingsService {
                         .toList(),
                 Instant.now()
         );
-        return repository.save(settings);
+        UserSettingsEntity saved = repository.save(settings);
+        scheduleRefreshService.request(userId, Instant.now());
+        return saved;
     }
 
     @Transactional(readOnly = true)

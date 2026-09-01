@@ -55,6 +55,7 @@ public class RoadmapLearningLoopService {
     private final QuestionJpaRepository questionRepository;
     private final ObjectMapper objectMapper;
     private final QuizService quizService;
+    private final RoadmapScheduleRefreshService scheduleRefreshService;
 
     public RoadmapLearningLoopService(
             UserRoadmapJpaRepository enrollmentRepository,
@@ -67,7 +68,8 @@ public class RoadmapLearningLoopService {
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
             QuestionJpaRepository questionRepository,
             ObjectMapper objectMapper,
-            QuizService quizService
+            QuizService quizService,
+            RoadmapScheduleRefreshService scheduleRefreshService
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
@@ -80,6 +82,7 @@ public class RoadmapLearningLoopService {
         this.questionRepository = questionRepository;
         this.objectMapper = objectMapper;
         this.quizService = quizService;
+        this.scheduleRefreshService = scheduleRefreshService;
     }
 
     @Transactional
@@ -299,6 +302,7 @@ public class RoadmapLearningLoopService {
         }
         if (job.getStatus() == RoadmapQuizGenerationStatus.FAILED) {
             state.markQuizGenerationFailed(now);
+            scheduleRefreshService.request(job.getOwnerId(), now);
         }
         return payload(job);
     }

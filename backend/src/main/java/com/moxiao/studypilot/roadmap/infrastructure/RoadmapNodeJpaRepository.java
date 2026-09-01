@@ -11,6 +11,19 @@ import java.util.Optional;
 public interface RoadmapNodeJpaRepository extends JpaRepository<RoadmapNodeEntity, String> {
     List<RoadmapNodeEntity> findAllByTemplateIdOrderByStageIdAscNodeOrderAsc(String templateId);
 
+    @Query("""
+            SELECT node
+            FROM RoadmapNodeEntity node
+            JOIN RoadmapStageEntity stage
+              ON stage.id = node.stageId AND stage.templateId = node.templateId
+            JOIN RoadmapModuleEntity module
+              ON module.id = node.moduleId AND module.templateId = node.templateId
+            WHERE node.templateId = :templateId
+            ORDER BY stage.stageOrder ASC, module.moduleOrder ASC, node.nodeOrder ASC
+            """)
+    List<RoadmapNodeEntity> findAllByTemplateIdInRoadmapOrder(
+            @Param("templateId") String templateId);
+
     List<RoadmapNodeEntity> findAllByStageIdOrderByNodeOrderAsc(String stageId);
 
     Optional<RoadmapNodeEntity> findByIdAndTemplateId(String id, String templateId);

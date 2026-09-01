@@ -2,6 +2,7 @@ package com.moxiao.studypilot.roadmap.infrastructure;
 
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 import com.moxiao.studypilot.roadmap.application.RoadmapEnrollmentService;
+import com.moxiao.studypilot.roadmap.application.RoadmapScheduleRefreshService;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -25,15 +26,18 @@ public class RoadmapNodeMutationService {
     private final UserRoadmapJpaRepository userRoadmapRepository;
     private final UserRoadmapNodeJpaRepository userNodeRepository;
     private final RoadmapEnrollmentService enrollmentService;
+    private final RoadmapScheduleRefreshService scheduleRefreshService;
 
     public RoadmapNodeMutationService(
             UserRoadmapJpaRepository userRoadmapRepository,
             UserRoadmapNodeJpaRepository userNodeRepository,
-            RoadmapEnrollmentService enrollmentService
+            RoadmapEnrollmentService enrollmentService,
+            RoadmapScheduleRefreshService scheduleRefreshService
     ) {
         this.userRoadmapRepository = userRoadmapRepository;
         this.userNodeRepository = userNodeRepository;
         this.enrollmentService = enrollmentService;
+        this.scheduleRefreshService = scheduleRefreshService;
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
@@ -42,7 +46,7 @@ public class RoadmapNodeMutationService {
             throw new IllegalStateException("路线节点变更必须由锁优先事务直接发起");
         }
         // This must remain the first database operation in the transaction.
-        userRoadmapRepository.findByIdForUpdate(enrollmentId)
+        UserRoadmapEntity enrollment = userRoadmapRepository.findByIdForUpdate(enrollmentId)
                 .orElseThrow(() -> new ResourceNotFoundException("学习路线绑定不存在"));
         UserRoadmapNodeEntity state = userNodeRepository
                 .findByUserRoadmapIdAndNodeId(enrollmentId, nodeId)
@@ -50,6 +54,7 @@ public class RoadmapNodeMutationService {
 
         state.completeAfterRequirements(Instant.now());
         enrollmentService.recalculateAvailability(enrollmentId);
+        scheduleRefreshService.request(enrollment.getOwnerId(), Instant.now());
     }
 
     /**
@@ -77,5 +82,6 @@ public class RoadmapNodeMutationService {
             state.completeAfterRequirements(now);
             enrollmentService.recalculateAvailability(enrollment.getId());
         }
+        scheduleRefreshService.request(enrollment.getOwnerId(), now);
     }
 }
