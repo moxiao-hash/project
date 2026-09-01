@@ -59,4 +59,14 @@ public class RoadmapLearningLoopController {
     ) {
         return service.retryQuiz(user.id(), nodeId, request);
     }
+
+    @PostMapping("/quick-verification")
+    @ResponseStatus(HttpStatus.CREATED)
+    public RoadmapQuizGenerationResponse quickVerification(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String nodeId,
+            @Valid @RequestBody RetryRoadmapQuizRequest request
+    ) {
+        return service.quickVerification(user.id(), nodeId, request);
+    }
 }

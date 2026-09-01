@@ -491,7 +491,7 @@ class RoadmapLearningLoopPersistenceTest {
                                 {"ownerId":"%s","userRoadmapId":"%s","purpose":"DIAGNOSTIC",
                                  "title":"路线诊断","modelName":"test-model","questions":[%s]}
                                 """.formatted(owner.userId(), enrollmentId, question)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isConflict());
         mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -502,7 +502,7 @@ class RoadmapLearningLoopPersistenceTest {
                                  "modelName":"test-model","questions":[%s]}
                                 """.formatted(owner.userId(), enrollmentId, stageId,
                                 enrollmentTemplateId, question)))
-                .andExpect(status().isCreated());
+                .andExpect(status().isBadRequest());
         mockMvc.perform(post("/internal/quizzes")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)

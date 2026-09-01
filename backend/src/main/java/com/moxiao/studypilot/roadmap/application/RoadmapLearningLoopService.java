@@ -140,6 +140,33 @@ public class RoadmapLearningLoopService {
                 .stream().map(this::response).toList();
     }
 
+    @Transactional
+    public RoadmapQuizGenerationResponse quickVerification(
+            String ownerId, String nodeId, RetryRoadmapQuizRequest request
+    ) {
+        UserRoadmapEntity enrollment = currentEnrollmentForUpdate(ownerId);
+        UserRoadmapNodeEntity state = currentNodeForUpdate(enrollment.getId(), nodeId);
+        RoadmapQuizGenerationJobEntity replay = jobRepository
+                .findByOwnerIdAndUserRoadmapNodeIdAndRetryIdempotencyKey(
+                        ownerId, state.getId(), request.idempotencyKey()).orElse(null);
+        if (replay != null) {
+            return RoadmapQuizGenerationResponse.from(replay);
+        }
+        try {
+            state.queueQuickVerification(Instant.now());
+        } catch (IllegalStateException exception) {
+            throw new ConflictException(exception.getMessage());
+        }
+        Instant now = Instant.now();
+        RoadmapQuizGenerationJobEntity job = jobRepository.save(
+                new RoadmapQuizGenerationJobEntity(
+                        UUID.randomUUID().toString(), ownerId, enrollment.getId(), state.getId(),
+                        nodeId, null, RoadmapQuizPurpose.NODE, 0,
+                        request.idempotencyKey(), now));
+        scheduleRefreshService.markStarted(ownerId, state.getId(), now);
+        return RoadmapQuizGenerationResponse.from(job);
+    }
+
     @Transactional(readOnly = true)
     public RoadmapNodeQuizResponse quiz(String ownerId, String nodeId) {
         UserRoadmapEntity enrollment = enrollmentRepository
@@ -393,6 +420,9 @@ public class RoadmapLearningLoopService {
     }
 
     private RoadmapQuizJobPayload payload(RoadmapQuizGenerationJobEntity job) {
+        if (job.getCheckInId() == null) {
+            return RoadmapQuizJobPayload.quickVerification(job);
+        }
         RoadmapNodeCheckInEntity checkIn = checkInRepository.findById(job.getCheckInId())
                 .orElseThrow(() -> new ResourceNotFoundException("路线节点打卡不存在"));
         return RoadmapQuizJobPayload.from(job, checkIn);

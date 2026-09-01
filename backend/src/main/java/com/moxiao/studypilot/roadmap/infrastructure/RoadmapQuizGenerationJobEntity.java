@@ -26,7 +26,7 @@ public class RoadmapQuizGenerationJobEntity {
     private String userRoadmapNodeId;
     @Column(name = "node_id", nullable = false, length = 100)
     private String nodeId;
-    @Column(name = "check_in_id", nullable = false, length = 36)
+    @Column(name = "check_in_id", length = 36)
     private String checkInId;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

@@ -22,6 +22,7 @@ public record RoadmapNodeResponse(
         String quizStatus,
         String artifactStatus,
         String completionStatus,
+        boolean diagnosticMastered,
         String displayStatus,
         long version
 ) {

@@ -64,6 +64,9 @@ public class UserRoadmapNodeEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    @Column(name = "diagnostic_mastered", nullable = false)
+    private boolean diagnosticMastered;
+
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
@@ -95,6 +98,7 @@ public class UserRoadmapNodeEntity {
         this.quizStatus = QuizStatus.NOT_GENERATED;
         this.artifactStatus = artifactRequired ? ArtifactStatus.MISSING : ArtifactStatus.NOT_REQUIRED;
         this.completionStatus = CompletionStatus.INCOMPLETE;
+        this.diagnosticMastered = false;
         this.updatedAt = now;
     }
 
@@ -127,9 +131,31 @@ public class UserRoadmapNodeEntity {
         updatedAt = now;
     }
 
+    public void markDiagnosticMastered(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (artifactStatus != ArtifactStatus.NOT_REQUIRED) {
+            throw new IllegalStateException("里程碑节点不能跳过打卡和实践");
+        }
+        diagnosticMastered = true;
+        updatedAt = now;
+    }
+
+    public void queueQuickVerification(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (!diagnosticMastered || artifactStatus != ArtifactStatus.NOT_REQUIRED) {
+            throw new IllegalStateException("该节点不满足快速验证条件");
+        }
+        quizStatus = QuizStatus.GENERATING;
+        if (learningStatus == LearningStatus.NOT_STARTED) {
+            learningStatus = LearningStatus.IN_PROGRESS;
+        }
+        updatedAt = now;
+    }
+
     public void retryQuizGeneration(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
-        if (checkInStatus != CheckInStatus.SUBMITTED || quizStatus != QuizStatus.FAILED) {
+        if ((checkInStatus != CheckInStatus.SUBMITTED && !diagnosticMastered)
+                || quizStatus != QuizStatus.FAILED) {
             throw new IllegalStateException("路线节点测验当前不可重试: " + nodeId);
         }
         quizStatus = QuizStatus.GENERATING;
@@ -138,7 +164,7 @@ public class UserRoadmapNodeEntity {
 
     public void markQuizReady(Instant now) {
         Objects.requireNonNull(now, "now must not be null");
-        if (checkInStatus != CheckInStatus.SUBMITTED) {
+        if (checkInStatus != CheckInStatus.SUBMITTED && !diagnosticMastered) {
             throw new IllegalStateException("未打卡节点不能生成测验: " + nodeId);
         }
         quizStatus = QuizStatus.READY;
@@ -168,7 +194,7 @@ public class UserRoadmapNodeEntity {
             return;
         }
         if (availabilityStatus != AvailabilityStatus.AVAILABLE
-                || checkInStatus != CheckInStatus.SUBMITTED
+                || (checkInStatus != CheckInStatus.SUBMITTED && !diagnosticMastered)
                 || quizStatus != QuizStatus.PASSED
                 || (artifactStatus != ArtifactStatus.NOT_REQUIRED
                 && artifactStatus != ArtifactStatus.ACCEPTED)) {
@@ -181,7 +207,7 @@ public class UserRoadmapNodeEntity {
 
     boolean completionRequirementsSatisfied() {
         return availabilityStatus == AvailabilityStatus.AVAILABLE
-                && checkInStatus == CheckInStatus.SUBMITTED
+                && (checkInStatus == CheckInStatus.SUBMITTED || diagnosticMastered)
                 && quizStatus == QuizStatus.PASSED
                 && (artifactStatus == ArtifactStatus.NOT_REQUIRED
                 || artifactStatus == ArtifactStatus.ACCEPTED);
@@ -218,4 +244,5 @@ public class UserRoadmapNodeEntity {
     public Instant getCompletedAt() { return completedAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public long getRowVersion() { return rowVersion; }
+    public boolean isDiagnosticMastered() { return diagnosticMastered; }
 }

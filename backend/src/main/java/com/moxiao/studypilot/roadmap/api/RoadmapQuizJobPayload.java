@@ -18,4 +18,13 @@ public record RoadmapQuizJobPayload(
                 job.getStatus().name(), job.getRetrySequence(), job.getAttemptCount(), job.getLeaseToken(),
                 job.getQuizId(), job.getLastError(), job.getLeaseUntil());
     }
+
+    public static RoadmapQuizJobPayload quickVerification(
+            RoadmapQuizGenerationJobEntity job
+    ) {
+        return new RoadmapQuizJobPayload(job.getId(), job.getOwnerId(), job.getNodeId(),
+                null, "诊断掌握后的快速验证", job.getPurpose().name(),
+                job.getStatus().name(), job.getRetrySequence(), job.getAttemptCount(),
+                job.getLeaseToken(), job.getQuizId(), job.getLastError(), job.getLeaseUntil());
+    }
 }

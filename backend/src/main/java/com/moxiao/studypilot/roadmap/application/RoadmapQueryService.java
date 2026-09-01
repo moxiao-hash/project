@@ -406,6 +406,7 @@ public class RoadmapQueryService {
                 state.getQuizStatus().name(),
                 state.getArtifactStatus().name(),
                 state.getCompletionStatus().name(),
+                state.isDiagnosticMastered(),
                 displayStatus(state).name(),
                 state.getRowVersion());
     }

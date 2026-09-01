@@ -32,6 +32,8 @@ import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodePrerequisiteJpaRe
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.application.RoadmapQuizProgressService;
+import com.moxiao.studypilot.roadmap.application.RoadmapStageGraduationService;
+import com.moxiao.studypilot.roadmap.application.RoadmapDiagnosticService;
 import com.moxiao.studypilot.course.infrastructure.LessonJpaRepository;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressEntity;
 import com.moxiao.studypilot.course.infrastructure.LessonProgressJpaRepository;
@@ -68,6 +70,8 @@ public class QuizService {
     private final RoadmapNodeJpaRepository roadmapNodeRepository;
     private final RoadmapNodePrerequisiteJpaRepository prerequisiteRepository;
     private final RoadmapQuizProgressService roadmapQuizProgressService;
+    private final RoadmapStageGraduationService roadmapStageGraduationService;
+    private final RoadmapDiagnosticService roadmapDiagnosticService;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -87,7 +91,9 @@ public class QuizService {
             UserRoadmapNodeJpaRepository userRoadmapNodeRepository,
             RoadmapNodeJpaRepository roadmapNodeRepository,
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
-            RoadmapQuizProgressService roadmapQuizProgressService
+            RoadmapQuizProgressService roadmapQuizProgressService,
+            RoadmapStageGraduationService roadmapStageGraduationService,
+            RoadmapDiagnosticService roadmapDiagnosticService
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -107,6 +113,8 @@ public class QuizService {
         this.roadmapNodeRepository = roadmapNodeRepository;
         this.prerequisiteRepository = prerequisiteRepository;
         this.roadmapQuizProgressService = roadmapQuizProgressService;
+        this.roadmapStageGraduationService = roadmapStageGraduationService;
+        this.roadmapDiagnosticService = roadmapDiagnosticService;
     }
 
     @Transactional
@@ -128,6 +136,10 @@ public class QuizService {
         }
         if (request.purpose() == RoadmapQuizPurpose.NODE && request.questions().size() != 5) {
             throw new IllegalArgumentException("节点测验必须恰好包含五题");
+        }
+        if (request.purpose() == RoadmapQuizPurpose.STAGE_GRADUATION
+                && request.questions().size() != 10) {
+            throw new IllegalArgumentException("阶段毕业测验必须恰好包含十题");
         }
         if (roadmapQuiz) {
             Set<String> signatures = new java.util.HashSet<>();
@@ -195,7 +207,10 @@ public class QuizService {
                     , input.points(), input.coverageNodeId(), input.practical()
             ));
         }
-        return new QuizBundle(quiz, questionRepository.saveAll(questions));
+        List<QuestionEntity> savedQuestions = questionRepository.saveAll(questions);
+        roadmapDiagnosticService.bindQuiz(quiz, savedQuestions, Instant.now());
+        roadmapStageGraduationService.bindQuiz(quiz, Instant.now());
+        return new QuizBundle(quiz, savedQuestions);
     }
 
     private void validateRoadmapOrigin(CreateQuizRequest request) {
@@ -431,6 +446,8 @@ public class QuizService {
             if (bundle.quiz().getPurpose() == RoadmapQuizPurpose.NODE) {
                 roadmapQuizProgressService.recordResult(bundle.quiz(), objectiveScore, now);
             }
+            roadmapStageGraduationService.recordQuizResult(bundle.quiz(), objectiveScore, now);
+            roadmapDiagnosticService.recordQuizResult(bundle.quiz(), bundle.questions(), results, now);
         }
         return new QuizAttemptResponse(
                 attemptId, objectiveScore, attemptStatus.name(), null, results
@@ -517,6 +534,7 @@ public class QuizService {
         if (quiz.getPurpose() == RoadmapQuizPurpose.NODE) {
             roadmapQuizProgressService.recordResult(quiz, finalScore, now);
         }
+        roadmapStageGraduationService.recordQuizResult(quiz, finalScore, now);
         return toAttemptResponse(attemptRepository.save(attempt), questions);
     }
 
