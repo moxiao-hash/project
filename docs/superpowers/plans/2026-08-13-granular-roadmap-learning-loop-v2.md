@@ -126,10 +126,10 @@
 **Files:**
 - Modify NodeView and Today view; add check-in/quiz/schedule services, stores, components and tests.
 
-- [ ] Write failing tests for the visible sequence objectives → self-study → summary check-in → generation → quiz → practice.
-- [ ] Display `生成中`, `开始测验`, `查看解析`, `重新测验` on node and Today pages; link using real persisted quiz IDs.
-- [ ] Poll Java only with cancellation/stale-response guards, accessible status announcements, retry/error/empty states and duplicate-submit prevention.
-- [ ] Run frontend test/typecheck/build and commit `feat: complete roadmap daily learning loop`.
+- [x] Write failing tests for the visible sequence objectives → self-study → summary check-in → generation → quiz → practice.
+- [x] Display `生成中`, `开始测验`, `查看解析`, `重新测验` on node and Today pages; link using real persisted quiz IDs.
+- [x] Poll Java only with cancellation/stale-response guards, accessible status announcements, retry/error/empty states and duplicate-submit prevention.
+- [x] Run frontend test/typecheck/build and commit `feat: complete roadmap daily learning loop`.
 
 ## Batch 3 — Milestone evidence and safe runner
 

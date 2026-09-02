@@ -698,17 +698,28 @@ class RoadmapLearningLoopPersistenceTest {
                                 "quizId", quizId))))
                 .andExpect(status().isOk());
 
-        jdbcTemplate.update("""
-                UPDATE user_roadmaps SET status = 'SUPERSEDED', active_slot = NULL
-                WHERE id = ?
-                """, enrollmentId);
-        enrollV1(owner.token());
-
         String failedAttemptId = submitQuizAttempt(owner.token(), quiz, 3, "score-60")
                 .get("id").asText();
         assertThat(jdbcTemplate.queryForObject("""
                 SELECT quiz_status FROM user_roadmap_nodes WHERE owner_id = ? AND node_id = ?
                 """, String.class, owner.userId(), availableNodeId)).isEqualTo("FAILED");
+        mockMvc.perform(get("/api/roadmap-nodes/{nodeId}/quiz", availableNodeId)
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quizId").value(quizId))
+                .andExpect(jsonPath("$.latestAttemptId").value(failedAttemptId));
+        mockMvc.perform(post("/api/roadmap-nodes/{nodeId}/quiz-retries", availableNodeId)
+                        .header("Authorization", bearer(owner.token()))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"idempotencyKey\":\"retry-failed-attempt\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        jdbcTemplate.update("""
+                UPDATE user_roadmaps SET status = 'SUPERSEDED', active_slot = NULL
+                WHERE id = ?
+                """, enrollmentId);
+        enrollV1(owner.token());
 
         JsonNode passed = submitQuizAttempt(owner.token(), quiz, 4, "score-80");
         assertThat(passed.get("score").asDouble()).isEqualTo(80.0);

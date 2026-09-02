@@ -17,6 +17,10 @@ vi.mock('@/services/roadmap', () => ({
     getStage: vi.fn(),
     getModule: vi.fn(),
     getNode: vi.fn(),
+    getNodeQuiz: vi.fn(),
+    checkIn: vi.fn(),
+    retryNodeQuiz: vi.fn(),
+    quickVerification: vi.fn(),
   },
 }))
 
@@ -41,6 +45,7 @@ function node(overrides: Partial<RoadmapNode> = {}): RoadmapNode {
     quizStatus: 'NOT_GENERATED',
     artifactStatus: 'NOT_REQUIRED',
     completionStatus: 'INCOMPLETE',
+    diagnosticMastered: false,
     displayStatus: 'AVAILABLE',
     version: 0,
     ...overrides,
@@ -389,7 +394,7 @@ describe('roadmap read views', () => {
     expect(wrapper.text()).not.toContain('Java 核心与工程基础')
   })
 
-  it('loads a node by route id and shows all study guidance without mutation actions', async () => {
+  it('loads a node by route id and exposes its study guidance and check-in entry', async () => {
     vi.mocked(roadmapApi.getNode).mockResolvedValue(node({ prerequisiteCodes: ['java-basics'] }))
     vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue({
       ...fixtureRoadmap(),
@@ -406,7 +411,7 @@ describe('roadmap read views', () => {
     expect(wrapper.get('[data-testid="node-prerequisites"] a').attributes('href'))
       .toBe('/roadmap/nodes/node-basics')
     expect(wrapper.text()).toContain('打卡、测验和必交成果全部满足后才完成节点')
-    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.get('button').text()).toContain('提交总结并打卡')
   })
 
   it('keeps module context when navigating into a node', async () => {

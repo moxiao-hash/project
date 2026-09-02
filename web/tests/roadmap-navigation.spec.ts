@@ -46,6 +46,7 @@ const node: RoadmapNode = {
   quizStatus: 'NOT_GENERATED',
   artifactStatus: 'NOT_REQUIRED',
   completionStatus: 'INCOMPLETE',
+  diagnosticMastered: false,
   displayStatus: 'AVAILABLE',
   version: 0,
 }

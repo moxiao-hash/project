@@ -19,4 +19,7 @@ public interface QuizAttemptJpaRepository extends JpaRepository<QuizAttemptEntit
     );
 
     Optional<QuizAttemptEntity> findByIdAndOwnerId(String id, String ownerId);
+
+    Optional<QuizAttemptEntity> findFirstByOwnerIdAndQuizIdOrderByCreatedAtDesc(
+            String ownerId, String quizId);
 }

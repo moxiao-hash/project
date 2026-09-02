@@ -1,5 +1,6 @@
 package com.moxiao.studypilot.roadmap.application;
 
+import com.moxiao.studypilot.assessment.infrastructure.QuizAttemptJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizJpaRepository;
 import com.moxiao.studypilot.assessment.infrastructure.QuestionJpaRepository;
@@ -16,6 +17,7 @@ import com.moxiao.studypilot.roadmap.api.RoadmapQuizContextResponse;
 import com.moxiao.studypilot.roadmap.domain.AvailabilityStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizGenerationStatus;
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
+import com.moxiao.studypilot.roadmap.domain.QuizStatus;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeCheckInEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeCheckInJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeEntity;
@@ -56,6 +58,7 @@ public class RoadmapLearningLoopService {
     private final ObjectMapper objectMapper;
     private final QuizService quizService;
     private final RoadmapScheduleRefreshService scheduleRefreshService;
+    private final QuizAttemptJpaRepository attemptRepository;
 
     public RoadmapLearningLoopService(
             UserRoadmapJpaRepository enrollmentRepository,
@@ -69,7 +72,8 @@ public class RoadmapLearningLoopService {
             QuestionJpaRepository questionRepository,
             ObjectMapper objectMapper,
             QuizService quizService,
-            RoadmapScheduleRefreshService scheduleRefreshService
+            RoadmapScheduleRefreshService scheduleRefreshService,
+            QuizAttemptJpaRepository attemptRepository
     ) {
         this.enrollmentRepository = enrollmentRepository;
         this.stateRepository = stateRepository;
@@ -83,6 +87,7 @@ public class RoadmapLearningLoopService {
         this.objectMapper = objectMapper;
         this.quizService = quizService;
         this.scheduleRefreshService = scheduleRefreshService;
+        this.attemptRepository = attemptRepository;
     }
 
     @Transactional
@@ -178,8 +183,12 @@ public class RoadmapLearningLoopService {
         RoadmapQuizGenerationJobEntity job = jobRepository
                 .findFirstByUserRoadmapNodeIdOrderByCreatedAtDesc(state.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("节点测验尚未生成"));
+        String latestAttemptId = job.getQuizId() == null ? null : attemptRepository
+                .findFirstByOwnerIdAndQuizIdOrderByCreatedAtDesc(ownerId, job.getQuizId())
+                .map(com.moxiao.studypilot.assessment.infrastructure.QuizAttemptEntity::getId)
+                .orElse(null);
         return new RoadmapNodeQuizResponse(nodeId, state.getQuizStatus().name(),
-                job.getQuizId(), RoadmapQuizGenerationResponse.from(job));
+                job.getQuizId(), latestAttemptId, RoadmapQuizGenerationResponse.from(job));
     }
 
     @Transactional(readOnly = true)
@@ -274,8 +283,11 @@ public class RoadmapLearningLoopService {
         RoadmapQuizGenerationJobEntity latest = jobRepository
                 .findFirstByUserRoadmapNodeIdOrderByCreatedAtDesc(state.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("节点测验生成任务不存在"));
-        if (latest.getStatus() != RoadmapQuizGenerationStatus.FAILED) {
-            throw new ConflictException("仅失败的节点测验可以重试");
+        boolean generationFailed = latest.getStatus() == RoadmapQuizGenerationStatus.FAILED;
+        boolean answerFailed = latest.getStatus() == RoadmapQuizGenerationStatus.COMPLETED
+                && state.getQuizStatus() == QuizStatus.FAILED;
+        if (!generationFailed && !answerFailed) {
+            throw new ConflictException("仅生成失败或未通过的节点测验可以重试");
         }
         if (latest.getRetrySequence() >= 3) {
             throw new ConflictException("节点测验重试次数已达上限");

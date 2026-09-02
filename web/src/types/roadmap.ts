@@ -34,8 +34,59 @@ export interface RoadmapNode {
     | 'PARTIALLY_GRADED'
   artifactStatus: 'NOT_REQUIRED' | 'MISSING' | 'SUBMITTED' | 'ACCEPTED' | 'REJECTED'
   completionStatus: 'INCOMPLETE' | 'COMPLETED'
+  diagnosticMastered: boolean
   displayStatus: RoadmapDisplayStatus
   version: number
+}
+
+export interface RoadmapQuizGeneration {
+  jobId: string
+  purpose: 'NODE' | 'DIAGNOSTIC' | 'STAGE_GRADUATION'
+  status: 'PENDING' | 'LEASED' | 'COMPLETED' | 'FAILED'
+  retrySequence: number
+  attemptCount: number
+  quizId: string | null
+  lastError: string | null
+  leaseUntil: string | null
+  updatedAt: string
+}
+
+export interface RoadmapNodeQuiz {
+  nodeId: string
+  status: RoadmapNode['quizStatus']
+  quizId: string | null
+  latestAttemptId: string | null
+  generation: RoadmapQuizGeneration
+}
+
+export interface RoadmapNodeCheckIn {
+  id: string
+  nodeId: string
+  summary: string
+  idempotencyKey: string
+  createdAt: string
+  quizGeneration: RoadmapQuizGeneration
+}
+
+export interface RoadmapScheduleItem {
+  id: string
+  nodeId: string
+  nodeCode: string
+  title: string
+  plannedMinutes: number
+  status: 'PLANNED' | 'STARTED' | 'COMPLETED'
+}
+
+export interface RoadmapSchedule {
+  scheduleId: string
+  timeZone: string
+  dailyCapacityMinutes: number
+  weekendsEnabled: boolean
+  days: Array<{
+    date: string
+    plannedMinutes: number
+    items: RoadmapScheduleItem[]
+  }>
 }
 
 export interface RoadmapModuleSummary {
