@@ -26,6 +26,37 @@ def build_settings() -> Settings:
     )
 
 
+def test_internal_requests_ignore_system_proxy_settings(monkeypatch) -> None:
+    captured_options: dict[str, object] = {}
+    original_async_client = httpx.AsyncClient
+
+    def create_client(*args, **kwargs):
+        captured_options.update(kwargs)
+        return original_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.clients.java_backend.httpx.AsyncClient",
+        create_client,
+    )
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"goals": [], "plans": [], "tasks": [], "materials": [], "mastery": []},
+        )
+
+    async def call_client():
+        client = JavaBackendClient(
+            build_settings(),
+            transport=httpx.MockTransport(handler),
+        )
+        return await client.get_learning_context("user-123")
+
+    asyncio.run(call_client())
+
+    assert captured_options.get("trust_env") is False
+
+
 def test_get_learning_context_uses_internal_contract() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"

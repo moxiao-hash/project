@@ -595,6 +595,9 @@ class JavaBackendClient:
                 headers=headers,
                 timeout=self._timeout,
                 transport=self._transport,
+                # Java 是同机内部服务。忽略操作系统代理，避免 localhost
+                # 请求被代理软件接管并返回与真实后端无关的 502。
+                trust_env=False,
             ) as client:
                 response = await client.request(method, path, **kwargs)
                 response.raise_for_status()
