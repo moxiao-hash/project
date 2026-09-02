@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     app_name: str = "studypilot-ai"
     model_provider: Literal["deepseek"] = "deepseek"
     model_base_url: str = "https://api.deepseek.com"
-    model_name: str = "deepseek-v4-pro"
+    model_name: str = "deepseek-v4-flash"
     deepseek_api_key: SecretStr = SecretStr("")
 
     java_backend_base_url: str = "http://localhost:8080"

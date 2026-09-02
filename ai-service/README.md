@@ -58,7 +58,7 @@ cp .env.example .env
 ```env
 MODEL_PROVIDER=deepseek
 MODEL_BASE_URL=https://api.deepseek.com
-MODEL_NAME=deepseek-v4-pro
+MODEL_NAME=deepseek-v4-flash
 DEEPSEEK_API_KEY=填写你自己的Key
 
 JAVA_BACKEND_BASE_URL=http://localhost:8080

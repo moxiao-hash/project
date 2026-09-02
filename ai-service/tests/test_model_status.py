@@ -53,7 +53,7 @@ def test_model_status_never_exposes_api_key() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "provider": "deepseek",
-        "model": "deepseek-v4-pro",
+        "model": "deepseek-v4-flash",
         "configured": True,
     }
     assert "secret-key" not in response.text
@@ -68,7 +68,7 @@ def test_default_credential_status_only_returns_masked_metadata() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "provider": "deepseek",
-        "model": "deepseek-v4-pro",
+        "model": "deepseek-v4-flash",
         "deepseek": {"configured": True, "maskedSuffix": "-key"},
         "tavily": {"configured": True, "maskedSuffix": "cret"},
     }
