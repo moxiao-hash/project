@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import { teachingApi } from '@/services/course'
 import { describeError } from '@/services/http'
+import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
 
 const props = defineProps<{ lessonId: string }>()
 
@@ -48,7 +49,7 @@ async function send() {
     <div class="rounds">
       <template v-for="(round, index) in rounds" :key="index">
         <div class="student">{{ round.question }}</div>
-        <div class="assistant">{{ round.answer }}</div>
+        <div class="assistant"><AiMarkdownMessage :content="round.answer" /></div>
       </template>
       <div v-if="sending" class="assistant">正在结合本课内容思考…</div>
     </div>

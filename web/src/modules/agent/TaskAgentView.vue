@@ -23,7 +23,10 @@
       <div class="card chat-card">
         <div ref="messagesEl" class="messages">
           <div v-for="(msg, i) in messages" :key="i" class="message" :class="msg.role">
-            <div class="message-bubble">{{ msg.text }}</div>
+            <div class="message-bubble">
+              <AiMarkdownMessage v-if="msg.role === 'assistant'" :content="msg.text" />
+              <template v-else>{{ msg.text }}</template>
+            </div>
           </div>
           <div v-if="sending" class="message assistant">
             <div class="message-bubble"><span class="spinner" /> 正在理解你的意图…</div>
@@ -149,6 +152,7 @@ import { todayString } from '@/utils/datetime'
 import { taskStatusBadge, taskStatusLabels } from '@/utils/labels'
 import type { TaskConversation } from '@/types/agent'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import MockBanner from '@/components/MockBanner.vue'
 import StatusBadge from '@/components/StatusBadge.vue'

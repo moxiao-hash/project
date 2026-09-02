@@ -41,7 +41,7 @@
             </div>
             <div class="message assistant">
               <div class="message-bubble answer-bubble">
-                <p class="answer-text">{{ round.answer }}</p>
+                <AiMarkdownMessage :content="round.answer" />
                 <div class="muted" style="font-size: 12px; margin-bottom: 8px">
                   检索模式：{{ retrievalModeLabel(round.retrievalMode) }}
                 </div>
@@ -142,6 +142,7 @@ import type {
 } from '@/types/agent'
 import type { MaterialCategory, PrivacyLevel } from '@/types/api'
 import CitationCard from '@/components/CitationCard.vue'
+import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import MockBanner from '@/components/MockBanner.vue'
 
@@ -369,11 +370,6 @@ onBeforeUnmount(() => {
 
 .answer-bubble {
   width: 85%;
-}
-
-.answer-text {
-  margin: 0 0 8px;
-  white-space: pre-wrap;
 }
 
 .citations-title {

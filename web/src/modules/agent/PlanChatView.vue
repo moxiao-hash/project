@@ -44,7 +44,8 @@
         <div ref="messagesEl" class="messages">
           <div v-for="(msg, i) in messages" :key="i" class="message" :class="msg.role">
             <div class="message-bubble">
-              {{ msg.text }}
+              <AiMarkdownMessage v-if="msg.role === 'assistant'" :content="msg.text" />
+              <template v-else>{{ msg.text }}</template>
               <div v-if="msg.warnings?.length" class="msg-warnings">
                 <div v-for="(w, wi) in msg.warnings" :key="wi" class="alert alert-warning" style="margin: 6px 0 0">
                   {{ w }}
@@ -208,6 +209,7 @@ import type { LearningGoal } from '@/types/api'
 import type { PlanConversation, PlanDraft } from '@/types/agent'
 import { buildPlanRevisionMessage } from '@/services/planned/planRevision'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'

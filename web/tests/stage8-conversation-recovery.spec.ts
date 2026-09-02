@@ -147,6 +147,79 @@ describe('Agent 会话 URL 恢复', () => {
     expect(wrapper.text()).not.toContain('Spring Boot')
   })
 
+  it('三个 Agent 页面都把助手回复渲染为安全 Markdown', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    planned.getPlanConversation.mockResolvedValue({
+      ...plan,
+      reply: '**计划助手**已准备好。',
+    })
+    planned.getTaskConversation.mockResolvedValue({
+      ...task,
+      reply: '## 今日任务',
+    })
+    planned.getKnowledgeConversation.mockResolvedValue({
+      ...knowledge,
+      answer:
+        '## `@RequestMapping`\n\n- 映射请求\n\n```java\n@GetMapping("/tasks")\n```\n\n' +
+        '<img src="x" onerror="alert(1)"><script>alert(2)</script>' +
+        '[危险链接](javascript:alert(3))\n\n[Spring 官方文档](https://spring.io)',
+    })
+
+    const { wrapper: planWrapper } = await mountAt(
+      PlanChatView,
+      '/agent?conversationId=plan-conversation',
+    )
+    const { wrapper: taskWrapper } = await mountAt(
+      TaskAgentView,
+      '/agent?conversationId=task-conversation',
+    )
+    const { wrapper: knowledgeWrapper } = await mountAt(
+      KnowledgeView,
+      '/agent?conversationId=knowledge-conversation',
+    )
+
+    expect(planWrapper.get('.message.assistant strong').text()).toBe('计划助手')
+    expect(taskWrapper.get('.message.assistant h2').text()).toBe('今日任务')
+    expect(knowledgeWrapper.get('.message.assistant h2').text()).toBe('@RequestMapping')
+    expect(knowledgeWrapper.get('.message.assistant pre code').text()).toContain('@GetMapping')
+    expect(knowledgeWrapper.find('.message.assistant script').exists()).toBe(false)
+    expect(knowledgeWrapper.find('.message.assistant [onerror]').exists()).toBe(false)
+    expect(knowledgeWrapper.find('.message.assistant a[href^="javascript:"]').exists()).toBe(false)
+    const safeLink = knowledgeWrapper.get<HTMLAnchorElement>('a[href="https://spring.io"]')
+    expect(safeLink.attributes('target')).toBe('_blank')
+    expect(safeLink.attributes('rel')).toBe('noopener noreferrer')
+    const copyButton = knowledgeWrapper.get('[data-copy-code]')
+    expect(copyButton.text()).toBe('复制')
+    await copyButton.trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('@GetMapping("/tasks")')
+    expect(copyButton.text()).toBe('已复制')
+  })
+
+  it('用户消息保持纯文本，不按 Markdown 或 HTML 渲染', async () => {
+    planned.createKnowledgeConversation.mockResolvedValue(knowledge)
+    planned.sendKnowledgeMessage.mockResolvedValue({
+      ...knowledge,
+      answer: '普通回答',
+    })
+    const { wrapper } = await mountAt(KnowledgeView, '/agent')
+    await wrapper.get('button.btn-primary').trigger('click')
+    await flushPromises()
+
+    const input = wrapper.get<HTMLInputElement>('input[placeholder="输入你的问题…"]')
+    await input.setValue('<strong>用户问题</strong>')
+    await wrapper.get('form.chat-input').trigger('submit.prevent')
+    await flushPromises()
+
+    const userMessage = wrapper.get('.message.user')
+    expect(userMessage.text()).toBe('<strong>用户问题</strong>')
+    expect(userMessage.find('strong').exists()).toBe(false)
+  })
+
   it('创建会话后把 conversationId 写入 query', async () => {
     planned.createTaskConversation.mockResolvedValue(task)
     const { wrapper, router } = await mountAt(TaskAgentView, '/agent')
