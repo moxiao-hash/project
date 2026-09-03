@@ -148,3 +148,17 @@ export interface RoadmapEnrollment {
   status: 'ACTIVE' | 'SUPERSEDED' | 'ARCHIVED'
   enrolledAt: string
 }
+
+export interface RoadmapUpgrade {
+  id: string
+  sourceVersion: number
+  targetVersion: number
+  status: 'PREVIEW' | 'COMPLETED'
+  unchangedNodeCodes: string[]
+  addedNodeCodes: string[]
+  removedNodeCodes: string[]
+  manualReviewNodeCodes: string[]
+  addedModuleCount: number
+  removedModuleCount: number
+  changedModuleCount: number
+}

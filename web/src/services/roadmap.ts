@@ -9,10 +9,11 @@ import type {
   RoadmapQuizGeneration,
   RoadmapSchedule,
   RoadmapStage,
+  RoadmapUpgrade,
 } from '@/types/roadmap'
 
 export const roadmapApi = {
-  enroll(roadmapCode = 'studypilot-java-ai', templateVersion = 1) {
+  enroll(roadmapCode = 'studypilot-java-ai', templateVersion = 2) {
     return http
       .post<RoadmapEnrollment>('/api/roadmap-enrollments', {
         roadmapCode,
@@ -23,6 +24,18 @@ export const roadmapApi = {
   getCurrentMap() {
     return http
       .get<RoadmapMap>('/api/roadmaps/current/map')
+      .then((response) => response.data)
+  },
+  getUpgrades() {
+    return http
+      .get<RoadmapUpgrade[]>('/api/roadmaps/current/upgrades')
+      .then((response) => response.data)
+  },
+  confirmUpgrade(upgradeId: string) {
+    return http
+      .post<RoadmapUpgrade>(
+        `/api/roadmaps/current/upgrades/${encodeURIComponent(upgradeId)}/confirm`,
+      )
       .then((response) => response.data)
   },
   getStage(stageId: string) {

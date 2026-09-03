@@ -8,7 +8,7 @@ import RoadmapView from './RoadmapView.vue'
 import StageView from './StageView.vue'
 import RoadmapNodeCard from './components/RoadmapNodeCard.vue'
 import { roadmapApi } from '@/services/roadmap'
-import type { RoadmapMap, RoadmapNode, RoadmapStage } from '@/types/roadmap'
+import type { RoadmapMap, RoadmapNode, RoadmapStage, RoadmapUpgrade } from '@/types/roadmap'
 
 vi.mock('@/services/roadmap', () => ({
   roadmapApi: {
@@ -18,6 +18,8 @@ vi.mock('@/services/roadmap', () => ({
     getModule: vi.fn(),
     getNode: vi.fn(),
     getNodeQuiz: vi.fn(),
+    getUpgrades: vi.fn(),
+    confirmUpgrade: vi.fn(),
     checkIn: vi.fn(),
     retryNodeQuiz: vi.fn(),
     quickVerification: vi.fn(),
@@ -139,6 +141,22 @@ function fixtureRoadmap(): RoadmapMap {
   }
 }
 
+function fixtureUpgrade(): RoadmapUpgrade {
+  return {
+    id: 'upgrade-v1-v2',
+    sourceVersion: 1,
+    targetVersion: 2,
+    status: 'PREVIEW',
+    unchangedNodeCodes: [],
+    addedNodeCodes: Array.from({ length: 125 }, (_, index) => `node-${index + 1}`),
+    removedNodeCodes: Array.from({ length: 64 }, (_, index) => `legacy-${index + 1}`),
+    manualReviewNodeCodes: [],
+    addedModuleCount: 24,
+    removedModuleCount: 0,
+    changedModuleCount: 0,
+  }
+}
+
 function makeRouter(): Router {
   return createRouter({
     history: createMemoryHistory(),
@@ -156,7 +174,12 @@ async function mountAt(component: object, path = '/roadmap') {
   const router = makeRouter()
   await router.push(path)
   await router.isReady()
-  return { wrapper: mount(component, { global: { plugins: [router] } }), router }
+  return {
+    wrapper: mount(component, {
+      global: { plugins: [router], stubs: { teleport: true } },
+    }),
+    router,
+  }
 }
 
 function deferred<T>() {
@@ -166,7 +189,57 @@ function deferred<T>() {
 }
 
 describe('roadmap read views', () => {
-  beforeEach(() => vi.resetAllMocks())
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(roadmapApi.getUpgrades).mockResolvedValue([])
+  })
+
+  it('shows a V2 upgrade entry for V1 learners and upgrades only after explicit confirmation', async () => {
+    vi.mocked(roadmapApi.getCurrentMap)
+      .mockResolvedValueOnce(fixtureRoadmap())
+      .mockResolvedValueOnce({
+        ...fixtureRoadmap(),
+        templateVersion: 2,
+        totalRequiredNodes: 123,
+        stages: [stageWithModules()],
+      })
+    vi.mocked(roadmapApi.getUpgrades).mockResolvedValue([fixtureUpgrade()])
+    vi.mocked(roadmapApi.confirmUpgrade).mockResolvedValue({
+      ...fixtureUpgrade(),
+      status: 'COMPLETED',
+    })
+    const { wrapper } = await mountAt(RoadmapView)
+    await flushPromises()
+
+    const notice = wrapper.get('[data-testid="roadmap-upgrade-notice"]')
+    expect(notice.text()).toContain('V2 初学者细化版')
+    expect(notice.text()).toContain('24 个模块')
+    expect(notice.text()).toContain('125 个知识节点')
+    expect(roadmapApi.confirmUpgrade).not.toHaveBeenCalled()
+
+    await notice.get('button').trigger('click')
+    expect(wrapper.get('[data-testid="roadmap-upgrade-dialog"]').text())
+      .toContain('V1 的历史记录会保留')
+
+    await wrapper.get('[data-testid="roadmap-upgrade-dialog"] .btn-primary')
+      .trigger('click')
+    await flushPromises()
+
+    expect(roadmapApi.confirmUpgrade).toHaveBeenCalledWith('upgrade-v1-v2')
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('studypilot-java-ai · V2')
+    expect(wrapper.find('[data-testid="roadmap-upgrade-notice"]').exists()).toBe(false)
+  })
+
+  it('keeps the roadmap usable when the optional upgrade lookup fails', async () => {
+    vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue(fixtureRoadmap())
+    vi.mocked(roadmapApi.getUpgrades).mockRejectedValue(new Error('upgrade unavailable'))
+    const { wrapper } = await mountAt(RoadmapView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('StudyPilot Java + AI 学习路线')
+    expect(wrapper.text()).not.toContain('学习路线加载失败')
+  })
 
   it('shows graph and semantic list views from the same model with an accessible toggle', async () => {
     vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue(fixtureRoadmap())
@@ -263,6 +336,7 @@ describe('roadmap read views', () => {
     await button.trigger('click')
     await button.trigger('click')
     expect(roadmapApi.enroll).toHaveBeenCalledTimes(1)
+    expect(roadmapApi.enroll).toHaveBeenCalledWith('studypilot-java-ai', 2)
     expect(button.attributes()).toHaveProperty('disabled')
 
     enrollment.resolve({
@@ -412,6 +486,22 @@ describe('roadmap read views', () => {
       .toBe('/roadmap/nodes/node-basics')
     expect(wrapper.text()).toContain('打卡、测验和必交成果全部满足后才完成节点')
     expect(wrapper.get('button').text()).toContain('提交总结并打卡')
+  })
+
+  it('marks V1 nodes as historical and links learners back to the V2 upgrade entry', async () => {
+    vi.mocked(roadmapApi.getNode).mockResolvedValue(node({
+      id: 'studypilot-java-ai-v1-java-syntax-oop',
+    }))
+    const { wrapper } = await mountAt(
+      NodeView,
+      '/roadmap/nodes/studypilot-java-ai-v1-java-syntax-oop',
+    )
+    await flushPromises()
+
+    const warning = wrapper.get('[data-testid="legacy-roadmap-warning"]')
+    expect(warning.text()).toContain('这是 V1 历史课程')
+    expect(warning.text()).toContain('不再推荐零基础学习者从这里开始')
+    expect(warning.get('a').attributes('href')).toBe('/roadmap')
   })
 
   it('keeps module context when navigating into a node', async () => {

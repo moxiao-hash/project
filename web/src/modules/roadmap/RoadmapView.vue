@@ -48,6 +48,51 @@
         </aside>
       </header>
 
+      <section
+        v-if="upgrade"
+        class="roadmap-upgrade"
+        data-testid="roadmap-upgrade-notice"
+        aria-labelledby="roadmap-upgrade-title"
+      >
+        <div class="roadmap-upgrade__version" aria-hidden="true">
+          <span>V{{ upgrade.sourceVersion }}</span>
+          <span class="roadmap-upgrade__arrow">→</span>
+          <strong>V{{ upgrade.targetVersion }}</strong>
+        </div>
+        <div class="roadmap-upgrade__copy">
+          <p class="roadmap-kicker">新版学习路线已就绪</p>
+          <h2 id="roadmap-upgrade-title">V2 初学者细化版</h2>
+          <p>
+            新路线拆为 {{ upgrade.addedModuleCount }} 个模块、
+            {{ upgrade.addedNodeCodes.length }} 个知识节点，从 JDK 和第一个程序开始逐步学习。
+          </p>
+        </div>
+        <button class="btn btn-primary" type="button" @click="upgradeDialogOpen = true">
+          查看差异并升级
+        </button>
+      </section>
+
+      <div v-if="upgradeDialogOpen && upgrade" data-testid="roadmap-upgrade-dialog">
+        <ConfirmDialog
+          v-model="upgradeDialogOpen"
+          title="确认升级到 V2 初学者细化版"
+          confirm-text="确认升级到 V2"
+          :loading="upgradeLoading"
+          @confirm="confirmUpgrade"
+        >
+          <div class="upgrade-dialog-copy">
+            <p>V1 的历史记录会保留，不会删除已有打卡、测验或学习证据。</p>
+            <dl>
+              <div><dt>课程结构</dt><dd>新增 {{ upgrade.addedModuleCount }} 个模块</dd></div>
+              <div><dt>知识节点</dt><dd>{{ upgrade.removedNodeCodes.length }} 个旧节点调整为 {{ upgrade.addedNodeCodes.length }} 个细化节点</dd></div>
+              <div><dt>学习起点</dt><dd>从 JDK、变量、分支和循环开始</dd></div>
+            </dl>
+            <p class="upgrade-dialog-note">升级完成后将切换到 V2，只有内容完全等价的完成记录才会继承。</p>
+            <p v-if="upgradeError" class="field-error" role="alert">{{ upgradeError }}</p>
+          </div>
+        </ConfirmDialog>
+      </div>
+
       <div class="roadmap-toolbar">
         <p>{{ roadmap.stages.length }} 个阶段，按前置关系循序解锁</p>
         <div class="roadmap-toggle" role="group" aria-label="路线展示方式">
@@ -77,8 +122,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { roadmapApi } from '@/services/roadmap'
-import type { RoadmapMap } from '@/types/roadmap'
+import type { RoadmapMap, RoadmapUpgrade } from '@/types/roadmap'
 import RoadmapGraph from './components/RoadmapGraph.vue'
 import RoadmapList from './components/RoadmapList.vue'
 
@@ -88,6 +134,10 @@ const enrolling = ref(false)
 const notEnrolled = ref(false)
 const error = ref(false)
 const enrollmentError = ref(false)
+const upgrade = ref<RoadmapUpgrade | null>(null)
+const upgradeDialogOpen = ref(false)
+const upgradeLoading = ref(false)
+const upgradeError = ref('')
 const viewMode = ref<'graph' | 'list'>('graph')
 let active = true
 let requestSequence = 0
@@ -111,6 +161,7 @@ async function load() {
     const result = await roadmapApi.getCurrentMap()
     if (!active || sequence !== requestSequence) return
     roadmap.value = result
+    void loadUpgrade(result.templateVersion, sequence)
   } catch (cause) {
     if (!active || sequence !== requestSequence) return
     roadmap.value = null
@@ -126,7 +177,7 @@ async function enroll() {
   enrolling.value = true
   enrollmentError.value = false
   try {
-    await roadmapApi.enroll()
+    await roadmapApi.enroll('studypilot-java-ai', 2)
     if (!active) return
     await load()
   } catch {
@@ -135,6 +186,39 @@ async function enroll() {
     enrollmentError.value = true
   } finally {
     if (active) enrolling.value = false
+  }
+}
+
+async function loadUpgrade(currentVersion: number, mapSequence: number) {
+  if (currentVersion >= 2) {
+    upgrade.value = null
+    return
+  }
+  try {
+    const previews = await roadmapApi.getUpgrades()
+    if (!active || mapSequence !== requestSequence) return
+    upgrade.value = previews
+      .filter((item) => item.status === 'PREVIEW' && item.targetVersion > currentVersion)
+      .sort((left, right) => right.targetVersion - left.targetVersion)[0] ?? null
+  } catch {
+    // 升级提示是可选增强，失败不能阻断当前路线的正常学习。
+    if (active && mapSequence === requestSequence) upgrade.value = null
+  }
+}
+
+async function confirmUpgrade() {
+  if (!upgrade.value || upgradeLoading.value) return
+  upgradeLoading.value = true
+  upgradeError.value = ''
+  try {
+    await roadmapApi.confirmUpgrade(upgrade.value.id)
+    if (!active) return
+    upgradeDialogOpen.value = false
+    await load()
+  } catch {
+    if (active) upgradeError.value = '升级失败，当前路线没有变化，请稍后重试。'
+  } finally {
+    if (active) upgradeLoading.value = false
   }
 }
 
@@ -176,6 +260,32 @@ onBeforeUnmount(() => {
   gap: 16px;
   margin-bottom: 24px;
 }
+.roadmap-upgrade {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: center;
+  margin: -3px 0 30px;
+  padding: 24px 26px;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 28%, var(--color-border));
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius);
+  background: linear-gradient(110deg, var(--color-primary-soft), var(--color-surface) 58%);
+}
+.roadmap-upgrade__version { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.roadmap-upgrade__version span,
+.roadmap-upgrade__version strong { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; }
+.roadmap-upgrade__version span { border: 1px solid var(--color-border); color: var(--color-text-secondary); background: var(--color-surface); }
+.roadmap-upgrade__version strong { color: white; background: var(--color-primary); }
+.roadmap-upgrade__arrow { width: auto !important; border: 0 !important; background: transparent !important; }
+.roadmap-upgrade__copy h2 { margin: 0; font-size: 22px; }
+.roadmap-upgrade__copy > p:last-child { margin: 7px 0 0; color: var(--color-text-secondary); line-height: 1.65; }
+.upgrade-dialog-copy p { margin: 0; line-height: 1.65; }
+.upgrade-dialog-copy dl { display: grid; gap: 8px; margin: 16px 0; }
+.upgrade-dialog-copy dl > div { display: flex; justify-content: space-between; gap: 20px; padding-bottom: 8px; border-bottom: 1px solid var(--color-border); }
+.upgrade-dialog-copy dt { color: var(--color-text-secondary); }
+.upgrade-dialog-copy dd { margin: 0; text-align: right; font-weight: 650; }
+.upgrade-dialog-note { color: var(--color-text-secondary); font-size: 13px; }
 .roadmap-toolbar > p { margin: 0; color: var(--color-text-secondary); font-size: 13px; }
 .roadmap-toggle { display: inline-flex; padding: 3px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); }
 .roadmap-toggle button { border: 0; border-radius: 6px; padding: 6px 13px; background: transparent; color: var(--color-text-secondary); font: inherit; cursor: pointer; }
@@ -197,6 +307,9 @@ onBeforeUnmount(() => {
   .roadmap-toggle button { flex: 1; min-height: 42px; }
   .roadmap-empty { grid-template-columns: 1fr; padding: 28px 20px; }
   .roadmap-empty__index { font-size: 34px; }
+  .roadmap-upgrade { grid-template-columns: 1fr; gap: 16px; }
+  .roadmap-upgrade__version { justify-content: flex-start; }
+  .roadmap-upgrade .btn { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
   .progress-fill { transition: none; }

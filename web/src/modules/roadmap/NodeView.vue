@@ -16,6 +16,13 @@
         ? { name: 'roadmap-module', params: { id: moduleId } }
         : { name: 'roadmap' }"
       >{{ moduleId ? '← 返回所属模块' : '← 返回学习路线' }}</RouterLink>
+      <aside v-if="isLegacyNode" class="legacy-roadmap-warning" data-testid="legacy-roadmap-warning">
+        <div>
+          <strong>这是 V1 历史课程</strong>
+          <p>该版本保留用于查看历史记录，不再推荐零基础学习者从这里开始。</p>
+        </div>
+        <RouterLink class="btn btn-secondary" to="/roadmap">返回路线并升级 V2</RouterLink>
+      </aside>
       <header class="node-hero">
         <div class="node-meta">
           <span>{{ statusLabel }}</span><span>{{ node.required ? '必修' : '选修' }}</span>
@@ -129,6 +136,7 @@ const artifactLabels: Record<RoadmapNode['artifactStatus'], string> = {
 }
 const statusLabel = computed(() => node.value ? labels[node.value.displayStatus] : '')
 const artifactLabel = computed(() => node.value ? artifactLabels[node.value.artifactStatus] : '')
+const isLegacyNode = computed(() => node.value?.id.includes('studypilot-java-ai-v1-') ?? false)
 const quizBusy = computed(() => quiz.value?.status === 'GENERATING' || quiz.value?.status === 'EVALUATING'
   || quiz.value?.generation.status === 'PENDING' || quiz.value?.generation.status === 'LEASED')
 
@@ -290,6 +298,21 @@ onBeforeUnmount(() => {
 <style scoped>
 .node-page { max-width: 930px; }
 .node-back { display: inline-block; margin-bottom: 20px; font-size: 13px; }
+.legacy-roadmap-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 22px;
+  padding: 17px 19px;
+  border: 1px solid #e8c781;
+  border-left: 4px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--color-warning-soft);
+}
+.legacy-roadmap-warning strong { color: #6d4909; }
+.legacy-roadmap-warning p { margin: 4px 0 0; color: #75510f; font-size: 13px; line-height: 1.55; }
+.legacy-roadmap-warning .btn { flex: 0 0 auto; }
 .node-hero { padding: 8px 0 28px; border-bottom: 1px solid var(--color-border); }
 .node-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .node-meta span { padding: 2px 9px; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 11px; font-weight: 650; }
@@ -312,5 +335,9 @@ onBeforeUnmount(() => {
 .status-success { color: var(--color-success); }
 .node-state { padding: 40px; }
 .node-state p { margin: 8px 0 18px; color: var(--color-text-secondary); }
-@media (max-width: 680px) { .node-content { grid-template-columns: 1fr; } }
+@media (max-width: 680px) {
+  .node-content { grid-template-columns: 1fr; }
+  .legacy-roadmap-warning { align-items: stretch; flex-direction: column; }
+  .legacy-roadmap-warning .btn { width: 100%; }
+}
 </style>

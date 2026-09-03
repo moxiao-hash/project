@@ -24,6 +24,7 @@ import type {
   RoadmapMap,
   RoadmapNode,
   RoadmapStage,
+  RoadmapUpgrade,
 } from '@/types/roadmap'
 
 const node: RoadmapNode = {
@@ -84,6 +85,20 @@ const enrollment: RoadmapEnrollment = {
   enrolledAt: '2026-08-09T08:00:00Z',
 }
 
+const upgrade: RoadmapUpgrade = {
+  id: 'upgrade/1',
+  sourceVersion: 1,
+  targetVersion: 2,
+  status: 'PREVIEW',
+  unchangedNodeCodes: [],
+  addedNodeCodes: ['java-environment-first-program'],
+  removedNodeCodes: ['java-syntax-oop'],
+  manualReviewNodeCodes: [],
+  addedModuleCount: 24,
+  removedModuleCount: 0,
+  changedModuleCount: 0,
+}
+
 describe('roadmapApi', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -96,8 +111,27 @@ describe('roadmapApi', () => {
 
     expect(post).toHaveBeenCalledExactlyOnceWith('/api/roadmap-enrollments', {
       roadmapCode: 'studypilot-java-ai',
-      templateVersion: 1,
+      templateVersion: 2,
     })
+  })
+
+  it('loads available upgrades through the Java public API', async () => {
+    const get = vi.spyOn(http, 'get').mockResolvedValueOnce({ data: [upgrade] })
+
+    await expect(roadmapApi.getUpgrades()).resolves.toEqual([upgrade])
+
+    expect(get).toHaveBeenCalledExactlyOnceWith('/api/roadmaps/current/upgrades')
+  })
+
+  it('confirms an encoded upgrade id through its dedicated Java endpoint', async () => {
+    const completed = { ...upgrade, status: 'COMPLETED' as const }
+    const post = vi.spyOn(http, 'post').mockResolvedValueOnce({ data: completed })
+
+    await expect(roadmapApi.confirmUpgrade('upgrade/1')).resolves.toEqual(completed)
+
+    expect(post).toHaveBeenCalledExactlyOnceWith(
+      '/api/roadmaps/current/upgrades/upgrade%2F1/confirm',
+    )
   })
 
   it('loads the current map only through the Java public API', async () => {
