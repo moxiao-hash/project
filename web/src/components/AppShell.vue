@@ -85,6 +85,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
       { to: '/roadmap', icon: '🧭', label: '学习路线' },
       { to: '/today', icon: '✅', label: '今日任务' },
       { to: '/materials', icon: '📚', label: '学习资料' },
+      { to: '/wrong-questions', icon: '📝', label: '错题集' },
       { to: '/mastery', icon: '📈', label: '掌握度' },
     ],
   },

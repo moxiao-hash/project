@@ -5,6 +5,10 @@ import type {
   QuizAttempt,
   SelfAssessmentRequest,
   SubmitQuizAttemptRequest,
+  WrongQuestionPage,
+  WrongQuestionReview,
+  WrongQuestionStatus,
+  WrongQuestionSummary,
 } from '@/types/api'
 
 export const assessmentApi = {
@@ -26,5 +30,24 @@ export const assessmentApi = {
   },
   listMastery() {
     return http.get<Mastery[]>('/api/mastery').then((r) => r.data)
+  },
+  getWrongQuestionSummary() {
+    return http.get<WrongQuestionSummary>('/api/wrong-questions/summary').then((r) => r.data)
+  },
+  listWrongQuestions(params: {
+    status?: WrongQuestionStatus
+    chapterKey?: string
+    page?: number
+    size?: number
+  } = {}) {
+    return http.get<WrongQuestionPage>('/api/wrong-questions', { params }).then((r) => r.data)
+  },
+  getCurrentWrongQuestionReview() {
+    return http.get<WrongQuestionReview | ''>('/api/wrong-question-reviews/current')
+      .then((r) => r.data || null)
+  },
+  createWrongQuestionReview(body: { chapterKey: string | null; idempotencyKey: string }) {
+    return http.post<WrongQuestionReview>('/api/wrong-question-reviews', body)
+      .then((r) => r.data)
   },
 }

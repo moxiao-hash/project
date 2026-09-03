@@ -8,7 +8,10 @@
         <div>
           <h1 class="page-title">{{ quiz.title }}</h1>
           <p class="page-subtitle">
-            由 {{ quiz.modelName }} 生成 · 共 {{ quiz.questions.length }} 题
+            <template v-if="quiz.kind === 'WRONG_QUESTION_REVIEW'">
+              原题复习 · 不会重新消耗 AI 出题或联网额度 · 共 {{ quiz.questions.length }} 题
+            </template>
+            <template v-else>由 {{ quiz.modelName }} 生成 · 共 {{ quiz.questions.length }} 题</template>
           </p>
         </div>
       </div>

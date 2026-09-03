@@ -21,6 +21,8 @@ export type Difficulty = 'EASY' | 'MEDIUM' | 'HARD'
 export type CodingKind =
   | 'CODE_COMPLETION' | 'DEBUGGING' | 'METHOD_IMPLEMENTATION' | 'MINI_MODULE'
 export type AttemptStatus = 'EVALUATING' | 'GRADED' | 'PARTIALLY_GRADED'
+export type QuizKind = 'GENERATED' | 'WRONG_QUESTION_REVIEW'
+export type WrongQuestionStatus = 'ACTIVE' | 'MASTERED'
 export type AgentScope =
   | 'MATERIAL_PROCESSING' | 'QUIZ_GENERATION' | 'PLAN_GENERATION'
   | 'TASK_MANAGEMENT' | 'SMALL_PLAN_ADJUSTMENT' | 'LARGE_PLAN_ADJUSTMENT'
@@ -193,6 +195,7 @@ export interface Quiz {
   materialId: string | null
   taskId: string | null
   lessonId: string | null
+  kind?: QuizKind
   title: string
   modelName: string
   questions: QuizQuestion[]
@@ -200,6 +203,13 @@ export interface Quiz {
 
 export interface QuestionResult {
   questionId: string
+  type: QuestionType
+  questionText: string
+  options: string[]
+  selectedAnswers: string[]
+  codeAnswer: string | null
+  correctAnswers: string[]
+  referenceAnswer: string | null
   correct: boolean
   knowledgePoint: string
   explanation: string | null
@@ -210,10 +220,64 @@ export interface QuestionResult {
 
 export interface QuizAttempt {
   id: string
+  quizId?: string
   score: number
   status: AttemptStatus
   warning: string | null
   results: QuestionResult[]
+  reviewProgress?: { clearedCount: number; remainingCount: number } | null
+}
+
+export interface WrongQuestion {
+  id: string
+  status: WrongQuestionStatus
+  chapterKey: string
+  chapterTitle: string
+  type: QuestionType
+  difficulty: Difficulty
+  codingKind: CodingKind | null
+  language: string | null
+  knowledgePoint: string
+  questionText: string
+  options: string[]
+  latestSelectedAnswers: string[]
+  latestCodeAnswer: string | null
+  correctAnswers: string[]
+  referenceAnswer: string | null
+  explanation: string
+  sources: QuizSource[]
+  wrongCount: number
+  redoCount: number
+  firstWrongAt: string
+  lastWrongAt: string
+  masteredAt: string | null
+}
+
+export interface WrongQuestionPage {
+  items: WrongQuestion[]
+  totalElements: number
+  page: number
+  size: number
+}
+
+export interface WrongQuestionReview {
+  id: string
+  quizId: string
+  status: 'OPEN' | 'COMPLETED'
+  questionCount: number
+  remainingCount: number
+}
+
+export interface WrongQuestionSummary {
+  activeCount: number
+  masteredCount: number
+  chapters: Array<{
+    chapterKey: string
+    chapterTitle: string
+    activeCount: number
+    masteredCount: number
+  }>
+  currentReview: WrongQuestionReview | null
 }
 
 export interface SubmitQuizAttemptRequest {

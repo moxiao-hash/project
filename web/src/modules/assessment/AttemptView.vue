@@ -43,6 +43,18 @@
         <div class="muted">总分</div>
       </div>
 
+      <div v-if="attempt.reviewProgress" class="card review-progress">
+        <div>
+          <strong>本次掌握 {{ attempt.reviewProgress.clearedCount }} 题</strong>
+          <p class="muted">仍有 {{ attempt.reviewProgress.remainingCount }} 题待重做</p>
+        </div>
+        <div class="row">
+          <RouterLink to="/wrong-questions" class="btn btn-secondary">返回错题集</RouterLink>
+          <RouterLink v-if="attempt.reviewProgress.remainingCount > 0"
+                      to="/wrong-questions?mode=redo" class="btn btn-primary">继续重做</RouterLink>
+        </div>
+      </div>
+
       <div v-for="(result, index) in attempt.results" :key="result.questionId" class="card result-card">
         <div class="row" style="margin-bottom: 8px">
           <span style="font-weight: 700">第 {{ index + 1 }} 题</span>
@@ -53,6 +65,21 @@
           <span class="muted" style="font-size: 12px">评分方式：{{ result.evaluationMethod }}</span>
           <span v-if="result.score !== null" class="spacer" />
           <span v-if="result.score !== null" class="mono">{{ result.score }} 分</span>
+        </div>
+        <h2 v-if="result.questionText" class="result-question">{{ result.questionText }}</h2>
+        <div v-if="result.type !== 'CODING'" class="answer-comparison">
+          <div class="answer-box submitted">
+            <span>你的答案</span>
+            <strong>{{ formatAnswers(result.selectedAnswers) }}</strong>
+          </div>
+          <div class="answer-box expected">
+            <span>正确答案</span>
+            <strong>{{ formatAnswers(result.correctAnswers) }}</strong>
+          </div>
+        </div>
+        <div v-else class="answer-comparison">
+          <div class="answer-box submitted"><span>你的代码</span><pre class="mono">{{ result.codeAnswer }}</pre></div>
+          <div class="answer-box expected"><span>参考实现</span><pre class="mono">{{ result.referenceAnswer }}</pre></div>
         </div>
         <p v-if="result.explanation" class="explanation">{{ result.explanation }}</p>
         <details v-if="result.evaluation" class="evaluation-detail">
@@ -151,6 +178,10 @@ function prettyJson(value: unknown): string {
   }
 }
 
+function formatAnswers(answers: string[] | undefined): string {
+  return answers?.length ? answers.join('、') : '未作答'
+}
+
 async function onSelfAssess() {
   const ratings = knowledgePoints.value
     .map((kp) => ({ knowledgePoint: kp, score: selfAssessScores[kp] }))
@@ -213,6 +244,20 @@ onMounted(load)
 
 .result-card {
   margin-top: 14px;
+}
+
+.review-progress { display: flex; align-items: center; justify-content: space-between; }
+.review-progress p { margin: 5px 0 0; }
+.result-question { font-size: 17px; line-height: 1.55; margin: 14px 0; }
+.answer-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.answer-box { border-radius: 8px; padding: 12px; }
+.answer-box span { display: block; font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.answer-box pre { margin: 0; white-space: pre-wrap; }
+.answer-box.submitted { background: var(--color-danger-soft, #fff1f2); }
+.answer-box.expected { background: var(--color-success-soft, #ecfdf5); }
+@media (max-width: 720px) {
+  .review-progress { align-items: stretch; flex-direction: column; gap: 12px; }
+  .answer-comparison { grid-template-columns: 1fr; }
 }
 
 .explanation {

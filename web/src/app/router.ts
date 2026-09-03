@@ -117,6 +117,12 @@ const router = createRouter({
           meta: { title: '测验结果' },
         },
         {
+          path: 'wrong-questions',
+          name: 'wrong-questions',
+          component: () => import('@/modules/assessment/WrongQuestionsView.vue'),
+          meta: { title: '错题集' },
+        },
+        {
           path: 'mastery',
           name: 'mastery',
           component: () => import('@/modules/assessment/MasteryView.vue'),
