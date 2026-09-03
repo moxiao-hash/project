@@ -110,6 +110,7 @@ public class QuizAttemptEntity {
     public String getAnswersJson() { return answersJson; }
     public String getEvaluationJson() { return evaluationJson; }
     public String getWarning() { return warning; }
+    public Instant getCreatedAt() { return createdAt; }
 
     public void complete(double finalScore, String evaluationJson, Instant now) {
         this.score = finalScore;

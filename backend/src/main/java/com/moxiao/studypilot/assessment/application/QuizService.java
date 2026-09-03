@@ -72,6 +72,7 @@ public class QuizService {
     private final RoadmapQuizProgressService roadmapQuizProgressService;
     private final RoadmapStageGraduationService roadmapStageGraduationService;
     private final RoadmapDiagnosticService roadmapDiagnosticService;
+    private final WrongQuestionService wrongQuestionService;
 
     public QuizService(
             UserAccountJpaRepository userRepository,
@@ -93,7 +94,8 @@ public class QuizService {
             RoadmapNodePrerequisiteJpaRepository prerequisiteRepository,
             RoadmapQuizProgressService roadmapQuizProgressService,
             RoadmapStageGraduationService roadmapStageGraduationService,
-            RoadmapDiagnosticService roadmapDiagnosticService
+            RoadmapDiagnosticService roadmapDiagnosticService,
+            WrongQuestionService wrongQuestionService
     ) {
         this.userRepository = userRepository;
         this.quizRepository = quizRepository;
@@ -115,6 +117,7 @@ public class QuizService {
         this.roadmapQuizProgressService = roadmapQuizProgressService;
         this.roadmapStageGraduationService = roadmapStageGraduationService;
         this.roadmapDiagnosticService = roadmapDiagnosticService;
+        this.wrongQuestionService = wrongQuestionService;
     }
 
     @Transactional
@@ -346,6 +349,7 @@ public class QuizService {
         if (existing.isPresent()) {
             return toAttemptResponse(existing.get(), bundle.questions());
         }
+        wrongQuestionService.requireReviewOpen(ownerId, quizId);
         if (attemptRepository.existsByOwnerIdAndQuizIdAndStatus(
                 ownerId, quizId, QuizAttemptStatus.EVALUATING
         )) {
@@ -374,7 +378,10 @@ public class QuizService {
                     throw new IllegalArgumentException("提交的编程题与测验不匹配");
                 }
                 results.add(new QuizAttemptResponse.QuestionResult(
-                        question.getId(), false, question.getKnowledgePoint(),
+                        question.getId(), question.getType(), question.getQuestionText(),
+                        question.getOptions(), Set.of(), submittedCode.get(question.getId()),
+                        question.getCorrectAnswers(), question.getReferenceAnswer(),
+                        false, question.getKnowledgePoint(),
                         question.getExplanation(), "PENDING_AI_EVALUATION", null, null
                 ));
                 continue;
@@ -389,6 +396,8 @@ public class QuizService {
             }
             results.add(new QuizAttemptResponse.QuestionResult(
                     question.getId(),
+                    question.getType(), question.getQuestionText(), question.getOptions(),
+                    selected, null, question.getCorrectAnswers(), question.getReferenceAnswer(),
                     correct,
                     question.getKnowledgePoint(),
                     question.getExplanation(),
@@ -419,6 +428,7 @@ public class QuizService {
                 null,
                 now
         ));
+        QuizAttemptResponse.ReviewProgress reviewProgress = null;
         if (!submittedCode.isEmpty()) {
             if (bundle.quiz().getPurpose() == RoadmapQuizPurpose.NODE) {
                 roadmapQuizProgressService.markEvaluating(bundle.quiz(), now);
@@ -448,9 +458,12 @@ public class QuizService {
             }
             roadmapStageGraduationService.recordQuizResult(bundle.quiz(), objectiveScore, now);
             roadmapDiagnosticService.recordQuizResult(bundle.quiz(), bundle.questions(), results, now);
+            reviewProgress = wrongQuestionService.recordTerminalAttempt(
+                    bundle.quiz(), attempt, bundle.questions(), results, false, now);
         }
         return new QuizAttemptResponse(
-                attemptId, objectiveScore, attemptStatus.name(), null, results
+                attemptId, quizId, objectiveScore, attemptStatus.name(), null, results,
+                reviewProgress
         );
     }
 
@@ -535,7 +548,13 @@ public class QuizService {
             roadmapQuizProgressService.recordResult(quiz, finalScore, now);
         }
         roadmapStageGraduationService.recordQuizResult(quiz, finalScore, now);
-        return toAttemptResponse(attemptRepository.save(attempt), questions);
+        QuizAttemptEntity savedAttempt = attemptRepository.save(attempt);
+        QuizAttemptResponse response = toAttemptResponse(savedAttempt, questions);
+        QuizAttemptResponse.ReviewProgress reviewProgress = wrongQuestionService.recordTerminalAttempt(
+                quiz, savedAttempt, questions, response.results(), false, now);
+        return new QuizAttemptResponse(
+                response.id(), response.quizId(), response.score(), response.status(),
+                response.warning(), response.results(), reviewProgress);
     }
 
     @Transactional
@@ -554,7 +573,13 @@ public class QuizService {
             QuizAttemptEntity attempt = attemptRepository.findById(job.getAttemptId())
                     .orElseThrow();
             attempt.partiallyGrade("代码评估失败，已仅保留客观题成绩", Instant.now());
-            attemptRepository.save(attempt);
+            QuizAttemptEntity savedAttempt = attemptRepository.save(attempt);
+            List<QuestionEntity> questions = questionRepository
+                    .findAllByQuizIdOrderByPosition(attempt.getQuizId());
+            QuizEntity quiz = quizRepository.findById(attempt.getQuizId()).orElseThrow();
+            QuizAttemptResponse response = toAttemptResponse(savedAttempt, questions);
+            wrongQuestionService.recordTerminalAttempt(
+                    quiz, savedAttempt, questions, response.results(), false, Instant.now());
         }
     }
 
@@ -579,6 +604,11 @@ public class QuizService {
                         SubmitQuizAttemptRequest.AnswerInput::questionId,
                         answer -> answer.selectedAnswers() == null
                                 ? Set.of() : answer.selectedAnswers()));
+        Map<String, String> submittedCode = submitted.answers().stream()
+                .filter(answer -> answer.codeAnswer() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        SubmitQuizAttemptRequest.AnswerInput::questionId,
+                        SubmitQuizAttemptRequest.AnswerInput::codeAnswer));
         Map<String, Map<String, Object>> evaluations = attempt.getEvaluationJson() == null
                 ? Map.of()
                 : ((List<Map<String, Object>>) objectMapper.readValue(
@@ -590,12 +620,18 @@ public class QuizService {
                 Map<String, Object> evaluation = evaluations.get(question.getId());
                 if (evaluation == null) {
                     results.add(new QuizAttemptResponse.QuestionResult(
-                            question.getId(), false, question.getKnowledgePoint(),
+                            question.getId(), question.getType(), question.getQuestionText(),
+                            question.getOptions(), Set.of(), submittedCode.get(question.getId()),
+                            question.getCorrectAnswers(), question.getReferenceAnswer(),
+                            false, question.getKnowledgePoint(),
                             question.getExplanation(), "PENDING_AI_EVALUATION", null, null));
                     continue;
                 }
                 results.add(new QuizAttemptResponse.QuestionResult(
                         question.getId(),
+                        question.getType(), question.getQuestionText(), question.getOptions(),
+                        Set.of(), submittedCode.get(question.getId()), question.getCorrectAnswers(),
+                        question.getReferenceAnswer(),
                         ((Number) evaluation.get("score")).doubleValue() >= 70,
                         question.getKnowledgePoint(),
                         question.getExplanation(),
@@ -608,14 +644,32 @@ public class QuizService {
             boolean correct = selected.getOrDefault(question.getId(), Set.of())
                     .equals(question.getCorrectAnswers());
             results.add(new QuizAttemptResponse.QuestionResult(
-                    question.getId(), correct, question.getKnowledgePoint(),
+                    question.getId(), question.getType(), question.getQuestionText(),
+                    question.getOptions(), selected.getOrDefault(question.getId(), Set.of()),
+                    null, question.getCorrectAnswers(), question.getReferenceAnswer(),
+                    correct, question.getKnowledgePoint(),
                     question.getExplanation(), "DETERMINISTIC",
                     correct ? 100.0 : 0.0, null));
         }
         return new QuizAttemptResponse(
-                attempt.getId(), attempt.getScore(), attempt.getStatus().name(),
-                attempt.getWarning(), results
+                attempt.getId(), attempt.getQuizId(), attempt.getScore(), attempt.getStatus().name(),
+                attempt.getWarning(), results,
+                wrongQuestionService.progressForQuiz(attempt.getOwnerId(), attempt.getQuizId())
         );
+    }
+
+    @Transactional
+    public void backfillWrongQuestions() {
+        for (QuizAttemptEntity attempt : attemptRepository.findAllByOrderByCreatedAtAsc()) {
+            if (attempt.getStatus() == QuizAttemptStatus.EVALUATING) continue;
+            QuizEntity quiz = quizRepository.findById(attempt.getQuizId()).orElse(null);
+            if (quiz == null) continue;
+            List<QuestionEntity> questions = questionRepository
+                    .findAllByQuizIdOrderByPosition(attempt.getQuizId());
+            QuizAttemptResponse response = toAttemptResponse(attempt, questions);
+            wrongQuestionService.recordTerminalAttempt(
+                    quiz, attempt, questions, response.results(), false, attempt.getCreatedAt());
+        }
     }
 
     private double calculateAdaptiveQuizScore(

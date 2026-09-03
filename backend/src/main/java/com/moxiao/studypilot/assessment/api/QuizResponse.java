@@ -5,12 +5,14 @@ import com.moxiao.studypilot.assessment.infrastructure.QuestionEntity;
 import com.moxiao.studypilot.assessment.infrastructure.QuizEntity;
 
 import java.util.List;
+import com.moxiao.studypilot.assessment.domain.QuizKind;
 
 public record QuizResponse(
         String id,
         String materialId,
         String taskId,
         String lessonId,
+        QuizKind kind,
         String title,
         String modelName,
         List<QuestionResponse> questions
@@ -21,6 +23,7 @@ public record QuizResponse(
                 quiz.getMaterialId(),
                 quiz.getTaskId(),
                 quiz.getLessonId(),
+                quiz.getKind(),
                 quiz.getTitle(),
                 quiz.getModelName(),
                 questions.stream().map(QuestionResponse::from).toList()

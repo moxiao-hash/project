@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.assessment.infrastructure;
 
 import com.moxiao.studypilot.roadmap.domain.RoadmapQuizPurpose;
+import com.moxiao.studypilot.assessment.domain.QuizKind;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -56,6 +57,15 @@ public class QuizEntity {
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(
+            name = "quiz_kind",
+            nullable = false,
+            length = 30,
+            columnDefinition = "varchar(30) default 'GENERATED'"
+    )
+    private QuizKind kind = QuizKind.GENERATED;
 
     protected QuizEntity() {
     }
@@ -134,6 +144,11 @@ public class QuizEntity {
     public String getRoadmapStageId() { return roadmapStageId; }
     public String getRoadmapTemplateId() { return roadmapTemplateId; }
     public RoadmapQuizPurpose getPurpose() { return purpose; }
+    public QuizKind getKind() { return kind; }
+
+    public void markAsWrongQuestionReview() {
+        this.kind = QuizKind.WRONG_QUESTION_REVIEW;
+    }
 
     public String getTitle() {
         return title;

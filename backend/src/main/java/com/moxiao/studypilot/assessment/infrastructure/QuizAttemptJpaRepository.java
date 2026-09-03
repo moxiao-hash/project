@@ -4,6 +4,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import com.moxiao.studypilot.assessment.domain.QuizAttemptStatus;
 
 import java.util.Optional;
+import java.util.List;
 
 public interface QuizAttemptJpaRepository extends JpaRepository<QuizAttemptEntity, String> {
     Optional<QuizAttemptEntity> findByOwnerIdAndQuizIdAndIdempotencyKey(
@@ -22,4 +23,6 @@ public interface QuizAttemptJpaRepository extends JpaRepository<QuizAttemptEntit
 
     Optional<QuizAttemptEntity> findFirstByOwnerIdAndQuizIdOrderByCreatedAtDesc(
             String ownerId, String quizId);
+
+    List<QuizAttemptEntity> findAllByOrderByCreatedAtAsc();
 }
