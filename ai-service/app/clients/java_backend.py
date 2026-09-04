@@ -31,6 +31,7 @@ from app.schemas.learning import (
     PlanAdjustment,
 )
 from app.search.models import WebSearchOutcome
+from app.unified_agent.models import ToolDescriptor
 
 
 class JavaBackendError(RuntimeError):
@@ -578,6 +579,33 @@ class JavaBackendClient:
             body["id"],
             tuple(result["id"] for result in body["results"]),
         )
+
+    async def get_agent_tool_catalog(self) -> list[ToolDescriptor]:
+        """读取 Java 发布的唯一可信工具目录。"""
+
+        response = await self._request("GET", "/internal/agent-tools/catalog")
+        payload = response.json()
+        return TypeAdapter(list[ToolDescriptor]).validate_python(payload)
+
+    async def invoke_agent_tool(
+        self,
+        tool_name: str,
+        owner_id: str,
+        arguments: dict[str, Any],
+        idempotency_key: str | None = None,
+    ) -> dict[str, Any]:
+        """通过类型化 Java 网关调用工具，绝不接受模型提供的 URL。"""
+
+        response = await self._request(
+            "POST",
+            f"/internal/agent-tools/{tool_name}/invoke",
+            json={
+                "ownerId": owner_id,
+                "idempotencyKey": idempotency_key,
+                "arguments": arguments,
+            },
+        )
+        return response.json()
 
     async def _request(
         self,
