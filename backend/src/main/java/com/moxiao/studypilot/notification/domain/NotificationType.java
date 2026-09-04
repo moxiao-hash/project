@@ -6,5 +6,7 @@ public enum NotificationType {
     MATERIAL_READY,
     QUIZ_READY,
     TASK_OVERDUE,
-    AGENT_FAILED
+    AGENT_FAILED,
+    AGENT_ACTION_READY,
+    AGENT_ACTION_COMPLETED
 }

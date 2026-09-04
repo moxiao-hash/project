@@ -6,6 +6,7 @@ public record AgentToolInvocationResponse(
         String toolName,
         int toolVersion,
         JsonNode data,
-        boolean truncated
+        boolean truncated,
+        AgentToolActionResponse action
 ) {
 }

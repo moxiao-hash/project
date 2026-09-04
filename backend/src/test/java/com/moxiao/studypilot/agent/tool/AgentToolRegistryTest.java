@@ -25,7 +25,7 @@ class AgentToolRegistryTest {
                 registry.catalog().stream().map(AgentToolDescriptor::name).toList());
         AgentToolInvocationResponse response = registry.invoke(
                 "learning.context.get",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode()));
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode()));
 
         assertEquals("learning.context.get", response.toolName());
         assertEquals("server-derived", response.data().get("owner").asText());
@@ -40,10 +40,10 @@ class AgentToolRegistryTest {
         AgentToolRegistry registry = new AgentToolRegistry(List.of(handler), objectMapper);
         assertThrows(IllegalArgumentException.class, () -> registry.invoke(
                 "missing.tool",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode())));
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode())));
         assertThrows(IllegalArgumentException.class, () -> registry.invoke(
                 "learning.context.get",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode()
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode()
                         .put("ownerId", "attacker"))));
     }
 
@@ -66,19 +66,19 @@ class AgentToolRegistryTest {
 
         assertThrows(IllegalArgumentException.class, () -> registry.invoke(
                 "roadmap.node.get",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode())));
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode())));
         assertThrows(IllegalArgumentException.class, () -> registry.invoke(
                 "roadmap.node.get",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode()
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode()
                         .put("nodeId", 42))));
         assertThrows(IllegalArgumentException.class, () -> registry.invoke(
                 "roadmap.node.get",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode()
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode()
                         .put("nodeId", "node-1").put("extra", true))));
 
         AgentToolInvocationResponse response = registry.invoke(
                 "roadmap.node.get",
-                new AgentToolInvocationRequest("user-1", objectMapper.createObjectNode()
+                new AgentToolInvocationRequest("user-1", null, objectMapper.createObjectNode()
                         .put("nodeId", "node-1")));
         assertTrue(response.truncated());
         assertTrue(objectMapper.writeValueAsBytes(response.data()).length <= 65_536);

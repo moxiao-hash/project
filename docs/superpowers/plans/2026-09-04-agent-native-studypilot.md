@@ -12,7 +12,7 @@
 
 - [x] Task 12：固化工具、UI Action、SSE 事件和页面能力矩阵；明确学习真实性和高风险边界。
 - [x] Task 13：Java 类型化 Tool Registry、内部目录/调用接口和动态学习上下文；先接入只读与导航工具。
-- [ ] Task 14：业务写工具接入 AgentExecution、Grant、通知、审计、幂等和专用确认。
+- [x] Task 14：业务写工具接入 AgentExecution、Grant、通知、审计、幂等和专用确认。
 - [ ] Task 15：Unified LangGraph Supervisor 复用现有子图，增加循环、预算、取消、注入和失败恢复。
 - [ ] Task 16：加密 SQLite 会话、轮次和事件持久化；Java SSE 代理、断线续传和重启恢复。
 - [ ] Task 17：新增 `/assistant` 首页、全局快捷入口、过程卡片和白名单 UI Action Dispatcher。

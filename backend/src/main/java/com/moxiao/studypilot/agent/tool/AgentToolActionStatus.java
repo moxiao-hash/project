@@ -1,9 +1,9 @@
-package com.moxiao.studypilot.agent.domain;
+package com.moxiao.studypilot.agent.tool;
 
-public enum ExecutionStatus {
+public enum AgentToolActionStatus {
     WAITING_AUTHORIZATION,
     WAITING_CONFIRMATION,
-    PENDING,
+    READY,
     RUNNING,
     SUCCEEDED,
     FAILED,

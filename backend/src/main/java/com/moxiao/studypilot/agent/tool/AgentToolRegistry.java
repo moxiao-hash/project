@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.agent.tool;
 
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -18,9 +19,29 @@ public class AgentToolRegistry {
 
     private final Map<String, AgentToolHandler> handlers;
     private final ObjectMapper objectMapper;
+    private final AgentToolActionService actionService;
 
-    public AgentToolRegistry(List<AgentToolHandler> handlers, ObjectMapper objectMapper) {
+    @Autowired
+    public AgentToolRegistry(
+            List<AgentToolHandler> handlers,
+            ObjectMapper objectMapper,
+            AgentToolActionService actionService
+    ) {
+        this(handlers, objectMapper, actionService, true);
+    }
+
+    AgentToolRegistry(List<AgentToolHandler> handlers, ObjectMapper objectMapper) {
+        this(handlers, objectMapper, null, true);
+    }
+
+    private AgentToolRegistry(
+            List<AgentToolHandler> handlers,
+            ObjectMapper objectMapper,
+            AgentToolActionService actionService,
+            boolean ignored
+    ) {
         this.objectMapper = objectMapper;
+        this.actionService = actionService;
         Map<String, AgentToolHandler> byName = new TreeMap<>();
         for (AgentToolHandler handler : handlers) {
             AgentToolDescriptor descriptor = handler.descriptor();
@@ -43,18 +64,31 @@ public class AgentToolRegistry {
         JsonNode arguments = request.arguments() == null
                 ? objectMapper.createObjectNode() : request.arguments();
         validateArguments(arguments, handler.descriptor().inputSchema());
+        if (handler.descriptor().effect() == AgentToolEffect.WRITE
+                || handler.descriptor().effect() == AgentToolEffect.LOCAL) {
+            if (actionService == null || !(handler instanceof GovernedAgentToolHandler governed)) {
+                throw new IllegalStateException("写工具没有接入执行治理: " + toolName);
+            }
+            if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
+                throw new IllegalArgumentException("写工具必须提供幂等键");
+            }
+            AgentToolActionResponse action = actionService.prepare(
+                    governed, request.ownerId(), request.idempotencyKey().trim(), arguments);
+            return new AgentToolInvocationResponse(
+                    toolName, handler.descriptor().version(), action.result(), false, action);
+        }
         JsonNode data = objectMapper.valueToTree(
                 handler.invoke(new AgentToolContext(request.ownerId()), arguments));
         int bytes = objectMapper.writeValueAsBytes(data).length;
         if (bytes <= MAX_OUTPUT_BYTES) {
             return new AgentToolInvocationResponse(
-                    toolName, handler.descriptor().version(), data, false);
+                    toolName, handler.descriptor().version(), data, false, null);
         }
         JsonNode clipped = objectMapper.createObjectNode()
                 .put("warning", "工具输出超过安全上限，已裁剪；请使用更具体的查询参数")
                 .put("originalBytes", bytes);
         return new AgentToolInvocationResponse(
-                toolName, handler.descriptor().version(), clipped, true);
+                toolName, handler.descriptor().version(), clipped, true, null);
     }
 
     private void validateArguments(JsonNode arguments, JsonNode schema) {

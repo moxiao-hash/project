@@ -80,6 +80,14 @@ public class AgentGovernanceService {
     }
 
     @Transactional
+    public AgentExecutionEntity reject(String ownerId, String executionId) {
+        AgentExecutionEntity execution = requireOwnedExecution(ownerId, executionId);
+        execution.reject(Instant.now());
+        audit(ownerId, "EXECUTION_REJECTED", "AGENT_EXECUTION", executionId, "用户已拒绝");
+        return execution;
+    }
+
+    @Transactional
     public AgentExecutionEntity update(
             String executionId,
             UpdateAgentExecutionRequest request

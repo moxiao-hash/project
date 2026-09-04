@@ -115,6 +115,15 @@ public class AgentExecutionEntity {
         updatedAt = now;
     }
 
+    public void reject(Instant now) {
+        if (status != ExecutionStatus.WAITING_CONFIRMATION
+                && status != ExecutionStatus.WAITING_AUTHORIZATION) {
+            throw new IllegalArgumentException("当前执行不能拒绝");
+        }
+        status = ExecutionStatus.REJECTED;
+        updatedAt = now;
+    }
+
     public void update(
             ExecutionStatus status,
             String resultSummary,
