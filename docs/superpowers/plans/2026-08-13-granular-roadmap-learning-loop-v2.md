@@ -135,9 +135,9 @@
 
 ### Task 11: Register owner-scoped workspaces and artifact submissions
 
-- [ ] Write failing tests for workspace CRUD, canonical absolute roots, owner isolation, symlink/path traversal rejection, and artifact state transitions.
-- [ ] Implement `/api/workspaces` and `/api/roadmap-artifacts`; store node/module/stage snapshot, test evidence and immutable review history.
-- [ ] Commit `feat: register roadmap project evidence`.
+- [x] Write failing tests for workspace CRUD, canonical absolute roots, owner isolation, symlink/path traversal rejection, and artifact state transitions.
+- [x] Implement `/api/workspaces` and `/api/roadmap-artifacts`; store node/module/stage snapshot, test evidence and immutable review history.
+- [x] Commit `feat: register roadmap project evidence`.
 
 ### Task 12: Add governed dependency preparation and runner executions
 

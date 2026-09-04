@@ -180,6 +180,18 @@ public class UserRoadmapNodeEntity {
         }
     }
 
+    public void submitArtifact(Instant now) {
+        Objects.requireNonNull(now, "now must not be null");
+        if (artifactStatus == ArtifactStatus.NOT_REQUIRED) {
+            throw new IllegalStateException("该路线节点不要求实践成果: " + nodeId);
+        }
+        artifactStatus = ArtifactStatus.SUBMITTED;
+        if (learningStatus == LearningStatus.NOT_STARTED) {
+            learningStatus = LearningStatus.IN_PROGRESS;
+        }
+        updatedAt = now;
+    }
+
     public void recordQuizResult(double score, Instant now) {
         Objects.requireNonNull(now, "now must not be null");
         if (quizStatus == QuizStatus.PASSED) {
