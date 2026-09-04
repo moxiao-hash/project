@@ -91,6 +91,13 @@ class AssistantMessage(JavaContractModel):
     content: str
 
 
+class AssistantEvent(JavaContractModel):
+    sequence: int = Field(ge=1)
+    type: str
+    conversation_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
 class AssistantConversationSnapshot(JavaContractModel):
     conversation_id: str
     owner_id: str

@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import suppress
 
 from app.unified_agent.models import (
     AssistantConversationStatus,
@@ -184,3 +185,29 @@ async def _ambiguous_write_request_is_clarified_without_write_tool() -> None:
     assert "具体" in result.reply
     assert [call[0] for call in java.calls] == ["learning.context.get"]
     assert all(call[1] == "user-1" for call in java.calls)
+
+
+def test_failed_tool_turn_clears_active_state_and_records_failure_event() -> None:
+    asyncio.run(_failed_tool_turn_clears_active_state_and_records_failure_event())
+
+
+async def _failed_tool_turn_clears_active_state_and_records_failure_event() -> None:
+    java = FakeJavaBackend()
+    service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash")
+    conversation = await service.create_conversation("user-1")
+
+    async def fail(*_args, **_kwargs):
+        raise RuntimeError("java unavailable")
+
+    java.invoke_agent_tool = fail
+    with suppress(RuntimeError):
+        await service.send_message(
+            conversation.conversation_id,
+            "打开错题集",
+            "assistant-turn:failed-1",
+            "user-1",
+            {},
+        )
+    events = await service.list_events(conversation.conversation_id, "user-1")
+
+    assert events[-1].type == "TURN_FAILED"

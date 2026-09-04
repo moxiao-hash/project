@@ -14,7 +14,7 @@
 - [x] Task 13：Java 类型化 Tool Registry、内部目录/调用接口和动态学习上下文；先接入只读与导航工具。
 - [x] Task 14：业务写工具接入 AgentExecution、Grant、通知、审计、幂等和专用确认。
 - [x] Task 15：Unified LangGraph Supervisor 复用现有子图，增加循环、预算、取消、注入和失败恢复。
-- [ ] Task 16：加密 SQLite 会话、轮次和事件持久化；Java SSE 代理、断线续传和重启恢复。
+- [x] Task 16：加密 SQLite 会话、轮次和事件持久化；Java SSE 代理、断线续传和重启恢复。
 - [ ] Task 17：新增 `/assistant` 首页、全局快捷入口、过程卡片和白名单 UI Action Dispatcher。
 - [ ] Task 18：补齐路线、今日、测验、错题、掌握度、资料、计划、通知、设置、工作区全部页面能力。
 - [ ] Task 19：主动自动化规则、租约、授权内低风险执行、高风险通知和全局暂停。
@@ -49,6 +49,17 @@
 - [x] 工具只能来自 Java 发布的类型化目录，Python 不接受模型构造的 URL、SQL 或任意调用目标。
 - [x] 结构化上下文中的自然语言仅作不可信数据，Supervisor 不把资料或网页正文解释成工具指令。
 - [x] Python 全量 260 项测试和 Ruff 校验通过。
+
+## Task 16 验收证据
+
+- [x] 统一会话快照、消息、幂等轮次结果和可重放事件写入既有 AES-GCM 加密 SQLite。
+- [x] FastAPI 服务对象重建后可以按会话 ID 和 owner 恢复，其他 owner 得不到密文数据。
+- [x] 事件使用严格递增 sequence，支持 `afterSequence` 游标，只返回尚未消费的事件。
+- [x] Java 提供 `/api/assistant/conversations/**` Bearer 公共门面，并覆盖创建、消息、查询、确认、拒绝和取消。
+- [x] SSE 门面发送心跳、事件 ID、事件类型和 JSON 数据；`Last-Event-ID` 会转换为内部续传游标。
+- [x] 用户身份只从 Bearer Token 注入，浏览器伪造的 `ownerId` 不会传给 Python。
+- [x] 工具失败会保存 `TURN_FAILED` 事件并释放活动轮次；相同幂等键在服务重启后仍返回原结果。
+- [x] Java 全量 302 项、Python全量 269 项测试通过，Ruff 校验通过。
 
 ## 提交映射
 

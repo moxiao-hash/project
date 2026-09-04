@@ -607,6 +607,26 @@ class JavaBackendClient:
         )
         return response.json()
 
+    async def confirm_agent_tool_action(
+        self, action_id: str, owner_id: str
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            f"/internal/agent-tool-actions/{action_id}/confirm",
+            json={"ownerId": owner_id},
+        )
+        return response.json()
+
+    async def reject_agent_tool_action(
+        self, action_id: str, owner_id: str
+    ) -> dict[str, Any]:
+        response = await self._request(
+            "POST",
+            f"/internal/agent-tool-actions/{action_id}/reject",
+            json={"ownerId": owner_id},
+        )
+        return response.json()
+
     async def _request(
         self,
         method: str,

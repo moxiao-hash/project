@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.core.security import require_internal_token
 from app.unified_agent.models import (
     AssistantConversationSnapshot,
+    AssistantEvent,
     CreateAssistantConversationRequest,
     SendAssistantMessageRequest,
 )
@@ -72,5 +73,66 @@ async def send_message(
             body.owner_id,
             body.client_context,
         )
+    except Exception as exc:
+        raise _translate(exc) from exc
+
+
+@router.get("/{conversation_id}/events", response_model=list[AssistantEvent])
+async def list_events(
+    conversation_id: str,
+    owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
+    service: Annotated[UnifiedAgentSupervisor, Depends(get_unified_agent_service)],
+    after_sequence: Annotated[int, Query(alias="afterSequence", ge=0)] = 0,
+) -> list[AssistantEvent]:
+    try:
+        return await service.list_events(conversation_id, owner_id, after_sequence)
+    except Exception as exc:
+        raise _translate(exc) from exc
+
+
+@router.post(
+    "/{conversation_id}/actions/{action_id}/confirm",
+    response_model=AssistantConversationSnapshot,
+)
+async def confirm_action(
+    conversation_id: str,
+    action_id: str,
+    body: CreateAssistantConversationRequest,
+    service: Annotated[UnifiedAgentSupervisor, Depends(get_unified_agent_service)],
+) -> AssistantConversationSnapshot:
+    try:
+        return await service.confirm_action(conversation_id, action_id, body.owner_id)
+    except Exception as exc:
+        raise _translate(exc) from exc
+
+
+@router.post(
+    "/{conversation_id}/actions/{action_id}/reject",
+    response_model=AssistantConversationSnapshot,
+)
+async def reject_action(
+    conversation_id: str,
+    action_id: str,
+    body: CreateAssistantConversationRequest,
+    service: Annotated[UnifiedAgentSupervisor, Depends(get_unified_agent_service)],
+) -> AssistantConversationSnapshot:
+    try:
+        return await service.reject_action(conversation_id, action_id, body.owner_id)
+    except Exception as exc:
+        raise _translate(exc) from exc
+
+
+@router.post(
+    "/{conversation_id}/turns/{turn_id}/cancel",
+    response_model=AssistantConversationSnapshot,
+)
+async def cancel_turn(
+    conversation_id: str,
+    turn_id: str,
+    body: CreateAssistantConversationRequest,
+    service: Annotated[UnifiedAgentSupervisor, Depends(get_unified_agent_service)],
+) -> AssistantConversationSnapshot:
+    try:
+        return await service.cancel_turn(conversation_id, turn_id, body.owner_id)
     except Exception as exc:
         raise _translate(exc) from exc

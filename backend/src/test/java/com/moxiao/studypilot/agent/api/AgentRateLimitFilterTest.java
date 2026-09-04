@@ -34,14 +34,14 @@ class AgentRateLimitFilterTest {
         try {
             MockHttpServletRequest first = new MockHttpServletRequest(
                     "POST",
-                    "/api/agent/knowledge-conversations/id/messages"
+                    "/api/assistant/conversations/id/messages"
             );
             filter.doFilter(first, new MockHttpServletResponse(), (req, res) -> {
             });
 
             MockHttpServletRequest second = new MockHttpServletRequest(
                     "POST",
-                    "/api/agent/knowledge-conversations/id/messages"
+                    "/api/assistant/conversations/id/messages"
             );
             MockHttpServletResponse response = new MockHttpServletResponse();
             AtomicInteger calls = new AtomicInteger();

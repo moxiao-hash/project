@@ -8,9 +8,11 @@ from uuid import uuid4
 from langgraph.graph import END, START, StateGraph
 
 from app.clients.java_backend import JavaBackendClient
+from app.persistence.agent_state import AgentPersistence
 from app.unified_agent.models import (
     AssistantConversationSnapshot,
     AssistantConversationStatus,
+    AssistantEvent,
     AssistantIntent,
     AssistantMessage,
     PublicToolStep,
@@ -44,14 +46,24 @@ class _Conversation:
     snapshot: AssistantConversationSnapshot
     lock: asyncio.Lock
     turn_results: dict[str, AssistantConversationSnapshot]
+    events: list[AssistantEvent]
+    active_turn_id: str | None = None
+    cancel_requested_turn_id: str | None = None
 
 
 class UnifiedAgentSupervisor:
     """协调专用能力；不暴露思维链，也不把普通聊天当作确认。"""
 
-    def __init__(self, java_backend: JavaBackendClient, *, model_name: str) -> None:
+    def __init__(
+        self,
+        java_backend: JavaBackendClient,
+        *,
+        model_name: str,
+        persistence: AgentPersistence | None = None,
+    ) -> None:
         self._java = java_backend
         self._model_name = model_name
+        self._persistence = persistence
         self._conversations: dict[str, _Conversation] = {}
         self._graph = self._build_graph()
 
@@ -68,13 +80,129 @@ class UnifiedAgentSupervisor:
             snapshot=snapshot,
             lock=asyncio.Lock(),
             turn_results={},
+            events=[
+                AssistantEvent(
+                    sequence=1,
+                    type="TURN_COMPLETED",
+                    conversation_id=conversation_id,
+                    payload={"phase": "CONVERSATION_CREATED"},
+                )
+            ],
         )
+        await self._save(self._conversations[conversation_id])
         return snapshot
 
     async def get_conversation(
         self, conversation_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
-        return self._require(conversation_id, owner_id).snapshot
+        return (await self._require(conversation_id, owner_id)).snapshot
+
+    async def list_events(
+        self,
+        conversation_id: str,
+        owner_id: str,
+        after_sequence: int = 0,
+    ) -> list[AssistantEvent]:
+        conversation = await self._require(conversation_id, owner_id)
+        return [event for event in conversation.events if event.sequence > after_sequence]
+
+    async def confirm_action(
+        self, conversation_id: str, action_id: str, owner_id: str
+    ) -> AssistantConversationSnapshot:
+        conversation = await self._require(conversation_id, owner_id)
+        pending = conversation.snapshot.pending_action
+        if pending is None or pending.action_id != action_id:
+            raise AssistantConversationNotFoundError("待确认操作不存在")
+        response = await self._java.confirm_agent_tool_action(action_id, owner_id)
+        confirmed = type(pending).model_validate(response)
+        ui_actions = list(conversation.snapshot.ui_actions)
+        if confirmed.tool_name == "assessment.wrong_question_review.create":
+            result = confirmed.result if isinstance(confirmed.result, dict) else {}
+            quiz_id = result.get("quizId")
+            if isinstance(quiz_id, str) and quiz_id:
+                ui_actions.append(
+                    UiAction(
+                        route_key="QUIZ",
+                        params={"quizId": quiz_id},
+                        reason="开始已确认的错题重做测验",
+                    )
+                )
+        snapshot = conversation.snapshot.model_copy(
+            update={
+                "status": AssistantConversationStatus.COMPLETED,
+                "reply": "操作已确认并执行。",
+                "pending_action": None,
+                "ui_actions": ui_actions,
+                "messages": [
+                    *conversation.snapshot.messages,
+                    AssistantMessage(role="assistant", content="操作已确认并执行。"),
+                ],
+            }
+        )
+        conversation.snapshot = snapshot
+        conversation.events.append(
+            AssistantEvent(
+                sequence=len(conversation.events) + 1,
+                type="TURN_COMPLETED",
+                conversation_id=conversation_id,
+                payload={"actionId": action_id, "actionStatus": confirmed.status},
+            )
+        )
+        await self._save(conversation)
+        return snapshot
+
+    async def reject_action(
+        self, conversation_id: str, action_id: str, owner_id: str
+    ) -> AssistantConversationSnapshot:
+        conversation = await self._require(conversation_id, owner_id)
+        pending = conversation.snapshot.pending_action
+        if pending is None or pending.action_id != action_id:
+            raise AssistantConversationNotFoundError("待确认操作不存在")
+        await self._java.reject_agent_tool_action(action_id, owner_id)
+        snapshot = conversation.snapshot.model_copy(
+            update={
+                "status": AssistantConversationStatus.COMPLETED,
+                "reply": "操作已取消。",
+                "pending_action": None,
+                "messages": [
+                    *conversation.snapshot.messages,
+                    AssistantMessage(role="assistant", content="操作已取消。"),
+                ],
+            }
+        )
+        conversation.snapshot = snapshot
+        conversation.events.append(
+            AssistantEvent(
+                sequence=len(conversation.events) + 1,
+                type="TURN_COMPLETED",
+                conversation_id=conversation_id,
+                payload={"actionId": action_id, "actionStatus": "REJECTED"},
+            )
+        )
+        await self._save(conversation)
+        return snapshot
+
+    async def cancel_turn(
+        self, conversation_id: str, turn_id: str, owner_id: str
+    ) -> AssistantConversationSnapshot:
+        conversation = await self._require(conversation_id, owner_id)
+        if turn_id in conversation.turn_results:
+            return conversation.turn_results[turn_id]
+        if conversation.active_turn_id != turn_id:
+            raise AssistantConversationNotFoundError("正在执行的轮次不存在")
+        conversation.cancel_requested_turn_id = turn_id
+        conversation.events.append(
+            AssistantEvent(
+                sequence=len(conversation.events) + 1,
+                type="TURN_FAILED",
+                conversation_id=conversation_id,
+                payload={"turnId": turn_id, "reason": "CANCEL_REQUESTED"},
+            )
+        )
+        await self._save(conversation)
+        return conversation.snapshot.model_copy(
+            update={"reply": "已请求取消当前轮次，正在停止后续工具调用。"}
+        )
 
     async def send_message(
         self,
@@ -84,7 +212,7 @@ class UnifiedAgentSupervisor:
         owner_id: str,
         client_context: dict[str, Any],
     ) -> AssistantConversationSnapshot:
-        conversation = self._require(conversation_id, owner_id)
+        conversation = await self._require(conversation_id, owner_id)
         existing = conversation.turn_results.get(idempotency_key)
         if existing is not None:
             return existing
@@ -109,16 +237,46 @@ class UnifiedAgentSupervisor:
                 )
             else:
                 gateway = UnifiedToolGateway(self._java, owner_id, ToolBudget())
-                values = await self._graph.ainvoke(
-                    {
-                        "message": message,
-                        "idempotency_key": idempotency_key,
-                        # 客户端上下文只是提示。当前确定性路由不从中读取 ownerId，
-                        # 后续使用实体 ID 时仍必须由 Java 工具重新校验归属。
-                        "client_context": client_context,
-                        "gateway": gateway,
-                    }
-                )
+                conversation.active_turn_id = idempotency_key
+                try:
+                    values = await self._graph.ainvoke(
+                        {
+                            "message": message,
+                            "idempotency_key": idempotency_key,
+                            # 客户端上下文只是提示。当前确定性路由不从中读取 ownerId，
+                            # 后续使用实体 ID 时仍必须由 Java 工具重新校验归属。
+                            "client_context": client_context,
+                            "gateway": gateway,
+                        }
+                    )
+                except BaseException as exc:
+                    conversation.active_turn_id = None
+                    conversation.events.append(
+                        AssistantEvent(
+                            sequence=len(conversation.events) + 1,
+                            type="TURN_FAILED",
+                            conversation_id=conversation_id,
+                            payload={
+                                "turnId": idempotency_key,
+                                "errorType": type(exc).__name__,
+                            },
+                        )
+                    )
+                    await self._save(conversation)
+                    raise
+                conversation.active_turn_id = None
+                if conversation.cancel_requested_turn_id == idempotency_key:
+                    conversation.cancel_requested_turn_id = None
+                    result = conversation.snapshot.model_copy(
+                        update={
+                            "status": AssistantConversationStatus.FAILED,
+                            "reply": "本轮操作已取消。",
+                        }
+                    )
+                    conversation.snapshot = result
+                    conversation.turn_results[idempotency_key] = result
+                    await self._save(conversation)
+                    return result
                 pending_action = values.get("pending_action")
                 status = (
                     AssistantConversationStatus.WAITING_CONFIRMATION
@@ -143,13 +301,96 @@ class UnifiedAgentSupervisor:
                 )
             conversation.snapshot = result
             conversation.turn_results[idempotency_key] = result
+            self._append_turn_events(conversation, result)
+            await self._save(conversation)
             return result
 
-    def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
+    async def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
         conversation = self._conversations.get(conversation_id)
+        if conversation is None and self._persistence is not None:
+            payload = await self._persistence.store.load(
+                kind="unified-assistant",
+                conversation_id=conversation_id,
+                owner_id=owner_id,
+            )
+            if payload is not None:
+                snapshot = AssistantConversationSnapshot.model_validate(payload["snapshot"])
+                conversation = _Conversation(
+                    snapshot=snapshot,
+                    lock=asyncio.Lock(),
+                    turn_results={
+                        key: AssistantConversationSnapshot.model_validate(value)
+                        for key, value in payload.get("turnResults", {}).items()
+                    },
+                    events=[
+                        AssistantEvent.model_validate(value)
+                        for value in payload.get("events", [])
+                    ],
+                    active_turn_id=None,
+                    cancel_requested_turn_id=None,
+                )
+                self._conversations[conversation_id] = conversation
         if conversation is None or conversation.snapshot.owner_id != owner_id:
             raise AssistantConversationNotFoundError("统一 Agent 会话不存在")
         return conversation
+
+    async def _save(self, conversation: _Conversation) -> None:
+        if self._persistence is None:
+            return
+        await self._persistence.store.save(
+            kind="unified-assistant",
+            conversation_id=conversation.snapshot.conversation_id,
+            owner_id=conversation.snapshot.owner_id,
+            payload={
+                "snapshot": conversation.snapshot.model_dump(mode="json", by_alias=True),
+                "turnResults": {
+                    key: value.model_dump(mode="json", by_alias=True)
+                    for key, value in conversation.turn_results.items()
+                },
+                "events": [
+                    event.model_dump(mode="json", by_alias=True)
+                    for event in conversation.events
+                ],
+            },
+        )
+
+    @staticmethod
+    def _append_turn_events(
+        conversation: _Conversation,
+        snapshot: AssistantConversationSnapshot,
+    ) -> None:
+        event_types: list[tuple[str, dict[str, Any]]] = [
+            ("TURN_STARTED", {}),
+            ("CONTEXT_LOADED", {}),
+        ]
+        event_types.extend(
+            ("TOOL_SUCCEEDED", {"toolName": step.tool_name, "summary": step.summary})
+            for step in snapshot.tool_steps
+        )
+        if snapshot.pending_action is not None:
+            event_types.append(
+                (
+                    "ACTION_PREVIEW",
+                    {
+                        "actionId": snapshot.pending_action.action_id,
+                        "summary": snapshot.pending_action.summary,
+                    },
+                )
+            )
+        event_types.extend(
+            ("UI_ACTION", action.model_dump(mode="json", by_alias=True))
+            for action in snapshot.ui_actions
+        )
+        event_types.append(("TURN_COMPLETED", {"reply": snapshot.reply}))
+        for event_type, payload in event_types:
+            conversation.events.append(
+                AssistantEvent(
+                    sequence=len(conversation.events) + 1,
+                    type=event_type,
+                    conversation_id=snapshot.conversation_id,
+                    payload=payload,
+                )
+            )
 
     @staticmethod
     def _build_graph():

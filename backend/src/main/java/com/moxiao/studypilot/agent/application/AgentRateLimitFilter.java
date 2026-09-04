@@ -47,7 +47,8 @@ public class AgentRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/agent/");
+        String path = request.getRequestURI();
+        return !path.startsWith("/api/agent/") && !path.startsWith("/api/assistant/");
     }
 
     @Override

@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(webEnvironment = WebEnvironment.MOCK)
@@ -207,6 +208,74 @@ class AgentFacadeControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"taskId\":\"task-1\",\"webSearch\":\"AUTO\"}"),
                     "/internal/assessment/quizzes/generate", "POST");
+        } finally {
+            upstreamBody = null;
+        }
+    }
+
+    @Test
+    void unifiedAssistantFacadeInjectsOwnerAndMapsDedicatedActions() throws Exception {
+        Registration registration = registerUser();
+        String authorization = "Bearer " + registration.token();
+        upstreamStatus = 201;
+        assertForwarded(post("/api/assistant/conversations")
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ownerId\":\"attacker\"}"),
+                "/internal/assistant/conversations", "POST");
+        JsonNode createBody = objectMapper.readTree(LAST_REQUEST.get().body());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                registration.userId(), createBody.get("ownerId").asText());
+
+        upstreamStatus = 200;
+        assertForwarded(post("/api/assistant/conversations/{id}/messages", PLAN_CONVERSATION_ID)
+                        .header("Authorization", authorization)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"打开错题集\",\"idempotencyKey\":\"turn-1\"}"),
+                "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID + "/messages",
+                "POST");
+        assertForwarded(get("/api/assistant/conversations/{id}", PLAN_CONVERSATION_ID)
+                        .header("Authorization", authorization),
+                "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID
+                        + "?ownerId=" + registration.userId(), "GET");
+        assertForwarded(post("/api/assistant/conversations/{id}/actions/{actionId}/confirm",
+                        PLAN_CONVERSATION_ID, "action-1")
+                        .header("Authorization", authorization),
+                "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID
+                        + "/actions/action-1/confirm", "POST");
+        assertForwarded(post("/api/assistant/conversations/{id}/actions/{actionId}/reject",
+                        PLAN_CONVERSATION_ID, "action-1")
+                        .header("Authorization", authorization),
+                "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID
+                        + "/actions/action-1/reject", "POST");
+        assertForwarded(post("/api/assistant/conversations/{id}/turns/{turnId}/cancel",
+                        PLAN_CONVERSATION_ID, "turn-1")
+                        .header("Authorization", authorization),
+                "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID
+                        + "/turns/turn-1/cancel", "POST");
+    }
+
+    @Test
+    void unifiedEventEndpointReplaysSseAfterLastEventId() throws Exception {
+        Registration registration = registerUser();
+        upstreamStatus = 200;
+        upstreamBody = """
+                [{"sequence":3,"type":"TURN_COMPLETED","conversationId":"%s",\
+                "payload":{"reply":"done"}}]
+                """.formatted(PLAN_CONVERSATION_ID);
+        try {
+            mockMvc.perform(get("/api/assistant/conversations/{id}/events", PLAN_CONVERSATION_ID)
+                            .header("Authorization", "Bearer " + registration.token())
+                            .header("Last-Event-ID", "2"))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("id: 3")))
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                            "event: TURN_COMPLETED")));
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID
+                            + "/events?afterSequence=2&ownerId=" + registration.userId(),
+                    LAST_REQUEST.get().path());
         } finally {
             upstreamBody = null;
         }

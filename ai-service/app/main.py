@@ -286,6 +286,7 @@ async def lifespan(application: FastAPI):
         application.state.unified_agent_service = UnifiedAgentSupervisor(
             JavaBackendClient(settings),
             model_name=settings.model_name,
+            persistence=persistence,
         )
         scheduler = AsyncIOScheduler(timezone="UTC")
         scheduler.add_job(
