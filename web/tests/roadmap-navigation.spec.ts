@@ -281,11 +281,12 @@ describe('roadmap-first navigation', () => {
     }
 
     expect(groups.map((group) => group.text())).toEqual(['总览', '学习', 'AI 助手'])
-    expect(groupLinks(0)).toEqual(['/', '/notifications'])
+    expect(groupLinks(0)).toEqual(['/dashboard', '/notifications'])
     expect(groupLinks(1)).toEqual([
       '/roadmap', '/today', '/materials', '/wrong-questions', '/mastery',
     ])
     expect(wrapper.find('a[href="/wrong-questions"]').text()).toContain('错题集')
+    expect(wrapper.find('a[href="/"]').text()).toContain('Agent 首页')
     expect(wrapper.findAll('a[href="/today"]')).toHaveLength(1)
     expect(wrapper.find('a[href="/courses"]').exists()).toBe(false)
     expect(wrapper.find('a[href="/roadmap"]').classes()).toContain('active')

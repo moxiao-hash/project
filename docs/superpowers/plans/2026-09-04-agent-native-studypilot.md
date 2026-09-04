@@ -15,7 +15,7 @@
 - [x] Task 14：业务写工具接入 AgentExecution、Grant、通知、审计、幂等和专用确认。
 - [x] Task 15：Unified LangGraph Supervisor 复用现有子图，增加循环、预算、取消、注入和失败恢复。
 - [x] Task 16：加密 SQLite 会话、轮次和事件持久化；Java SSE 代理、断线续传和重启恢复。
-- [ ] Task 17：新增 `/assistant` 首页、全局快捷入口、过程卡片和白名单 UI Action Dispatcher。
+- [x] Task 17：新增 `/assistant` 首页、全局快捷入口、过程卡片和白名单 UI Action Dispatcher。
 - [ ] Task 18：补齐路线、今日、测验、错题、掌握度、资料、计划、通知、设置、工作区全部页面能力。
 - [ ] Task 19：主动自动化规则、租约、授权内低风险执行、高风险通知和全局暂停。
 - [ ] Task 20：固定 Agent 评测集、越权和 Prompt Injection 测试、循环与成本限制、健康指标页面。
@@ -60,6 +60,16 @@
 - [x] 用户身份只从 Bearer Token 注入，浏览器伪造的 `ownerId` 不会传给 Python。
 - [x] 工具失败会保存 `TURN_FAILED` 事件并释放活动轮次；相同幂等键在服务重启后仍返回原结果。
 - [x] Java 全量 302 项、Python全量 269 项测试通过，Ruff 校验通过。
+
+## Task 17 验收证据
+
+- [x] 登录后的 `/` 改为统一 Agent 主入口，原工作台保留在 `/dashboard`。
+- [x] 侧边栏固定提供 Agent 首页入口，传统路线、任务、资料、错题等菜单全部保留。
+- [x] 页面展示快捷指令、Markdown 对话、模型名称、公开工具步骤、警告和风险确认卡片。
+- [x] 助手消息使用安全 Markdown；用户消息继续按纯文本插值显示。
+- [x] UI Action Dispatcher 只接受固定 route key 和固定实体 ID 参数，拒绝 URL、脚本和多余参数。
+- [x] 写操作只能通过确认卡片调用专用 confirm/reject API，不能发送聊天文本代替确认。
+- [x] 前端全量 119 项测试、TypeScript、生产构建和 `git diff --check` 通过。
 
 ## 提交映射
 

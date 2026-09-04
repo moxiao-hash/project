@@ -22,6 +22,12 @@ const router = createRouter({
       children: [
         {
           path: '',
+          name: 'assistant',
+          component: () => import('@/modules/assistant/AssistantView.vue'),
+          meta: { title: 'StudyPilot Agent' },
+        },
+        {
+          path: 'dashboard',
           name: 'dashboard',
           component: () => import('@/modules/dashboard/DashboardView.vue'),
           meta: { title: '工作台' },
@@ -190,7 +196,7 @@ router.beforeEach(async (to) => {
     return { name: 'login', query: to.fullPath !== '/' ? { redirect: to.fullPath } : {} }
   }
   if (to.meta.public && auth.isAuthenticated && (to.name === 'login' || to.name === 'register')) {
-    return { name: 'dashboard' }
+    return { name: 'assistant' }
   }
   return true
 })

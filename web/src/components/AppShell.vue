@@ -6,6 +6,15 @@
         <span class="brand-name">StudyPilot</span>
       </div>
       <nav class="nav">
+        <RouterLink
+          to="/"
+          class="nav-item agent-home-link"
+          :class="{ active: route.name === 'assistant' }"
+          aria-label="Agent 首页"
+        >
+          <span class="nav-icon" aria-hidden="true">✦</span>
+          <span>Agent 首页</span>
+        </RouterLink>
         <template v-for="group in navGroups" :key="group.title">
           <div class="nav-group-title">{{ group.title }}</div>
           <RouterLink
@@ -75,7 +84,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
   {
     title: '总览',
     items: [
-      { to: '/', icon: '📊', label: '工作台', exact: true },
+      { to: '/dashboard', icon: '📊', label: '工作台', exact: true },
       { to: '/notifications', icon: '🔔', label: '通知' },
     ],
   },
@@ -163,6 +172,14 @@ async function onLogout() {
 .nav {
   flex: 1;
   padding: 4px 10px;
+}
+
+.agent-home-link {
+  margin: 4px 10px 10px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.32), rgba(139, 92, 246, 0.18));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .nav-group-title {
