@@ -75,6 +75,67 @@
         </button>
       </div>
     </form>
+
+    <section class="card automation-card">
+      <div class="row automation-heading">
+        <div>
+          <h2 class="section-title automation-title">主动 Agent</h2>
+          <p class="muted automation-copy">
+            只在你创建的规则和有效长期授权范围内运行；高风险操作仍会要求逐次确认。
+          </p>
+        </div>
+        <span class="spacer" />
+        <button
+          data-testid="automation-master-toggle"
+          type="button"
+          class="btn"
+          :class="automationSettings?.paused ? 'btn-primary' : 'btn-secondary'"
+          :disabled="automationSaving"
+          @click="toggleAllAutomation"
+        >
+          {{ automationSettings?.paused ? '恢复全部自动化' : '暂停全部自动化' }}
+        </button>
+      </div>
+
+      <div v-if="automationSettings?.paused" class="alert alert-warning">
+        全部主动自动化已暂停，已有规则和历史记录不会被删除。
+      </div>
+      <p v-if="automationError" class="field-error">{{ automationError }}</p>
+      <p v-if="automationLoading" class="muted">正在读取主动规则…</p>
+      <div v-else class="automation-list">
+        <div v-for="rule in automationRules" :key="rule.id" class="automation-rule">
+          <div>
+            <strong>{{ automationRuleLabels[rule.type] }}</strong>
+            <p class="muted rule-meta">
+              每天 {{ rule.localTime.slice(0, 5) }} · {{ rule.timezone }} ·
+              {{ rule.requiredScope }}
+            </p>
+          </div>
+          <span class="badge" :class="rule.status === 'ACTIVE' ? 'badge-success' : ''">
+            {{ rule.status === 'ACTIVE' ? '运行中' : '已暂停' }}
+          </span>
+          <button type="button" class="btn btn-ghost btn-sm" @click="toggleRule(rule)">
+            {{ rule.status === 'ACTIVE' ? '暂停' : '恢复' }}
+          </button>
+          <button type="button" class="btn btn-ghost btn-sm" @click="removeRule(rule.id)">
+            删除
+          </button>
+        </div>
+        <p v-if="automationRules.length === 0" class="muted">尚未创建主动规则。</p>
+      </div>
+
+      <div class="automation-create">
+        <select v-model="newRuleType" class="select">
+          <option v-for="(label, type) in automationRuleLabels" :key="type" :value="type">
+            {{ label }}
+          </option>
+        </select>
+        <input v-model="newRuleTime" class="input rule-time" type="time" />
+        <button type="button" class="btn btn-primary" :disabled="automationSaving" @click="addRule">
+          添加规则
+        </button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -82,10 +143,16 @@
 import { onMounted, ref } from 'vue'
 import { AxiosError } from 'axios'
 import { settingsApi } from '@/services/current/dashboard'
+import { assistantApi } from '@/services/current/assistant'
 import { describeError, getApiError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
 import { dayOfWeekLabels, privacyLevelLabels, weekendPreferenceLabels } from '@/utils/labels'
 import type { UserSettings } from '@/types/api'
+import type {
+  AutomationRule,
+  AutomationRuleType,
+  AutomationSettings,
+} from '@/types/assistant'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 
@@ -96,6 +163,21 @@ const error = ref('')
 const saving = ref(false)
 const saveError = ref('')
 const slotError = ref('')
+const automationRules = ref<AutomationRule[]>([])
+const automationSettings = ref<AutomationSettings | null>(null)
+const automationLoading = ref(true)
+const automationSaving = ref(false)
+const automationError = ref('')
+const newRuleType = ref<AutomationRuleType>('AUTHORIZED_PLAN_ADJUSTMENT')
+const newRuleTime = ref('00:15')
+
+const automationRuleLabels: Record<AutomationRuleType, string> = {
+  AUTHORIZED_PLAN_ADJUSTMENT: '夜间计划整理',
+  OVERDUE_NODE_ROLLOVER: '逾期节点滚动',
+  QUIZ_GENERATION_RETRY: '测验生成失败重试',
+  WEAKNESS_REVIEW_REMINDER: '薄弱点复习提醒',
+  ARTIFACT_REVIEW_REMINDER: '待验收成果提醒',
+}
 
 function defaultSettings(): UserSettings {
   return {
@@ -178,6 +260,88 @@ async function load() {
   } finally {
     loading.value = false
   }
+  await loadAutomation()
+}
+
+async function loadAutomation() {
+  automationLoading.value = true
+  automationError.value = ''
+  try {
+    const [rules, state] = await Promise.all([
+      assistantApi.listAutomationRules(),
+      assistantApi.getAutomationSettings(),
+    ])
+    automationRules.value = rules
+    automationSettings.value = state
+  } catch (e) {
+    automationError.value = describeError(e)
+  } finally {
+    automationLoading.value = false
+  }
+}
+
+async function toggleAllAutomation() {
+  if (!automationSettings.value || automationSaving.value) return
+  automationSaving.value = true
+  automationError.value = ''
+  try {
+    automationSettings.value = await assistantApi.updateAutomationSettings({
+      paused: !automationSettings.value.paused,
+    })
+  } catch (e) {
+    automationError.value = describeError(e)
+  } finally {
+    automationSaving.value = false
+  }
+}
+
+async function toggleRule(rule: AutomationRule) {
+  if (automationSaving.value) return
+  automationSaving.value = true
+  try {
+    const updated = await assistantApi.updateAutomationRule(rule.id, {
+      enabled: rule.status !== 'ACTIVE',
+    })
+    automationRules.value = automationRules.value.map((item) =>
+      item.id === rule.id ? updated : item,
+    )
+  } catch (e) {
+    automationError.value = describeError(e)
+  } finally {
+    automationSaving.value = false
+  }
+}
+
+async function removeRule(id: string) {
+  if (automationSaving.value) return
+  automationSaving.value = true
+  try {
+    await assistantApi.deleteAutomationRule(id)
+    automationRules.value = automationRules.value.filter((item) => item.id !== id)
+  } catch (e) {
+    automationError.value = describeError(e)
+  } finally {
+    automationSaving.value = false
+  }
+}
+
+async function addRule() {
+  if (!settings.value || automationSaving.value) return
+  automationSaving.value = true
+  try {
+    const created = await assistantApi.createAutomationRule({
+      type: newRuleType.value,
+      timezone: settings.value.timeZone,
+      localTime: newRuleTime.value,
+      enabled: true,
+    })
+    automationRules.value = [created, ...automationRules.value]
+    toast.success('主动规则已创建，请确认对应长期授权仍有效')
+  } catch (e) {
+    automationError.value = describeError(e)
+  } finally {
+    automationSaving.value = false
+  }
 }
 
 onMounted(load)
@@ -202,5 +366,53 @@ onMounted(load)
 
 .slot-time {
   width: 130px;
+}
+
+.automation-card {
+  margin-top: 20px;
+}
+
+.automation-heading {
+  align-items: flex-start;
+}
+
+.automation-title {
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+.automation-copy,
+.rule-meta {
+  font-size: 13px;
+}
+
+.automation-list {
+  margin-top: 16px;
+}
+
+.automation-rule {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.automation-create {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+
+.rule-time {
+  width: 140px;
+}
+
+@media (max-width: 720px) {
+  .automation-rule {
+    grid-template-columns: 1fr auto;
+  }
 }
 </style>

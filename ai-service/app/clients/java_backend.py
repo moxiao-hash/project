@@ -16,6 +16,7 @@ from app.schemas.agent import (
     CreateTaskAgentExecutionRequest,
     UpdateAgentExecutionRequest,
 )
+from app.schemas.automation import AutomationJob
 from app.schemas.learning import (
     AdaptationContext,
     ChangeLearningTaskStatusRequest,
@@ -496,6 +497,71 @@ class JavaBackendClient:
         )
         return TypeAdapter(list[NightlyAdjustmentCandidate]).validate_python(
             response.json()
+        )
+
+    async def claim_automation_job(
+        self,
+        worker_id: str,
+        lease_seconds: int,
+    ) -> AutomationJob | None:
+        response = await self._request(
+            "POST",
+            "/internal/assistant-automation-jobs/claim",
+            json={"workerId": worker_id, "leaseSeconds": lease_seconds},
+        )
+        if response.status_code == 204:
+            return None
+        return AutomationJob.model_validate(response.json())
+
+    async def complete_automation_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        lease_token: str,
+        summary: str,
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/assistant-automation-jobs/{job_id}/complete",
+            json={
+                "workerId": worker_id,
+                "leaseToken": lease_token,
+                "resultSummary": summary,
+            },
+        )
+
+    async def heartbeat_automation_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        lease_token: str,
+        lease_seconds: int,
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/assistant-automation-jobs/{job_id}/heartbeat",
+            json={
+                "workerId": worker_id,
+                "leaseToken": lease_token,
+                "leaseSeconds": lease_seconds,
+            },
+        )
+
+    async def fail_automation_job(
+        self,
+        job_id: str,
+        worker_id: str,
+        lease_token: str,
+        error: str,
+    ) -> None:
+        await self._request(
+            "POST",
+            f"/internal/assistant-automation-jobs/{job_id}/fail",
+            json={
+                "workerId": worker_id,
+                "leaseToken": lease_token,
+                "error": error,
+            },
         )
 
     async def claim_material_job(

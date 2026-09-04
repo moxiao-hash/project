@@ -3,6 +3,9 @@ package com.moxiao.studypilot.agent.tool;
 import com.moxiao.studypilot.agent.api.AgentExecutionResponse;
 import com.moxiao.studypilot.agent.api.AuditLogResponse;
 import com.moxiao.studypilot.agent.application.AgentGovernanceService;
+import com.moxiao.studypilot.agent.automation.AssistantAutomationService;
+import com.moxiao.studypilot.agent.automation.AutomationRuleResponse;
+import com.moxiao.studypilot.agent.automation.AutomationSettingsResponse;
 import com.moxiao.studypilot.aicredential.application.AiCredentialService;
 import com.moxiao.studypilot.assessment.api.MasteryResponse;
 import com.moxiao.studypilot.assessment.api.QuizResponse;
@@ -266,6 +269,24 @@ public class AgentReadToolConfiguration {
     AgentToolHandler aiSettingsStatusTool(ObjectMapper mapper, AiCredentialService service) {
         return read(mapper, "settings.ai_status.get", "SETTINGS", Map.of(), Set.of(),
                 (context, arguments) -> service.settings(context.ownerId()));
+    }
+
+    @Bean
+    AgentToolHandler automationSettingsTool(
+            ObjectMapper mapper, AssistantAutomationService service
+    ) {
+        return read(mapper, "automation.settings.get", "AUTOMATION", Map.of(), Set.of(),
+                (context, arguments) -> AutomationSettingsResponse.from(
+                        service.settings(context.ownerId())));
+    }
+
+    @Bean
+    AgentToolHandler automationRulesTool(
+            ObjectMapper mapper, AssistantAutomationService service
+    ) {
+        return read(mapper, "automation.rules.list", "AUTOMATION", Map.of(), Set.of(),
+                (context, arguments) -> service.list(context.ownerId()).stream()
+                        .map(AutomationRuleResponse::from).toList());
     }
 
     private static AgentToolHandler read(

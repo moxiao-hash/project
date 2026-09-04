@@ -83,7 +83,8 @@ class AgentNativeContractTest {
         JsonNode matrix = readContract("capability-matrix.json");
 
         assertTextSet(matrix.get("userOnlyDecisions"),
-                "SUBMIT_QUIZ_ANSWERS", "SUBMIT_CHECK_IN_SUMMARY", "ACCEPT_ARTIFACT", "EXPAND_GRANT");
+                "SUBMIT_QUIZ_ANSWERS", "SUBMIT_CHECK_IN_SUMMARY", "ACCEPT_ARTIFACT",
+                "EXPAND_GRANT", "MANAGE_AUTOMATION_RULES");
         assertTextSet(matrix.get("alwaysConfirmActions"),
                 "DELETE_AI_CREDENTIAL", "PREPARE_RUNNER_DEPENDENCIES", "APPLY_CODE_PATCH",
                 "GIT_COMMIT", "GIT_PUSH");

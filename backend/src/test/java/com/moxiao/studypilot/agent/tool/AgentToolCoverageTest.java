@@ -44,6 +44,8 @@ class AgentToolCoverageTest {
                 "governance.audit.list",
                 "settings.learning.get",
                 "settings.ai_status.get",
+                "automation.settings.get",
+                "automation.rules.list",
                 "workspaces.list",
                 "artifacts.list",
                 "artifacts.get"

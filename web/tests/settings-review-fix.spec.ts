@@ -7,9 +7,16 @@ const settingsApiMock = vi.hoisted(() => ({
   get: vi.fn(),
   update: vi.fn(),
 }))
+const assistantApiMock = vi.hoisted(() => ({
+  listAutomationRules: vi.fn().mockResolvedValue([]),
+  getAutomationSettings: vi.fn().mockResolvedValue({ paused: false, updatedAt: '' }),
+}))
 
 vi.mock('@/services/current/dashboard', () => ({
   settingsApi: settingsApiMock,
+}))
+vi.mock('@/services/current/assistant', () => ({
+  assistantApi: assistantApiMock,
 }))
 
 import SettingsView from '@/modules/settings/SettingsView.vue'

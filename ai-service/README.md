@@ -160,7 +160,20 @@ GET  /internal/knowledge/conversations/{conversationId}
 等同于编译器、测试沙箱或人工代码审查。完整联调顺序见
 [`../docs/quiz-mastery-e2e.http`](../docs/quiz-mastery-e2e.http)。
 
-## 7. 测试与代码检查
+## 7. 主动 Agent Worker
+
+FastAPI 的定时器会从 Java 领取持久化的主动自动化任务，不再直接扫描用户并绕过治理层。
+Java 在每次领取前检查规则是否启用、全局暂停开关和有效长期授权；高风险操作不会被
+Worker 自动执行。任务使用带 worker ID 和随机 token 的租约，运行期间定时续租，服务
+中断后可恢复，最多重试三次。
+
+当前支持计划整理、逾期节点滚动、测验生成重试、薄弱点提醒和成果待验收提醒。完成或
+最终失败都会写入 `AgentExecution`、通知和审计日志。规则只能由用户在设置页管理，
+统一 Agent 仅能查询规则状态，不能创建规则或扩大授权。
+
+`AUTOMATION_WORKER_ID` 用于区分 Worker 实例；本地保持一个 FastAPI worker 即可。
+
+## 8. 测试与代码检查
 
 ```bash
 .venv/bin/python -m ruff format --check app tests

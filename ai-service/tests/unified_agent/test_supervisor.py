@@ -23,6 +23,8 @@ class FakeJavaBackend:
             tool("assessment.node_quiz_status.get", ToolEffect.READ),
             tool("assessment.mastery.list", ToolEffect.READ),
             tool("settings.ai_status.get", ToolEffect.READ),
+            tool("automation.settings.get", ToolEffect.READ),
+            tool("automation.rules.list", ToolEffect.READ),
             tool("settings.learning.update", ToolEffect.WRITE),
             tool("roadmap.current.get", ToolEffect.READ),
             tool("learning.goals.list", ToolEffect.READ),
@@ -330,6 +332,7 @@ async def _page_families_query_business_state_before_navigation() -> None:
         ("查看通知", "notifications.list", "NOTIFICATIONS"),
         ("查看执行与审计", "governance.executions.list", "AGENT_ACTIVITY"),
         ("检查工作区和成果", "workspaces.list", "WORKSPACE_ARTIFACTS"),
+        ("查看主动自动化规则", "automation.rules.list", "LEARNING_SETTINGS"),
     ]
     for index, (message, tool_name, route_key) in enumerate(cases):
         java = FakeJavaBackend()

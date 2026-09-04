@@ -60,7 +60,7 @@ from app.persistence.lifecycle import open_agent_persistence
 from app.providers.credentials import CredentialProvider, CredentialResolver
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.factory import get_hybrid_index
-from app.scheduler.nightly_adjustments import NightlyAdjustmentScheduler
+from app.scheduler.proactive_automation import ProactiveAutomationWorker
 from app.search.service import WebSearchService
 from app.search.tavily import TavilySearchClient
 from app.search.web_fetcher import SafeWebFetcher
@@ -103,7 +103,7 @@ async def build_owner_adjustment_service(
 
 
 async def run_nightly_adjustment_job() -> None:
-    """运行一次可补偿的夜间分析；单个周期失败不会终止应用进程。"""
+    """从 Java 租约队列领取一次主动任务，重启后可继续补跑。"""
 
     settings = get_settings()
     try:
@@ -112,12 +112,12 @@ async def run_nightly_adjustment_job() -> None:
         async def service_for(owner_id: str):
             return await build_owner_adjustment_service(owner_id, settings, java)
 
-        runner = NightlyAdjustmentScheduler(
+        runner = ProactiveAutomationWorker(
             java,
-            None,
+            worker_id=settings.automation_worker_id,
             adjustment_service_factory=service_for,
         )
-        await runner.run_due(datetime.now(UTC))
+        await runner.run_once(datetime.now(UTC))
     except ModelConfigurationError:
         logger.warning("未配置模型，跳过本轮夜间计划调整")
     except Exception:

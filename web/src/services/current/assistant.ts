@@ -1,5 +1,11 @@
 import { http } from '@/services/http'
-import type { AssistantConversation, SendAssistantMessage } from '@/types/assistant'
+import type {
+  AssistantConversation,
+  AutomationRule,
+  AutomationRuleType,
+  AutomationSettings,
+  SendAssistantMessage,
+} from '@/types/assistant'
 
 const assistantRequest = { timeout: 120_000 } as const
 
@@ -24,4 +30,28 @@ export const assistantApi = {
       `/api/assistant/conversations/${conversationId}/actions/${actionId}/reject`,
       {}, assistantRequest,
     ).then((response) => response.data),
+  listAutomationRules: () =>
+    http.get<AutomationRule[]>('/api/assistant/automation-rules')
+      .then((response) => response.data),
+  createAutomationRule: (body: {
+    type: AutomationRuleType
+    timezone: string
+    localTime: string
+    enabled: boolean
+  }) => http.post<AutomationRule>('/api/assistant/automation-rules', body)
+    .then((response) => response.data),
+  updateAutomationRule: (id: string, body: {
+    enabled?: boolean
+    timezone?: string
+    localTime?: string
+  }) => http.patch<AutomationRule>(`/api/assistant/automation-rules/${id}`, body)
+    .then((response) => response.data),
+  deleteAutomationRule: (id: string) =>
+    http.delete(`/api/assistant/automation-rules/${id}`),
+  getAutomationSettings: () =>
+    http.get<AutomationSettings>('/api/assistant/automation-settings')
+      .then((response) => response.data),
+  updateAutomationSettings: (body: { paused: boolean }) =>
+    http.patch<AutomationSettings>('/api/assistant/automation-settings', body)
+      .then((response) => response.data),
 }

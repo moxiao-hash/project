@@ -65,3 +65,27 @@ export interface SendAssistantMessage {
     timezone: string
   }
 }
+
+export type AutomationRuleType =
+  | 'AUTHORIZED_PLAN_ADJUSTMENT'
+  | 'OVERDUE_NODE_ROLLOVER'
+  | 'QUIZ_GENERATION_RETRY'
+  | 'WEAKNESS_REVIEW_REMINDER'
+  | 'ARTIFACT_REVIEW_REMINDER'
+
+export interface AutomationRule {
+  id: string
+  type: AutomationRuleType
+  status: 'ACTIVE' | 'PAUSED'
+  timezone: string
+  localTime: string
+  riskLevel: 'NONE' | 'LOW' | 'HIGH'
+  requiredScope: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface AutomationSettings {
+  paused: boolean
+  updatedAt: string
+}

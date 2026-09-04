@@ -871,6 +871,12 @@ class UnifiedAgentSupervisor:
     @staticmethod
     def _page_request(message: str) -> tuple[str, str, tuple[str, ...]] | None:
         rules = (
+            (
+                ("主动自动化", "自动化规则", "主动规则"),
+                "LEARNING_SETTINGS",
+                "主动 Agent 设置",
+                ("automation.settings.get", "automation.rules.list"),
+            ),
             (("学习路线",), "ROADMAP", "学习路线", ("roadmap.current.get",)),
             (("学习目标",), "LEARNING_GOALS", "学习目标", ("learning.goals.list",)),
             (("学习计划",), "LEARNING_PLANS", "学习计划", ("learning.plans.list",)),
