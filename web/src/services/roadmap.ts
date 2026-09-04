@@ -1,5 +1,6 @@
 import { http } from './http'
 import type {
+  ProjectWorkspace,
   RoadmapEnrollment,
   RoadmapMap,
   RoadmapModule,
@@ -13,6 +14,12 @@ import type {
 } from '@/types/roadmap'
 
 export const roadmapApi = {
+  listWorkspaces() {
+    return http.get<ProjectWorkspace[]>('/api/workspaces').then((response) => response.data)
+  },
+  registerWorkspace(body: { name: string; rootPath: string }) {
+    return http.post<ProjectWorkspace>('/api/workspaces', body).then((response) => response.data)
+  },
   enroll(roadmapCode = 'studypilot-java-ai', templateVersion = 2) {
     return http
       .post<RoadmapEnrollment>('/api/roadmap-enrollments', {

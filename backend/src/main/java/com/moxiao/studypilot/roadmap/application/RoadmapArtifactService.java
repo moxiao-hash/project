@@ -157,6 +157,13 @@ public class RoadmapArtifactService {
         return response(artifact);
     }
 
+    @Transactional(readOnly = true)
+    public List<RoadmapArtifactResponse> artifacts(String ownerId) {
+        return artifactRepository.findAllByOwnerIdOrderByCreatedAtDesc(ownerId).stream()
+                .map(this::response)
+                .toList();
+    }
+
     private RoadmapArtifactResponse response(RoadmapArtifactEntity artifact) {
         return RoadmapArtifactResponse.from(
                 artifact,

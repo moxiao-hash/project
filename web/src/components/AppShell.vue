@@ -96,6 +96,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
       { to: '/materials', icon: '📚', label: '学习资料' },
       { to: '/wrong-questions', icon: '📝', label: '错题集' },
       { to: '/mastery', icon: '📈', label: '掌握度' },
+      { to: '/workspaces', icon: '🧰', label: '工作区与成果' },
     ],
   },
   {

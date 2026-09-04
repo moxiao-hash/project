@@ -1,13 +1,17 @@
 """StudyPilot 单入口 LangGraph Supervisor。"""
 
 import asyncio
+import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, TypedDict
 from uuid import uuid4
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from langgraph.graph import END, START, StateGraph
 
 from app.clients.java_backend import JavaBackendClient
+from app.knowledge.models import KnowledgeMode, WebSearchPolicy
 from app.persistence.agent_state import AgentPersistence
 from app.unified_agent.models import (
     AssistantConversationSnapshot,
@@ -30,6 +34,7 @@ class AssistantConversationBusyError(RuntimeError):
 
 
 class SupervisorState(TypedDict, total=False):
+    owner_id: str
     message: str
     idempotency_key: str
     client_context: dict[str, Any]
@@ -39,6 +44,9 @@ class SupervisorState(TypedDict, total=False):
     tool_steps: list[dict[str, str]]
     pending_action: dict[str, Any] | None
     ui_actions: list[dict[str, Any]]
+    warnings: list[str]
+    citations: list[Any]
+    knowledge_conversation_id: str | None
 
 
 @dataclass
@@ -47,6 +55,7 @@ class _Conversation:
     lock: asyncio.Lock
     turn_results: dict[str, AssistantConversationSnapshot]
     events: list[AssistantEvent]
+    knowledge_conversation_id: str | None = None
     active_turn_id: str | None = None
     cancel_requested_turn_id: str | None = None
 
@@ -60,10 +69,12 @@ class UnifiedAgentSupervisor:
         *,
         model_name: str,
         persistence: AgentPersistence | None = None,
+        knowledge_services: Any | None = None,
     ) -> None:
         self._java = java_backend
         self._model_name = model_name
         self._persistence = persistence
+        self._knowledge_services = knowledge_services
         self._conversations: dict[str, _Conversation] = {}
         self._graph = self._build_graph()
 
@@ -241,12 +252,16 @@ class UnifiedAgentSupervisor:
                 try:
                     values = await self._graph.ainvoke(
                         {
+                            "owner_id": owner_id,
                             "message": message,
                             "idempotency_key": idempotency_key,
                             # 客户端上下文只是提示。当前确定性路由不从中读取 ownerId，
                             # 后续使用实体 ID 时仍必须由 Java 工具重新校验归属。
                             "client_context": client_context,
                             "gateway": gateway,
+                            "knowledge_conversation_id": (
+                                conversation.knowledge_conversation_id
+                            ),
                         }
                     )
                 except BaseException as exc:
@@ -278,6 +293,10 @@ class UnifiedAgentSupervisor:
                     await self._save(conversation)
                     return result
                 pending_action = values.get("pending_action")
+                conversation.knowledge_conversation_id = values.get(
+                    "knowledge_conversation_id",
+                    conversation.knowledge_conversation_id,
+                )
                 status = (
                     AssistantConversationStatus.WAITING_CONFIRMATION
                     if pending_action is not None
@@ -297,6 +316,8 @@ class UnifiedAgentSupervisor:
                     tool_steps=values.get("tool_steps", []),
                     pending_action=pending_action,
                     ui_actions=values.get("ui_actions", []),
+                    warnings=values.get("warnings", []),
+                    citations=values.get("citations", []),
                     model_name=self._model_name,
                 )
             conversation.snapshot = result
@@ -326,6 +347,7 @@ class UnifiedAgentSupervisor:
                         AssistantEvent.model_validate(value)
                         for value in payload.get("events", [])
                     ],
+                    knowledge_conversation_id=payload.get("knowledgeConversationId"),
                     active_turn_id=None,
                     cancel_requested_turn_id=None,
                 )
@@ -351,6 +373,7 @@ class UnifiedAgentSupervisor:
                     event.model_dump(mode="json", by_alias=True)
                     for event in conversation.events
                 ],
+                "knowledgeConversationId": conversation.knowledge_conversation_id,
             },
         )
 
@@ -392,8 +415,7 @@ class UnifiedAgentSupervisor:
                 )
             )
 
-    @staticmethod
-    def _build_graph():
+    def _build_graph(self):
         async def dispatch(state: SupervisorState) -> dict[str, Any]:
             gateway = state["gateway"]
             steps: list[PublicToolStep] = []
@@ -406,6 +428,176 @@ class UnifiedAgentSupervisor:
                 )
             )
             message = state["message"].strip()
+
+            limit_minutes = UnifiedAgentSupervisor._study_limit_minutes(message)
+            if limit_minutes is not None and any(
+                word in message for word in ("调整", "改成", "改为", "只有", "设置")
+            ):
+                invocation = await gateway.invoke(
+                    "settings.learning.update",
+                    {"dailyStudyLimitMinutes": limit_minutes},
+                    idempotency_key=state["idempotency_key"],
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="settings.learning.update",
+                        status=(
+                            invocation.action.status
+                            if invocation.action is not None
+                            else "SUCCEEDED"
+                        ),
+                        summary=f"已生成每日学习时长 {limit_minutes} 分钟的调整预览",
+                    )
+                )
+                if invocation.action is not None:
+                    return {
+                        "intent": AssistantIntent.PLAN,
+                        "reply": (
+                            f"已准备把每日学习上限调整为 {limit_minutes} 分钟。"
+                            "这会影响后续日程，需要你在操作卡片中确认。"
+                        ),
+                        "tool_steps": steps,
+                        "pending_action": invocation.action,
+                        "ui_actions": [],
+                    }
+                return {
+                    "intent": AssistantIntent.PLAN,
+                    "reply": f"每日学习上限已调整为 {limit_minutes} 分钟。",
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [UiAction(route_key="TODAY", reason="查看调整后的日程")],
+                }
+
+            if "测验" in message and any(
+                word in message for word in ("开始", "打开", "继续", "进入")
+            ):
+                node_id = UnifiedAgentSupervisor._current_node_id(
+                    state.get("client_context", {}), context_result.data
+                )
+                if node_id is None:
+                    return {
+                        "intent": AssistantIntent.TEACHING,
+                        "reply": "还没有找到可测验的路线节点，请先进入一个知识节点。",
+                        "tool_steps": steps,
+                        "pending_action": None,
+                        "ui_actions": [UiAction(route_key="ROADMAP", reason="选择学习节点")],
+                    }
+                quiz_result = await gateway.invoke(
+                    "assessment.node_quiz_status.get", {"nodeId": node_id}
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="assessment.node_quiz_status.get",
+                        status="SUCCEEDED",
+                        summary="已检查当前节点测验状态",
+                    )
+                )
+                quiz = quiz_result.data if isinstance(quiz_result.data, dict) else {}
+                quiz_id = quiz.get("quizId")
+                if isinstance(quiz_id, str) and quiz_id:
+                    params = {"quizId": quiz_id}
+                    await gateway.invoke(
+                        "navigation.resolve", {"routeKey": "QUIZ", "params": params}
+                    )
+                    steps.append(
+                        PublicToolStep(
+                            tool_name="navigation.resolve",
+                            status="SUCCEEDED",
+                            summary="已解析当前节点测验页面",
+                        )
+                    )
+                    return {
+                        "intent": AssistantIntent.TEACHING,
+                        "reply": "测验已经准备好，现在开始作答。",
+                        "tool_steps": steps,
+                        "pending_action": None,
+                        "ui_actions": [
+                            UiAction(route_key="QUIZ", params=params, reason="开始当前节点测验")
+                        ],
+                    }
+                return {
+                    "intent": AssistantIntent.TEACHING,
+                    "reply": "当前节点的测验尚未生成。请先完成节点打卡，系统会自动生成五道题。",
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [
+                        UiAction(
+                            route_key="ROADMAP_NODE",
+                            params={"nodeId": node_id},
+                            reason="完成学习总结与打卡",
+                        )
+                    ],
+                }
+
+            if "今天" in message and any(
+                word in message for word in ("安排", "任务", "学习", "计划", "查看")
+            ):
+                date = UnifiedAgentSupervisor._today(state.get("client_context", {}))
+                await gateway.invoke("schedule.today.get", {"date": date})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="schedule.today.get",
+                        status="SUCCEEDED",
+                        summary="已读取今天的路线安排",
+                    )
+                )
+                await gateway.invoke("navigation.resolve", {"routeKey": "TODAY"})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="navigation.resolve",
+                        status="SUCCEEDED",
+                        summary="已解析今日学习页面",
+                    )
+                )
+                return {
+                    "intent": AssistantIntent.TASK,
+                    "reply": f"已读取 {date} 的学习安排，并为你打开今日任务。",
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [UiAction(route_key="TODAY", reason="查看今日学习安排")],
+                }
+
+            if any(word in message for word in ("薄弱点", "掌握度", "掌握情况")):
+                mastery_result = await gateway.invoke("assessment.mastery.list", {})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="assessment.mastery.list",
+                        status="SUCCEEDED",
+                        summary="已读取知识点掌握度",
+                    )
+                )
+                weak = UnifiedAgentSupervisor._weakest_mastery(mastery_result.data)
+                reply = "还没有足够的测验证据来判断薄弱点。"
+                if weak is not None:
+                    reply = f"目前最需要复习的是“{weak}”。我已打开掌握度页面供你查看。"
+                return {
+                    "intent": AssistantIntent.TEACHING,
+                    "reply": reply,
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [UiAction(route_key="MASTERY", reason="查看知识掌握度")],
+                }
+
+            if "AI" in message.upper() and any(
+                word in message for word in ("配置", "凭据", "模型", "设置")
+            ):
+                settings_result = await gateway.invoke("settings.ai_status.get", {})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="settings.ai_status.get",
+                        status="SUCCEEDED",
+                        summary="已安全检查 AI 配置状态",
+                    )
+                )
+                configured = UnifiedAgentSupervisor._configured(settings_result.data)
+                reply = "AI 凭据已配置。" if configured else "AI 凭据尚未配置或暂时不可用。"
+                return {
+                    "intent": AssistantIntent.NAVIGATION,
+                    "reply": reply + "我已打开 AI 设置页面。",
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [UiAction(route_key="AI_SETTINGS", reason="查看 AI 配置")],
+                }
 
             if "继续" in message and any(
                 word in message for word in ("昨天", "没学完", "未完成", "学习")
@@ -502,6 +694,68 @@ class UnifiedAgentSupervisor:
                     ],
                 }
 
+            if self._knowledge_services is not None and any(
+                word in message for word in ("查找", "搜索", "解释", "什么是", "怎么学")
+            ):
+                knowledge_service = await self._knowledge_services.for_owner(state["owner_id"])
+                knowledge_conversation_id = state.get("knowledge_conversation_id")
+                if knowledge_conversation_id is None:
+                    knowledge_conversation = await knowledge_service.create_conversation(
+                        state["owner_id"], KnowledgeMode.AUTO
+                    )
+                    knowledge_conversation_id = knowledge_conversation.conversation_id
+                answer = await knowledge_service.send_message(
+                    knowledge_conversation_id,
+                    message,
+                    WebSearchPolicy.AUTO,
+                    state["owner_id"],
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="knowledge.search",
+                        status="SUCCEEDED",
+                        summary=f"已完成 {answer.retrieval_mode} 知识检索与回答",
+                    )
+                )
+                return {
+                    "intent": AssistantIntent.KNOWLEDGE,
+                    "reply": answer.answer,
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [],
+                    "warnings": answer.warnings,
+                    "citations": answer.citations,
+                    "knowledge_conversation_id": knowledge_conversation_id,
+                }
+
+            page_request = UnifiedAgentSupervisor._page_request(message)
+            if page_request is not None:
+                route_key, label, tool_names = page_request
+                for tool_name in tool_names:
+                    await gateway.invoke(tool_name, {})
+                    steps.append(
+                        PublicToolStep(
+                            tool_name=tool_name,
+                            status="SUCCEEDED",
+                            summary=f"已读取{label}最新数据",
+                        )
+                    )
+                await gateway.invoke("navigation.resolve", {"routeKey": route_key})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="navigation.resolve",
+                        status="SUCCEEDED",
+                        summary=f"已解析{label}页面",
+                    )
+                )
+                return {
+                    "intent": AssistantIntent.NAVIGATION,
+                    "reply": f"已读取最新数据并为你打开{label}。",
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [UiAction(route_key=route_key, reason=f"查看{label}")],
+                }
+
             return {
                 "intent": AssistantIntent.CLARIFY,
                 "reply": (
@@ -547,3 +801,95 @@ class UnifiedAgentSupervisor:
                 if fallback is None and display_status in {"AVAILABLE", "READY"}:
                     fallback = node
         return fallback
+
+    @staticmethod
+    def _current_node_id(client_context: Any, context: Any) -> str | None:
+        """界面参数只用于定位；真正归属校验始终由后续 Java 工具完成。"""
+
+        if isinstance(client_context, dict) and client_context.get("routeName") == "roadmap-node":
+            params = client_context.get("routeParams")
+            if isinstance(params, dict):
+                value = params.get("id") or params.get("nodeId")
+                if isinstance(value, str) and value:
+                    return value
+        node = UnifiedAgentSupervisor._next_roadmap_node(context)
+        return str(node["id"]) if node is not None else None
+
+    @staticmethod
+    def _today(client_context: Any) -> str:
+        timezone = "Asia/Shanghai"
+        if isinstance(client_context, dict) and isinstance(client_context.get("timezone"), str):
+            timezone = client_context["timezone"]
+        try:
+            zone = ZoneInfo(timezone)
+        except ZoneInfoNotFoundError:
+            zone = ZoneInfo("Asia/Shanghai")
+        return datetime.now(zone).date().isoformat()
+
+    @staticmethod
+    def _weakest_mastery(data: Any) -> str | None:
+        if not isinstance(data, list):
+            return None
+        candidates = [item for item in data if isinstance(item, dict)]
+        if not candidates:
+            return None
+
+        def score(item: dict[str, Any]) -> float:
+            for key in ("score", "compositeScore", "masteryScore"):
+                value = item.get(key)
+                if isinstance(value, (int, float)):
+                    return float(value)
+            return 101.0
+
+        weakest = min(candidates, key=score)
+        value = weakest.get("knowledgePoint") or weakest.get("knowledge_point")
+        return str(value) if value else None
+
+    @staticmethod
+    def _configured(data: Any) -> bool:
+        if not isinstance(data, dict):
+            return False
+        for key in ("configured", "apiKeyConfigured", "hasApiKey"):
+            value = data.get(key)
+            if isinstance(value, bool):
+                return value
+        return False
+
+    @staticmethod
+    def _study_limit_minutes(message: str) -> int | None:
+        minute_match = re.search(r"(\d{1,3})\s*(?:分钟|分)", message)
+        if minute_match:
+            value = int(minute_match.group(1))
+            return value if 15 <= value <= 720 else None
+        hour_match = re.search(r"(\d{1,2})(?:\.5)?\s*(?:小时|钟头)", message)
+        if hour_match:
+            hours = float(hour_match.group(0).split("小")[0].split("钟")[0])
+            value = round(hours * 60)
+            return value if 15 <= value <= 720 else None
+        return None
+
+    @staticmethod
+    def _page_request(message: str) -> tuple[str, str, tuple[str, ...]] | None:
+        rules = (
+            (("学习路线",), "ROADMAP", "学习路线", ("roadmap.current.get",)),
+            (("学习目标",), "LEARNING_GOALS", "学习目标", ("learning.goals.list",)),
+            (("学习计划",), "LEARNING_PLANS", "学习计划", ("learning.plans.list",)),
+            (("学习资料", "资料库"), "MATERIALS", "学习资料", ("materials.list",)),
+            (("通知",), "NOTIFICATIONS", "通知", ("notifications.list",)),
+            (
+                ("执行与审计", "执行记录", "审计"),
+                "AGENT_ACTIVITY",
+                "执行与审计",
+                ("governance.executions.list", "governance.audit.list"),
+            ),
+            (
+                ("工作区", "实践成果"),
+                "WORKSPACE_ARTIFACTS",
+                "工作区与实践成果",
+                ("workspaces.list", "artifacts.list"),
+            ),
+        )
+        for keywords, route_key, label, tools in rules:
+            if any(keyword in message for keyword in keywords):
+                return route_key, label, tools
+        return None

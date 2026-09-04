@@ -162,3 +162,11 @@ export interface RoadmapUpgrade {
   removedModuleCount: number
   changedModuleCount: number
 }
+
+export interface ProjectWorkspace {
+  id: string
+  name: string
+  rootPath: string
+  status: 'ACTIVE' | 'ARCHIVED'
+  createdAt: string
+}

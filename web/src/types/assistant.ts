@@ -44,6 +44,15 @@ export interface AssistantConversation {
   pendingAction: AssistantPendingAction | null
   uiActions: AssistantUiAction[]
   warnings: string[]
+  citations: Array<{
+    sourceType: string
+    title: string
+    snippet: string
+    materialId?: string | null
+    locator?: string | null
+    resultId?: string | null
+    url?: string | null
+  }>
   modelName: string
 }
 

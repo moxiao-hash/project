@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import Field
 
+from app.knowledge.models import KnowledgeCitation
 from app.schemas.learning import JavaContractModel
 
 
@@ -109,6 +110,7 @@ class AssistantConversationSnapshot(JavaContractModel):
     pending_action: PendingToolAction | None = None
     ui_actions: list[UiAction] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    citations: list[KnowledgeCitation] = Field(default_factory=list)
     model_name: str
 
 

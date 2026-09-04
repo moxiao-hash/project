@@ -32,4 +32,21 @@ describe('assistant UI action dispatcher', () => {
     )).rejects.toThrow('参数')
     expect(router.push).not.toHaveBeenCalled()
   })
+
+  it('covers every current StudyPilot page family through fixed route keys', async () => {
+    const cases = [
+      ['LEARNING_GOALS', {}, 'goals', undefined],
+      ['LEARNING_PLANS', {}, 'plans', undefined],
+      ['LEARNING_PLAN', { planId: 'plan-1' }, 'plan-detail', { id: 'plan-1' }],
+      ['PLAN_ASSISTANT', {}, 'agent-plan', undefined],
+      ['TASK_ASSISTANT', {}, 'agent-tasks', undefined],
+      ['WORKSPACE_ARTIFACTS', {}, 'workspace-artifacts', undefined],
+    ] as const
+
+    for (const [routeKey, params, name, mappedParams] of cases) {
+      const push = vi.fn().mockResolvedValue(undefined)
+      await dispatchUiAction({ type: 'NAVIGATE', routeKey, params, reason: 'coverage' }, { push })
+      expect(push).toHaveBeenCalledWith(mappedParams ? { name, params: mappedParams } : { name })
+    }
+  })
 })

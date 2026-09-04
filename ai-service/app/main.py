@@ -287,6 +287,7 @@ async def lifespan(application: FastAPI):
             JavaBackendClient(settings),
             model_name=settings.model_name,
             persistence=persistence,
+            knowledge_services=application.state.knowledge_conversation_service,
         )
         scheduler = AsyncIOScheduler(timezone="UTC")
         scheduler.add_job(

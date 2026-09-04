@@ -8,6 +8,7 @@ import com.moxiao.studypilot.assessment.api.MasteryResponse;
 import com.moxiao.studypilot.assessment.api.QuizResponse;
 import com.moxiao.studypilot.assessment.application.QuizService;
 import com.moxiao.studypilot.assessment.application.WrongQuestionService;
+import com.moxiao.studypilot.assessment.domain.WrongQuestionStatus;
 import com.moxiao.studypilot.learning.api.LearningGoalResponse;
 import com.moxiao.studypilot.learning.api.LearningPlanResponse;
 import com.moxiao.studypilot.learning.api.LearningTaskResponse;
@@ -19,7 +20,11 @@ import com.moxiao.studypilot.material.application.MaterialService;
 import com.moxiao.studypilot.notification.api.NotificationResponse;
 import com.moxiao.studypilot.notification.application.NotificationService;
 import com.moxiao.studypilot.roadmap.application.RoadmapArtifactService;
+import com.moxiao.studypilot.roadmap.application.RoadmapLearningLoopService;
 import com.moxiao.studypilot.roadmap.application.RoadmapQueryService;
+import com.moxiao.studypilot.roadmap.application.RoadmapScheduleService;
+import com.moxiao.studypilot.user.api.UserSettingsResponse;
+import com.moxiao.studypilot.user.application.UserSettingsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import tools.jackson.databind.JsonNode;
@@ -53,6 +58,14 @@ public class AgentReadToolConfiguration {
         return read(mapper, "learning.plans.list", "LEARNING", Map.of(), Set.of(),
                 (context, arguments) -> service.list(context.ownerId()).stream()
                         .map(LearningPlanResponse::from).toList());
+    }
+
+    @Bean
+    AgentToolHandler learningPlanTool(ObjectMapper mapper, LearningPlanService service) {
+        return read(mapper, "learning.plan.get", "LEARNING",
+                Map.of("planId", "string"), Set.of("planId"),
+                (context, arguments) -> LearningPlanResponse.from(service.requireOwnedPlan(
+                        context.ownerId(), text(arguments, "planId"))));
     }
 
     @Bean
@@ -95,6 +108,48 @@ public class AgentReadToolConfiguration {
     }
 
     @Bean
+    AgentToolHandler todayScheduleTool(ObjectMapper mapper, RoadmapScheduleService service) {
+        return read(mapper, "schedule.today.get", "SCHEDULE",
+                Map.of("date", "string"), Set.of("date"),
+                (context, arguments) -> {
+                    LocalDate date = LocalDate.parse(text(arguments, "date"));
+                    return service.getOrCreate(context.ownerId(), date, date);
+                });
+    }
+
+    @Bean
+    AgentToolHandler unfinishedScheduleTool(ObjectMapper mapper, RoadmapScheduleService service) {
+        return read(mapper, "schedule.unfinished.get", "SCHEDULE",
+                Map.of("from", "string", "to", "string"), Set.of("from", "to"),
+                (context, arguments) -> {
+                    var schedule = service.getOrCreate(
+                            context.ownerId(), LocalDate.parse(text(arguments, "from")),
+                            LocalDate.parse(text(arguments, "to")));
+                    return schedule.days().stream()
+                            .flatMap(day -> day.items().stream()
+                                    .filter(item -> item.status()
+                                            != com.moxiao.studypilot.roadmap.domain
+                                            .RoadmapScheduleItemStatus.COMPLETED)
+                                    .map(item -> Map.of(
+                                            "date", day.date(),
+                                            "nodeId", item.nodeId(),
+                                            "title", item.title(),
+                                            "status", item.status())))
+                            .toList();
+                });
+    }
+
+    @Bean
+    AgentToolHandler nodeQuizStatusTool(
+            ObjectMapper mapper, RoadmapLearningLoopService service
+    ) {
+        return read(mapper, "assessment.node_quiz_status.get", "ASSESSMENT",
+                Map.of("nodeId", "string"), Set.of("nodeId"),
+                (context, arguments) -> service.quiz(
+                        context.ownerId(), text(arguments, "nodeId")));
+    }
+
+    @Bean
     AgentToolHandler quizTool(ObjectMapper mapper, QuizService service) {
         return read(mapper, "assessment.quiz.get", "ASSESSMENT",
                 Map.of("quizId", "string"), Set.of("quizId"),
@@ -103,6 +158,14 @@ public class AgentReadToolConfiguration {
                             context.ownerId(), text(arguments, "quizId"));
                     return QuizResponse.from(bundle.quiz(), bundle.questions());
                 });
+    }
+
+    @Bean
+    AgentToolHandler quizAttemptTool(ObjectMapper mapper, QuizService service) {
+        return read(mapper, "assessment.attempt.get", "ASSESSMENT",
+                Map.of("attemptId", "string"), Set.of("attemptId"),
+                (context, arguments) -> service.getAttempt(
+                        context.ownerId(), text(arguments, "attemptId")));
     }
 
     @Bean
@@ -119,6 +182,22 @@ public class AgentReadToolConfiguration {
         return read(mapper, "assessment.wrong_questions.summary", "ASSESSMENT",
                 Map.of(), Set.of(),
                 (context, arguments) -> service.summary(context.ownerId()));
+    }
+
+    @Bean
+    AgentToolHandler wrongQuestionsTool(ObjectMapper mapper, WrongQuestionService service) {
+        return read(mapper, "assessment.wrong_questions.list", "ASSESSMENT",
+                Map.of("status", "string", "chapterKey", "string",
+                        "page", "integer", "size", "integer"), Set.of(),
+                (context, arguments) -> service.list(
+                        context.ownerId(),
+                        arguments.hasNonNull("status")
+                                ? WrongQuestionStatus.valueOf(text(arguments, "status"))
+                                : WrongQuestionStatus.ACTIVE,
+                        arguments.hasNonNull("chapterKey")
+                                ? text(arguments, "chapterKey") : null,
+                        arguments.hasNonNull("page") ? arguments.get("page").asInt() : 0,
+                        arguments.hasNonNull("size") ? arguments.get("size").asInt() : 20));
     }
 
     @Bean
@@ -161,6 +240,26 @@ public class AgentReadToolConfiguration {
     AgentToolHandler workspacesTool(ObjectMapper mapper, RoadmapArtifactService service) {
         return read(mapper, "workspaces.list", "WORKSPACE", Map.of(), Set.of(),
                 (context, arguments) -> service.workspaces(context.ownerId()));
+    }
+
+    @Bean
+    AgentToolHandler artifactTool(ObjectMapper mapper, RoadmapArtifactService service) {
+        return read(mapper, "artifacts.get", "WORKSPACE",
+                Map.of("artifactId", "string"), Set.of("artifactId"),
+                (context, arguments) -> service.artifact(
+                        context.ownerId(), text(arguments, "artifactId")));
+    }
+
+    @Bean
+    AgentToolHandler artifactsTool(ObjectMapper mapper, RoadmapArtifactService service) {
+        return read(mapper, "artifacts.list", "WORKSPACE", Map.of(), Set.of(),
+                (context, arguments) -> service.artifacts(context.ownerId()));
+    }
+
+    @Bean
+    AgentToolHandler learningSettingsTool(ObjectMapper mapper, UserSettingsService service) {
+        return read(mapper, "settings.learning.get", "SETTINGS", Map.of(), Set.of(),
+                (context, arguments) -> UserSettingsResponse.from(service.get(context.ownerId())));
     }
 
     @Bean

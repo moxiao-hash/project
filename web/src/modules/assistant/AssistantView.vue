@@ -78,6 +78,15 @@
           {{ warning }}
         </div>
 
+        <div v-if="conversation.citations.length" class="citation-panel">
+          <div class="process-title">回答来源</div>
+          <article v-for="citation in conversation.citations" :key="`${citation.sourceType}:${citation.title}:${citation.locator}`" class="citation-card">
+            <div><strong>{{ citation.title }}</strong><small>{{ citation.sourceType }}<template v-if="citation.locator"> · {{ citation.locator }}</template></small></div>
+            <p>{{ citation.snippet }}</p>
+            <a v-if="safeCitationUrl(citation.url)" :href="safeCitationUrl(citation.url) ?? undefined" target="_blank" rel="noopener noreferrer">打开来源</a>
+          </article>
+        </div>
+
         <form class="composer" @submit.prevent="send">
           <textarea
             v-model.trim="message"
@@ -121,6 +130,16 @@ const prompts = [
   { icon: '↺', title: '复习错题', text: '打开错题集并重做五题' },
   { icon: '⌕', title: '查找资料', text: '帮我查找 Redis 入门学习资料' },
 ]
+
+function safeCitationUrl(value?: string | null): string | null {
+  if (!value) return null
+  try {
+    const parsed = new URL(value)
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null
+  } catch {
+    return null
+  }
+}
 
 onMounted(async () => {
   try {
@@ -213,6 +232,11 @@ async function rejectAction() {
 .assistant-hero p { margin: 8px 0 0; color: var(--color-text-secondary); font-size: 15px; }
 .model-pill { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 12px; }
 .model-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-success); box-shadow: 0 0 0 4px var(--color-success-soft); }
+.citation-panel { margin: 0 20px 16px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-bg); }
+.citation-card + .citation-card { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
+.citation-card small { display: block; margin-top: 3px; color: var(--color-text-secondary); }
+.citation-card p { margin: 7px 0; color: var(--color-text-secondary); }
+.citation-card a { color: var(--color-primary); font-weight: 700; }
 .assistant-card { background: #fff; border: 1px solid var(--color-border); border-radius: 18px; box-shadow: 0 18px 50px rgba(31, 36, 48, .08); }
 .loading-state { padding: 48px; display: flex; justify-content: center; gap: 10px; color: var(--color-text-secondary); }
 .prompt-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }

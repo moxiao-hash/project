@@ -34,6 +34,7 @@ function snapshot(overrides: Partial<AssistantConversation> = {}): AssistantConv
     pendingAction: null,
     uiActions: [{ type: 'NAVIGATE', routeKey: 'WRONG_QUESTIONS', params: {}, reason: '查看错题' }],
     warnings: [],
+    citations: [],
     modelName: 'deepseek-v4-flash',
     ...overrides,
   }
@@ -86,5 +87,19 @@ describe('AssistantView', () => {
     await wrapper.get('[data-testid="confirm-action"]').trigger('click')
     await flushPromises()
     expect(assistantApi.confirmAction).toHaveBeenCalledWith('conversation-1', 'action-1')
+  })
+
+  it('shows grounded citations but never renders an unsafe source link', async () => {
+    vi.mocked(assistantApi.createConversation).mockResolvedValue(snapshot({
+      citations: [{
+        sourceType: 'WEB', title: 'Redis 官方文档', snippet: 'Redis data types',
+        url: 'javascript:alert(1)',
+      }],
+    }))
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Redis 官方文档')
+    expect(wrapper.find('.citation-card a').exists()).toBe(false)
   })
 })

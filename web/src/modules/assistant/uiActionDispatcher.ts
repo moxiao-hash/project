@@ -15,6 +15,9 @@ const routes: Record<string, RouteDefinition> = {
   ROADMAP_STAGE: { name: 'roadmap-stage', params: { stageId: 'id' } },
   ROADMAP_MODULE: { name: 'roadmap-module', params: { moduleId: 'id' } },
   ROADMAP_NODE: { name: 'roadmap-node', params: { nodeId: 'id' } },
+  LEARNING_GOALS: { name: 'goals', params: {} },
+  LEARNING_PLANS: { name: 'plans', params: {} },
+  LEARNING_PLAN: { name: 'plan-detail', params: { planId: 'id' } },
   TODAY: { name: 'today', params: {} },
   MATERIALS: { name: 'materials', params: {} },
   MATERIAL_DETAIL: { name: 'material-detail', params: { materialId: 'id' } },
@@ -23,10 +26,13 @@ const routes: Record<string, RouteDefinition> = {
   WRONG_QUESTIONS: { name: 'wrong-questions', params: {} },
   MASTERY: { name: 'mastery', params: {} },
   KNOWLEDGE: { name: 'knowledge', params: {} },
+  PLAN_ASSISTANT: { name: 'agent-plan', params: {} },
+  TASK_ASSISTANT: { name: 'agent-tasks', params: {} },
   NOTIFICATIONS: { name: 'notifications', params: {} },
   AGENT_ACTIVITY: { name: 'activity', params: {} },
   LEARNING_SETTINGS: { name: 'settings', params: {} },
   AI_SETTINGS: { name: 'settings-ai', params: {} },
+  WORKSPACE_ARTIFACTS: { name: 'workspace-artifacts', params: {} },
 }
 
 const safeId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/

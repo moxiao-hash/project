@@ -176,6 +176,12 @@ const router = createRouter({
           component: () => import('@/modules/settings/AiSettingsView.vue'),
           meta: { title: 'AI 设置' },
         },
+        {
+          path: 'workspaces',
+          name: 'workspace-artifacts',
+          component: () => import('@/modules/roadmap/WorkspaceArtifactsView.vue'),
+          meta: { title: '工作区与成果' },
+        },
       ],
     },
     {
