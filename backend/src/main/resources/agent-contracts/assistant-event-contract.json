@@ -1,0 +1,19 @@
+{
+  "contractVersion": 1,
+  "requiredFields": ["conversationId", "turnId", "sequence", "type", "timestamp", "payload"],
+  "types": [
+    "TURN_STARTED",
+    "CONTEXT_LOADED",
+    "TOOL_STARTED",
+    "TOOL_SUCCEEDED",
+    "ACTION_PREVIEW",
+    "ASSISTANT_DELTA",
+    "UI_ACTION",
+    "TURN_COMPLETED",
+    "TURN_FAILED",
+    "HEARTBEAT"
+  ],
+  "ordering": "SEQUENCE_STRICTLY_INCREASES_PER_CONVERSATION",
+  "resume": "LAST_EVENT_ID",
+  "publicProcessPolicy": "Expose tool names, safe summaries and results; never expose private model reasoning"
+}

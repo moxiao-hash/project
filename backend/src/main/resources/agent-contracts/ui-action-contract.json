@@ -1,0 +1,13 @@
+{
+  "contractVersion": 1,
+  "requiredFields": ["id", "type", "reason"],
+  "types": ["NAVIGATE", "OPEN_MODAL", "PREFILL_FORM", "REFRESH_RESOURCE", "FOCUS_ELEMENT"],
+  "routeResolution": "ROUTE_KEY_REGISTRY_ONLY",
+  "forbiddenFields": [
+    {"name": "url", "reason": "navigation must use a registered route key"},
+    {"name": "javascript", "reason": "model output is never executable"},
+    {"name": "cssSelector", "reason": "focus targets must use registered element keys"},
+    {"name": "html", "reason": "actions cannot inject markup"}
+  ],
+  "failureBehavior": "KEEP_CONVERSATION_AND_SHOW_MANUAL_ROUTE"
+}

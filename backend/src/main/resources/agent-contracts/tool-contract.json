@@ -1,0 +1,31 @@
+{
+  "contractVersion": 1,
+  "descriptorRequiredFields": [
+    "name",
+    "version",
+    "category",
+    "effect",
+    "riskLevel",
+    "requiredScope",
+    "idempotencyRequired",
+    "inputSchema",
+    "outputSchema"
+  ],
+  "effects": ["READ", "NAVIGATE", "WRITE", "LOCAL"],
+  "riskLevels": ["NONE", "LOW", "HIGH"],
+  "turnLimits": {
+    "maxToolCalls": 8,
+    "maxWebSearches": 1,
+    "maxWriteTransactions": 1,
+    "maxPendingHighRiskActions": 1,
+    "rejectRepeatedToolAndArguments": true
+  },
+  "prohibitedArguments": [
+    {"name": "ownerId", "reason": "Java derives the owner from the authenticated session"},
+    {"name": "url", "reason": "tools cannot invoke arbitrary URLs"},
+    {"name": "sql", "reason": "tools cannot execute model-provided SQL"},
+    {"name": "beanName", "reason": "tools cannot select Spring beans or reflection targets"},
+    {"name": "className", "reason": "tools cannot select Java classes or reflection targets"},
+    {"name": "shell", "reason": "tools cannot execute arbitrary shell text"}
+  ]
+}
