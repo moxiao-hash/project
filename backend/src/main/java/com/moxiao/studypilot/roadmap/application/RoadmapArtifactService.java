@@ -23,6 +23,9 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
+import com.moxiao.studypilot.roadmap.infrastructure.ArtifactSensitiveScanner;
+import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeMutationService;
+
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -53,6 +56,10 @@ public class RoadmapArtifactService {
     private final RoadmapStageJpaRepository stageRepository;
     private final ObjectMapper objectMapper;
 
+    private final ArtifactSensitiveScanner sensitiveScanner;
+    private final ArtifactReviewRubricEvaluator rubricEvaluator;
+    private final RoadmapNodeMutationService mutationService;
+
     public RoadmapArtifactService(
             ProjectWorkspaceJpaRepository workspaceRepository,
             RoadmapArtifactJpaRepository artifactRepository,
@@ -62,7 +69,10 @@ public class RoadmapArtifactService {
             RoadmapNodeJpaRepository nodeRepository,
             RoadmapModuleJpaRepository moduleRepository,
             RoadmapStageJpaRepository stageRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            ArtifactSensitiveScanner sensitiveScanner,
+            ArtifactReviewRubricEvaluator rubricEvaluator,
+            RoadmapNodeMutationService mutationService
     ) {
         this.workspaceRepository = workspaceRepository;
         this.artifactRepository = artifactRepository;
@@ -73,6 +83,9 @@ public class RoadmapArtifactService {
         this.moduleRepository = moduleRepository;
         this.stageRepository = stageRepository;
         this.objectMapper = objectMapper;
+        this.sensitiveScanner = sensitiveScanner;
+        this.rubricEvaluator = rubricEvaluator;
+        this.mutationService = mutationService;
     }
 
     @Transactional
@@ -267,4 +280,106 @@ public class RoadmapArtifactService {
             throw new IllegalStateException("运行环境不支持 SHA-256", exception);
         }
     }
+
+    @Transactional
+    public RoadmapArtifactResponse evaluate(String ownerId, String artifactId) {
+        RoadmapArtifactEntity artifact = artifactRepository.findByIdAndOwnerId(artifactId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("成果物不存在"));
+
+        ArtifactReviewRubricEvaluator.EvaluationResult result = rubricEvaluator.evaluate(artifact);
+        Instant now = Instant.now();
+        artifact.recordReview(
+                result.score(),
+                result.feedback(),
+                result.sensitiveScanPassed(),
+                result.sensitiveFindings(),
+                now
+        );
+
+        String eventType = result.passed() ? "RUBRIC_PASSED" : "RUBRIC_REJECTED";
+        String reviewDetails = "评分: " + result.score() + "/100, 敏感扫描: "
+                + (result.sensitiveScanPassed() ? "通过" : "发现违规: " + result.sensitiveFindings())
+                + ", 反馈: " + result.feedback();
+
+        reviewRepository.save(new RoadmapArtifactReviewEntity(
+                UUID.randomUUID().toString(),
+                artifact.getId(),
+                ownerId,
+                ArtifactStatus.SUBMITTED,
+                artifact.getStatus(),
+                eventType,
+                reviewDetails,
+                result.score(),
+                result.breakdownJson(),
+                now
+        ));
+
+        return response(artifact);
+    }
+
+    @Transactional
+    public RoadmapArtifactResponse accept(String ownerId, String artifactId) {
+        RoadmapArtifactEntity artifact = artifactRepository.findByIdAndOwnerId(artifactId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("成果物不存在"));
+
+        if (artifact.getStatus() != ArtifactStatus.SUBMITTED && artifact.getStatus() != ArtifactStatus.ACCEPTED) {
+            throw new ConflictException("只有等待验收或已通过评审的成果物可接受");
+        }
+
+        if (artifact.getRubricScore() == null) {
+            evaluate(ownerId, artifactId);
+            artifact = artifactRepository.findByIdAndOwnerId(artifactId, ownerId).orElseThrow();
+        }
+
+        if (artifact.getRubricScore() < 70 || Boolean.FALSE.equals(artifact.getSensitiveScanPassed())) {
+            throw new ConflictException("成果物评审得分未达 70 分或未通过敏感信息扫描，不可接受");
+        }
+
+        Instant now = Instant.now();
+        ArtifactStatus prevStatus = artifact.getStatus();
+        artifact.accept(now);
+
+        mutationService.recordArtifactAccepted(ownerId, artifact.getRoadmapNodeId(), now);
+
+        reviewRepository.save(new RoadmapArtifactReviewEntity(
+                UUID.randomUUID().toString(),
+                artifact.getId(),
+                ownerId,
+                prevStatus,
+                ArtifactStatus.ACCEPTED,
+                "USER_ACCEPTED",
+                "用户人工核准通过实践成果物",
+                artifact.getRubricScore(),
+                null,
+                now
+        ));
+
+        return response(artifact);
+    }
+
+    @Transactional
+    public RoadmapArtifactResponse reject(String ownerId, String artifactId, String reason) {
+        RoadmapArtifactEntity artifact = artifactRepository.findByIdAndOwnerId(artifactId, ownerId)
+                .orElseThrow(() -> new ResourceNotFoundException("成果物不存在"));
+
+        Instant now = Instant.now();
+        ArtifactStatus prevStatus = artifact.getStatus();
+        artifact.reject(reason != null ? reason : "未说明原因", now);
+
+        reviewRepository.save(new RoadmapArtifactReviewEntity(
+                UUID.randomUUID().toString(),
+                artifact.getId(),
+                ownerId,
+                prevStatus,
+                ArtifactStatus.REJECTED,
+                "USER_REJECTED",
+                "人工拒绝: " + (reason != null ? reason : "未说明原因"),
+                artifact.getRubricScore(),
+                null,
+                now
+        ));
+
+        return response(artifact);
+    }
+
 }

@@ -38,4 +38,30 @@ public class RoadmapArtifactController {
     ) {
         return service.artifact(user.id(), artifactId);
     }
+
+    @PostMapping("/{artifactId}/evaluate")
+    public RoadmapArtifactResponse evaluate(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String artifactId
+    ) {
+        return service.evaluate(user.id(), artifactId);
+    }
+
+    @PostMapping("/{artifactId}/accept")
+    public RoadmapArtifactResponse accept(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String artifactId
+    ) {
+        return service.accept(user.id(), artifactId);
+    }
+
+    @PostMapping("/{artifactId}/reject")
+    public RoadmapArtifactResponse reject(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String artifactId,
+            @Valid @RequestBody(required = false) RejectRoadmapArtifactRequest request
+    ) {
+        return service.reject(user.id(), artifactId, request != null ? request.reason() : null);
+    }
+
 }

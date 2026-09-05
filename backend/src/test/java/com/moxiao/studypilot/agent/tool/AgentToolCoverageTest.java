@@ -49,6 +49,7 @@ class AgentToolCoverageTest {
                 "workspaces.list",
                 "artifacts.list",
                 "artifacts.get",
+                "artifacts.evaluate",
                 "runner.execution.preview"
         )));
     }

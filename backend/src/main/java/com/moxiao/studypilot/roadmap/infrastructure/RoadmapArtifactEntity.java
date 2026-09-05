@@ -60,6 +60,16 @@ public class RoadmapArtifactEntity {
     private Instant createdAt;
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+    @Column(name = "rubric_score")
+    private Integer rubricScore;
+    @Column(name = "rubric_feedback", length = 4000)
+    private String rubricFeedback;
+    @Column(name = "sensitive_scan_passed")
+    private Boolean sensitiveScanPassed = true;
+    @Column(name = "sensitive_findings", length = 2000)
+    private String sensitiveFindings;
+    @Column(name = "accepted_at")
+    private Instant acceptedAt;
     @Version
     @Column(name = "row_version", nullable = false)
     private long rowVersion;
@@ -118,4 +128,40 @@ public class RoadmapArtifactEntity {
     public String getIdempotencyKey() { return idempotencyKey; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
+
+    public void recordReview(int score, String feedback, boolean sensitivePassed, String sensitiveFindings, Instant now) {
+        this.rubricScore = score;
+        this.rubricFeedback = feedback;
+        this.sensitiveScanPassed = sensitivePassed;
+        this.sensitiveFindings = sensitiveFindings;
+        if (!sensitivePassed) {
+            this.status = ArtifactStatus.REJECTED;
+        }
+        this.updatedAt = now;
+    }
+
+    public void accept(Instant now) {
+        if (this.status == ArtifactStatus.REJECTED) {
+            throw new IllegalArgumentException("已被拒绝的成果物无法直接接受");
+        }
+        if (this.rubricScore != null && this.rubricScore < 70) {
+            throw new IllegalArgumentException("评分低于70分（当前" + this.rubricScore + "分），无法通过验收");
+        }
+        this.status = ArtifactStatus.ACCEPTED;
+        this.acceptedAt = now;
+        this.updatedAt = now;
+    }
+
+    public void reject(String reason, Instant now) {
+        this.status = ArtifactStatus.REJECTED;
+        this.rubricFeedback = reason;
+        this.updatedAt = now;
+    }
+
+    public Integer getRubricScore() { return rubricScore; }
+    public String getRubricFeedback() { return rubricFeedback; }
+    public Boolean getSensitiveScanPassed() { return sensitiveScanPassed; }
+    public String getSensitiveFindings() { return sensitiveFindings; }
+    public Instant getAcceptedAt() { return acceptedAt; }
+
 }

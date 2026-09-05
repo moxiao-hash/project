@@ -20,6 +20,11 @@ public record RoadmapArtifactResponse(
         int submissionVersion,
         RoadmapNodeSnapshot roadmapNode,
         List<ReviewEvent> reviewHistory,
+        Integer rubricScore,
+        String rubricFeedback,
+        Boolean sensitiveScanPassed,
+        String sensitiveFindings,
+        Instant acceptedAt,
         Instant createdAt
 ) {
     public static RoadmapArtifactResponse from(
@@ -34,7 +39,7 @@ public record RoadmapArtifactResponse(
                         entity.getRoadmapNodeId(), entity.getRoadmapModuleId(),
                         entity.getRoadmapStageId(), entity.getNodeTitle(),
                         entity.getModuleTitle(), entity.getStageTitle()),
-                reviews.stream().map(ReviewEvent::from).toList(), entity.getCreatedAt());
+                reviews.stream().map(ReviewEvent::from).toList(), entity.getRubricScore(), entity.getRubricFeedback(), entity.getSensitiveScanPassed(), entity.getSensitiveFindings(), entity.getAcceptedAt(), entity.getCreatedAt());
     }
 
     public record RoadmapNodeSnapshot(
@@ -52,12 +57,14 @@ public record RoadmapArtifactResponse(
             ArtifactStatus toStatus,
             String eventType,
             String details,
+            Integer score,
+            String rubricBreakdownJson,
             Instant createdAt
     ) {
         static ReviewEvent from(RoadmapArtifactReviewEntity entity) {
             return new ReviewEvent(
                     entity.getId(), entity.getFromStatus(), entity.getToStatus(),
-                    entity.getEventType(), entity.getDetails(), entity.getCreatedAt());
+                    entity.getEventType(), entity.getDetails(), entity.getScore(), entity.getRubricBreakdownJson(), entity.getCreatedAt());
         }
     }
 }

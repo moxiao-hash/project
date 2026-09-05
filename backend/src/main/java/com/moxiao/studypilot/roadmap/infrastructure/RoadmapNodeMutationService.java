@@ -87,4 +87,24 @@ public class RoadmapNodeMutationService {
             scheduleRefreshService.request(enrollment.getOwnerId(), now);
         }
     }
+
+    @Transactional
+    public void recordArtifactAccepted(String ownerId, String nodeId, Instant now) {
+        UserRoadmapEntity enrollment = userRoadmapRepository
+                .findByOwnerIdAndActiveSlotForUpdate(ownerId, "CURRENT")
+                .or(() -> userRoadmapRepository.findByIdForUpdate(ownerId))
+                .orElseThrow(() -> new ResourceNotFoundException("学习路线绑定不存在"));
+        UserRoadmapNodeEntity state = userNodeRepository
+                .findByUserRoadmapIdAndNodeId(enrollment.getId(), nodeId)
+                .orElseThrow(() -> new ResourceNotFoundException("路线节点状态不存在"));
+        state.acceptArtifact(now);
+        if (state.completionRequirementsSatisfied()) {
+            state.completeAfterRequirements(now);
+            enrollmentService.recalculateAvailability(enrollment.getId());
+            scheduleRefreshService.markCompleted(enrollment.getOwnerId(), state.getId(), now);
+        } else {
+            scheduleRefreshService.request(enrollment.getOwnerId(), now);
+        }
+    }
+
 }

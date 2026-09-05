@@ -253,6 +253,14 @@ public class AgentReadToolConfiguration {
     }
 
     @Bean
+    AgentToolHandler artifactEvaluateTool(ObjectMapper mapper, RoadmapArtifactService service) {
+        return read(mapper, "artifacts.evaluate", "WORKSPACE",
+                Map.of("artifactId", "string"), Set.of("artifactId"),
+                (context, arguments) -> service.evaluate(
+                        context.ownerId(), text(arguments, "artifactId")));
+    }
+
+    @Bean
     AgentToolHandler artifactTool(ObjectMapper mapper, RoadmapArtifactService service) {
         return read(mapper, "artifacts.get", "WORKSPACE",
                 Map.of("artifactId", "string"), Set.of("artifactId"),

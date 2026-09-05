@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -235,4 +236,86 @@ class RoadmapArtifactWorkflowTest {
     private record Registration(String userId, String token) { }
 
     private record RoadmapTarget(String nodeId, String moduleId, String stageId) { }
+
+    @Test
+    void shouldEvaluateArtifactAndAcceptWhenScorePasses() throws Exception {
+        Registration owner = registerAndEnroll();
+        Path wsDir = Files.createDirectory(tempDir.resolve("eval-ws"));
+        Path subDir = Files.createDirectory(wsDir.resolve("src"));
+        String workspaceId = read(createWorkspace(owner, "Eval", wsDir.toString()).andReturn()).get("id").asText();
+        RoadmapTarget target = firstMilestone(owner);
+
+        // Submit artifact
+        MvcResult submitResult = mockMvc.perform(post("/api/roadmap-artifacts")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workspaceId":"%s",
+                                  "roadmapNodeId":"%s",
+                                  "relativePath":"src",
+                                  "description":"实现标准核心服务",
+                                  "testEvidence":"mvn test passes with 10 unit tests",
+                                  "evaluationMode":"HYBRID",
+                                  "idempotencyKey":"eval-pass-key"
+                                }
+                                """.formatted(workspaceId, target.nodeId())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String artifactId = read(submitResult).get("id").asText();
+
+        // 1. Evaluate artifact (Rubric scoring)
+        MvcResult evalResult = mockMvc.perform(post("/api/roadmap-artifacts/{artifactId}/evaluate", artifactId)
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rubricScore").value(org.hamcrest.Matchers.greaterThanOrEqualTo(70)))
+                .andExpect(jsonPath("$.sensitiveScanPassed").value(true))
+                .andReturn();
+        int score = read(evalResult).get("rubricScore").asInt();
+        assertTrue(score >= 70, "Rubric score should be >= 70");
+
+        // 2. User accepts artifact
+        mockMvc.perform(post("/api/roadmap-artifacts/{artifactId}/accept", artifactId)
+                        .header("Authorization", bearer(owner)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.rubricScore").value(score));
+    }
+
+    @Test
+    void shouldRejectArtifactWhenExplicitlyRejectedByUser() throws Exception {
+        Registration owner = registerAndEnroll();
+        Path wsDir = Files.createDirectory(tempDir.resolve("rej-ws"));
+        Path subDir = Files.createDirectory(wsDir.resolve("src"));
+        String workspaceId = read(createWorkspace(owner, "Rej", wsDir.toString()).andReturn()).get("id").asText();
+        RoadmapTarget target = firstMilestone(owner);
+
+        MvcResult submitResult = mockMvc.perform(post("/api/roadmap-artifacts")
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "workspaceId":"%s",
+                                  "roadmapNodeId":"%s",
+                                  "relativePath":"src",
+                                  "description":"待完善实现",
+                                  "testEvidence":"部分测试未通过",
+                                  "evaluationMode":"HYBRID",
+                                  "idempotencyKey":"reject-key"
+                                }
+                                """.formatted(workspaceId, target.nodeId())))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String artifactId = read(submitResult).get("id").asText();
+
+        mockMvc.perform(post("/api/roadmap-artifacts/{artifactId}/reject", artifactId)
+                        .header("Authorization", bearer(owner))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"代码质量不符合要求，缺少单元测试"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+    }
+
 }

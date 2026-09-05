@@ -24,7 +24,7 @@
 
 - [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
 - [x] Task 22：Docker/Podman Runner、Unix Socket、签名信封、nonce、断网、资源和环境隔离。
-- [ ] Task 23：测试后文件清单与敏感扫描、DeepSeek Rubric、70 分阈值和用户最终接受。
+- [x] Task 23：测试后文件清单与敏感扫描、DeepSeek Rubric、70 分阈值和用户最终接受。
 - [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
 - [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
@@ -115,6 +115,14 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 实现受治理 Runner 执行接口 `POST /api/runner/executions` 及写工具 `runner.check.run`、`runner.dependencies.prepare`。
 - [x] 强制对齐能力矩阵：`PREPARE_DEPENDENCIES` 归为高风险必须经过专用用户确认卡片/API，进入 `WAITING_CONFIRMATION` 并发送 `AGENT_ACTION_READY` 通知与审计日志；只读检查自动流转并记录审计。
 - [x] 后端 315 项测试通过（新增 `RunnerGovernanceWorkflowTest` 覆盖预览、注入校验、高风险待确认、通过确认流转执行与审计闭环）。
+
+## Task 23 验收证据
+
+- [x] 增加成果敏感扫描机制 `ArtifactSensitiveScanner`，拦截私钥、密码和 API 密钥泄露并记录违规清单。
+- [x] 建立基于 DeepSeek Rubric 的 70 分阅卷规则 `ArtifactReviewRubricEvaluator`，未达 70 分不允许核准。
+- [x] 支持用户人工最终决策 `POST /api/roadmap-artifacts/{id}/accept` 与 `POST /api/roadmap-artifacts/{id}/reject`，符合学习真实性底线。
+- [x] 成功接受成果物时自动标记路线节点完成（`recordArtifactAccepted`），驱动下一阶段学习推进。
+- [x] 集成测试 `RoadmapArtifactWorkflowTest` 323 项通过。
 
 ## Task 22 验收证据
 

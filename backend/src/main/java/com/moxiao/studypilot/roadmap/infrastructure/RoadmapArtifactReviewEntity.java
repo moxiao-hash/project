@@ -33,6 +33,11 @@ public class RoadmapArtifactReviewEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @Column(name = "score")
+    private Integer score;
+    @Column(name = "rubric_breakdown_json", length = 4000)
+    private String rubricBreakdownJson;
+
     protected RoadmapArtifactReviewEntity() { }
 
     public RoadmapArtifactReviewEntity(
@@ -49,6 +54,26 @@ public class RoadmapArtifactReviewEntity {
         this.createdAt = createdAt;
     }
 
+
+    public RoadmapArtifactReviewEntity(
+            String id, String artifactId, String ownerId, ArtifactStatus fromStatus,
+            ArtifactStatus toStatus, String eventType, String details, Integer score,
+            String rubricBreakdownJson, Instant createdAt
+    ) {
+        this.id = id;
+        this.artifactId = artifactId;
+        this.ownerId = ownerId;
+        this.fromStatus = fromStatus;
+        this.toStatus = toStatus;
+        this.eventType = eventType;
+        this.details = details;
+        this.score = score;
+        this.rubricBreakdownJson = rubricBreakdownJson;
+        this.createdAt = createdAt;
+    }
+
+    public Integer getScore() { return score; }
+    public String getRubricBreakdownJson() { return rubricBreakdownJson; }
     public String getId() { return id; }
     public String getArtifactId() { return artifactId; }
     public String getOwnerId() { return ownerId; }
