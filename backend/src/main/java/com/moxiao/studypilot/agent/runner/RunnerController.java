@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,19 +37,27 @@ public class RunnerController {
         return ResponseEntity.ok(runnerService.submitExecution(user.id(), request));
     }
 
-    @PostMapping("/executions/{executionId}/confirm")
-    public ResponseEntity<RunnerExecutionResult> confirm(
+    @GetMapping("/executions/{runnerExecutionId}")
+    public ResponseEntity<RunnerExecutionResult> get(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String executionId
+            @PathVariable String runnerExecutionId
     ) {
-        return ResponseEntity.ok(runnerService.confirmExecution(user.id(), executionId));
+        return ResponseEntity.ok(runnerService.get(user.id(), runnerExecutionId));
     }
 
-    @PostMapping("/executions/{executionId}/reject")
+    @PostMapping("/executions/{runnerExecutionId}/confirm")
+    public ResponseEntity<RunnerExecutionResult> confirm(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String runnerExecutionId
+    ) {
+        return ResponseEntity.ok(runnerService.confirmExecution(user.id(), runnerExecutionId));
+    }
+
+    @PostMapping("/executions/{runnerExecutionId}/reject")
     public ResponseEntity<RunnerExecutionResult> reject(
             @AuthenticationPrincipal AuthenticatedUser user,
-            @PathVariable String executionId
+            @PathVariable String runnerExecutionId
     ) {
-        return ResponseEntity.ok(runnerService.rejectExecution(user.id(), executionId));
+        return ResponseEntity.ok(runnerService.rejectExecution(user.id(), runnerExecutionId));
     }
 }

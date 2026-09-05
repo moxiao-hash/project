@@ -1,0 +1,32 @@
+CREATE TABLE runner_executions (
+    id VARCHAR(36) PRIMARY KEY,
+    owner_id VARCHAR(36) NOT NULL,
+    workspace_id VARCHAR(36) NOT NULL,
+    workspace_path VARCHAR(1024) NOT NULL,
+    workspace_fingerprint VARCHAR(64) NOT NULL,
+    template_type VARCHAR(40) NOT NULL,
+    target_pattern VARCHAR(255),
+    command_tokens_json VARCHAR(2000) NOT NULL,
+    risk_level VARCHAR(10) NOT NULL,
+    timeout_seconds INT NOT NULL,
+    idempotency_key VARCHAR(180) NOT NULL,
+    request_fingerprint VARCHAR(64) NOT NULL,
+    governance_execution_id VARCHAR(36) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    exit_code INT,
+    stdout_summary VARCHAR(2000),
+    stderr_summary VARCHAR(2000),
+    success BOOLEAN,
+    duration_millis BIGINT,
+    executed_at TIMESTAMP(6),
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    row_version BIGINT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_runner_execution_owner FOREIGN KEY (owner_id) REFERENCES app_users (id),
+    CONSTRAINT fk_runner_execution_workspace FOREIGN KEY (workspace_id) REFERENCES project_workspaces (id),
+    CONSTRAINT fk_runner_execution_governance FOREIGN KEY (governance_execution_id) REFERENCES agent_executions (id),
+    CONSTRAINT uk_runner_execution_idempotency UNIQUE (owner_id, idempotency_key),
+    CONSTRAINT uk_runner_execution_governance UNIQUE (governance_execution_id)
+);
+
+CREATE INDEX idx_runner_executions_owner_created ON runner_executions (owner_id, created_at);

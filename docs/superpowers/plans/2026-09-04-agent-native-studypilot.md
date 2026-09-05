@@ -111,10 +111,11 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 ## Task 21 验收证据
 
 - [x] 提供固定命令模板：只读检查（MAVEN_TEST、MAVEN_COMPILE、NPM_TEST、PYTEST）与高危依赖准备（PREPARE_DEPENDENCIES），严禁任意自由 Shell 命令。
-- [x] 实现 Runner 执行预览接口 `GET /api/runner/preview` 及只读工具 `runner.execution.preview`，支持预先获取风险等级、模板说明、执行指令、超时时间和确认需求。
+- [x] 实现无副作用 Runner 执行预览接口 `POST /api/runner/preview` 及只读工具 `runner.execution.preview`，支持预先获取风险等级、模板说明、执行指令、超时时间和确认需求。
 - [x] 实现受治理 Runner 执行接口 `POST /api/runner/executions` 及写工具 `runner.check.run`、`runner.dependencies.prepare`。
-- [x] 强制对齐能力矩阵：`PREPARE_DEPENDENCIES` 归为高风险必须经过专用用户确认卡片/API，进入 `WAITING_CONFIRMATION` 并发送 `AGENT_ACTION_READY` 通知与审计日志；只读检查自动流转并记录审计。
-- [x] 后端 315 项测试通过（新增 `RunnerGovernanceWorkflowTest` 覆盖预览、注入校验、高风险待确认、通过确认流转执行与审计闭环）。
+- [x] 强制对齐能力矩阵：`PREPARE_DEPENDENCIES` 归为高风险，持久绑定原始工作区、模板、命令令牌和超时后进入 `WAITING_CONFIRMATION`，且仅专用确认 API 可执行；只读检查自动流转并记录审计。
+- [x] Runner 提交要求客户端幂等键，重复提交/确认不重复执行；执行记录支持按 owner 查询，工作区路径或指纹变化时冲突终止。
+- [x] `RunnerGovernanceWorkflowTest` 覆盖预览无副作用、精确工作区/模板确认、重复确认、幂等冲突、跨 owner、工作区变化、低风险精确执行、拒绝幂等及失败状态一致性。
 
 ## Task 23 验收证据
 

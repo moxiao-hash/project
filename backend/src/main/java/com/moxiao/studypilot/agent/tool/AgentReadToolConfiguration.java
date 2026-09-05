@@ -311,8 +311,8 @@ public class AgentReadToolConfiguration {
             com.moxiao.studypilot.agent.runner.RunnerGovernanceService service
     ) {
         return read(mapper, "runner.execution.preview", "RUNNER",
-                Map.of("workspaceId", "string", "templateType", "string"),
-                Set.of("workspaceId", "templateType"),
+                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
+                Set.of("workspaceId", "templateType", "idempotencyKey"),
                 (context, arguments) -> service.preview(
                         context.ownerId(),
                         new com.moxiao.studypilot.agent.runner.RunnerExecutionRequest(
@@ -320,7 +320,8 @@ public class AgentReadToolConfiguration {
                                 com.moxiao.studypilot.agent.runner.RunnerTemplateType.valueOf(
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
-                                optionalText(arguments, "explanation"))));
+                                optionalText(arguments, "explanation"),
+                                text(arguments, "idempotencyKey"))));
     }
     private static AgentToolHandler read(
             ObjectMapper mapper,

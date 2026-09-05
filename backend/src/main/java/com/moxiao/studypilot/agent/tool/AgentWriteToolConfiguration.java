@@ -304,7 +304,7 @@ public class AgentWriteToolConfiguration {
     ) {
         return write(mapper, "runner.check.run", "RUNNER", AgentToolRiskLevel.LOW,
                 "RUNNER_MANAGEMENT", ExecutionType.RUNNER_EXECUTION,
-                Map.of("workspaceId", "string", "templateType", "string"),
+                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
                 Set.of("workspaceId", "templateType"),
                 arguments -> "执行项目本地检查任务（" + text(arguments, "templateType") + "）",
                 (context, arguments) -> service.submitExecution(
@@ -314,7 +314,8 @@ public class AgentWriteToolConfiguration {
                                 com.moxiao.studypilot.agent.runner.RunnerTemplateType.valueOf(
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
-                                optionalText(arguments, "explanation"))));
+                                optionalText(arguments, "explanation"),
+                                runnerIdempotencyKey(context, arguments))));
     }
 
     @Bean
@@ -324,7 +325,7 @@ public class AgentWriteToolConfiguration {
     ) {
         return write(mapper, "runner.dependencies.prepare", "RUNNER", AgentToolRiskLevel.HIGH,
                 "RUNNER_MANAGEMENT", ExecutionType.RUNNER_EXECUTION,
-                Map.of("workspaceId", "string", "templateType", "string"),
+                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
                 Set.of("workspaceId", "templateType"),
                 arguments -> "准备并安装项目运行环境依赖（" + text(arguments, "templateType") + "）",
                 (context, arguments) -> service.submitExecution(
@@ -334,7 +335,20 @@ public class AgentWriteToolConfiguration {
                                 com.moxiao.studypilot.agent.runner.RunnerTemplateType.valueOf(
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
-                                optionalText(arguments, "explanation"))));
+                                optionalText(arguments, "explanation"),
+                                runnerIdempotencyKey(context, arguments))));
+    }
+
+    private static String runnerIdempotencyKey(AgentToolContext context, JsonNode arguments) {
+        if (context.operationIdempotencyKey() != null
+                && !context.operationIdempotencyKey().isBlank()) {
+            return context.operationIdempotencyKey();
+        }
+        String supplied = optionalText(arguments, "idempotencyKey");
+        if (supplied == null || supplied.isBlank()) {
+            throw new IllegalArgumentException("Runner 执行缺少幂等键");
+        }
+        return supplied;
     }
 
     private static AgentToolHandler write(
