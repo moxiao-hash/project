@@ -33,17 +33,20 @@ public class RunnerGovernanceService {
     private final AgentGovernanceService governanceService;
     private final NotificationService notificationService;
     private final AuditLogJpaRepository auditLogRepository;
+    private final IsolatedRunnerExecutor isolatedExecutor;
 
     public RunnerGovernanceService(
             ProjectWorkspaceJpaRepository workspaceRepository,
             AgentGovernanceService governanceService,
             NotificationService notificationService,
-            AuditLogJpaRepository auditLogRepository
+            AuditLogJpaRepository auditLogRepository,
+            IsolatedRunnerExecutor isolatedExecutor
     ) {
         this.workspaceRepository = workspaceRepository;
         this.governanceService = governanceService;
         this.notificationService = notificationService;
         this.auditLogRepository = auditLogRepository;
+        this.isolatedExecutor = isolatedExecutor;
     }
 
     public RunnerExecutionPreview preview(String ownerId, RunnerExecutionRequest request) {
@@ -143,30 +146,35 @@ public class RunnerGovernanceService {
                 ExecutionStatus.RUNNING, null, null, null, null, null, null, null
         ));
 
+        ProjectWorkspaceEntity workspace = workspaceRepository.findAllByOwnerIdOrderByCreatedAtAsc(ownerId)
+                .stream().findFirst().orElse(null);
+        String wsPath = workspace != null ? workspace.getRootPath() : System.getProperty("java.io.tmpdir");
+
+        RunnerExecutionResult result = isolatedExecutor.execute(
+                executionId,
+                workspace != null ? workspace.getId() : "workspace-confirmed",
+                RunnerTemplateType.PREPARE_DEPENDENCIES,
+                wsPath,
+                List.of("mvn", "dependency:resolve"),
+                300
+        );
+
         governanceService.update(executionId, new UpdateAgentExecutionRequest(
-                ExecutionStatus.SUCCEEDED, "Runner 模拟执行完成", null, null, null, null, 150L, null
+                result.success() ? ExecutionStatus.SUCCEEDED : ExecutionStatus.FAILED,
+                result.success() ? "Runner 执行已完成" : "Runner 执行失败",
+                result.success() ? null : result.stderrSummary(),
+                null, null, null,
+                result.durationMillis(), null
         ));
 
         notificationService.create(new CreateNotificationRequest(
                 ownerId,
-                NotificationType.AGENT_ACTION_COMPLETED,
-                "Runner 执行已完成",
+                result.success() ? NotificationType.AGENT_ACTION_COMPLETED : NotificationType.AGENT_FAILED,
+                result.success() ? "Runner 执行已完成" : "Runner 执行失败",
                 execution.getSummary()
         ));
 
-        return new RunnerExecutionResult(
-                execution.getId(),
-                "workspace-confirmed",
-                RunnerTemplateType.PREPARE_DEPENDENCIES,
-                "SUCCEEDED",
-                0,
-                List.of("mvn", "dependency:resolve"),
-                "Dependencies resolved successfully",
-                "",
-                true,
-                150L,
-                Instant.now()
-        );
+        return result;
     }
 
     @Transactional
@@ -201,30 +209,31 @@ public class RunnerGovernanceService {
                 ExecutionStatus.RUNNING, null, null, null, null, null, null, null
         ));
 
+        RunnerExecutionResult result = isolatedExecutor.execute(
+                execution.getId(),
+                preview.workspaceId(),
+                preview.templateType(),
+                preview.workspacePath(),
+                preview.commandTokens(),
+                preview.timeoutSeconds()
+        );
+
         governanceService.update(execution.getId(), new UpdateAgentExecutionRequest(
-                ExecutionStatus.SUCCEEDED, "执行成功: " + preview.renderedCommand(), null, null, null, null, 80L, null
+                result.success() ? ExecutionStatus.SUCCEEDED : ExecutionStatus.FAILED,
+                result.success() ? "执行成功: " + preview.renderedCommand() : "执行失败",
+                result.success() ? null : result.stderrSummary(),
+                null, null, null,
+                result.durationMillis(), null
         ));
 
         notificationService.create(new CreateNotificationRequest(
                 ownerId,
-                NotificationType.AGENT_ACTION_COMPLETED,
-                "Runner 检查完成",
+                result.success() ? NotificationType.AGENT_ACTION_COMPLETED : NotificationType.AGENT_FAILED,
+                result.success() ? "Runner 检查完成" : "Runner 检查失败",
                 preview.renderedCommand()
         ));
 
-        return new RunnerExecutionResult(
-                execution.getId(),
-                preview.workspaceId(),
-                preview.templateType(),
-                "SUCCEEDED",
-                0,
-                preview.commandTokens(),
-                "Check completed successfully for " + preview.renderedCommand(),
-                "",
-                true,
-                80L,
-                Instant.now()
-        );
+        return result;
     }
 
     private ProjectWorkspaceEntity requireOwnedWorkspace(String ownerId, String workspaceId) {

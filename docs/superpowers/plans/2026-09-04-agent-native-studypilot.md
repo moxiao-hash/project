@@ -23,7 +23,7 @@
 ## Runner 与 Developer Agent
 
 - [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
-- [ ] Task 22：Docker/Podman Runner、Unix Socket、签名信封、nonce、断网、资源和环境隔离。
+- [x] Task 22：Docker/Podman Runner、Unix Socket、签名信封、nonce、断网、资源和环境隔离。
 - [ ] Task 23：测试后文件清单与敏感扫描、DeepSeek Rubric、70 分阈值和用户最终接受。
 - [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
@@ -115,6 +115,15 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 实现受治理 Runner 执行接口 `POST /api/runner/executions` 及写工具 `runner.check.run`、`runner.dependencies.prepare`。
 - [x] 强制对齐能力矩阵：`PREPARE_DEPENDENCIES` 归为高风险必须经过专用用户确认卡片/API，进入 `WAITING_CONFIRMATION` 并发送 `AGENT_ACTION_READY` 通知与审计日志；只读检查自动流转并记录审计。
 - [x] 后端 315 项测试通过（新增 `RunnerGovernanceWorkflowTest` 覆盖预览、注入校验、高风险待确认、通过确认流转执行与审计闭环）。
+
+## Task 22 验收证据
+
+- [x] 实现基于签名信封（Signed Envelope）与 Nonce 防重放的安全 Runner 协议（`RunnerSignedEnvelope` + `RunnerSecurityService`）。
+- [x] 实现了 10 分钟时间戳有效期校验、Nonce 重放检测（内存缓存）、以及基于 HMAC-SHA256 的签名生成与严格鉴权。
+- [x] 实现了规范路径（Canonical Path）与符号链接越界逃逸防护（Symlink Escape Detection），禁止在指向外部的符号链接路径中运行任务。
+- [x] 实现了沙箱环境与资源隔离规范：断网执行（`networkDisabled=true`，对应 `--network none`）、CPU 配额限制（`cpuLimit=1.0`）、内存限制（`memoryLimit=1024m`）以及安全环境变量白名单。
+- [x] 支持 Docker / Podman / Emulated Socket 隔离模式自动探测与降级回退机制（`IsolatedRunnerExecutor`）。
+- [x] 后端 321 项测试通过（新增 `RunnerProtocolSecurityTest` 覆盖签名验证、篡改防御、过期拦截、Nonce 重放拒绝、符号链接逃逸阻断与安全信封执行全链路）。
 
 ## 提交映射（按任务）
 
