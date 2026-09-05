@@ -155,6 +155,16 @@ public class AssistantAutomationService {
         Instant now = Instant.now();
         for (AssistantAutomationJobEntity job : jobRepository.findClaimable(
                 now, PageRequest.of(0, MAX_CLAIM_SCAN))) {
+            if (job.exhaustExpiredLease(now)) {
+                governanceService.update(job.getExecutionId(), new UpdateAgentExecutionRequest(
+                        ExecutionStatus.FAILED, null, job.getErrorMessage(), null,
+                        null, null, null, null));
+                notificationService.create(new CreateNotificationRequest(
+                        job.getOwnerId(), NotificationType.AGENT_FAILED,
+                        "主动学习任务处理失败", job.getErrorMessage()));
+                audit(job.getOwnerId(), "AUTOMATION_JOB_FAILED", job.getId(), job.getErrorMessage());
+                continue;
+            }
             AssistantAutomationRuleEntity rule = ruleRepository.findById(job.getRuleId())
                     .orElse(null);
             if (rule == null || rule.getStatus() != AutomationRuleStatus.ACTIVE) {

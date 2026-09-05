@@ -31,3 +31,4 @@ venv/
 http-client.private.env.json
 *.log
 .DS_Store
+.superpowers/

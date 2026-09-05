@@ -1,6 +1,8 @@
 import asyncio
 from datetime import UTC, date, datetime
 
+import pytest
+
 from app.scheduler.proactive_automation import ProactiveAutomationWorker
 from app.schemas.automation import AutomationJob
 
@@ -50,7 +52,7 @@ class FakeJava:
         self, name, owner_id, arguments, idempotency_key=None
     ):
         self.tool_calls.append((name, arguments, idempotency_key))
-        return {"toolName": name, "data": {}, "action": None}
+        return {"toolName": name, "data": {}, "action": {"status": "SUCCEEDED"}}
 
     async def create_notification(self, owner_id, notification_type, title, content):
         self.tool_calls.append(("notification", {"title": title, "content": content}, None))
@@ -151,5 +153,53 @@ def test_long_running_handler_renews_its_lease() -> None:
         await worker.run_once(datetime(2026, 7, 27, 0, 17, tzinfo=UTC))
 
         assert java.heartbeats
+
+    asyncio.run(run())
+
+
+def test_lost_lease_cancels_handler_before_it_can_perform_later_work():
+    async def run():
+        java = FakeJava()
+        service = FakeAdjustmentService()
+        later_work = []
+
+        async def lost_lease(*args):
+            raise RuntimeError("lease revoked")
+
+        async def slow_analyze(**kwargs):
+            await asyncio.sleep(0.05)
+            later_work.append("must not happen")
+
+        java.heartbeat_automation_job = lost_lease
+        service.analyze = slow_analyze
+        worker = ProactiveAutomationWorker(
+            java, worker_id="worker",
+            adjustment_service_factory=lambda _: asyncio.sleep(0, result=service),
+            heartbeat_interval_seconds=0.001,
+        )
+        await worker.run_once(datetime.now(UTC))
+        assert later_work == []
+        assert java.completed == []
+        assert len(java.failed) == 1
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("status", ["FAILED", "WAITING_CONFIRMATION", "RUNNING"])
+def test_rollover_never_claims_success_without_successful_java_execution(status):
+    async def run():
+        java = FakeJava("OVERDUE_NODE_ROLLOVER")
+
+        async def invoke(*args):
+            return {"action": {"status": status}}
+
+        java.invoke_agent_tool = invoke
+        worker = ProactiveAutomationWorker(
+            java, worker_id="worker",
+            adjustment_service_factory=lambda _: asyncio.sleep(0),
+        )
+        await worker.run_once(datetime.now(UTC))
+        assert java.completed == []
+        assert len(java.failed) == 1
 
     asyncio.run(run())

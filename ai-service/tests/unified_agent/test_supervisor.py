@@ -523,3 +523,108 @@ def test_prompt_injection_cannot_force_an_undeclared_or_unconfirmed_write() -> N
         assert all(call[1] == "user-1" for call in java.calls)
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("status", ["FAILED", "WAITING_CONFIRMATION", "RUNNING"])
+def test_confirm_never_reports_success_for_unexecuted_action(status):
+    async def run():
+        java = FakeJavaBackend()
+        service = UnifiedAgentSupervisor(java, model_name="test")
+        convo = await service.create_conversation("user-1")
+        preview = await service.send_message(
+            convo.conversation_id, "重做错题五题", "preview", "user-1", {}
+        )
+
+        async def confirm(*args):
+            return preview.pending_action.model_copy(update={
+                "status": status, "result": {"quizId": "must-not-open"}
+            }).model_dump(mode="json", by_alias=True)
+
+        java.confirm_agent_tool_action = confirm
+        result = await service.confirm_action(convo.conversation_id, "action-1", "user-1")
+        assert result.status != AssistantConversationStatus.COMPLETED
+        assert "已确认并执行" not in result.reply
+        assert not result.ui_actions
+        events = await service.list_events(convo.conversation_id, "user-1")
+        assert events[-1].type != "TURN_COMPLETED"
+        if status == "FAILED":
+            assert result.status == AssistantConversationStatus.FAILED
+            assert result.pending_action is None
+        else:
+            assert result.pending_action.status == status
+
+    asyncio.run(run())
+
+
+def test_confirmation_is_serialized_and_completed_confirmation_is_idempotent():
+    async def run():
+        from app.unified_agent.supervisor import AssistantConversationBusyError
+
+        java = FakeJavaBackend()
+        service = UnifiedAgentSupervisor(java, model_name="test")
+        convo = await service.create_conversation("user-1")
+        preview = await service.send_message(
+            convo.conversation_id, "重做错题五题", "preview", "user-1", {}
+        )
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+
+        async def confirm(*args):
+            calls.append(args)
+            entered.set()
+            await release.wait()
+            return preview.pending_action.model_copy(update={
+                "status": "SUCCEEDED", "result": {"quizId": "quiz-review"}
+            }).model_dump(mode="json", by_alias=True)
+
+        java.confirm_agent_tool_action = confirm
+        first = asyncio.create_task(
+            service.confirm_action(convo.conversation_id, "action-1", "user-1")
+        )
+        await entered.wait()
+        try:
+            with pytest.raises(AssistantConversationBusyError):
+                await asyncio.wait_for(
+                    service.confirm_action(convo.conversation_id, "action-1", "user-1"),
+                    timeout=0.1,
+                )
+            with pytest.raises(AssistantConversationBusyError):
+                await service.reject_action(convo.conversation_id, "action-1", "user-1")
+        finally:
+            release.set()
+            result = await first
+        repeated = await service.confirm_action(convo.conversation_id, "action-1", "user-1")
+        assert repeated == result
+        assert len(calls) == 1
+
+    asyncio.run(run())
+
+
+def test_cancel_during_context_fetch_prevents_subsequent_write_tool():
+    async def run():
+        java = FakeJavaBackend()
+        service = UnifiedAgentSupervisor(java, model_name="test")
+        convo = await service.create_conversation("user-1")
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = java.invoke_agent_tool
+
+        async def invoke(name, *args):
+            if name == "learning.context.get":
+                entered.set()
+                await release.wait()
+            return await original(name, *args)
+
+        java.invoke_agent_tool = invoke
+        turn = asyncio.create_task(service.send_message(
+            convo.conversation_id, "重做错题五题", "cancel-turn", "user-1", {}
+        ))
+        await entered.wait()
+        await service.cancel_turn(convo.conversation_id, "cancel-turn", "user-1")
+        release.set()
+        result = await turn
+        assert [call[0] for call in java.calls] == ["learning.context.get"]
+        assert result.status == AssistantConversationStatus.FAILED
+        assert result.pending_action is None
+        assert "取消" in result.reply
+
+    asyncio.run(run())

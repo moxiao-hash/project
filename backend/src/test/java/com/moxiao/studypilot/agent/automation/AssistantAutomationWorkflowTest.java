@@ -167,6 +167,33 @@ class AssistantAutomationWorkflowTest {
                 ruleId, AutomationJobStatus.PENDING);
     }
 
+    @Test
+    void expiredThirdLeaseIsFailedInsteadOfClaimedForever() throws Exception {
+        Registration owner = register("automation-exhausted");
+        createGrant(owner.token());
+        createRule(owner.token()).andExpect(status().isCreated());
+        MvcResult response = claim("crashed-worker").andExpect(status().isOk()).andReturn();
+        String id = objectMapper.readTree(response.getResponse().getContentAsString())
+                .get("id").asText();
+        AssistantAutomationJobEntity job = jobRepository.findById(id).orElseThrow();
+        org.springframework.test.util.ReflectionTestUtils.setField(job, "attempts", 3);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                job, "leaseUntil", Instant.now().minusSeconds(60));
+        jobRepository.saveAndFlush(job);
+
+        claim("replacement-worker").andExpect(status().isNoContent());
+
+        AssistantAutomationJobEntity exhausted = jobRepository.findById(id).orElseThrow();
+        org.assertj.core.api.Assertions.assertThat(exhausted.getStatus())
+                .isEqualTo(AutomationJobStatus.FAILED);
+        org.assertj.core.api.Assertions.assertThat(exhausted.getAttempts()).isEqualTo(3);
+        org.assertj.core.api.Assertions.assertThat(exhausted.getLeaseToken()).isNull();
+        mockMvc.perform(get("/api/agent-executions")
+                        .header("Authorization", bearer(owner.token())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].status").value("FAILED"));
+    }
+
     private org.springframework.test.web.servlet.ResultActions createRule(String token)
             throws Exception {
         String localTime = LocalTime.now(ZoneId.of("Asia/Shanghai"))

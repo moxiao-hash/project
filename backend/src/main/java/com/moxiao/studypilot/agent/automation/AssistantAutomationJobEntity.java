@@ -104,6 +104,19 @@ public class AssistantAutomationJobEntity {
         this.updatedAt = now;
     }
 
+    /** 超时也算一次尝试；worker 崩溃不能绕过最大尝试次数。 */
+    public boolean exhaustExpiredLease(Instant now) {
+        if (attempts < 3 || status != AutomationJobStatus.PROCESSING
+                || leaseUntil == null || leaseUntil.isAfter(now)) {
+            return false;
+        }
+        status = AutomationJobStatus.FAILED;
+        errorMessage = "主动自动化任务租约超时，已达到最大尝试次数";
+        clearLease();
+        updatedAt = now;
+        return true;
+    }
+
     public void complete(String workerId, String leaseToken, String summary, Instant now) {
         requireLease(workerId, leaseToken, now);
         status = AutomationJobStatus.COMPLETED;

@@ -2,7 +2,6 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
@@ -80,12 +79,20 @@ class ProactiveAutomationWorker:
             return False
         try:
             heartbeat = asyncio.create_task(self._heartbeat(job))
+            handler = asyncio.create_task(self._handle(job, at))
             try:
-                summary = await self._handle(job, at)
+                done, _ = await asyncio.wait(
+                    {heartbeat, handler}, return_when=asyncio.FIRST_COMPLETED
+                )
+                # 租约失效后立即停止本 worker，不能继续使用旧授权完成后续工作。
+                if heartbeat in done:
+                    await heartbeat
+                    raise RuntimeError("任务心跳意外结束")
+                summary = await handler
             finally:
                 heartbeat.cancel()
-                with suppress(asyncio.CancelledError):
-                    await heartbeat
+                handler.cancel()
+                await asyncio.gather(heartbeat, handler, return_exceptions=True)
             await self._java.complete_automation_job(
                 job.id,
                 self._worker_id,
@@ -129,12 +136,13 @@ class ProactiveAutomationWorker:
             return "已完成夜间学习计划分析"
         if job.type == "OVERDUE_NODE_ROLLOVER":
             start = at.date()
-            await self._java.invoke_agent_tool(
+            result = await self._java.invoke_agent_tool(
                 "schedule.refresh",
                 job.owner_id,
                 {"from": start.isoformat(), "to": (start + timedelta(days=6)).isoformat()},
                 f"automation:{job.id}",
             )
+            self._require_success(result)
             return "已滚动整理逾期学习节点"
         if job.type == "QUIZ_GENERATION_RETRY":
             context = await self._java.invoke_agent_tool(
@@ -142,12 +150,13 @@ class ProactiveAutomationWorker:
             )
             node_id = self._next_available_node_id(context.get("data"))
             if node_id is not None:
-                await self._java.invoke_agent_tool(
+                result = await self._java.invoke_agent_tool(
                     "assessment.node_quiz.generate",
                     job.owner_id,
                     {"nodeId": node_id},
                     f"automation:{job.id}",
                 )
+                self._require_success(result)
             return "已检查并重试待生成的路线测验"
         if job.type == "WEAKNESS_REVIEW_REMINDER":
             await self._java.create_notification(
@@ -166,6 +175,12 @@ class ProactiveAutomationWorker:
             )
             return "已发送待验收成果提醒"
         raise RuntimeError(f"尚未注册主动自动化处理器: {job.type}")
+
+    @staticmethod
+    def _require_success(result: dict[str, Any]) -> None:
+        action = result.get("action")
+        if not isinstance(action, dict) or action.get("status") != "SUCCEEDED":
+            raise RuntimeError("治理工具尚未成功执行，不得记录自动化成功")
 
     @staticmethod
     def _next_available_node_id(data: Any) -> str | None:

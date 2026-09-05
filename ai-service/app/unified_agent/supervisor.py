@@ -2,7 +2,7 @@
 
 import asyncio
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from time import monotonic
 from typing import Any, TypedDict
@@ -24,7 +24,11 @@ from app.unified_agent.models import (
     PublicToolStep,
     UiAction,
 )
-from app.unified_agent.tool_gateway import ToolBudget, UnifiedToolGateway
+from app.unified_agent.tool_gateway import (
+    ToolBudget,
+    ToolTurnCancelledError,
+    UnifiedToolGateway,
+)
 
 
 class AssistantConversationNotFoundError(LookupError):
@@ -57,6 +61,7 @@ class _Conversation:
     lock: asyncio.Lock
     turn_results: dict[str, AssistantConversationSnapshot]
     events: list[AssistantEvent]
+    action_results: dict[str, AssistantConversationSnapshot] = field(default_factory=dict)
     knowledge_conversation_id: str | None = None
     active_turn_id: str | None = None
     cancel_requested_turn_id: str | None = None
@@ -125,13 +130,42 @@ class UnifiedAgentSupervisor:
         self, conversation_id: str, action_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
         conversation = await self._require(conversation_id, owner_id)
+        if conversation.lock.locked():
+            raise AssistantConversationBusyError("会话正在处理其他操作")
+        async with conversation.lock:
+            if action_id in conversation.action_results:
+                return conversation.action_results[action_id]
+            result = await self._confirm_action(conversation_id, action_id, owner_id)
+            if result.pending_action is None:
+                conversation.action_results[action_id] = result
+                await self._save(conversation)
+            return result
+
+    async def _confirm_action(
+        self, conversation_id: str, action_id: str, owner_id: str
+    ) -> AssistantConversationSnapshot:
+        conversation = await self._require(conversation_id, owner_id)
         pending = conversation.snapshot.pending_action
         if pending is None or pending.action_id != action_id:
             raise AssistantConversationNotFoundError("待确认操作不存在")
         response = await self._java.confirm_agent_tool_action(action_id, owner_id)
         confirmed = type(pending).model_validate(response)
+        # 确认请求成功不等于业务执行成功；只相信 Java 的执行终态。
+        succeeded = confirmed.status == "SUCCEEDED"
+        failed = confirmed.status in {"FAILED", "REJECTED", "EXPIRED", "CANCELLED"}
+        status = (
+            AssistantConversationStatus.COMPLETED if succeeded
+            else AssistantConversationStatus.FAILED if failed
+            else AssistantConversationStatus.RUNNING if confirmed.status in {"RUNNING", "PENDING"}
+            else AssistantConversationStatus.WAITING_CONFIRMATION
+        )
+        reply = (
+            "操作已确认并执行。" if succeeded
+            else "操作未执行成功，请查看执行记录后重试。" if failed
+            else "操作尚未执行完成，请查看执行状态或处理待确认事项。"
+        )
         ui_actions = list(conversation.snapshot.ui_actions)
-        if confirmed.tool_name == "assessment.wrong_question_review.create":
+        if succeeded and confirmed.tool_name == "assessment.wrong_question_review.create":
             result = confirmed.result if isinstance(confirmed.result, dict) else {}
             quiz_id = result.get("quizId")
             if isinstance(quiz_id, str) and quiz_id:
@@ -144,13 +178,13 @@ class UnifiedAgentSupervisor:
                 )
         snapshot = conversation.snapshot.model_copy(
             update={
-                "status": AssistantConversationStatus.COMPLETED,
-                "reply": "操作已确认并执行。",
-                "pending_action": None,
+                "status": status,
+                "reply": reply,
+                "pending_action": None if succeeded or failed else confirmed,
                 "ui_actions": ui_actions,
                 "messages": [
                     *conversation.snapshot.messages,
-                    AssistantMessage(role="assistant", content="操作已确认并执行。"),
+                    AssistantMessage(role="assistant", content=reply),
                 ],
             }
         )
@@ -158,7 +192,9 @@ class UnifiedAgentSupervisor:
         conversation.events.append(
             AssistantEvent(
                 sequence=len(conversation.events) + 1,
-                type="TURN_COMPLETED",
+                type=(
+                    "TURN_COMPLETED" if succeeded else "TURN_FAILED" if failed else "ACTION_PREVIEW"
+                ),
                 conversation_id=conversation_id,
                 payload={"actionId": action_id, "actionStatus": confirmed.status},
             )
@@ -167,6 +203,20 @@ class UnifiedAgentSupervisor:
         return snapshot
 
     async def reject_action(
+        self, conversation_id: str, action_id: str, owner_id: str
+    ) -> AssistantConversationSnapshot:
+        conversation = await self._require(conversation_id, owner_id)
+        if conversation.lock.locked():
+            raise AssistantConversationBusyError("会话正在处理其他操作")
+        async with conversation.lock:
+            if action_id in conversation.action_results:
+                return conversation.action_results[action_id]
+            result = await self._reject_action(conversation_id, action_id, owner_id)
+            conversation.action_results[action_id] = result
+            await self._save(conversation)
+            return result
+
+    async def _reject_action(
         self, conversation_id: str, action_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
         conversation = await self._require(conversation_id, owner_id)
@@ -251,7 +301,10 @@ class UnifiedAgentSupervisor:
                     }
                 )
             else:
-                gateway = UnifiedToolGateway(self._java, owner_id, ToolBudget())
+                gateway = UnifiedToolGateway(
+                    self._java, owner_id, ToolBudget(),
+                    is_cancelled=lambda: conversation.cancel_requested_turn_id == idempotency_key,
+                )
                 conversation.active_turn_id = idempotency_key
                 turn_started = monotonic()
                 try:
@@ -269,6 +322,8 @@ class UnifiedAgentSupervisor:
                             ),
                         }
                     )
+                except ToolTurnCancelledError:
+                    values = {"intent": "UNKNOWN"}
                 except BaseException as exc:
                     self._metrics.observe_turn(
                         intent="UNKNOWN", status="error",
@@ -290,7 +345,11 @@ class UnifiedAgentSupervisor:
                     raise
                 conversation.active_turn_id = None
                 self._metrics.observe_turn(
-                    intent=str(values.get("intent", "UNKNOWN")), status="success",
+                    intent=str(values.get("intent", "UNKNOWN")),
+                    status=(
+                        "cancelled" if conversation.cancel_requested_turn_id == idempotency_key
+                        else "success"
+                    ),
                     duration_seconds=monotonic() - turn_started,
                 )
                 if conversation.cancel_requested_turn_id == idempotency_key:
@@ -298,7 +357,7 @@ class UnifiedAgentSupervisor:
                     result = conversation.snapshot.model_copy(
                         update={
                             "status": AssistantConversationStatus.FAILED,
-                            "reply": "本轮操作已取消。",
+                            "reply": "已取消本轮后续操作；已发送的请求请以执行记录为准。",
                         }
                     )
                     conversation.snapshot = result
@@ -356,6 +415,10 @@ class UnifiedAgentSupervisor:
                         key: AssistantConversationSnapshot.model_validate(value)
                         for key, value in payload.get("turnResults", {}).items()
                     },
+                    action_results={
+                        key: AssistantConversationSnapshot.model_validate(value)
+                        for key, value in payload.get("actionResults", {}).items()
+                    },
                     events=[
                         AssistantEvent.model_validate(value)
                         for value in payload.get("events", [])
@@ -381,6 +444,10 @@ class UnifiedAgentSupervisor:
                 "turnResults": {
                     key: value.model_dump(mode="json", by_alias=True)
                     for key, value in conversation.turn_results.items()
+                },
+                "actionResults": {
+                    key: value.model_dump(mode="json", by_alias=True)
+                    for key, value in conversation.action_results.items()
                 },
                 "events": [
                     event.model_dump(mode="json", by_alias=True)

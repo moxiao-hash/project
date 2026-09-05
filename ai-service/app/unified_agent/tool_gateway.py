@@ -1,6 +1,7 @@
 """带调用次数、联网和写操作预算的 Java 工具网关。"""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,10 @@ class DuplicateToolCallError(RuntimeError):
 
 
 class ToolBudgetExceededError(RuntimeError):
+    pass
+
+
+class ToolTurnCancelledError(RuntimeError):
     pass
 
 
@@ -46,11 +51,13 @@ class UnifiedToolGateway:
         owner_id: str,
         budget: ToolBudget,
         metrics: AgentRuntimeMetrics = AGENT_RUNTIME_METRICS,
+        is_cancelled: Callable[[], bool] = lambda: False,
     ) -> None:
         self._java = java_backend
         self._owner_id = owner_id
         self._budget = budget
         self._metrics = metrics
+        self._is_cancelled = is_cancelled
         self._catalog: dict[str, ToolDescriptor] | None = None
         self._signatures: set[str] = set()
         self.usage = ToolUsage()
@@ -62,7 +69,9 @@ class UnifiedToolGateway:
         *,
         idempotency_key: str | None = None,
     ) -> ToolInvocationResult:
+        self._check_cancelled()
         descriptor = await self._descriptor(tool_name)
+        self._check_cancelled()
         signature = json.dumps(
             {"tool": tool_name, "arguments": arguments},
             ensure_ascii=False,
@@ -110,7 +119,14 @@ class UnifiedToolGateway:
                 else "error" if result.action.status == "FAILED" else "pending"
             )
         self._metrics.observe_tool(category=descriptor.category, status=status)
+        # 只读请求结束时也检查，避免随后继续调用知识模型等非工具能力。
+        if descriptor.effect != ToolEffect.WRITE:
+            self._check_cancelled()
         return result
+
+    def _check_cancelled(self) -> None:
+        if self._is_cancelled():
+            raise ToolTurnCancelledError("本轮已取消，停止后续工具调用")
 
     async def _descriptor(self, tool_name: str) -> ToolDescriptor:
         if self._catalog is None:
