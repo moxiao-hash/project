@@ -2,6 +2,11 @@ package com.moxiao.studypilot.agent.runner;
 
 import com.moxiao.studypilot.agent.domain.ExecutionStatus;
 import com.moxiao.studypilot.agent.infrastructure.AgentExecutionJpaRepository;
+import com.moxiao.studypilot.agent.tool.AgentToolBusinessExecutor;
+import com.moxiao.studypilot.agent.tool.AgentToolContext;
+import com.moxiao.studypilot.agent.tool.AgentToolHandler;
+import com.moxiao.studypilot.agent.tool.GovernedAgentToolHandler;
+import com.moxiao.studypilot.notification.application.NotificationService;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -52,6 +58,9 @@ class RunnerGovernanceWorkflowTest {
     @Autowired private RunnerExecutionJpaRepository runnerRepository;
     @Autowired private AgentExecutionJpaRepository agentRepository;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private AgentToolBusinessExecutor toolBusinessExecutor;
+    @Autowired private List<AgentToolHandler> toolHandlers;
+    @Autowired private NotificationService notificationService;
 
     @MockitoBean
     private IsolatedRunnerExecutor isolatedExecutor;
@@ -108,6 +117,8 @@ class RunnerGovernanceWorkflowTest {
 
         assertThat(confirmed.executionId()).isEqualTo(second.executionId());
         assertThat(confirmed.governanceExecutionId()).isNotBlank();
+        assertThat(notificationService.list(ownerId)).anyMatch(notification ->
+                notification.getTitle().equals("Runner 执行待确认"));
         verify(isolatedExecutor).execute(
                 confirmed.governanceExecutionId(), secondWorkspaceId,
                 RunnerTemplateType.PREPARE_DEPENDENCIES, secondRoot.toRealPath().toString(),
@@ -301,6 +312,77 @@ class RunnerGovernanceWorkflowTest {
         assertThat(persisted.getStatus()).isEqualTo(ExecutionStatus.FAILED);
         assertThat(agentRepository.findById(result.governanceExecutionId()).orElseThrow().getStatus())
                 .isEqualTo(ExecutionStatus.FAILED);
+    }
+
+    @Test
+    void governedRunnerToolSuspendsOuterBusinessTransactionDuringExecution() {
+        doAnswer(invocation -> {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+            return successfulResult(invocation.getArgument(0), invocation.getArgument(1),
+                    invocation.getArgument(2), invocation.getArgument(4));
+        }).when(isolatedExecutor).execute(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
+        GovernedAgentToolHandler handler = toolHandlers.stream()
+                .filter(GovernedAgentToolHandler.class::isInstance)
+                .map(GovernedAgentToolHandler.class::cast)
+                .filter(candidate -> candidate.descriptor().name().equals("runner.check.run"))
+                .findFirst().orElseThrow();
+        JsonNode arguments = objectMapper.createObjectNode()
+                .put("workspaceId", workspaceId)
+                .put("templateType", "MAVEN_COMPILE");
+
+        Object result = toolBusinessExecutor.execute(
+                handler, new AgentToolContext(ownerId, "real-tool-transaction"), arguments);
+
+        assertThat(result).isInstanceOf(RunnerExecutionResult.class);
+        RunnerExecutionResult execution = (RunnerExecutionResult) result;
+        assertThat(runnerRepository.findById(execution.executionId())).isPresent();
+        assertThat(execution.status()).isEqualTo(ExecutionStatus.SUCCEEDED.name());
+    }
+
+    @Test
+    void lowRiskWithoutGrantWaitsForAuthorizationThenDedicatedConfirmExecutes() throws Exception {
+        Auth ungranted = register("ungranted-runner");
+        Path ungrantedRoot = tempDir.resolve("ungranted");
+        java.nio.file.Files.createDirectory(ungrantedRoot);
+        String ungrantedWorkspace = createWorkspace(ungranted.token(), "ungranted", ungrantedRoot);
+
+        RunnerExecutionResult waiting = runnerService.submit(ungranted.ownerId(), request(
+                ungrantedWorkspace, "authorize-low-risk", RunnerTemplateType.MAVEN_COMPILE, null));
+        RunnerExecutionResult confirmed = runnerService.confirm(ungranted.ownerId(), waiting.executionId());
+
+        assertThat(waiting.status()).isEqualTo(ExecutionStatus.WAITING_AUTHORIZATION.name());
+        assertThat(notificationService.list(ungranted.ownerId())).anyMatch(notification ->
+                notification.getTitle().equals("Runner 执行待授权"));
+        assertThat(confirmed.status()).isEqualTo(ExecutionStatus.SUCCEEDED.name());
+        verify(isolatedExecutor, times(1)).execute(anyString(),
+                org.mockito.ArgumentMatchers.eq(ungrantedWorkspace),
+                org.mockito.ArgumentMatchers.eq(RunnerTemplateType.MAVEN_COMPILE),
+                org.mockito.ArgumentMatchers.eq(ungrantedRoot.toRealPath().toString()),
+                org.mockito.ArgumentMatchers.eq(List.of("mvn", "test-compile")),
+                org.mockito.ArgumentMatchers.eq(60));
+    }
+
+    @Test
+    void requestSizeBoundariesAreEnforcedWithoutServerErrors() throws Exception {
+        mockMvc.perform(post("/api/runner/executions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(workspaceId, "k".repeat(180), "MAVEN_COMPILE", "")))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/runner/executions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson(workspaceId, "target-too-long", "MAVEN_TEST", "T".repeat(256))))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/runner/executions")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workspaceId":"%s","templateType":"MAVEN_COMPILE",\
+                                 "explanation":"%s","idempotencyKey":"explanation-too-long"}
+                                """.formatted(workspaceId, "E".repeat(501))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

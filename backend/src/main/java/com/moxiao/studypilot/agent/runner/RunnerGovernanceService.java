@@ -21,6 +21,8 @@ import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -111,7 +113,8 @@ public class RunnerGovernanceService {
             if (execution.getStatus() == ExecutionStatus.REJECTED) {
                 return execution;
             }
-            if (execution.getStatus() != ExecutionStatus.WAITING_CONFIRMATION) {
+            if (execution.getStatus() != ExecutionStatus.WAITING_CONFIRMATION
+                    && execution.getStatus() != ExecutionStatus.WAITING_AUTHORIZATION) {
                 throw new ConflictException("当前 Runner 执行不能拒绝");
             }
             governanceService.reject(ownerId, execution.getGovernanceExecutionId());
@@ -150,7 +153,7 @@ public class RunnerGovernanceService {
         String explanation = normalizeExplanation(request.explanation(), workspace, template);
         RiskLevel governanceRisk = template.isConfirmationRequired() ? RiskLevel.HIGH : RiskLevel.LOW;
         AgentExecutionEntity governance = governanceService.createExecution(new CreateAgentExecutionRequest(
-                ownerId, "runner:" + request.idempotencyKey(), ExecutionType.RUNNER_EXECUTION,
+                ownerId, "runner:" + sha256(request.idempotencyKey()), ExecutionType.RUNNER_EXECUTION,
                 TriggerType.USER_REQUEST, governanceRisk, AgentScope.RUNNER_MANAGEMENT, explanation));
         Instant now = Instant.now();
         RunnerExecutionEntity entity = runnerRepository.save(new RunnerExecutionEntity(
@@ -162,9 +165,12 @@ public class RunnerGovernanceService {
         audit(ownerId, "RUNNER_EXECUTION_PREPARED", entity,
                 "准备 " + entity.getTemplateType().name() + "，工作区 " + entity.getWorkspaceId()
                         + "，命令 " + String.join(" ", request.commandTokens()));
-        if (entity.getStatus() == ExecutionStatus.WAITING_CONFIRMATION) {
+        if (entity.getStatus() == ExecutionStatus.WAITING_CONFIRMATION
+                || entity.getStatus() == ExecutionStatus.WAITING_AUTHORIZATION) {
             notificationService.create(new CreateNotificationRequest(
-                    ownerId, NotificationType.AGENT_ACTION_READY, "Runner 执行待确认",
+                    ownerId, NotificationType.AGENT_ACTION_READY,
+                    entity.getStatus() == ExecutionStatus.WAITING_CONFIRMATION
+                            ? "Runner 执行待确认" : "Runner 执行待授权",
                     template.name() + " @ " + workspace.getName()));
             return new Submission(entity, false);
         }
@@ -182,7 +188,8 @@ public class RunnerGovernanceService {
         if (isTerminal(entity.getStatus()) || entity.getStatus() == ExecutionStatus.RUNNING) {
             return new Submission(entity, false);
         }
-        if (entity.getStatus() != ExecutionStatus.WAITING_CONFIRMATION) {
+        if (entity.getStatus() != ExecutionStatus.WAITING_CONFIRMATION
+                && entity.getStatus() != ExecutionStatus.WAITING_AUTHORIZATION) {
             throw new ConflictException("当前 Runner 执行不需要确认");
         }
         validateRecordedWorkspace(ownerId, entity);
@@ -371,10 +378,12 @@ public class RunnerGovernanceService {
                 ownerId, action, "RUNNER_EXECUTION", entity.getId(), details, Instant.now()));
     }
 
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RunnerExecutionResult submitExecution(String ownerId, RunnerExecutionRequest request) {
         return submit(ownerId, request);
     }
 
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public RunnerExecutionResult confirmExecution(String ownerId, String runnerExecutionId) {
         return confirm(ownerId, runnerExecutionId);
     }
