@@ -114,7 +114,7 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 实现无副作用 Runner 执行预览接口 `POST /api/runner/preview` 及只读工具 `runner.execution.preview`，支持预先获取风险等级、模板说明、执行指令、超时时间和确认需求。
 - [x] 实现受治理 Runner 执行接口 `POST /api/runner/executions` 及写工具 `runner.check.run`、`runner.dependencies.prepare`。
 - [x] 强制对齐能力矩阵：`PREPARE_DEPENDENCIES` 归为高风险，持久绑定原始工作区、模板、命令令牌和超时后进入 `WAITING_CONFIRMATION`，且仅专用确认 API 可执行；只读检查自动流转并记录审计。
-- [x] Runner 提交要求客户端幂等键，重复提交/确认不重复执行；执行记录支持按 owner 查询，工作区路径或指纹变化时冲突终止。
+- [x] Runner 提交要求客户端幂等键，相同请求即使工作区随后移动也返回原结果且不重复执行；执行记录支持按 owner 查询，首次执行或待确认执行前校验工作区目录身份，路径或身份变化时冲突终止。
 - [x] `RunnerGovernanceWorkflowTest` 覆盖预览无副作用、精确工作区/模板确认、重复确认、幂等冲突、跨 owner、工作区变化、低风险精确执行、拒绝幂等及失败状态一致性。
 
 ## Task 23 验收证据

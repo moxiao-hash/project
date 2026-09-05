@@ -28,7 +28,9 @@ import tools.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
@@ -74,21 +76,21 @@ public class RunnerGovernanceService {
 
     public RunnerExecutionPreview preview(String ownerId, RunnerExecutionRequest request) {
         ProjectWorkspaceEntity workspace = requireOwnedWorkspace(ownerId, request.workspaceId());
-        String canonicalPath = validateCurrentWorkspace(workspace);
+        WorkspaceBinding binding = validateCurrentWorkspace(workspace);
         String targetPattern = normalizeTargetPattern(request.targetPattern());
         RunnerTemplateType template = request.templateType();
         List<String> tokens = template.resolveTokens(targetPattern);
         String explanation = normalizeExplanation(request.explanation(), workspace, template);
         return new RunnerExecutionPreview(
-                workspace.getId(), workspace.getName(), canonicalPath, template,
+                workspace.getId(), workspace.getName(), binding.canonicalPath(), template,
                 template.getDescription(), template.getRiskLevel(), tokens,
                 String.join(" ", tokens), template.getDefaultTimeoutSeconds(),
                 template.isConfirmationRequired(), explanation);
     }
 
     public RunnerExecutionResult submit(String ownerId, RunnerExecutionRequest request) {
-        RunnerExecutionPreview preview = preview(ownerId, request);
-        Submission submission = transactions.execute(status -> prepareSubmission(ownerId, request, preview));
+        CanonicalRequest canonical = canonicalRequest(request);
+        Submission submission = transactions.execute(status -> prepareSubmission(ownerId, canonical));
         if (submission == null) {
             throw new IllegalStateException("Runner 执行创建事务未返回结果");
         }
@@ -130,46 +132,40 @@ public class RunnerGovernanceService {
         return response(entity);
     }
 
-    private Submission prepareSubmission(
-            String ownerId, RunnerExecutionRequest request, RunnerExecutionPreview preview
-    ) {
+    private Submission prepareSubmission(String ownerId, CanonicalRequest request) {
         userRepository.findByIdForUpdate(ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("用户不存在"));
-        String key = request.idempotencyKey().trim();
-        String requestFingerprint = requestFingerprint(
-                preview, request.targetPattern(), request.explanation());
         RunnerExecutionEntity existing = runnerRepository
-                .findByOwnerIdAndIdempotencyKey(ownerId, key).orElse(null);
+                .findByOwnerIdAndIdempotencyKey(ownerId, request.idempotencyKey()).orElse(null);
         if (existing != null) {
-            if (!existing.getRequestFingerprint().equals(requestFingerprint)) {
+            if (!existing.getRequestFingerprint().equals(request.requestFingerprint())) {
                 throw new ConflictException("Runner 幂等键已用于不同执行请求");
             }
-            validateRecordedWorkspace(ownerId, existing);
             return new Submission(existing, false);
         }
 
-        ProjectWorkspaceEntity workspace = requireOwnedWorkspace(ownerId, preview.workspaceId());
-        String canonicalPath = validateCurrentWorkspace(workspace);
-        if (!canonicalPath.equals(preview.workspacePath())) {
-            throw new ConflictException("工作区在预览与提交之间已变化");
-        }
-        RiskLevel governanceRisk = preview.confirmationRequired() ? RiskLevel.HIGH : RiskLevel.LOW;
+        ProjectWorkspaceEntity workspace = requireOwnedWorkspace(ownerId, request.workspaceId());
+        WorkspaceBinding binding = validateCurrentWorkspace(workspace);
+        RunnerTemplateType template = request.templateType();
+        String explanation = normalizeExplanation(request.explanation(), workspace, template);
+        RiskLevel governanceRisk = template.isConfirmationRequired() ? RiskLevel.HIGH : RiskLevel.LOW;
         AgentExecutionEntity governance = governanceService.createExecution(new CreateAgentExecutionRequest(
-                ownerId, "runner:" + key, ExecutionType.RUNNER_EXECUTION, TriggerType.USER_REQUEST,
-                governanceRisk, AgentScope.RUNNER_MANAGEMENT, preview.explanation()));
+                ownerId, "runner:" + request.idempotencyKey(), ExecutionType.RUNNER_EXECUTION,
+                TriggerType.USER_REQUEST, governanceRisk, AgentScope.RUNNER_MANAGEMENT, explanation));
         Instant now = Instant.now();
         RunnerExecutionEntity entity = runnerRepository.save(new RunnerExecutionEntity(
-                UUID.randomUUID().toString(), ownerId, workspace.getId(), canonicalPath,
-                workspace.getRootPathHash(), preview.templateType(), normalizeTargetPattern(request.targetPattern()),
-                objectMapper.writeValueAsString(preview.commandTokens()), preview.riskLevel(),
-                preview.timeoutSeconds(), key, requestFingerprint, governance.getId(), governance.getStatus(), now));
+                UUID.randomUUID().toString(), ownerId, workspace.getId(), binding.canonicalPath(),
+                binding.identity(), template, request.targetPattern(),
+                objectMapper.writeValueAsString(request.commandTokens()), template.getRiskLevel(),
+                request.timeoutSeconds(), request.idempotencyKey(), request.requestFingerprint(),
+                governance.getId(), governance.getStatus(), now));
         audit(ownerId, "RUNNER_EXECUTION_PREPARED", entity,
                 "准备 " + entity.getTemplateType().name() + "，工作区 " + entity.getWorkspaceId()
-                        + "，命令 " + String.join(" ", preview.commandTokens()));
+                        + "，命令 " + String.join(" ", request.commandTokens()));
         if (entity.getStatus() == ExecutionStatus.WAITING_CONFIRMATION) {
             notificationService.create(new CreateNotificationRequest(
                     ownerId, NotificationType.AGENT_ACTION_READY, "Runner 执行待确认",
-                    preview.templateType().name() + " @ " + preview.workspaceName()));
+                    template.name() + " @ " + workspace.getName()));
             return new Submission(entity, false);
         }
         if (entity.getStatus() != ExecutionStatus.PENDING) {
@@ -260,14 +256,14 @@ public class RunnerGovernanceService {
 
     private void validateRecordedWorkspace(String ownerId, RunnerExecutionEntity execution) {
         ProjectWorkspaceEntity workspace = requireOwnedWorkspace(ownerId, execution.getWorkspaceId());
-        String currentPath = validateCurrentWorkspace(workspace);
-        if (!execution.getWorkspacePath().equals(currentPath)
-                || !execution.getWorkspaceFingerprint().equals(workspace.getRootPathHash())) {
+        WorkspaceBinding current = validateCurrentWorkspace(workspace);
+        if (!execution.getWorkspacePath().equals(current.canonicalPath())
+                || !execution.getWorkspaceFingerprint().equals(current.identity())) {
             throw new ConflictException("工作区路径或指纹已变化，请重新提交 Runner 执行");
         }
     }
 
-    private String validateCurrentWorkspace(ProjectWorkspaceEntity workspace) {
+    private WorkspaceBinding validateCurrentWorkspace(ProjectWorkspaceEntity workspace) {
         if (workspace.getRootPath() == null || workspace.getRootPath().isBlank()) {
             throw new ConflictException("工作区目录不能为空");
         }
@@ -282,7 +278,12 @@ public class RunnerGovernanceService {
                     || !sha256(canonical.toString()).equals(workspace.getRootPathHash())) {
                 throw new ConflictException("工作区路径或指纹已变化，请重新注册");
             }
-            return canonical.toString();
+            BasicFileAttributes attributes = Files.readAttributes(
+                    canonical, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            String identityMaterial = String.join("\u001f",
+                    canonical.toString(), String.valueOf(attributes.fileKey()),
+                    attributes.creationTime().toString());
+            return new WorkspaceBinding(canonical.toString(), sha256(identityMaterial));
         } catch (IOException | RuntimeException exception) {
             if (exception instanceof ConflictException conflict) throw conflict;
             throw new ConflictException("工作区本地目录不存在或不可访问");
@@ -306,14 +307,20 @@ public class RunnerGovernanceService {
                 : "执行工作区《" + workspace.getName() + "》的 " + template.getDescription();
     }
 
-    private String requestFingerprint(
-            RunnerExecutionPreview preview, String targetPattern, String explanation
-    ) {
-        return sha256(String.join("\u001f",
-                preview.workspaceId(), preview.templateType().name(),
-                normalizeNullable(targetPattern),
-                preview.commandTokens().toString(), Integer.toString(preview.timeoutSeconds()),
-                normalizeNullable(explanation)));
+    private CanonicalRequest canonicalRequest(RunnerExecutionRequest request) {
+        String workspaceId = request.workspaceId().trim();
+        String idempotencyKey = request.idempotencyKey().trim();
+        String targetPattern = normalizeTargetPattern(request.targetPattern());
+        String explanation = normalizeNullable(request.explanation());
+        RunnerTemplateType template = request.templateType();
+        List<String> commandTokens = template.resolveTokens(targetPattern);
+        int timeoutSeconds = template.getDefaultTimeoutSeconds();
+        String fingerprint = sha256(String.join("\u001f",
+                workspaceId, template.name(), normalizeNullable(targetPattern),
+                commandTokens.toString(), Integer.toString(timeoutSeconds), explanation));
+        return new CanonicalRequest(
+                workspaceId, template, targetPattern, explanation, commandTokens,
+                timeoutSeconds, idempotencyKey, fingerprint);
     }
 
     private String normalizeNullable(String value) {
@@ -377,4 +384,17 @@ public class RunnerGovernanceService {
     }
 
     private record Submission(RunnerExecutionEntity entity, boolean execute) { }
+
+    private record WorkspaceBinding(String canonicalPath, String identity) { }
+
+    private record CanonicalRequest(
+            String workspaceId,
+            RunnerTemplateType templateType,
+            String targetPattern,
+            String explanation,
+            List<String> commandTokens,
+            int timeoutSeconds,
+            String idempotencyKey,
+            String requestFingerprint
+    ) { }
 }

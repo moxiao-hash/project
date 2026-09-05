@@ -149,6 +149,24 @@ class RunnerGovernanceWorkflowTest {
     }
 
     @Test
+    void completedExecutionRemainsIdempotentAfterWorkspaceIsMoved() throws Exception {
+        Path originalRoot = tempDir.resolve("idempotent-original");
+        java.nio.file.Files.createDirectory(originalRoot);
+        String movableWorkspaceId = createWorkspace(token, "movable", originalRoot);
+        RunnerExecutionRequest request = request(
+                movableWorkspaceId, "moved-after-completion", RunnerTemplateType.MAVEN_COMPILE, null);
+        RunnerExecutionResult completed = runnerService.submit(ownerId, request);
+        Path movedRoot = tempDir.resolve("idempotent-moved");
+        java.nio.file.Files.move(originalRoot, movedRoot);
+
+        RunnerExecutionResult repeated = runnerService.submit(ownerId, request);
+
+        assertThat(repeated).isEqualTo(completed);
+        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
+    }
+
+    @Test
     void concurrentSubmitClaimsExecutionOnlyOnce() throws Exception {
         CountDownLatch executorStarted = new CountDownLatch(1);
         CountDownLatch allowCompletion = new CountDownLatch(1);
@@ -234,6 +252,22 @@ class RunnerGovernanceWorkflowTest {
         java.nio.file.Files.createDirectory(changed);
         jdbcTemplate.update("update project_workspaces set root_path = ?, root_path_hash = ? where id = ?",
                 changed.toRealPath().toString(), "changed-fingerprint", workspaceId);
+
+        assertThatThrownBy(() -> runnerService.confirm(ownerId, pending.executionId()))
+                .isInstanceOf(ConflictException.class);
+        verify(isolatedExecutor, never()).execute(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
+    }
+
+    @Test
+    void replacingDirectoryAtSamePathInvalidatesPendingConfirmation() throws Exception {
+        Path replaceableRoot = tempDir.resolve("replaceable");
+        java.nio.file.Files.createDirectory(replaceableRoot);
+        String replaceableWorkspaceId = createWorkspace(token, "replaceable", replaceableRoot);
+        RunnerExecutionResult pending = runnerService.submit(ownerId,
+                request(replaceableWorkspaceId, "replace-directory", RunnerTemplateType.PREPARE_DEPENDENCIES, null));
+        java.nio.file.Files.delete(replaceableRoot);
+        java.nio.file.Files.createDirectory(replaceableRoot);
 
         assertThatThrownBy(() -> runnerService.confirm(ownerId, pending.executionId()))
                 .isInstanceOf(ConflictException.class);
