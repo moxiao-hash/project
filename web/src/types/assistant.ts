@@ -89,3 +89,18 @@ export interface AutomationSettings {
   paused: boolean
   updatedAt: string
 }
+
+export interface AssistantHealth {
+  costSamples: number
+  tokenSamples: number
+  latencySamples: number
+  totalExecutions: number
+  successfulExecutions: number
+  failedExecutions: number
+  successRate: number
+  promptTokens: number
+  completionTokens: number
+  estimatedCost: number
+  averageLatencyMs: number
+  pendingConfirmations: number
+}

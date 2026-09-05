@@ -159,6 +159,12 @@ const router = createRouter({
           meta: { title: '执行与审计' },
         },
         {
+          path: 'assistant/health',
+          name: 'assistant-health',
+          component: () => import('@/modules/assistant/AssistantHealthView.vue'),
+          meta: { title: 'Agent 运行健康' },
+        },
+        {
           path: 'notifications',
           name: 'notifications',
           component: () => import('@/modules/notifications/NotificationsView.vue'),

@@ -65,7 +65,7 @@ class AgentNativeContractTest {
                 "goals", "plans", "plan-detail", "today", "materials", "material-detail",
                 "quiz", "attempt", "wrong-questions", "mastery", "knowledge", "agent-plan",
                 "agent-tasks", "activity", "notifications", "settings", "settings-ai",
-                "workspace-artifacts");
+                "workspace-artifacts", "assistant-health");
         Set<String> actualRoutes = new HashSet<>();
         matrix.get("pages").forEach(page -> actualRoutes.add(page.get("routeName").asText()));
 

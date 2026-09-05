@@ -11,6 +11,7 @@ interface RouteDefinition {
 
 const routes: Record<string, RouteDefinition> = {
   DASHBOARD: { name: 'dashboard', params: {} },
+  ASSISTANT_HEALTH: { name: 'assistant-health', params: {} },
   ROADMAP: { name: 'roadmap', params: {} },
   ROADMAP_STAGE: { name: 'roadmap-stage', params: { stageId: 'id' } },
   ROADMAP_MODULE: { name: 'roadmap-module', params: { moduleId: 'id' } },

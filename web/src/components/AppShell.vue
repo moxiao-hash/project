@@ -106,6 +106,7 @@ const navGroups: Array<{ title: string; items: NavItem[] }> = [
       { to: '/agent/plan', icon: '🪄', label: '对话生成计划', mock: true },
       { to: '/agent/tasks', icon: '🤖', label: '任务 Agent', mock: true },
       { to: '/activity', icon: '🧾', label: '执行与审计' },
+      { to: '/assistant/health', icon: '🩺', label: '运行健康' },
     ],
   },
 ]

@@ -11,6 +11,7 @@ import java.util.Set;
 public class NavigationToolHandler implements AgentToolHandler {
     private static final Map<String, Set<String>> ROUTES = Map.ofEntries(
             Map.entry("DASHBOARD", Set.of()),
+            Map.entry("ASSISTANT_HEALTH", Set.of()),
             Map.entry("ROADMAP", Set.of()),
             Map.entry("ROADMAP_STAGE", Set.of("stageId")),
             Map.entry("ROADMAP_MODULE", Set.of("moduleId")),

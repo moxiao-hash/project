@@ -1,6 +1,7 @@
 {
   "contractVersion": 1,
   "pages": [
+    {"routeName":"assistant-health","routeKey":"ASSISTANT_HEALTH","readCapabilities":["governance.health.get"],"writeCapabilities":[],"learningIntegrity":"NONE"},
     {"routeName":"dashboard","routeKey":"DASHBOARD","readCapabilities":["learning.context.get"],"writeCapabilities":[],"learningIntegrity":"NONE"},
     {"routeName":"roadmap","routeKey":"ROADMAP","readCapabilities":["roadmap.current.get"],"writeCapabilities":["roadmap.enroll","roadmap.upgrade"],"learningIntegrity":"USER_CONFIRMATION"},
     {"routeName":"roadmap-stage","routeKey":"ROADMAP_STAGE","readCapabilities":["roadmap.stage.get"],"writeCapabilities":[],"learningIntegrity":"NONE"},

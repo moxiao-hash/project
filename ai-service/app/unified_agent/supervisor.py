@@ -4,6 +4,7 @@ import asyncio
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from time import monotonic
 from typing import Any, TypedDict
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -12,6 +13,7 @@ from langgraph.graph import END, START, StateGraph
 
 from app.clients.java_backend import JavaBackendClient
 from app.knowledge.models import KnowledgeMode, WebSearchPolicy
+from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
 from app.persistence.agent_state import AgentPersistence
 from app.unified_agent.models import (
     AssistantConversationSnapshot,
@@ -70,11 +72,13 @@ class UnifiedAgentSupervisor:
         model_name: str,
         persistence: AgentPersistence | None = None,
         knowledge_services: Any | None = None,
+        metrics: AgentRuntimeMetrics = AGENT_RUNTIME_METRICS,
     ) -> None:
         self._java = java_backend
         self._model_name = model_name
         self._persistence = persistence
         self._knowledge_services = knowledge_services
+        self._metrics = metrics
         self._conversations: dict[str, _Conversation] = {}
         self._graph = self._build_graph()
 
@@ -249,6 +253,7 @@ class UnifiedAgentSupervisor:
             else:
                 gateway = UnifiedToolGateway(self._java, owner_id, ToolBudget())
                 conversation.active_turn_id = idempotency_key
+                turn_started = monotonic()
                 try:
                     values = await self._graph.ainvoke(
                         {
@@ -265,6 +270,10 @@ class UnifiedAgentSupervisor:
                         }
                     )
                 except BaseException as exc:
+                    self._metrics.observe_turn(
+                        intent="UNKNOWN", status="error",
+                        duration_seconds=monotonic() - turn_started,
+                    )
                     conversation.active_turn_id = None
                     conversation.events.append(
                         AssistantEvent(
@@ -280,6 +289,10 @@ class UnifiedAgentSupervisor:
                     await self._save(conversation)
                     raise
                 conversation.active_turn_id = None
+                self._metrics.observe_turn(
+                    intent=str(values.get("intent", "UNKNOWN")), status="success",
+                    duration_seconds=monotonic() - turn_started,
+                )
                 if conversation.cancel_requested_turn_id == idempotency_key:
                     conversation.cancel_requested_turn_id = None
                     result = conversation.snapshot.model_copy(

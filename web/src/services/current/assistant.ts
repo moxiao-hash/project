@@ -1,6 +1,7 @@
 import { http } from '@/services/http'
 import type {
   AssistantConversation,
+  AssistantHealth,
   AutomationRule,
   AutomationRuleType,
   AutomationSettings,
@@ -53,5 +54,8 @@ export const assistantApi = {
       .then((response) => response.data),
   updateAutomationSettings: (body: { paused: boolean }) =>
     http.patch<AutomationSettings>('/api/assistant/automation-settings', body)
+      .then((response) => response.data),
+  getAssistantHealth: () =>
+    http.get<AssistantHealth>('/api/assistant/health')
       .then((response) => response.data),
 }

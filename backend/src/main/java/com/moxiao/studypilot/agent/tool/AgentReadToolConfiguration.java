@@ -42,6 +42,13 @@ import java.util.Set;
 public class AgentReadToolConfiguration {
 
     @Bean
+    AgentToolHandler assistantHealthTool(ObjectMapper mapper,
+            com.moxiao.studypilot.agent.application.AssistantHealthService service) {
+        return read(mapper, "governance.health.get", "GOVERNANCE", Map.of(), Set.of(),
+                (context, arguments) -> service.summarize(context.ownerId()));
+    }
+
+    @Bean
     AgentToolHandler learningContextTool(
             ObjectMapper mapper, AgentLearningContextService service
     ) {

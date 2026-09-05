@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.clients.java_backend import JavaBackendClient
+from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
 from app.unified_agent.models import ToolDescriptor, ToolEffect, ToolInvocationResult
 
 
@@ -44,10 +45,12 @@ class UnifiedToolGateway:
         java_backend: JavaBackendClient,
         owner_id: str,
         budget: ToolBudget,
+        metrics: AgentRuntimeMetrics = AGENT_RUNTIME_METRICS,
     ) -> None:
         self._java = java_backend
         self._owner_id = owner_id
         self._budget = budget
+        self._metrics = metrics
         self._catalog: dict[str, ToolDescriptor] | None = None
         self._signatures: set[str] = set()
         self.usage = ToolUsage()
@@ -83,21 +86,30 @@ class UnifiedToolGateway:
         ):
             raise ToolBudgetExceededError("本轮高风险待确认操作已达到上限")
 
-        payload = await self._java.invoke_agent_tool(
-            tool_name,
-            self._owner_id,
-            arguments,
-            idempotency_key,
-        )
-        result = ToolInvocationResult.model_validate(payload)
+        # 在网络请求前占用预算；超时也可能已经发生副作用，不能免费无限重试。
         self._signatures.add(signature)
         self.usage.total_calls += 1
         if is_web:
             self.usage.web_searches += 1
         if descriptor.effect == ToolEffect.WRITE:
             self.usage.write_calls += 1
-        if result.action is not None and result.action.risk_level.value == "HIGH":
+        if descriptor.risk_level.value == "HIGH":
             self.usage.high_risk_actions += 1
+        try:
+            payload = await self._java.invoke_agent_tool(
+                tool_name, self._owner_id, arguments, idempotency_key,
+            )
+            result = ToolInvocationResult.model_validate(payload)
+        except BaseException:
+            self._metrics.observe_tool(category=descriptor.category, status="error")
+            raise
+        status = "success"
+        if result.action is not None:
+            status = (
+                "success" if result.action.status == "SUCCEEDED"
+                else "error" if result.action.status == "FAILED" else "pending"
+            )
+        self._metrics.observe_tool(category=descriptor.category, status=status)
         return result
 
     async def _descriptor(self, tool_name: str) -> ToolDescriptor:
