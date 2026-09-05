@@ -296,6 +296,47 @@ public class AgentWriteToolConfiguration {
                                 PrivacyLevel.valueOf(text(arguments, "privacyLevel")))))));
     }
 
+
+    @Bean
+    AgentToolHandler runnerCheckRunTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.runner.RunnerGovernanceService service
+    ) {
+        return write(mapper, "runner.check.run", "RUNNER", AgentToolRiskLevel.LOW,
+                "RUNNER_MANAGEMENT", ExecutionType.RUNNER_EXECUTION,
+                Map.of("workspaceId", "string", "templateType", "string"),
+                Set.of("workspaceId", "templateType"),
+                arguments -> "执行项目本地检查任务（" + text(arguments, "templateType") + "）",
+                (context, arguments) -> service.submitExecution(
+                        context.ownerId(),
+                        new com.moxiao.studypilot.agent.runner.RunnerExecutionRequest(
+                                text(arguments, "workspaceId"),
+                                com.moxiao.studypilot.agent.runner.RunnerTemplateType.valueOf(
+                                        text(arguments, "templateType")),
+                                optionalText(arguments, "targetPattern"),
+                                optionalText(arguments, "explanation"))));
+    }
+
+    @Bean
+    AgentToolHandler runnerDependenciesPrepareTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.runner.RunnerGovernanceService service
+    ) {
+        return write(mapper, "runner.dependencies.prepare", "RUNNER", AgentToolRiskLevel.HIGH,
+                "RUNNER_MANAGEMENT", ExecutionType.RUNNER_EXECUTION,
+                Map.of("workspaceId", "string", "templateType", "string"),
+                Set.of("workspaceId", "templateType"),
+                arguments -> "准备并安装项目运行环境依赖（" + text(arguments, "templateType") + "）",
+                (context, arguments) -> service.submitExecution(
+                        context.ownerId(),
+                        new com.moxiao.studypilot.agent.runner.RunnerExecutionRequest(
+                                text(arguments, "workspaceId"),
+                                com.moxiao.studypilot.agent.runner.RunnerTemplateType.valueOf(
+                                        text(arguments, "templateType")),
+                                optionalText(arguments, "targetPattern"),
+                                optionalText(arguments, "explanation"))));
+    }
+
     private static AgentToolHandler write(
             ObjectMapper mapper,
             String name,

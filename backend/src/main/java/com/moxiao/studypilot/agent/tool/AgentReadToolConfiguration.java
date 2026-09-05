@@ -296,6 +296,24 @@ public class AgentReadToolConfiguration {
                         .map(AutomationRuleResponse::from).toList());
     }
 
+
+    @Bean
+    AgentToolHandler runnerExecutionPreviewTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.runner.RunnerGovernanceService service
+    ) {
+        return read(mapper, "runner.execution.preview", "RUNNER",
+                Map.of("workspaceId", "string", "templateType", "string"),
+                Set.of("workspaceId", "templateType"),
+                (context, arguments) -> service.preview(
+                        context.ownerId(),
+                        new com.moxiao.studypilot.agent.runner.RunnerExecutionRequest(
+                                text(arguments, "workspaceId"),
+                                com.moxiao.studypilot.agent.runner.RunnerTemplateType.valueOf(
+                                        text(arguments, "templateType")),
+                                optionalText(arguments, "targetPattern"),
+                                optionalText(arguments, "explanation"))));
+    }
     private static AgentToolHandler read(
             ObjectMapper mapper,
             String name,
@@ -323,5 +341,8 @@ public class AgentReadToolConfiguration {
 
     private static LocalDate optionalDate(JsonNode arguments, String name) {
         return arguments.hasNonNull(name) ? LocalDate.parse(arguments.get(name).asText()) : null;
+    }
+    private static String optionalText(JsonNode arguments, String name) {
+        return arguments.hasNonNull(name) ? arguments.get(name).asText() : null;
     }
 }

@@ -152,6 +152,13 @@ export const executionTypeLabels: Record<ExecutionType, string> = {
   PLAN_ADJUSTMENT: '计划调整',
   TASK_STATUS_CHANGE: '任务状态变更',
   WEB_SEARCH: '联网搜索',
+  LEARNING_GOAL_CHANGE: '学习目标变更',
+  USER_SETTINGS_CHANGE: '用户设置变更',
+  NOTIFICATION_CHANGE: '通知设置变更',
+  WORKSPACE_REGISTRATION: '工作区登记',
+  ARTIFACT_SUBMISSION: '成果提交',
+  ROADMAP_CHANGE: '路线切换',
+  RUNNER_EXECUTION: '本地执行器执行',
 }
 
 export const riskLevelLabels: Record<RiskLevel, string> = {

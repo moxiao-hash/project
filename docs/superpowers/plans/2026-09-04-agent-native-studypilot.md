@@ -22,7 +22,7 @@
 
 ## Runner 与 Developer Agent
 
-- [ ] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
+- [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
 - [ ] Task 22：Docker/Podman Runner、Unix Socket、签名信封、nonce、断网、资源和环境隔离。
 - [ ] Task 23：测试后文件清单与敏感扫描、DeepSeek Rubric、70 分阈值和用户最终接受。
 - [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
@@ -107,6 +107,14 @@ Task 20 尚未整体完成，后续验证完成后才勾选总任务。
 
 验证：Java 全量 308 项及新增统计单测 1 项通过；Python 295 项、前端 124 项通过，
 Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实模型计费联调。
+
+## Task 21 验收证据
+
+- [x] 提供固定命令模板：只读检查（MAVEN_TEST、MAVEN_COMPILE、NPM_TEST、PYTEST）与高危依赖准备（PREPARE_DEPENDENCIES），严禁任意自由 Shell 命令。
+- [x] 实现 Runner 执行预览接口 `GET /api/runner/preview` 及只读工具 `runner.execution.preview`，支持预先获取风险等级、模板说明、执行指令、超时时间和确认需求。
+- [x] 实现受治理 Runner 执行接口 `POST /api/runner/executions` 及写工具 `runner.check.run`、`runner.dependencies.prepare`。
+- [x] 强制对齐能力矩阵：`PREPARE_DEPENDENCIES` 归为高风险必须经过专用用户确认卡片/API，进入 `WAITING_CONFIRMATION` 并发送 `AGENT_ACTION_READY` 通知与审计日志；只读检查自动流转并记录审计。
+- [x] 后端 315 项测试通过（新增 `RunnerGovernanceWorkflowTest` 覆盖预览、注入校验、高风险待确认、通过确认流转执行与审计闭环）。
 
 ## 提交映射（按任务）
 

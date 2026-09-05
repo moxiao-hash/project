@@ -48,7 +48,8 @@ class AgentToolCoverageTest {
                 "automation.rules.list",
                 "workspaces.list",
                 "artifacts.list",
-                "artifacts.get"
+                "artifacts.get",
+                "runner.execution.preview"
         )));
     }
 
@@ -72,7 +73,9 @@ class AgentToolCoverageTest {
                 "notifications.mark_read",
                 "settings.learning.update",
                 "workspaces.register",
-                "artifacts.submit"
+                "artifacts.submit",
+                "runner.check.run",
+                "runner.dependencies.prepare"
         )));
     }
 }
