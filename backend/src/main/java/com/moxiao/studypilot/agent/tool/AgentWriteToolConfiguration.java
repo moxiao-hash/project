@@ -307,7 +307,7 @@ public class AgentWriteToolConfiguration {
                 Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
                 Set.of("workspaceId", "templateType"),
                 arguments -> "执行项目本地检查任务（" + text(arguments, "templateType") + "）",
-                (context, arguments) -> service.submitExecution(
+                (context, arguments) -> requireRunnerSuccess(service.submitExecution(
                         context.ownerId(),
                         new com.moxiao.studypilot.agent.runner.RunnerExecutionRequest(
                                 text(arguments, "workspaceId"),
@@ -315,7 +315,7 @@ public class AgentWriteToolConfiguration {
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
                                 optionalText(arguments, "explanation"),
-                                runnerIdempotencyKey(context, arguments))));
+                                runnerIdempotencyKey(context, arguments)))));
     }
 
     @Bean
@@ -328,7 +328,7 @@ public class AgentWriteToolConfiguration {
                 Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
                 Set.of("workspaceId", "templateType"),
                 arguments -> "准备并安装项目运行环境依赖（" + text(arguments, "templateType") + "）",
-                (context, arguments) -> service.submitExecution(
+                (context, arguments) -> requireRunnerSuccess(service.submitExecution(
                         context.ownerId(),
                         new com.moxiao.studypilot.agent.runner.RunnerExecutionRequest(
                                 text(arguments, "workspaceId"),
@@ -336,7 +336,18 @@ public class AgentWriteToolConfiguration {
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
                                 optionalText(arguments, "explanation"),
-                                runnerIdempotencyKey(context, arguments))));
+                                runnerIdempotencyKey(context, arguments)))));
+    }
+
+    private static com.moxiao.studypilot.agent.runner.RunnerExecutionResult requireRunnerSuccess(
+            com.moxiao.studypilot.agent.runner.RunnerExecutionResult result
+    ) {
+        if ("FAILED".equals(result.status())) {
+            String message = result.stderrSummary();
+            throw new IllegalStateException(
+                    message == null || message.isBlank() ? "Runner 执行失败" : message);
+        }
+        return result;
     }
 
     private static String runnerIdempotencyKey(AgentToolContext context, JsonNode arguments) {

@@ -3,6 +3,10 @@ package com.moxiao.studypilot.agent.runner;
 import com.moxiao.studypilot.agent.domain.ExecutionStatus;
 import com.moxiao.studypilot.agent.infrastructure.AgentExecutionJpaRepository;
 import com.moxiao.studypilot.agent.tool.AgentToolBusinessExecutor;
+import com.moxiao.studypilot.agent.tool.AgentToolActionJpaRepository;
+import com.moxiao.studypilot.agent.tool.AgentToolActionResponse;
+import com.moxiao.studypilot.agent.tool.AgentToolActionService;
+import com.moxiao.studypilot.agent.tool.AgentToolActionStatus;
 import com.moxiao.studypilot.agent.tool.AgentToolContext;
 import com.moxiao.studypilot.agent.tool.AgentToolHandler;
 import com.moxiao.studypilot.agent.tool.GovernedAgentToolHandler;
@@ -21,6 +25,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -61,6 +68,9 @@ class RunnerGovernanceWorkflowTest {
     @Autowired private AgentToolBusinessExecutor toolBusinessExecutor;
     @Autowired private List<AgentToolHandler> toolHandlers;
     @Autowired private NotificationService notificationService;
+    @Autowired private AgentToolActionService actionService;
+    @Autowired private AgentToolActionJpaRepository actionRepository;
+    @Autowired private PlatformTransactionManager transactionManager;
 
     @MockitoBean
     private IsolatedRunnerExecutor isolatedExecutor;
@@ -341,6 +351,67 @@ class RunnerGovernanceWorkflowTest {
     }
 
     @Test
+    void agentToolActionCommitsRunningBeforeBlockedRunnerAndReleasesItsRowLock() throws Exception {
+        CountDownLatch runnerStarted = new CountDownLatch(1);
+        CountDownLatch allowRunnerCompletion = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            runnerStarted.countDown();
+            assertThat(allowRunnerCompletion.await(5, TimeUnit.SECONDS)).isTrue();
+            return successfulResult(invocation.getArgument(0), invocation.getArgument(1),
+                    invocation.getArgument(2), invocation.getArgument(4));
+        }).when(isolatedExecutor).execute(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
+        GovernedAgentToolHandler handler = runnerCheckHandler();
+        JsonNode arguments = runnerCheckArguments();
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            var invocation = executor.submit(() -> actionService.prepare(
+                    handler, ownerId, "action-releases-lock", arguments));
+            assertThat(runnerStarted.await(5, TimeUnit.SECONDS)).isTrue();
+            String actionId = actionRepository
+                    .findByOwnerIdAndIdempotencyKey(ownerId, "action-releases-lock")
+                    .orElseThrow().getId();
+            var observer = executor.submit(() -> {
+                TransactionTemplate transaction = new TransactionTemplate(transactionManager);
+                transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                return transaction.execute(status -> {
+                    var action = actionRepository.findOwnedForUpdate(actionId, ownerId).orElseThrow();
+                    assertThat(action.getStatus()).isEqualTo(AgentToolActionStatus.RUNNING);
+                    action.running(Instant.now());
+                    actionRepository.save(action);
+                    return action.getStatus();
+                });
+            });
+            assertThat(observer.get(2, TimeUnit.SECONDS)).isEqualTo(AgentToolActionStatus.RUNNING);
+            allowRunnerCompletion.countDown();
+            AgentToolActionResponse completed = invocation.get(5, TimeUnit.SECONDS);
+            assertThat(completed.status()).isEqualTo(AgentToolActionStatus.SUCCEEDED);
+        } finally {
+            allowRunnerCompletion.countDown();
+            executor.shutdownNow();
+        }
+    }
+
+    @Test
+    void runnerCrashFailsActionRunnerAndBothGovernanceRecords() {
+        when(isolatedExecutor.execute(anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt()))
+                .thenThrow(new IllegalStateException("runner crashed"));
+
+        AgentToolActionResponse action = actionService.prepare(
+                runnerCheckHandler(), ownerId, "action-runner-crash", runnerCheckArguments());
+
+        assertThat(action.status()).isEqualTo(AgentToolActionStatus.FAILED);
+        assertThat(agentRepository.findById(action.executionId()).orElseThrow().getStatus())
+                .isEqualTo(ExecutionStatus.FAILED);
+        RunnerExecutionEntity runner = runnerRepository
+                .findByOwnerIdAndIdempotencyKey(ownerId, "action-runner-crash").orElseThrow();
+        assertThat(runner.getStatus()).isEqualTo(ExecutionStatus.FAILED);
+        assertThat(agentRepository.findById(runner.getGovernanceExecutionId()).orElseThrow().getStatus())
+                .isEqualTo(ExecutionStatus.FAILED);
+    }
+
+    @Test
     void lowRiskWithoutGrantWaitsForAuthorizationThenDedicatedConfirmExecutes() throws Exception {
         Auth ungranted = register("ungranted-runner");
         Path ungrantedRoot = tempDir.resolve("ungranted");
@@ -406,6 +477,20 @@ class RunnerGovernanceWorkflowTest {
             String workspace, String key, RunnerTemplateType template, String targetPattern
     ) {
         return new RunnerExecutionRequest(workspace, template, targetPattern, "runner test", key);
+    }
+
+    private GovernedAgentToolHandler runnerCheckHandler() {
+        return toolHandlers.stream()
+                .filter(GovernedAgentToolHandler.class::isInstance)
+                .map(GovernedAgentToolHandler.class::cast)
+                .filter(candidate -> candidate.descriptor().name().equals("runner.check.run"))
+                .findFirst().orElseThrow();
+    }
+
+    private JsonNode runnerCheckArguments() {
+        return objectMapper.createObjectNode()
+                .put("workspaceId", workspaceId)
+                .put("templateType", "MAVEN_COMPILE");
     }
 
     private RunnerExecutionResult successfulResult(
