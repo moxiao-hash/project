@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from studypilot_runner.container_engine import (
     ContainerEngine,
     ContainerUnavailable,
@@ -39,8 +40,9 @@ def test_builds_hardened_container_command_without_shell_or_host_fallback() -> N
     assert ["--pids-limit", "256"] == command[command.index("--pids-limit") : command.index("--pids-limit") + 2]
     assert ["--user", "65532:65532"] == command[command.index("--user") : command.index("--user") + 2]
     assert "type=bind,src=/safe/project,dst=/source,readonly" in command
-    assert "/workspace:rw,exec,nosuid,size=1g,uid=65532,gid=65532" in command
+    assert "/workspace:rw,exec,nosuid,size=1g,mode=1777" in command
     assert "type=volume,src=studypilot-cache-" in " ".join(command)
+    assert "MAVEN_OPTS=-Dmaven.repo.local=/cache/m2/repository -Djansi.tmpdir=/workspace/.jansi" in command
     assert command[-3:] == ["studypilot/runner-maven:1", "mvn", "test"]
 
 
@@ -50,6 +52,24 @@ def test_rejects_changed_command_tokens_and_network_for_test_template() -> None:
         engine.build_command(request(commandTokens=["sh", "-c", "id"]))
     with pytest.raises(ExecutionRejected, match="network"):
         engine.build_command(request(networkDisabled=False))
+
+
+def test_prepare_dependencies_uses_go_offline_template_with_network() -> None:
+    engine = ContainerEngine(engine_path="/usr/local/bin/docker")
+
+    command = engine.build_command(
+        request(
+            templateType="PREPARE_DEPENDENCIES",
+            commandTokens=["mvn", "dependency:go-offline"],
+            networkDisabled=False,
+        )
+    )
+
+    assert command[-3:] == [
+        "studypilot/runner-maven:1",
+        "mvn",
+        "dependency:go-offline",
+    ]
 
 
 def test_fails_closed_when_no_container_engine_is_installed(monkeypatch) -> None:
@@ -75,3 +95,18 @@ def test_stages_source_without_secrets_build_outputs_or_symlinks(tmp_path) -> No
         assert not (staged / "private.pem").exists()
         assert not (staged / "target").exists()
         assert not (staged / "link").exists()
+
+
+def test_stages_workspace_below_configured_shared_root(tmp_path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "README.md").write_text("safe")
+    staging_root = tmp_path / "container-shared-staging"
+    engine = ContainerEngine(
+        engine_path="/usr/local/bin/docker",
+        staging_root=staging_root,
+    )
+
+    with engine.stage_workspace(source) as staged:
+        assert staged.is_relative_to(staging_root)
+        assert (staged / "README.md").read_text() == "safe"

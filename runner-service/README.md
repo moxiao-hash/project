@@ -33,6 +33,8 @@ export STUDYPILOT_RUNNER_SIGNING_SECRET="$(openssl rand -hex 32)"
 export STUDYPILOT_RUNNER_ALLOWED_ROOTS="/Users/你的用户名/IdeaProjects"
 export STUDYPILOT_RUNNER_SOCKET_PATH="/tmp/studypilot-runner/runner.sock"
 export STUDYPILOT_RUNNER_NONCE_DB="/tmp/studypilot-runner/nonces.sqlite3"
+# 可选；默认 ~/.cache/studypilot-runner/staging。macOS 容器虚拟机必须能共享该目录。
+export STUDYPILOT_RUNNER_STAGING_ROOT="$HOME/.cache/studypilot-runner/staging"
 
 PYTHONPATH=runner-service ai-service/.venv/bin/python -m studypilot_runner
 ```
@@ -54,4 +56,6 @@ PYTHONPATH=runner-service ai-service/.venv/bin/python -m pytest -q runner-servic
 ai-service/.venv/bin/ruff check runner-service
 ```
 
-真正执行 Maven/npm/pytest 的端到端验收仍必须在安装容器引擎、构建上述镜像后完成。
+2026-09-06 已在 Colima + Docker 上完成真实验收：pytest、npm test 直接在断网容器内
+通过；Maven 先用已确认的 `dependency:go-offline` 联网准备缓存，再在断网容器内完成
+`mvn test`。更换操作系统或容器引擎后仍应重新执行这组验收。

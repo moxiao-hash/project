@@ -5,6 +5,7 @@ import hmac
 from datetime import datetime, timedelta, timezone
 
 import pytest
+
 from studypilot_runner.protocol import (
     EnvelopeVerifier,
     ProtocolError,

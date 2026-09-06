@@ -34,7 +34,7 @@ _IMAGES = {
 _BASE_TOKENS = {
     "MAVEN_TEST": ["mvn", "test"],
     "MAVEN_COMPILE": ["mvn", "test-compile"],
-    "PREPARE_DEPENDENCIES": ["mvn", "dependency:resolve"],
+    "PREPARE_DEPENDENCIES": ["mvn", "dependency:go-offline"],
     "NPM_TEST": ["npm", "test"],
     "PYTEST": ["pytest"],
 }
@@ -54,18 +54,23 @@ _EXCLUDED_DIRECTORIES = {
 
 
 class ContainerEngine:
-    def __init__(self, engine_path: str) -> None:
+    def __init__(self, engine_path: str, staging_root: Path | None = None) -> None:
         path = Path(engine_path)
         if not path.is_absolute():
             raise ExecutionRejected("container engine path must be absolute")
         self._engine_path = str(path)
+        self._staging_root = (
+            staging_root
+            if staging_root is not None
+            else Path.home() / ".cache" / "studypilot-runner" / "staging"
+        )
 
     @classmethod
-    def detect(cls) -> ContainerEngine:
+    def detect(cls, staging_root: Path | None = None) -> ContainerEngine:
         for name in ("docker", "podman"):
             located = shutil.which(name)
             if located:
-                return cls(located)
+                return cls(located, staging_root=staging_root)
         raise ContainerUnavailable("Docker or Podman is required; host fallback is forbidden")
 
     def build_command(self, request: dict[str, Any]) -> list[str]:
@@ -112,7 +117,7 @@ class ContainerEngine:
                 "--tmpfs",
                 "/tmp:rw,noexec,nosuid,size=64m",
                 "--tmpfs",
-                "/workspace:rw,exec,nosuid,size=1g,uid=65532,gid=65532",
+                "/workspace:rw,exec,nosuid,size=1g,mode=1777",
                 "--workdir",
                 "/workspace",
                 "--mount",
@@ -121,6 +126,8 @@ class ContainerEngine:
                 f"type=volume,src={cache_name},dst=/cache",
                 "--env",
                 "MAVEN_CONFIG=/cache/m2",
+                "--env",
+                "MAVEN_OPTS=-Dmaven.repo.local=/cache/m2/repository -Djansi.tmpdir=/workspace/.jansi",
                 "--env",
                 "npm_config_cache=/cache/npm",
                 _IMAGES[str(template)],
@@ -179,7 +186,12 @@ class ContainerEngine:
         canonical = source.resolve(strict=True)
         if not canonical.is_dir() or canonical != Path(os.path.abspath(source)):
             raise ExecutionRejected("workspace must remain a canonical directory")
-        with tempfile.TemporaryDirectory(prefix="studypilot-runner-", dir="/tmp") as temporary:
+        self._staging_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        self._staging_root.chmod(0o700)
+        with tempfile.TemporaryDirectory(
+            prefix="studypilot-runner-",
+            dir=self._staging_root,
+        ) as temporary:
             destination = Path(temporary) / "source"
             destination.mkdir(mode=0o700)
             staged_directories = [destination]

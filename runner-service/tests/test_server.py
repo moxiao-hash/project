@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
+
 from studypilot_runner.protocol import EnvelopeVerifier, canonical_payload
 from studypilot_runner.server import (
     LocalRunnerApplication,

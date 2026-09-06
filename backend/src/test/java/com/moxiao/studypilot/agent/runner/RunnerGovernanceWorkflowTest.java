@@ -139,7 +139,7 @@ class RunnerGovernanceWorkflowTest {
                 org.mockito.ArgumentMatchers.eq(com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.HIGH),
                 org.mockito.ArgumentMatchers.any(Instant.class),
                 org.mockito.ArgumentMatchers.eq(secondRoot.toRealPath().toString()),
-                org.mockito.ArgumentMatchers.eq(List.of("mvn", "dependency:resolve")),
+                org.mockito.ArgumentMatchers.eq(List.of("mvn", "dependency:go-offline")),
                 org.mockito.ArgumentMatchers.eq(180));
         verify(isolatedExecutor, never()).execute(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.eq(workspaceId),

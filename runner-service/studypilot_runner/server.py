@@ -135,11 +135,16 @@ def serve(
     signing_secret: str,
     nonce_database: Path,
     allowed_roots: list[Path],
+    staging_root: Path | None = None,
 ) -> None:
     """启动单进程 Unix Socket 服务；绝不绑定 TCP 端口。"""
 
     verifier = EnvelopeVerifier(signing_secret, nonce_database)
-    application = LocalRunnerApplication(verifier, ContainerEngine.detect(), allowed_roots)
+    application = LocalRunnerApplication(
+        verifier,
+        ContainerEngine.detect(staging_root=staging_root),
+        allowed_roots,
+    )
     server = create_server(socket_path, application)
     try:
         server.serve_forever(poll_interval=0.25)

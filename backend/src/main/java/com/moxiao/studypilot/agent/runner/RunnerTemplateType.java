@@ -36,7 +36,7 @@ public enum RunnerTemplateType {
     PREPARE_DEPENDENCIES(
             "准备本地构建依赖",
             AgentToolRiskLevel.HIGH,
-            List.of("mvn", "dependency:resolve"),
+            List.of("mvn", "dependency:go-offline"),
             180,
             true
     );

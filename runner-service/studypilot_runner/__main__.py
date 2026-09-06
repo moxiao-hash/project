@@ -19,8 +19,10 @@ def main() -> None:
     nonce_database = Path(
         os.environ.get("STUDYPILOT_RUNNER_NONCE_DB", "/tmp/studypilot-runner/nonces.sqlite3")
     )
+    staging_root_value = os.environ.get("STUDYPILOT_RUNNER_STAGING_ROOT")
+    staging_root = Path(staging_root_value) if staging_root_value else None
     allowed_roots = [Path(value) for value in roots.split(os.pathsep) if value]
-    serve(socket_path, secret, nonce_database, allowed_roots)
+    serve(socket_path, secret, nonce_database, allowed_roots, staging_root=staging_root)
 
 
 if __name__ == "__main__":
