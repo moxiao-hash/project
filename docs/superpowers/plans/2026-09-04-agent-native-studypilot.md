@@ -24,7 +24,7 @@
 
 - [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
 - [ ] Task 22：协议、Unix Socket 与容器策略已实现；本机尚无 Docker/Podman，真实容器执行验收待完成。
-- [ ] Task 23：已有敏感扫描和人工接受骨架，但当前评分仍是启发式字符串判断，尚未接入真实 DeepSeek Rubric。
+- [ ] Task 23：已有敏感扫描和人工决策骨架；不可信的启发式评分已移除并失败关闭，真实 DeepSeek Rubric 尚待实现。
 - [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
 - [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
@@ -120,7 +120,7 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 ## Task 23 验收证据
 
 - [x] 已有成果敏感扫描、人工接受/拒绝接口和路线节点推进骨架。
-- [ ] `ArtifactReviewRubricEvaluator` 当前只按证据字符串启发式计分，不能称为 DeepSeek Rubric。
+- [x] 已删除按 `testEvidence` 中 `pass/success/ok` 等字符串伪造及格分的 `ArtifactReviewRubricEvaluator`；评审和接受接口在真实 AI 评审接入前返回 409，不会错误推进路线。
 - [ ] 尚未实现“Runner 测试通过 → 文件清单预览 → 用户确认发送 → DeepSeek 固定 Rubric → 70 分 → 用户最终确认”的真实闭环。
 
 ## Task 22 验收证据

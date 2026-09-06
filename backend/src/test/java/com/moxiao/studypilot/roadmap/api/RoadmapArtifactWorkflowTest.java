@@ -20,7 +20,6 @@ import java.nio.file.Path;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -238,7 +237,7 @@ class RoadmapArtifactWorkflowTest {
     private record RoadmapTarget(String nodeId, String moduleId, String stageId) { }
 
     @Test
-    void shouldEvaluateArtifactAndAcceptWhenScorePasses() throws Exception {
+    void shouldNotTreatUserWrittenPassTextAsVerifiedAiRubric() throws Exception {
         Registration owner = registerAndEnroll();
         Path wsDir = Files.createDirectory(tempDir.resolve("eval-ws"));
         Path subDir = Files.createDirectory(wsDir.resolve("src"));
@@ -264,22 +263,18 @@ class RoadmapArtifactWorkflowTest {
                 .andReturn();
         String artifactId = read(submitResult).get("id").asText();
 
-        // 1. Evaluate artifact (Rubric scoring)
-        MvcResult evalResult = mockMvc.perform(post("/api/roadmap-artifacts/{artifactId}/evaluate", artifactId)
+        mockMvc.perform(post("/api/roadmap-artifacts/{artifactId}/evaluate", artifactId)
                         .header("Authorization", bearer(owner)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.rubricScore").value(org.hamcrest.Matchers.greaterThanOrEqualTo(70)))
-                .andExpect(jsonPath("$.sensitiveScanPassed").value(true))
-                .andReturn();
-        int score = read(evalResult).get("rubricScore").asInt();
-        assertTrue(score >= 70, "Rubric score should be >= 70");
+                .andExpect(status().isConflict());
 
-        // 2. User accepts artifact
         mockMvc.perform(post("/api/roadmap-artifacts/{artifactId}/accept", artifactId)
                         .header("Authorization", bearer(owner)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get("/api/roadmap-artifacts/{artifactId}", artifactId)
+                        .header("Authorization", bearer(owner)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("ACCEPTED"))
-                .andExpect(jsonPath("$.rubricScore").value(score));
+                .andExpect(jsonPath("$.status").value("SUBMITTED"))
+                .andExpect(jsonPath("$.rubricScore").doesNotExist());
     }
 
     @Test

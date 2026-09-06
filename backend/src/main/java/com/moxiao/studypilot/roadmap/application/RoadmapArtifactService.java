@@ -23,7 +23,6 @@ import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapJpaRepository;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.UserRoadmapNodeJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
-import com.moxiao.studypilot.roadmap.infrastructure.ArtifactSensitiveScanner;
 import com.moxiao.studypilot.roadmap.infrastructure.RoadmapNodeMutationService;
 
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
@@ -56,8 +55,6 @@ public class RoadmapArtifactService {
     private final RoadmapStageJpaRepository stageRepository;
     private final ObjectMapper objectMapper;
 
-    private final ArtifactSensitiveScanner sensitiveScanner;
-    private final ArtifactReviewRubricEvaluator rubricEvaluator;
     private final RoadmapNodeMutationService mutationService;
 
     public RoadmapArtifactService(
@@ -70,8 +67,6 @@ public class RoadmapArtifactService {
             RoadmapModuleJpaRepository moduleRepository,
             RoadmapStageJpaRepository stageRepository,
             ObjectMapper objectMapper,
-            ArtifactSensitiveScanner sensitiveScanner,
-            ArtifactReviewRubricEvaluator rubricEvaluator,
             RoadmapNodeMutationService mutationService
     ) {
         this.workspaceRepository = workspaceRepository;
@@ -83,8 +78,6 @@ public class RoadmapArtifactService {
         this.moduleRepository = moduleRepository;
         this.stageRepository = stageRepository;
         this.objectMapper = objectMapper;
-        this.sensitiveScanner = sensitiveScanner;
-        this.rubricEvaluator = rubricEvaluator;
         this.mutationService = mutationService;
     }
 
@@ -283,38 +276,10 @@ public class RoadmapArtifactService {
 
     @Transactional
     public RoadmapArtifactResponse evaluate(String ownerId, String artifactId) {
-        RoadmapArtifactEntity artifact = artifactRepository.findByIdAndOwnerId(artifactId, ownerId)
+        artifactRepository.findByIdAndOwnerId(artifactId, ownerId)
                 .orElseThrow(() -> new ResourceNotFoundException("成果物不存在"));
-
-        ArtifactReviewRubricEvaluator.EvaluationResult result = rubricEvaluator.evaluate(artifact);
-        Instant now = Instant.now();
-        artifact.recordReview(
-                result.score(),
-                result.feedback(),
-                result.sensitiveScanPassed(),
-                result.sensitiveFindings(),
-                now
-        );
-
-        String eventType = result.passed() ? "RUBRIC_PASSED" : "RUBRIC_REJECTED";
-        String reviewDetails = "评分: " + result.score() + "/100, 敏感扫描: "
-                + (result.sensitiveScanPassed() ? "通过" : "发现违规: " + result.sensitiveFindings())
-                + ", 反馈: " + result.feedback();
-
-        reviewRepository.save(new RoadmapArtifactReviewEntity(
-                UUID.randomUUID().toString(),
-                artifact.getId(),
-                ownerId,
-                ArtifactStatus.SUBMITTED,
-                artifact.getStatus(),
-                eventType,
-                reviewDetails,
-                result.score(),
-                result.breakdownJson(),
-                now
-        ));
-
-        return response(artifact);
+        throw new ConflictException(
+                "真实 DeepSeek Rubric 评审尚未接入，不能根据用户填写的测试文字生成验收分数");
     }
 
     @Transactional
@@ -327,11 +292,15 @@ public class RoadmapArtifactService {
         }
 
         if (artifact.getRubricScore() == null) {
-            evaluate(ownerId, artifactId);
-            artifact = artifactRepository.findByIdAndOwnerId(artifactId, ownerId).orElseThrow();
+            throw new ConflictException("成果物尚未完成真实 AI Rubric 评审，不可接受");
         }
 
-        if (artifact.getRubricScore() < 70 || Boolean.FALSE.equals(artifact.getSensitiveScanPassed())) {
+        boolean verifiedReview = reviewRepository
+                .findAllByArtifactIdOrderByCreatedAtAsc(artifact.getId())
+                .stream()
+                .anyMatch(review -> "AI_RUBRIC_PASSED".equals(review.getEventType()));
+        if (!verifiedReview || artifact.getRubricScore() < 70
+                || Boolean.FALSE.equals(artifact.getSensitiveScanPassed())) {
             throw new ConflictException("成果物评审得分未达 70 分或未通过敏感信息扫描，不可接受");
         }
 
