@@ -90,10 +90,11 @@ class RunnerGovernanceWorkflowTest {
         workspaceId = createWorkspace(token, "first", tempDir);
         grantRunner(token);
         doAnswer(invocation -> successfulResult(
-                invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2),
-                invocation.getArgument(4)))
-                .when(isolatedExecutor).execute(anyString(), anyString(),
+                invocation.getArgument(0), invocation.getArgument(2), invocation.getArgument(3),
+                invocation.getArgument(7)))
+                .when(isolatedExecutor).execute(anyString(), anyString(), anyString(),
                         org.mockito.ArgumentMatchers.any(RunnerTemplateType.class),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                         anyString(), anyList(), anyInt());
     }
 
@@ -109,7 +110,8 @@ class RunnerGovernanceWorkflowTest {
                 .andExpect(jsonPath("$.commandTokens[2]").value("-Dtest=SampleTest"));
 
         assertThat(runnerRepository.count()).isEqualTo(recordsBeforePreview);
-        verify(isolatedExecutor, never()).execute(anyString(), anyString(),
+        verify(isolatedExecutor, never()).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -130,11 +132,18 @@ class RunnerGovernanceWorkflowTest {
         assertThat(notificationService.list(ownerId)).anyMatch(notification ->
                 notification.getTitle().equals("Runner 执行待确认"));
         verify(isolatedExecutor).execute(
-                confirmed.governanceExecutionId(), secondWorkspaceId,
-                RunnerTemplateType.PREPARE_DEPENDENCIES, secondRoot.toRealPath().toString(),
-                List.of("mvn", "dependency:resolve"), 180);
-        verify(isolatedExecutor, never()).execute(anyString(),
+                org.mockito.ArgumentMatchers.eq(confirmed.governanceExecutionId()),
+                org.mockito.ArgumentMatchers.eq(ownerId),
+                org.mockito.ArgumentMatchers.eq(secondWorkspaceId),
+                org.mockito.ArgumentMatchers.eq(RunnerTemplateType.PREPARE_DEPENDENCIES),
+                org.mockito.ArgumentMatchers.eq(com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.HIGH),
+                org.mockito.ArgumentMatchers.any(Instant.class),
+                org.mockito.ArgumentMatchers.eq(secondRoot.toRealPath().toString()),
+                org.mockito.ArgumentMatchers.eq(List.of("mvn", "dependency:resolve")),
+                org.mockito.ArgumentMatchers.eq(180));
+        verify(isolatedExecutor, never()).execute(anyString(), anyString(),
                 org.mockito.ArgumentMatchers.eq(workspaceId),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
         assertThat(runnerService.get(ownerId, first.executionId()).status())
                 .isEqualTo(ExecutionStatus.WAITING_CONFIRMATION.name());
@@ -149,7 +158,8 @@ class RunnerGovernanceWorkflowTest {
         RunnerExecutionResult repeated = runnerService.confirm(ownerId, pending.executionId());
 
         assertThat(repeated).isEqualTo(first);
-        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(),
+        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -162,7 +172,8 @@ class RunnerGovernanceWorkflowTest {
         RunnerExecutionResult repeated = runnerService.submit(ownerId, request);
 
         assertThat(repeated).isEqualTo(first);
-        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(),
+        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
         assertThatThrownBy(() -> runnerService.submit(ownerId,
                 request(workspaceId, "stable-client-key", RunnerTemplateType.MAVEN_COMPILE, null)))
@@ -183,7 +194,8 @@ class RunnerGovernanceWorkflowTest {
         RunnerExecutionResult repeated = runnerService.submit(ownerId, request);
 
         assertThat(repeated).isEqualTo(completed);
-        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(),
+        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -194,9 +206,10 @@ class RunnerGovernanceWorkflowTest {
         doAnswer(invocation -> {
             executorStarted.countDown();
             assertThat(allowCompletion.await(5, TimeUnit.SECONDS)).isTrue();
-            return successfulResult(invocation.getArgument(0), invocation.getArgument(1),
-                    invocation.getArgument(2), invocation.getArgument(4));
-        }).when(isolatedExecutor).execute(anyString(), anyString(),
+            return successfulResult(invocation.getArgument(0), invocation.getArgument(2),
+                    invocation.getArgument(3), invocation.getArgument(7));
+        }).when(isolatedExecutor).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
         RunnerExecutionRequest request = request(
                 workspaceId, "concurrent-submit", RunnerTemplateType.MAVEN_COMPILE, null);
@@ -212,7 +225,8 @@ class RunnerGovernanceWorkflowTest {
             allowCompletion.countDown();
             executor.shutdownNow();
         }
-        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(),
+        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -225,9 +239,10 @@ class RunnerGovernanceWorkflowTest {
         doAnswer(invocation -> {
             executorStarted.countDown();
             assertThat(allowCompletion.await(5, TimeUnit.SECONDS)).isTrue();
-            return successfulResult(invocation.getArgument(0), invocation.getArgument(1),
-                    invocation.getArgument(2), invocation.getArgument(4));
-        }).when(isolatedExecutor).execute(anyString(), anyString(),
+            return successfulResult(invocation.getArgument(0), invocation.getArgument(2),
+                    invocation.getArgument(3), invocation.getArgument(7));
+        }).when(isolatedExecutor).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -241,7 +256,8 @@ class RunnerGovernanceWorkflowTest {
             allowCompletion.countDown();
             executor.shutdownNow();
         }
-        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(),
+        verify(isolatedExecutor, times(1)).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -276,7 +292,8 @@ class RunnerGovernanceWorkflowTest {
 
         assertThatThrownBy(() -> runnerService.confirm(ownerId, pending.executionId()))
                 .isInstanceOf(ConflictException.class);
-        verify(isolatedExecutor, never()).execute(anyString(), anyString(),
+        verify(isolatedExecutor, never()).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -292,7 +309,8 @@ class RunnerGovernanceWorkflowTest {
 
         assertThatThrownBy(() -> runnerService.confirm(ownerId, pending.executionId()))
                 .isInstanceOf(ConflictException.class);
-        verify(isolatedExecutor, never()).execute(anyString(), anyString(),
+        verify(isolatedExecutor, never()).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 
@@ -303,13 +321,21 @@ class RunnerGovernanceWorkflowTest {
 
         assertThat(result.status()).isEqualTo(ExecutionStatus.SUCCEEDED.name());
         verify(isolatedExecutor).execute(
-                result.governanceExecutionId(), workspaceId, RunnerTemplateType.MAVEN_TEST,
-                tempDir.toRealPath().toString(), List.of("mvn", "test", "-Dtest=SampleTest"), 60);
+                org.mockito.ArgumentMatchers.eq(result.governanceExecutionId()),
+                org.mockito.ArgumentMatchers.eq(ownerId),
+                org.mockito.ArgumentMatchers.eq(workspaceId),
+                org.mockito.ArgumentMatchers.eq(RunnerTemplateType.MAVEN_TEST),
+                org.mockito.ArgumentMatchers.eq(com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.LOW),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(tempDir.toRealPath().toString()),
+                org.mockito.ArgumentMatchers.eq(List.of("mvn", "test", "-Dtest=SampleTest")),
+                org.mockito.ArgumentMatchers.eq(60));
     }
 
     @Test
     void executorExceptionFailsRunnerAndGovernanceRecordsConsistently() {
-        when(isolatedExecutor.execute(anyString(), anyString(),
+        when(isolatedExecutor.execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt()))
                 .thenThrow(new IllegalStateException("executor unavailable"));
 
@@ -328,9 +354,10 @@ class RunnerGovernanceWorkflowTest {
     void governedRunnerToolSuspendsOuterBusinessTransactionDuringExecution() {
         doAnswer(invocation -> {
             assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
-            return successfulResult(invocation.getArgument(0), invocation.getArgument(1),
-                    invocation.getArgument(2), invocation.getArgument(4));
-        }).when(isolatedExecutor).execute(anyString(), anyString(),
+            return successfulResult(invocation.getArgument(0), invocation.getArgument(2),
+                    invocation.getArgument(3), invocation.getArgument(7));
+        }).when(isolatedExecutor).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
         GovernedAgentToolHandler handler = toolHandlers.stream()
                 .filter(GovernedAgentToolHandler.class::isInstance)
@@ -357,9 +384,10 @@ class RunnerGovernanceWorkflowTest {
         doAnswer(invocation -> {
             runnerStarted.countDown();
             assertThat(allowRunnerCompletion.await(5, TimeUnit.SECONDS)).isTrue();
-            return successfulResult(invocation.getArgument(0), invocation.getArgument(1),
-                    invocation.getArgument(2), invocation.getArgument(4));
-        }).when(isolatedExecutor).execute(anyString(), anyString(),
+            return successfulResult(invocation.getArgument(0), invocation.getArgument(2),
+                    invocation.getArgument(3), invocation.getArgument(7));
+        }).when(isolatedExecutor).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
         GovernedAgentToolHandler handler = runnerCheckHandler();
         JsonNode arguments = runnerCheckArguments();
@@ -394,7 +422,8 @@ class RunnerGovernanceWorkflowTest {
 
     @Test
     void runnerCrashFailsActionRunnerAndBothGovernanceRecords() {
-        when(isolatedExecutor.execute(anyString(), anyString(),
+        when(isolatedExecutor.execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt()))
                 .thenThrow(new IllegalStateException("runner crashed"));
 
@@ -427,8 +456,11 @@ class RunnerGovernanceWorkflowTest {
                 notification.getTitle().equals("Runner 执行待授权"));
         assertThat(confirmed.status()).isEqualTo(ExecutionStatus.SUCCEEDED.name());
         verify(isolatedExecutor, times(1)).execute(anyString(),
+                org.mockito.ArgumentMatchers.eq(ungranted.ownerId()),
                 org.mockito.ArgumentMatchers.eq(ungrantedWorkspace),
                 org.mockito.ArgumentMatchers.eq(RunnerTemplateType.MAVEN_COMPILE),
+                org.mockito.ArgumentMatchers.eq(com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.LOW),
+                org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq(ungrantedRoot.toRealPath().toString()),
                 org.mockito.ArgumentMatchers.eq(List.of("mvn", "test-compile")),
                 org.mockito.ArgumentMatchers.eq(60));
@@ -469,7 +501,8 @@ class RunnerGovernanceWorkflowTest {
         assertThat(repeated).isEqualTo(rejected);
         assertThat(runnerService.get(ownerId, first.executionId()).status())
                 .isEqualTo(ExecutionStatus.WAITING_CONFIRMATION.name());
-        verify(isolatedExecutor, never()).execute(anyString(), anyString(),
+        verify(isolatedExecutor, never()).execute(anyString(), anyString(), anyString(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), anyString(), anyList(), anyInt());
     }
 

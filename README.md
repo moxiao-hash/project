@@ -22,6 +22,7 @@ Python Agent 与项目操作能力。计划、任务和 Agent 监督用于辅助
 ```text
 backend/     Spring Boot：账户、学习计划、任务、测验、权限与审计
 ai-service/  FastAPI：RAG、模型路由、Agent 编排与工具调用
+runner-service/ Unix Socket + Docker/Podman：受治理的本地测试执行
 web/         Vue 3：学习工作台与 Agent 对话界面
 infra/       Docker Compose、环境模板与部署配置
 docs/        产品、架构、迭代与开发文档
@@ -87,6 +88,7 @@ npm run build
 - [前端开发对接说明](docs/前端开发对接说明.md)
 - [Java + AI 基础学习路线](docs/studypilot-java-ai-starter-syllabus.md)
 - [AI 服务说明](ai-service/README.md)
+- [Local Runner 说明](runner-service/README.md)
 - [项目开发步骤](项目开发步骤.md)
 - [Docker Compose 说明](infra/README.md)
 

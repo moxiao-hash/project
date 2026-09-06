@@ -207,7 +207,10 @@ public class RunnerGovernanceService {
         RunnerExecutionResult executorResult;
         try {
             executorResult = isolatedExecutor.execute(
-                    claimed.getGovernanceExecutionId(), claimed.getWorkspaceId(), claimed.getTemplateType(),
+                    claimed.getGovernanceExecutionId(), claimed.getOwnerId(), claimed.getWorkspaceId(),
+                    claimed.getTemplateType(), claimed.getRiskLevel(),
+                    claimed.getRiskLevel() == com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.HIGH
+                            ? claimed.getUpdatedAt() : null,
                     claimed.getWorkspacePath(), commandTokens(claimed), claimed.getTimeoutSeconds());
         } catch (RuntimeException exception) {
             executorResult = new RunnerExecutionResult(

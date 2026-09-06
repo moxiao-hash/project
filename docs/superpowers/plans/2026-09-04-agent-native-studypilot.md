@@ -23,8 +23,8 @@
 ## Runner 与 Developer Agent
 
 - [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
-- [x] Task 22：Docker/Podman Runner、Unix Socket、签名信封、nonce、断网、资源和环境隔离。
-- [x] Task 23：测试后文件清单与敏感扫描、DeepSeek Rubric、70 分阈值和用户最终接受。
+- [ ] Task 22：协议、Unix Socket 与容器策略已实现；本机尚无 Docker/Podman，真实容器执行验收待完成。
+- [ ] Task 23：已有敏感扫描和人工接受骨架，但当前评分仍是启发式字符串判断，尚未接入真实 DeepSeek Rubric。
 - [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
 - [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
@@ -119,20 +119,19 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 
 ## Task 23 验收证据
 
-- [x] 增加成果敏感扫描机制 `ArtifactSensitiveScanner`，拦截私钥、密码和 API 密钥泄露并记录违规清单。
-- [x] 建立基于 DeepSeek Rubric 的 70 分阅卷规则 `ArtifactReviewRubricEvaluator`，未达 70 分不允许核准。
-- [x] 支持用户人工最终决策 `POST /api/roadmap-artifacts/{id}/accept` 与 `POST /api/roadmap-artifacts/{id}/reject`，符合学习真实性底线。
-- [x] 成功接受成果物时自动标记路线节点完成（`recordArtifactAccepted`），驱动下一阶段学习推进。
-- [x] 集成测试 `RoadmapArtifactWorkflowTest` 323 项通过。
+- [x] 已有成果敏感扫描、人工接受/拒绝接口和路线节点推进骨架。
+- [ ] `ArtifactReviewRubricEvaluator` 当前只按证据字符串启发式计分，不能称为 DeepSeek Rubric。
+- [ ] 尚未实现“Runner 测试通过 → 文件清单预览 → 用户确认发送 → DeepSeek 固定 Rubric → 70 分 → 用户最终确认”的真实闭环。
 
 ## Task 22 验收证据
 
-- [x] 实现基于签名信封（Signed Envelope）与 Nonce 防重放的安全 Runner 协议（`RunnerSignedEnvelope` + `RunnerSecurityService`）。
-- [x] 实现了 10 分钟时间戳有效期校验、Nonce 重放检测（内存缓存）、以及基于 HMAC-SHA256 的签名生成与严格鉴权。
-- [x] 实现了规范路径（Canonical Path）与符号链接越界逃逸防护（Symlink Escape Detection），禁止在指向外部的符号链接路径中运行任务。
-- [x] 实现了沙箱环境与资源隔离规范：断网执行（`networkDisabled=true`，对应 `--network none`）、CPU 配额限制（`cpuLimit=1.0`）、内存限制（`memoryLimit=1024m`）以及安全环境变量白名单。
-- [x] 支持 Docker / Podman / Emulated Socket 隔离模式自动探测与降级回退机制（`IsolatedRunnerExecutor`）。
-- [x] 后端 321 项测试通过（新增 `RunnerProtocolSecurityTest` 覆盖签名验证、篡改防御、过期拦截、Nonce 重放拒绝、符号链接逃逸阻断与安全信封执行全链路）。
+- [x] Java 不再包含 `ProcessBuilder` 或宿主机降级路径，只能通过所有者专用 Unix Socket 调用独立 Runner。
+- [x] 完整签名信封包含用户、工作区、模板、风险、确认时间、资源限制和命令令牌；默认密钥和短密钥会被拒绝。
+- [x] 独立 Runner 实现 HMAC-SHA256 验签、10 分钟有效期、SQLite 持久化 nonce、防篡改和高风险确认时间校验。
+- [x] 规范路径、允许根目录与符号链接逃逸防护已实现，外层 workspace/template 必须与签名内容一致。
+- [x] 固定 Docker/Podman 命令采用断网、只读根、非 root、capability、进程、CPU、512MB 内存、超时及输出上限；源码只读挂载后复制到容器 tmpfs。
+- [x] Java/Python 共享长度前缀签名协议，并通过固定黄金签名验证互操作；Runner 协议与容器策略测试无需 Docker 即可运行。
+- [ ] 当前开发机未安装 Docker/Podman，三个镜像构建及真实 Maven/npm/pytest 容器执行尚未验收，因此 Task 22 暂不标记完成。
 
 ## 提交映射（按任务）
 
