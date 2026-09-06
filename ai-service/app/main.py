@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
+from app.api.artifact_reviews import router as artifact_reviews_router
 from app.api.conversations import (
     OwnerScopedConversationServices,
 )
@@ -416,6 +417,7 @@ app.include_router(plan_adjustments_router)
 app.include_router(knowledge_conversations_router)
 app.include_router(teaching_conversations_router)
 app.include_router(quiz_generation_router)
+app.include_router(artifact_reviews_router)
 app.include_router(unified_assistant_router)
 
 

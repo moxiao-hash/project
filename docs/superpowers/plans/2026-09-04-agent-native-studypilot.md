@@ -23,8 +23,8 @@
 ## Runner 与 Developer Agent
 
 - [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
-- [ ] Task 22：协议、Unix Socket 与容器策略已实现；本机尚无 Docker/Podman，真实容器执行验收待完成。
-- [ ] Task 23：已有敏感扫描和人工决策骨架；不可信的启发式评分已移除并失败关闭，真实 DeepSeek Rubric 尚待实现。
+- [x] Task 22：协议、Unix Socket、容器策略与 Maven/npm/pytest 真实容器执行均已验收。
+- [x] Task 23：Runner 证据、文件清单确认、敏感扫描、DeepSeek 固定 Rubric 和用户最终验收闭环已完成。
 - [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
 - [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
@@ -121,7 +121,15 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 
 - [x] 已有成果敏感扫描、人工接受/拒绝接口和路线节点推进骨架。
 - [x] 已删除按 `testEvidence` 中 `pass/success/ok` 等字符串伪造及格分的 `ArtifactReviewRubricEvaluator`；评审和接受接口在真实 AI 评审接入前返回 409，不会错误推进路线。
-- [ ] 尚未实现“Runner 测试通过 → 文件清单预览 → 用户确认发送 → DeepSeek 固定 Rubric → 70 分 → 用户最终确认”的真实闭环。
+- [x] 只有归属相同、晚于成果提交且真实成功的 Maven/npm/pytest Runner 记录可以作为评审证据。
+- [x] Java 先扫描并展示待发送文件；`.env`、应用配置、密钥、缓存和构建输出不会进入模型请求。
+- [x] 用户调用专用确认接口后才把清单内源码发送给 FastAPI；确认前文件变化会拒绝执行。
+- [x] DeepSeek V4 Flash 按 40/25/20/15 固定 Rubric 返回结构化评分，Python 与 Java 双重校验总分。
+- [x] AI 达到 70 分后仍保持 `SUBMITTED`，只有用户调用最终 `accept` 接口才进入 `ACCEPTED`。
+- [x] 预览、确认、成功和失败均写入审计；完成或失败会创建通知，重复确认不重复调用模型。
+- [x] 真实 DeepSeek 最小联调返回 80 分且四项之和为 80，模型标识为 `deepseek-v4-flash`。
+- [x] V43 在本地 MySQL 9.6 上成功迁移，数据库版本由 38 升至 43。
+- [x] Java 346 项、AI 服务 299 项、Runner 21 项测试通过；两套 Ruff 与 `git diff --check` 通过。
 
 ## Task 22 验收证据
 
@@ -131,7 +139,9 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 规范路径、允许根目录与符号链接逃逸防护已实现，外层 workspace/template 必须与签名内容一致。
 - [x] 固定 Docker/Podman 命令采用断网、只读根、非 root、capability、进程、CPU、512MB 内存、超时及输出上限；源码只读挂载后复制到容器 tmpfs。
 - [x] Java/Python 共享长度前缀签名协议，并通过固定黄金签名验证互操作；Runner 协议与容器策略测试无需 Docker 即可运行。
-- [ ] 当前开发机未安装 Docker/Podman，三个镜像构建及真实 Maven/npm/pytest 容器执行尚未验收，因此 Task 22 暂不标记完成。
+- [x] 当前开发机使用 Colima + Docker CLI 构建三个固定镜像；Python 与 npm 在断网容器内测试通过。
+- [x] Maven 使用高风险联网 `dependency:go-offline` 准备独立缓存，随后在 `--network none` 容器内编译测试通过。
+- [x] macOS 容器虚拟机不可见宿主 `/tmp` 的问题已通过用户缓存目录暂存解决；暂存目录可用 `STUDYPILOT_RUNNER_STAGING_ROOT` 覆盖。
 
 ## 提交映射（按任务）
 

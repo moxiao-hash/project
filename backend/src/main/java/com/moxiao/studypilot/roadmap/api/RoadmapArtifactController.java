@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.roadmap.api;
 
 import com.moxiao.studypilot.auth.security.AuthenticatedUser;
+import com.moxiao.studypilot.roadmap.application.ArtifactReviewService;
 import com.moxiao.studypilot.roadmap.application.RoadmapArtifactService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -17,9 +18,33 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/roadmap-artifacts")
 public class RoadmapArtifactController {
     private final RoadmapArtifactService service;
+    private final ArtifactReviewService reviewService;
 
-    public RoadmapArtifactController(RoadmapArtifactService service) {
+    public RoadmapArtifactController(
+            RoadmapArtifactService service,
+            ArtifactReviewService reviewService
+    ) {
         this.service = service;
+        this.reviewService = reviewService;
+    }
+
+    @PostMapping("/{artifactId}/review-previews")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ArtifactReviewPreviewResponse createReviewPreview(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String artifactId,
+            @Valid @RequestBody CreateArtifactReviewPreviewRequest request
+    ) {
+        return reviewService.createPreview(user.id(), artifactId, request);
+    }
+
+    @PostMapping("/{artifactId}/review-previews/{previewId}/confirm")
+    public RoadmapArtifactResponse confirmReviewPreview(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String artifactId,
+            @PathVariable String previewId
+    ) {
+        return reviewService.confirm(user.id(), artifactId, previewId);
     }
 
     @PostMapping
