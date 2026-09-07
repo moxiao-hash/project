@@ -50,7 +50,14 @@ class AgentToolCoverageTest {
                 "artifacts.list",
                 "artifacts.get",
                 "artifacts.evaluate",
-                "runner.execution.preview"
+                "runner.execution.preview",
+                "developer.file_tree.get",
+                "developer.file.read",
+                "developer.code.search",
+                "developer.git.status",
+                "developer.git.diff",
+                "developer.git.log",
+                "developer.patch.preview"
         )));
     }
 
@@ -76,7 +83,8 @@ class AgentToolCoverageTest {
                 "workspaces.register",
                 "artifacts.submit",
                 "runner.check.run",
-                "runner.dependencies.prepare"
+                "runner.dependencies.prepare",
+                "developer.patch.apply"
         )));
     }
 }

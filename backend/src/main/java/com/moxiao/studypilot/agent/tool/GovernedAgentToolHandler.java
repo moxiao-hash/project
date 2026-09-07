@@ -7,4 +7,7 @@ public interface GovernedAgentToolHandler extends AgentToolHandler {
     ExecutionType executionType();
 
     String summary(JsonNode arguments);
+
+    default void validateBeforePrepare(AgentToolContext context, JsonNode arguments) {
+    }
 }

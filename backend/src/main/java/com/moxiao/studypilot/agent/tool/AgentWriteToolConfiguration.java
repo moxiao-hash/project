@@ -42,6 +42,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
@@ -362,6 +363,34 @@ public class AgentWriteToolConfiguration {
         return supplied;
     }
 
+    @Bean
+    AgentToolHandler developerPatchApplyTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service,
+            AgentToolRequestValidator validator
+    ) {
+        return writeValidated(mapper, "developer.patch.apply", "DEVELOPER", AgentToolRiskLevel.HIGH,
+                "DEVELOPER_MANAGEMENT", ExecutionType.CODE_PATCH_APPLICATION,
+                Map.of("workspaceId", "string", "targetFile", "string", "unifiedDiff", "string",
+                        "expectedSha256", "string", "explanation", "string"),
+                Set.of("workspaceId", "targetFile", "unifiedDiff", "expectedSha256"),
+                arguments -> "应用代码补丁到 " + text(arguments, "targetFile"),
+                (context, arguments) -> service.validatePatchRequest(
+                        context.ownerId(), patchRequest(validator, arguments)),
+                (context, arguments) -> service.applyConfirmedPatch(
+                        context.ownerId(), patchRequest(validator, arguments)));
+    }
+
+    private static com.moxiao.studypilot.agent.developer.ApplyCodePatchRequest patchRequest(
+            AgentToolRequestValidator validator, JsonNode arguments
+    ) {
+        return validator.requireValid(
+                new com.moxiao.studypilot.agent.developer.ApplyCodePatchRequest(
+                        text(arguments, "workspaceId"), text(arguments, "targetFile"),
+                        text(arguments, "unifiedDiff"), text(arguments, "expectedSha256"),
+                        optionalText(arguments, "explanation")));
+    }
+
     private static AgentToolHandler write(
             ObjectMapper mapper,
             String name,
@@ -385,6 +414,32 @@ public class AgentWriteToolConfiguration {
         return new GovernedFunctionalAgentToolHandler(new AgentToolDescriptor(
                 name, 1, category, AgentToolEffect.WRITE, risk, scope, true, input, output),
                 executionType, summary, function);
+    }
+
+    private static AgentToolHandler writeValidated(
+            ObjectMapper mapper,
+            String name,
+            String category,
+            AgentToolRiskLevel risk,
+            String scope,
+            ExecutionType executionType,
+            Map<String, String> properties,
+            Set<String> required,
+            Function<JsonNode, String> summary,
+            BiConsumer<AgentToolContext, JsonNode> preflight,
+            BiFunction<AgentToolContext, JsonNode, Object> function
+    ) {
+        ObjectNode input = mapper.createObjectNode().put("type", "object")
+                .put("additionalProperties", false);
+        ObjectNode schemaProperties = input.putObject("properties");
+        properties.forEach((property, type) -> schemaProperties
+                .putObject(property).put("type", type));
+        var requiredArray = input.putArray("required");
+        required.forEach(requiredArray::add);
+        ObjectNode output = mapper.createObjectNode().put("type", "object");
+        return new GovernedFunctionalAgentToolHandler(new AgentToolDescriptor(
+                name, 1, category, AgentToolEffect.WRITE, risk, scope, true, input, output),
+                executionType, summary, preflight, function);
     }
 
     private static String text(JsonNode arguments, String name) {

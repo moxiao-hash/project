@@ -323,6 +323,90 @@ public class AgentReadToolConfiguration {
                                 optionalText(arguments, "explanation"),
                                 text(arguments, "idempotencyKey"))));
     }
+    @Bean
+    AgentToolHandler developerFileTreeTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.file_tree.get", "DEVELOPER",
+                Map.of("workspaceId", "string"), Set.of("workspaceId"),
+                (context, arguments) -> service.getFileTree(
+                        context.ownerId(), text(arguments, "workspaceId")));
+    }
+
+    @Bean
+    AgentToolHandler developerFileReadTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.file.read", "DEVELOPER",
+                Map.of("workspaceId", "string", "path", "string"),
+                Set.of("workspaceId", "path"),
+                (context, arguments) -> service.readFile(
+                        context.ownerId(), text(arguments, "workspaceId"),
+                        text(arguments, "path")));
+    }
+
+    @Bean
+    AgentToolHandler developerCodeSearchTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.code.search", "DEVELOPER",
+                Map.of("workspaceId", "string", "q", "string"),
+                Set.of("workspaceId", "q"),
+                (context, arguments) -> service.searchCode(
+                        context.ownerId(), text(arguments, "workspaceId"),
+                        text(arguments, "q")));
+    }
+
+    @Bean
+    AgentToolHandler developerGitStatusTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.git.status", "DEVELOPER",
+                Map.of("workspaceId", "string"), Set.of("workspaceId"),
+                (context, arguments) -> service.getGitStatus(
+                        context.ownerId(), text(arguments, "workspaceId")));
+    }
+
+    @Bean
+    AgentToolHandler developerGitDiffTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.git.diff", "DEVELOPER",
+                Map.of("workspaceId", "string"), Set.of("workspaceId"),
+                (context, arguments) -> service.getGitDiff(
+                        context.ownerId(), text(arguments, "workspaceId")));
+    }
+
+    @Bean
+    AgentToolHandler developerGitLogTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.git.log", "DEVELOPER",
+                Map.of("workspaceId", "string", "limit", "integer"), Set.of("workspaceId"),
+                (context, arguments) -> service.getGitLog(
+                        context.ownerId(), text(arguments, "workspaceId"),
+                        arguments.hasNonNull("limit") ? arguments.get("limit").asInt() : 20));
+    }
+
+    @Bean
+    AgentToolHandler developerPatchPreviewTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.patch.preview", "DEVELOPER",
+                Map.of("workspaceId", "string", "targetFile", "string", "diff", "string"),
+                Set.of("workspaceId", "targetFile", "diff"),
+                (context, arguments) -> service.previewPatch(
+                        context.ownerId(), text(arguments, "workspaceId"),
+                        text(arguments, "targetFile"), text(arguments, "diff")));
+    }
+
     private static AgentToolHandler read(
             ObjectMapper mapper,
             String name,

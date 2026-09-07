@@ -25,7 +25,7 @@
 - [x] Task 21：Runner 执行预览、固定模板、风险分类、专用确认、通知和审计。
 - [x] Task 22：协议、Unix Socket、容器策略与 Maven/npm/pytest 真实容器执行均已验收。
 - [x] Task 23：Runner 证据、文件清单确认、敏感扫描、DeepSeek 固定 Rubric 和用户最终验收闭环已完成。
-- [ ] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
+- [x] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
 - [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
 
@@ -142,6 +142,17 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 当前开发机使用 Colima + Docker CLI 构建三个固定镜像；Python 与 npm 在断网容器内测试通过。
 - [x] Maven 使用高风险联网 `dependency:go-offline` 准备独立缓存，随后在 `--network none` 容器内编译测试通过。
 - [x] macOS 容器虚拟机不可见宿主 `/tmp` 的问题已通过用户缓存目录暂存解决；暂存目录可用 `STUDYPILOT_RUNNER_STAGING_ROOT` 覆盖。
+
+## Task 24 验收证据
+
+- [x] 新增受 owner 隔离的文件树、文本读取、代码搜索、Git status/diff/log 和补丁预览工具；模型不能传入任意 URL、命令或工作区绝对路径。
+- [x] `.env`、应用配置、密钥文件、构建目录、二进制文件及符号链接均不会进入 Developer Agent 上下文；普通源码和 Git 输出中的常见凭据会统一脱敏。
+- [x] Unified Diff 只允许修改已登记工作区内的单个既有文本文件，限制文件与补丁大小，并确定性校验文件头、hunk 行号、上下文和行数声明。
+- [x] 预览返回原文件与结果文件 SHA-256；确认执行前再次预检，执行时再次比较摘要，文件被用户修改后返回冲突且绝不覆盖新内容。
+- [x] 应用补丁固定为 `HIGH` 风险，只有专用确认接口可执行；准备、确认、成功或失败复用 AgentExecution、通知、审计和幂等治理。
+- [x] 补丁采用同目录临时文件和原子替换，并保留原文件 POSIX 权限；重复确认返回原执行结果，不重复写文件。
+- [x] Task 25 的测试选择、Git commit/push 和浏览器/IDE 兜底未提前混入本任务。
+- [x] Java 全量 355 项测试通过，`git diff --check` 通过。
 
 ## 提交映射（按任务）
 

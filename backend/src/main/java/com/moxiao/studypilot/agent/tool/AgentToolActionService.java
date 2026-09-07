@@ -124,6 +124,7 @@ public class AgentToolActionService {
             }
             return new ActionClaim(existing.getId(), false, response(existing));
         }
+        handler.validateBeforePrepare(new AgentToolContext(ownerId), arguments);
         AgentToolDescriptor descriptor = handler.descriptor();
         RiskLevel risk = descriptor.riskLevel() == AgentToolRiskLevel.HIGH
                 ? RiskLevel.HIGH : RiskLevel.LOW;

@@ -125,6 +125,14 @@ export const agentScopeLabels: Record<AgentScope, string> = {
   TASK_MANAGEMENT: '任务管理',
   SMALL_PLAN_ADJUSTMENT: '小幅计划调整',
   LARGE_PLAN_ADJUSTMENT: '大幅计划调整',
+  LEARNING_MANAGEMENT: '学习管理',
+  SETTINGS_MANAGEMENT: '设置管理',
+  NOTIFICATION_MANAGEMENT: '通知管理',
+  WORKSPACE_MANAGEMENT: '工作区管理',
+  ARTIFACT_MANAGEMENT: '成果管理',
+  ROADMAP_MANAGEMENT: '路线管理',
+  RUNNER_MANAGEMENT: '执行器管理',
+  DEVELOPER_MANAGEMENT: '代码修改',
 }
 
 export const executionStatusLabels: Record<ExecutionStatus, string> = {
@@ -159,6 +167,7 @@ export const executionTypeLabels: Record<ExecutionType, string> = {
   ARTIFACT_SUBMISSION: '成果提交',
   ROADMAP_CHANGE: '路线切换',
   RUNNER_EXECUTION: '本地执行器执行',
+  CODE_PATCH_APPLICATION: '代码补丁应用',
 }
 
 export const riskLevelLabels: Record<RiskLevel, string> = {
