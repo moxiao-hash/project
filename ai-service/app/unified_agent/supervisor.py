@@ -509,6 +509,218 @@ class UnifiedAgentSupervisor:
             )
             message = state["message"].strip()
 
+            if "推送" in message and any(word in message for word in ("提交", "代码", "分支")):
+                workspaces_result = await gateway.invoke("workspaces.list", {})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="workspaces.list",
+                        status="SUCCEEDED",
+                        summary="已读取登记的代码工作区",
+                    )
+                )
+                workspace_id = UnifiedAgentSupervisor._single_workspace_id(
+                    workspaces_result.data
+                )
+                if workspace_id is None:
+                    return UnifiedAgentSupervisor._workspace_clarification(steps)
+                preview_result = await gateway.invoke(
+                    "developer.git.push.preview", {"workspaceId": workspace_id}
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.git.push.preview",
+                        status="SUCCEEDED",
+                        summary="已核对 origin、当前分支和待推送提交",
+                    )
+                )
+                preview = preview_result.data if isinstance(preview_result.data, dict) else {}
+                invocation = await gateway.invoke(
+                    "developer.git.push",
+                    {
+                        "workspaceId": workspace_id,
+                        "remoteName": preview.get("remoteName"),
+                        "branch": preview.get("branch"),
+                        "expectedHead": preview.get("expectedHead"),
+                    },
+                    idempotency_key=state["idempotency_key"],
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.git.push",
+                        status=invocation.action.status if invocation.action else "SUCCEEDED",
+                        summary="已生成独立的 Git push 高风险确认",
+                    )
+                )
+                return {
+                    "intent": AssistantIntent.DEVELOPER,
+                    "reply": "推送不会随 commit 自动执行。请单独确认本次 push。",
+                    "tool_steps": steps,
+                    "pending_action": invocation.action,
+                    "ui_actions": [],
+                }
+
+            if "提交" in message and any(
+                word in message for word in ("修改", "代码", "commit", "提交信息")
+            ):
+                workspaces_result = await gateway.invoke("workspaces.list", {})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="workspaces.list",
+                        status="SUCCEEDED",
+                        summary="已读取登记的代码工作区",
+                    )
+                )
+                workspace_id = UnifiedAgentSupervisor._single_workspace_id(
+                    workspaces_result.data
+                )
+                if workspace_id is None:
+                    return UnifiedAgentSupervisor._workspace_clarification(steps)
+                status_result = await gateway.invoke(
+                    "developer.git.status", {"workspaceId": workspace_id}
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.git.status",
+                        status="SUCCEEDED",
+                        summary="已读取真实 Git 改动范围",
+                    )
+                )
+                paths = UnifiedAgentSupervisor._changed_files(status_result.data)
+                commit_message = UnifiedAgentSupervisor._commit_message(message)
+                if len(paths) != 1 or commit_message is None:
+                    return {
+                        "intent": AssistantIntent.CLARIFY,
+                        "reply": "为避免误提交，请明确一个改动文件和单行提交信息。",
+                        "tool_steps": steps,
+                        "pending_action": None,
+                        "ui_actions": [],
+                    }
+                preview_result = await gateway.invoke(
+                    "developer.git.commit.preview",
+                    {"workspaceId": workspace_id, "paths": paths, "message": commit_message},
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.git.commit.preview",
+                        status="SUCCEEDED",
+                        summary="已创建仅包含指定文件的提交预览",
+                    )
+                )
+                preview = preview_result.data if isinstance(preview_result.data, dict) else {}
+                invocation = await gateway.invoke(
+                    "developer.git.commit",
+                    {
+                        "workspaceId": workspace_id,
+                        "paths": preview.get("paths", paths),
+                        "message": preview.get("message", commit_message),
+                        "expectedHead": preview.get("expectedHead"),
+                        "changeFingerprint": preview.get("changeFingerprint"),
+                    },
+                    idempotency_key=state["idempotency_key"],
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.git.commit",
+                        status=invocation.action.status if invocation.action else "SUCCEEDED",
+                        summary="已生成独立的 Git commit 高风险确认",
+                    )
+                )
+                return {
+                    "intent": AssistantIntent.DEVELOPER,
+                    "reply": "已准备仅提交预览中的文件；本次确认不会执行 push。",
+                    "tool_steps": steps,
+                    "pending_action": invocation.action,
+                    "ui_actions": [],
+                }
+
+            if "测试" in message and any(
+                word in message for word in ("运行", "执行", "检查", "修改后", "改动")
+            ):
+                workspaces_result = await gateway.invoke("workspaces.list", {})
+                steps.append(
+                    PublicToolStep(
+                        tool_name="workspaces.list",
+                        status="SUCCEEDED",
+                        summary="已读取登记的代码工作区",
+                    )
+                )
+                workspace_id = UnifiedAgentSupervisor._single_workspace_id(
+                    workspaces_result.data
+                )
+                if workspace_id is None:
+                    return {
+                        "intent": AssistantIntent.CLARIFY,
+                        "reply": "请先登记且只选择一个要测试的代码工作区。",
+                        "tool_steps": steps,
+                        "pending_action": None,
+                        "ui_actions": [
+                            UiAction(
+                                route_key="WORKSPACE_ARTIFACTS",
+                                reason="选择代码工作区",
+                            )
+                        ],
+                    }
+                git_status = await gateway.invoke(
+                    "developer.git.status", {"workspaceId": workspace_id}
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.git.status",
+                        status="SUCCEEDED",
+                        summary="已读取真实 Git 改动范围",
+                    )
+                )
+                changed_files = UnifiedAgentSupervisor._changed_files(git_status.data)
+                recommendation = await gateway.invoke(
+                    "developer.tests.recommend",
+                    {"workspaceId": workspace_id, "changedFiles": changed_files},
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="developer.tests.recommend",
+                        status="SUCCEEDED",
+                        summary="已按技术栈选择白名单测试模板",
+                    )
+                )
+                template = UnifiedAgentSupervisor._first_test_template(
+                    recommendation.data
+                )
+                if template is None:
+                    return {
+                        "intent": AssistantIntent.CLARIFY,
+                        "reply": "没有找到与当前工作区匹配的白名单测试模板。",
+                        "tool_steps": steps,
+                        "pending_action": None,
+                        "ui_actions": [],
+                    }
+                invocation = await gateway.invoke(
+                    "runner.check.run",
+                    {"workspaceId": workspace_id, "templateType": template},
+                    idempotency_key=state["idempotency_key"],
+                )
+                steps.append(
+                    PublicToolStep(
+                        tool_name="runner.check.run",
+                        status=(
+                            invocation.action.status
+                            if invocation.action is not None
+                            else "SUCCEEDED"
+                        ),
+                        summary=f"已提交固定模板 {template} 到隔离 Runner",
+                    )
+                )
+                return {
+                    "intent": AssistantIntent.DEVELOPER,
+                    "reply": (
+                        "白名单测试已提交执行。"
+                        if invocation.action is None
+                        else "白名单测试已准备好，请在操作卡片中完成授权或确认。"
+                    ),
+                    "tool_steps": steps,
+                    "pending_action": invocation.action,
+                    "ui_actions": [],
+                }
+
             limit_minutes = UnifiedAgentSupervisor._study_limit_minutes(message)
             if limit_minutes is not None and any(
                 word in message for word in ("调整", "改成", "改为", "只有", "设置")
@@ -881,6 +1093,54 @@ class UnifiedAgentSupervisor:
                 if fallback is None and display_status in {"AVAILABLE", "READY"}:
                     fallback = node
         return fallback
+
+    @staticmethod
+    def _single_workspace_id(data: Any) -> str | None:
+        if not isinstance(data, list) or len(data) != 1 or not isinstance(data[0], dict):
+            return None
+        value = data[0].get("id")
+        return value if isinstance(value, str) and value else None
+
+    @staticmethod
+    def _workspace_clarification(steps: list[PublicToolStep]) -> dict[str, Any]:
+        return {
+            "intent": AssistantIntent.CLARIFY,
+            "reply": "请先登记且只选择一个代码工作区。",
+            "tool_steps": steps,
+            "pending_action": None,
+            "ui_actions": [
+                UiAction(route_key="WORKSPACE_ARTIFACTS", reason="选择代码工作区")
+            ],
+        }
+
+    @staticmethod
+    def _changed_files(data: Any) -> list[str]:
+        if not isinstance(data, dict):
+            return []
+        result: list[str] = []
+        for key in ("modifiedFiles", "untrackedFiles"):
+            values = data.get(key)
+            if isinstance(values, list):
+                result.extend(value for value in values if isinstance(value, str))
+        return list(dict.fromkeys(result))
+
+    @staticmethod
+    def _first_test_template(data: Any) -> str | None:
+        if not isinstance(data, dict) or not isinstance(data.get("templates"), list):
+            return None
+        allowed = {"MAVEN_TEST", "MAVEN_COMPILE", "NPM_TEST", "PYTEST"}
+        for value in data["templates"]:
+            if isinstance(value, str) and value in allowed:
+                return value
+        return None
+
+    @staticmethod
+    def _commit_message(message: str) -> str | None:
+        matched = re.search(r"提交信息\s*[:：]?\s*(.+)$", message, re.IGNORECASE)
+        if matched is None:
+            return None
+        value = matched.group(1).strip()
+        return value if 1 <= len(value) <= 200 and "\n" not in value else None
 
     @staticmethod
     def _current_node_id(client_context: Any, context: Any) -> str | None:

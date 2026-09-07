@@ -71,6 +71,7 @@ class AssistantIntent(StrEnum):
     PLAN = "PLAN"
     TASK = "TASK"
     TEACHING = "TEACHING"
+    DEVELOPER = "DEVELOPER"
     CLARIFY = "CLARIFY"
 
 

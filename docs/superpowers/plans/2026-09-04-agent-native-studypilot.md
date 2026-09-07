@@ -26,7 +26,7 @@
 - [x] Task 22：协议、Unix Socket、容器策略与 Maven/npm/pytest 真实容器执行均已验收。
 - [x] Task 23：Runner 证据、文件清单确认、敏感扫描、DeepSeek 固定 Rubric 和用户最终验收闭环已完成。
 - [x] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
-- [ ] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
+- [x] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
 - [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
 
 ## Task 12 验收证据
@@ -153,6 +153,17 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 补丁采用同目录临时文件和原子替换，并保留原文件 POSIX 权限；重复确认返回原执行结果，不重复写文件。
 - [x] Task 25 的测试选择、Git commit/push 和浏览器/IDE 兜底未提前混入本任务。
 - [x] Java 全量 355 项测试通过，`git diff --check` 通过。
+
+## Task 25 验收证据
+
+- [x] 新增 `developer.tests.recommend`，只根据登记工作区、真实 Git 改动和项目标志文件推荐 Maven、npm 或 pytest 固定模板；模型不能生成命令令牌。
+- [x] Unified Agent 对“运行修改后的测试”先读取工作区与 Git 状态，再调用推荐工具，最终仅通过既有隔离 Runner 执行第一项白名单测试；多个工作区时要求用户明确选择。
+- [x] 新增 Git commit/push 预览与执行契约。commit 只接受明确的 1～50 个安全相对路径，拒绝敏感文件和预先暂存内容，并绑定 HEAD 与改动摘要。
+- [x] `developer.git.commit` 与 `developer.git.push` 是两个独立 `HIGH` 风险动作；确认 commit 不会 push，push 只允许 `origin` 和预览时的分支/HEAD。
+- [x] Git 执行继续复用专用确认、幂等、AgentExecution、通知与审计；确认前 HEAD、文件内容或分支变化会返回冲突。
+- [x] 新增 API 优先的界面兜底策略：存在业务 API 时强制选择 `BUSINESS_API`；只有无 API 时才允许预注册的 Playwright DOM 或 IDEA Accessibility 动作。
+- [x] 界面兜底拒绝任意 URL、CSS selector、文件路径、脚本和键鼠参数；当前只发布安全预览策略，不把宿主机任意控制能力暴露给模型。
+- [x] Java 全量 361 项、AI 服务 302 项、Runner 21 项、前端 124 项测试通过；两套 Ruff、TypeScript、生产构建和 `git diff --check` 通过。
 
 ## 提交映射（按任务）
 

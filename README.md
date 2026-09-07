@@ -90,6 +90,7 @@ npm run build
 - [AI 服务说明](ai-service/README.md)
 - [Local Runner 说明](runner-service/README.md)
 - [项目开发步骤](项目开发步骤.md)
+- [协同开发交接说明](docs/协同开发交接说明.md)
 - [Docker Compose 说明](infra/README.md)
 
 浏览器只调用 Java `/api/**`。`/internal/**` 只用于 Java 与 Python 服务间通信，不能

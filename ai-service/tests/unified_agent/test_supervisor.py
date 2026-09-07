@@ -37,6 +37,13 @@ class FakeJavaBackend:
             tool("governance.audit.list", ToolEffect.READ),
             tool("workspaces.list", ToolEffect.READ),
             tool("artifacts.list", ToolEffect.READ),
+            tool("developer.git.status", ToolEffect.READ),
+            tool("developer.tests.recommend", ToolEffect.READ),
+            tool("runner.check.run", ToolEffect.WRITE),
+            tool("developer.git.commit.preview", ToolEffect.READ),
+            tool("developer.git.commit", ToolEffect.WRITE),
+            tool("developer.git.push.preview", ToolEffect.READ),
+            tool("developer.git.push", ToolEffect.WRITE),
             tool("assessment.wrong_question_review.create", ToolEffect.WRITE),
         ]
 
@@ -133,6 +140,89 @@ class FakeJavaBackend:
                     "expiresAt": "2026-09-04T12:00:00Z",
                 },
             }
+        if name == "workspaces.list":
+            return {
+                "toolName": name,
+                "data": [{"id": "workspace-1", "name": "StudyPilot"}],
+                "action": None,
+            }
+        if name == "developer.git.status":
+            return {
+                "toolName": name,
+                "data": {
+                    "clean": False,
+                    "modifiedFiles": ["backend/src/main/java/Example.java"],
+                    "untrackedFiles": [],
+                },
+                "action": None,
+            }
+        if name == "developer.tests.recommend":
+            return {
+                "toolName": name,
+                "data": {"templates": ["MAVEN_TEST"], "reasons": ["Java/Maven 代码发生变化"]},
+                "action": None,
+            }
+        if name == "runner.check.run":
+            return {
+                "toolName": name,
+                "data": None,
+                "action": {
+                    "actionId": "action-runner-1",
+                    "executionId": "execution-runner-1",
+                    "toolName": name,
+                    "toolVersion": 1,
+                    "riskLevel": "LOW",
+                    "status": "WAITING_AUTHORIZATION",
+                    "summary": "执行项目白名单测试",
+                    "arguments": arguments,
+                    "result": None,
+                    "error": None,
+                    "expiresAt": "2026-09-04T12:00:00Z",
+                },
+            }
+        if name == "developer.git.commit.preview":
+            return {
+                "toolName": name,
+                "data": {
+                    "workspaceId": "workspace-1",
+                    "branch": "main",
+                    "expectedHead": "a" * 40,
+                    "changeFingerprint": "b" * 64,
+                    "paths": arguments["paths"],
+                    "message": arguments["message"],
+                },
+                "action": None,
+            }
+        if name == "developer.git.push.preview":
+            return {
+                "toolName": name,
+                "data": {
+                    "workspaceId": "workspace-1",
+                    "remoteName": "origin",
+                    "branch": "main",
+                    "expectedHead": "c" * 40,
+                    "aheadCount": 1,
+                },
+                "action": None,
+            }
+        if name in {"developer.git.commit", "developer.git.push"}:
+            return {
+                "toolName": name,
+                "data": None,
+                "action": {
+                    "actionId": f"action-{name}",
+                    "executionId": f"execution-{name}",
+                    "toolName": name,
+                    "toolVersion": 1,
+                    "riskLevel": "HIGH",
+                    "status": "WAITING_CONFIRMATION",
+                    "summary": "Git 高风险操作",
+                    "arguments": arguments,
+                    "result": None,
+                    "error": None,
+                    "expiresAt": "2026-09-04T12:00:00Z",
+                },
+            }
         return {"toolName": name, "data": {"routeKey": arguments.get("routeKey")}, "action": None}
 
 
@@ -151,6 +241,75 @@ def tool(name: str, effect: ToolEffect) -> ToolDescriptor:
 
 def test_navigation_turn_loads_context_and_emits_whitelisted_ui_action() -> None:
     asyncio.run(_navigation_turn_loads_context_and_emits_whitelisted_ui_action())
+
+
+def test_developer_test_request_selects_fixed_template_from_real_git_changes() -> None:
+    asyncio.run(_developer_test_request_selects_fixed_template_from_real_git_changes())
+
+
+async def _developer_test_request_selects_fixed_template_from_real_git_changes() -> None:
+    java = FakeJavaBackend()
+    service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash")
+    conversation = await service.create_conversation("user-1")
+
+    result = await service.send_message(
+        conversation.conversation_id,
+        "运行修改后的测试",
+        "assistant-turn:test-changes-1",
+        "user-1",
+        {},
+    )
+
+    assert [call[0] for call in java.calls] == [
+        "learning.context.get",
+        "workspaces.list",
+        "developer.git.status",
+        "developer.tests.recommend",
+        "runner.check.run",
+    ]
+    runner_call = java.calls[-1]
+    assert runner_call[2] == {"workspaceId": "workspace-1", "templateType": "MAVEN_TEST"}
+    assert result.pending_action is not None
+    assert result.pending_action.action_id == "action-runner-1"
+
+
+@pytest.mark.parametrize(
+    ("message", "expected_tools", "action_id"),
+    [
+        (
+            "提交刚才修改，提交信息 feat: update example",
+            ["learning.context.get", "workspaces.list", "developer.git.status",
+             "developer.git.commit.preview", "developer.git.commit"],
+            "action-developer.git.commit",
+        ),
+        (
+            "推送刚才的提交",
+            ["learning.context.get", "workspaces.list", "developer.git.push.preview",
+             "developer.git.push"],
+            "action-developer.git.push",
+        ),
+    ],
+)
+def test_git_mutations_surface_separate_high_risk_actions(
+    message: str, expected_tools: list[str], action_id: str
+) -> None:
+    async def scenario() -> None:
+        java = FakeJavaBackend()
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash")
+        conversation = await service.create_conversation("user-1")
+        result = await service.send_message(
+            conversation.conversation_id,
+            message,
+            f"assistant-turn:{action_id}",
+            "user-1",
+            {},
+        )
+        assert [call[0] for call in java.calls] == expected_tools
+        assert result.pending_action is not None
+        assert result.pending_action.action_id == action_id
+        assert result.pending_action.risk_level == ToolRiskLevel.HIGH
+
+    asyncio.run(scenario())
 
 
 async def _navigation_turn_loads_context_and_emits_whitelisted_ui_action() -> None:

@@ -57,7 +57,11 @@ class AgentToolCoverageTest {
                 "developer.git.status",
                 "developer.git.diff",
                 "developer.git.log",
-                "developer.patch.preview"
+                "developer.patch.preview",
+                "developer.tests.recommend",
+                "developer.git.commit.preview",
+                "developer.git.push.preview",
+                "developer.interface_fallback.preview"
         )));
     }
 
@@ -84,7 +88,9 @@ class AgentToolCoverageTest {
                 "artifacts.submit",
                 "runner.check.run",
                 "runner.dependencies.prepare",
-                "developer.patch.apply"
+                "developer.patch.apply",
+                "developer.git.commit",
+                "developer.git.push"
         )));
     }
 }

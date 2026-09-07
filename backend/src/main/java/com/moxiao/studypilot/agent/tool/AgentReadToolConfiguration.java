@@ -407,6 +407,58 @@ public class AgentReadToolConfiguration {
                         text(arguments, "targetFile"), text(arguments, "diff")));
     }
 
+    @Bean
+    AgentToolHandler developerTestsRecommendTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.tests.recommend", "DEVELOPER",
+                Map.of("workspaceId", "string", "changedFiles", "array"),
+                Set.of("workspaceId", "changedFiles"),
+                (context, arguments) -> service.recommendTests(
+                        context.ownerId(), text(arguments, "workspaceId"),
+                        stringList(arguments, "changedFiles")));
+    }
+
+    @Bean
+    AgentToolHandler developerGitCommitPreviewTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.git.commit.preview", "DEVELOPER",
+                Map.of("workspaceId", "string", "paths", "array", "message", "string"),
+                Set.of("workspaceId", "paths", "message"),
+                (context, arguments) -> service.previewGitCommit(
+                        context.ownerId(), text(arguments, "workspaceId"),
+                        stringList(arguments, "paths"), text(arguments, "message")));
+    }
+
+    @Bean
+    AgentToolHandler developerGitPushPreviewTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return read(mapper, "developer.git.push.preview", "DEVELOPER",
+                Map.of("workspaceId", "string"), Set.of("workspaceId"),
+                (context, arguments) -> service.previewGitPush(
+                        context.ownerId(), text(arguments, "workspaceId")));
+    }
+
+    @Bean
+    AgentToolHandler developerInterfaceFallbackPreviewTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.InterfaceFallbackPolicy policy
+    ) {
+        return read(mapper, "developer.interface_fallback.preview", "DEVELOPER",
+                Map.of("businessApiAvailable", "boolean", "channel", "string",
+                        "actionKey", "string", "arbitraryTarget", "string"),
+                Set.of("businessApiAvailable", "channel", "actionKey"),
+                (context, arguments) -> policy.preview(
+                        arguments.path("businessApiAvailable").asBoolean(),
+                        text(arguments, "channel"), text(arguments, "actionKey"),
+                        optionalText(arguments, "arbitraryTarget")));
+    }
+
     private static AgentToolHandler read(
             ObjectMapper mapper,
             String name,
@@ -437,5 +489,18 @@ public class AgentReadToolConfiguration {
     }
     private static String optionalText(JsonNode arguments, String name) {
         return arguments.hasNonNull(name) ? arguments.get(name).asText() : null;
+    }
+
+    private static java.util.List<String> stringList(JsonNode arguments, String name) {
+        JsonNode value = arguments.get(name);
+        if (value == null || !value.isArray()) {
+            throw new IllegalArgumentException("工具参数必须是字符串数组: " + name);
+        }
+        java.util.List<String> result = new java.util.ArrayList<>();
+        value.forEach(item -> {
+            if (!item.isTextual()) throw new IllegalArgumentException("工具参数必须是字符串数组: " + name);
+            result.add(item.asText());
+        });
+        return java.util.List.copyOf(result);
     }
 }

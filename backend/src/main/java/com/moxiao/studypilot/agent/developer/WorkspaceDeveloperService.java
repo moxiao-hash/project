@@ -10,6 +10,7 @@ import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.transport.RemoteRefUpdate;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -187,6 +189,181 @@ public class WorkspaceDeveloperService {
             return clippedGitText(workspaceId, result.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception exception) {
             throw new IllegalArgumentException("读取 Git 日志失败", exception);
+        }
+    }
+
+    public DeveloperTestRecommendation recommendTests(
+            String ownerId, String workspaceId, List<String> changedFiles
+    ) {
+        Path root = workspaceRoot(findWorkspace(ownerId, workspaceId));
+        List<String> changes = changedFiles == null ? List.of() : changedFiles;
+        LinkedHashSet<com.moxiao.studypilot.agent.runner.RunnerTemplateType> templates =
+                new LinkedHashSet<>();
+        List<String> reasons = new ArrayList<>();
+        if (matchesArea(changes, "backend/", ".java", ".xml")
+                && Files.isRegularFile(root.resolve("backend/pom.xml"))) {
+            templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST);
+            reasons.add("Java/Maven 代码发生变化");
+        }
+        if (matchesArea(changes, "web/", ".vue", ".ts", ".js", ".css")
+                && Files.isRegularFile(root.resolve("web/package.json"))) {
+            templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST);
+            reasons.add("Vue/TypeScript 前端发生变化");
+        }
+        if (matchesArea(changes, "ai-service/", ".py")
+                && (Files.isRegularFile(root.resolve("ai-service/pyproject.toml"))
+                || Files.isRegularFile(root.resolve("ai-service/requirements.txt")))) {
+            templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.PYTEST);
+            reasons.add("Python AI 服务发生变化");
+        }
+        if (templates.isEmpty()) {
+            if (Files.isRegularFile(root.resolve("pom.xml"))) {
+                templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST);
+                reasons.add("工作区根目录是 Maven 项目");
+            } else if (Files.isRegularFile(root.resolve("package.json"))) {
+                templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST);
+                reasons.add("工作区根目录是 npm 项目");
+            } else if (Files.isRegularFile(root.resolve("pyproject.toml"))) {
+                templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.PYTEST);
+                reasons.add("工作区根目录是 Python 项目");
+            }
+        }
+        return new DeveloperTestRecommendation(workspaceId, List.copyOf(templates), false,
+                List.copyOf(reasons));
+    }
+
+    public GitCommitPreview previewGitCommit(
+            String ownerId, String workspaceId, List<String> requestedPaths, String message
+    ) {
+        Path root = workspaceRoot(findWorkspace(ownerId, workspaceId));
+        List<String> paths = normalizeCommitPaths(root, requestedPaths);
+        String normalizedMessage = normalizeCommitMessage(message);
+        try (Git git = openGit(root)) {
+            var status = git.status().call();
+            Set<String> staged = new HashSet<>();
+            staged.addAll(status.getAdded());
+            staged.addAll(status.getChanged());
+            staged.addAll(status.getRemoved());
+            if (!staged.isEmpty()) {
+                throw new IllegalArgumentException("存在预先暂存的改动，请先处理后再创建提交预览");
+            }
+            Set<String> changed = new HashSet<>();
+            changed.addAll(status.getModified());
+            changed.addAll(status.getMissing());
+            changed.addAll(status.getUntracked());
+            if (!changed.containsAll(paths)) {
+                throw new IllegalArgumentException("提交路径必须全部是当前未暂存的真实改动");
+            }
+            Repository repository = git.getRepository();
+            ObjectId head = repository.resolve(Constants.HEAD);
+            if (head == null) throw new IllegalArgumentException("Git 仓库尚无初始提交");
+            return new GitCommitPreview(workspaceId, repository.getBranch(), head.name(),
+                    changeFingerprint(root, paths), paths, normalizedMessage);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("创建 Git 提交预览失败", exception);
+        }
+    }
+
+    public void validateGitCommit(String ownerId, GitCommitRequest request) {
+        GitCommitPreview current = previewGitCommit(
+                ownerId, request.workspaceId(), request.paths(), request.message());
+        if (!current.expectedHead().equals(request.expectedHead())
+                || !current.changeFingerprint().equals(request.changeFingerprint())) {
+            throw new ConflictException("Git 改动已变化，请重新创建提交预览");
+        }
+    }
+
+    public GitCommitResult commitConfirmed(String ownerId, GitCommitRequest request) {
+        validateGitCommit(ownerId, request);
+        Path root = workspaceRoot(findWorkspace(ownerId, request.workspaceId()));
+        synchronized (fileLocks[Math.floorMod(request.workspaceId().hashCode(), fileLocks.length)]) {
+            validateGitCommit(ownerId, request);
+            try (Git git = openGit(root)) {
+                for (String path : request.paths()) {
+                    if (Files.exists(root.resolve(path))) {
+                        git.add().addFilepattern(path).call();
+                    } else {
+                        git.rm().addFilepattern(path).call();
+                    }
+                }
+                var commit = git.commit().setMessage(normalizeCommitMessage(request.message())).call();
+                return new GitCommitResult(request.workspaceId(), commit.getId().name(),
+                        commit.getFullMessage(), List.copyOf(request.paths()), Instant.now());
+            } catch (Exception exception) {
+                try (Git git = openGit(root)) {
+                    git.reset().call();
+                } catch (Exception ignored) {
+                    // 保留工作区正文，尽力撤销本次暂存区变化。
+                }
+                throw new IllegalArgumentException("执行 Git commit 失败", exception);
+            }
+        }
+    }
+
+    public GitPushPreview previewGitPush(String ownerId, String workspaceId) {
+        Path root = workspaceRoot(findWorkspace(ownerId, workspaceId));
+        try (Git git = openGit(root)) {
+            Repository repository = git.getRepository();
+            String branch = repository.getBranch();
+            ObjectId head = repository.resolve(Constants.HEAD);
+            if (head == null || branch == null || Constants.HEAD.equals(branch)) {
+                throw new IllegalArgumentException("Git 当前不在可推送的本地分支上");
+            }
+            if (repository.getConfig().getString("remote", "origin", "url") == null) {
+                throw new IllegalArgumentException("Git 仓库未配置 origin");
+            }
+            ObjectId remote = repository.resolve("refs/remotes/origin/" + branch);
+            int ahead = 0;
+            for (var ignored : remote == null
+                    ? git.log().add(head).call()
+                    : git.log().addRange(remote, head).call()) {
+                ahead++;
+            }
+            return new GitPushPreview(workspaceId, "origin", branch, head.name(), ahead);
+        } catch (IllegalArgumentException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("创建 Git push 预览失败", exception);
+        }
+    }
+
+    public void validateGitPush(String ownerId, GitPushRequest request) {
+        if (!"origin".equals(request.remoteName())) {
+            throw new IllegalArgumentException("只允许推送到登记仓库的 origin");
+        }
+        GitPushPreview current = previewGitPush(ownerId, request.workspaceId());
+        if (!current.branch().equals(request.branch())
+                || !current.expectedHead().equals(request.expectedHead())) {
+            throw new ConflictException("Git 分支或提交已变化，请重新创建 push 预览");
+        }
+        if (current.aheadCount() < 1) {
+            throw new ConflictException("当前没有需要推送的新提交");
+        }
+    }
+
+    public GitPushResult pushConfirmed(String ownerId, GitPushRequest request) {
+        validateGitPush(ownerId, request);
+        Path root = workspaceRoot(findWorkspace(ownerId, request.workspaceId()));
+        synchronized (fileLocks[Math.floorMod(request.workspaceId().hashCode(), fileLocks.length)]) {
+            validateGitPush(ownerId, request);
+            try (Git git = openGit(root)) {
+                var results = git.push().setRemote("origin")
+                        .add("refs/heads/" + request.branch()).call();
+                for (var result : results) {
+                    for (RemoteRefUpdate update : result.getRemoteUpdates()) {
+                        if (update.getStatus() != RemoteRefUpdate.Status.OK
+                                && update.getStatus() != RemoteRefUpdate.Status.UP_TO_DATE) {
+                            throw new IllegalStateException("远端拒绝推送: " + update.getStatus());
+                        }
+                    }
+                }
+                return new GitPushResult(request.workspaceId(), "origin", request.branch(),
+                        request.expectedHead(), Instant.now());
+            } catch (Exception exception) {
+                throw new IllegalArgumentException("执行 Git push 失败", exception);
+            }
         }
     }
 
@@ -350,6 +527,61 @@ public class WorkspaceDeveloperService {
     private boolean containsNul(byte[] bytes) {
         for (byte value : bytes) if (value == 0) return true;
         return false;
+    }
+
+    private boolean matchesArea(List<String> files, String prefix, String... extensions) {
+        return files.stream().map(this::portableInput).anyMatch(file -> {
+            if (!file.startsWith(prefix)) return false;
+            for (String extension : extensions) if (file.endsWith(extension)) return true;
+            return false;
+        });
+    }
+
+    private String portableInput(String value) {
+        return value == null ? "" : value.trim().replace('\\', '/');
+    }
+
+    private List<String> normalizeCommitPaths(Path root, List<String> requestedPaths) {
+        if (requestedPaths == null || requestedPaths.isEmpty() || requestedPaths.size() > 50) {
+            throw new IllegalArgumentException("Git 提交必须明确指定 1 到 50 个文件");
+        }
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        for (String raw : requestedPaths) {
+            String portable = portableInput(raw);
+            Path relative = Path.of(portable);
+            if (portable.isBlank() || relative.isAbsolute() || portable.startsWith("../")
+                    || portable.contains("/../") || excluded(relative) || sensitive(relative)) {
+                throw new IllegalArgumentException("Git 提交包含不安全路径");
+            }
+            Path target = root.resolve(relative).normalize();
+            if (!target.startsWith(root)) throw new IllegalArgumentException("Git 提交路径越界");
+            normalized.add(portable);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private String normalizeCommitMessage(String message) {
+        String normalized = message == null ? "" : message.trim();
+        if (normalized.isEmpty() || normalized.length() > 200 || normalized.contains("\n")
+                || DeveloperOutputSanitizer.containsCredential(normalized)) {
+            throw new IllegalArgumentException("Git 提交信息必须为不含凭据的单行 1 到 200 字符文本");
+        }
+        return normalized;
+    }
+
+    private String changeFingerprint(Path root, List<String> paths) {
+        StringBuilder canonical = new StringBuilder();
+        for (String path : paths) {
+            Path target = root.resolve(path);
+            canonical.append(path).append('\0');
+            try {
+                canonical.append(Files.exists(target) ? sha256(Files.readAllBytes(target)) : "MISSING");
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("读取 Git 改动失败", exception);
+            }
+            canonical.append('\n');
+        }
+        return sha256(canonical.toString().getBytes(StandardCharsets.UTF_8));
     }
 
     private Set<PosixFilePermission> posixPermissions(Path path) throws IOException {

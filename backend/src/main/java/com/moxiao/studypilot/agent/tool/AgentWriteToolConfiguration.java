@@ -381,6 +381,57 @@ public class AgentWriteToolConfiguration {
                         context.ownerId(), patchRequest(validator, arguments)));
     }
 
+    @Bean
+    AgentToolHandler developerGitCommitTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return writeValidated(mapper, "developer.git.commit", "DEVELOPER", AgentToolRiskLevel.HIGH,
+                "DEVELOPER_MANAGEMENT", ExecutionType.GIT_COMMIT,
+                Map.of("workspaceId", "string", "paths", "array", "message", "string",
+                        "expectedHead", "string", "changeFingerprint", "string"),
+                Set.of("workspaceId", "paths", "message", "expectedHead", "changeFingerprint"),
+                arguments -> "创建 Git commit：" + text(arguments, "message"),
+                (context, arguments) -> service.validateGitCommit(
+                        context.ownerId(), gitCommitRequest(arguments)),
+                (context, arguments) -> service.commitConfirmed(
+                        context.ownerId(), gitCommitRequest(arguments)));
+    }
+
+    @Bean
+    AgentToolHandler developerGitPushTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.WorkspaceDeveloperService service
+    ) {
+        return writeValidated(mapper, "developer.git.push", "DEVELOPER", AgentToolRiskLevel.HIGH,
+                "DEVELOPER_MANAGEMENT", ExecutionType.GIT_PUSH,
+                Map.of("workspaceId", "string", "remoteName", "string", "branch", "string",
+                        "expectedHead", "string"),
+                Set.of("workspaceId", "remoteName", "branch", "expectedHead"),
+                arguments -> "推送 Git 分支 " + text(arguments, "branch") + " 到 origin",
+                (context, arguments) -> service.validateGitPush(
+                        context.ownerId(), gitPushRequest(arguments)),
+                (context, arguments) -> service.pushConfirmed(
+                        context.ownerId(), gitPushRequest(arguments)));
+    }
+
+    private static com.moxiao.studypilot.agent.developer.GitCommitRequest gitCommitRequest(
+            JsonNode arguments
+    ) {
+        return new com.moxiao.studypilot.agent.developer.GitCommitRequest(
+                text(arguments, "workspaceId"), stringList(arguments, "paths"),
+                text(arguments, "message"), text(arguments, "expectedHead"),
+                text(arguments, "changeFingerprint"));
+    }
+
+    private static com.moxiao.studypilot.agent.developer.GitPushRequest gitPushRequest(
+            JsonNode arguments
+    ) {
+        return new com.moxiao.studypilot.agent.developer.GitPushRequest(
+                text(arguments, "workspaceId"), text(arguments, "remoteName"),
+                text(arguments, "branch"), text(arguments, "expectedHead"));
+    }
+
     private static com.moxiao.studypilot.agent.developer.ApplyCodePatchRequest patchRequest(
             AgentToolRequestValidator validator, JsonNode arguments
     ) {
@@ -460,5 +511,18 @@ public class AgentWriteToolConfiguration {
 
     private static LocalDate optionalDate(JsonNode arguments, String name) {
         return arguments.hasNonNull(name) ? LocalDate.parse(arguments.get(name).asText()) : null;
+    }
+
+    private static java.util.List<String> stringList(JsonNode arguments, String name) {
+        JsonNode value = arguments.get(name);
+        if (value == null || !value.isArray()) {
+            throw new IllegalArgumentException("工具参数必须是字符串数组: " + name);
+        }
+        java.util.List<String> result = new java.util.ArrayList<>();
+        value.forEach(item -> {
+            if (!item.isTextual()) throw new IllegalArgumentException("工具参数必须是字符串数组: " + name);
+            result.add(item.asText());
+        });
+        return java.util.List.copyOf(result);
     }
 }

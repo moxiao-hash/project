@@ -168,6 +168,8 @@ export const executionTypeLabels: Record<ExecutionType, string> = {
   ROADMAP_CHANGE: '路线切换',
   RUNNER_EXECUTION: '本地执行器执行',
   CODE_PATCH_APPLICATION: '代码补丁应用',
+  GIT_COMMIT: '创建 Git 提交',
+  GIT_PUSH: '推送 Git 提交',
 }
 
 export const riskLevelLabels: Record<RiskLevel, string> = {

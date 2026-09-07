@@ -81,4 +81,31 @@ public class WorkspaceDeveloperController {
         return developerService.previewPatch(user.id(), workspaceId, targetFile, diff);
     }
 
+    @PostMapping("/workspaces/{workspaceId}/test-recommendations")
+    public DeveloperTestRecommendation recommendTests(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String workspaceId,
+            @RequestBody java.util.List<String> changedFiles
+    ) {
+        return developerService.recommendTests(user.id(), workspaceId, changedFiles);
+    }
+
+    @PostMapping("/workspaces/{workspaceId}/git-commit-preview")
+    public GitCommitPreview previewGitCommit(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String workspaceId,
+            @RequestBody CreateGitCommitPreviewRequest request
+    ) {
+        return developerService.previewGitCommit(
+                user.id(), workspaceId, request.paths(), request.message());
+    }
+
+    @GetMapping("/workspaces/{workspaceId}/git-push-preview")
+    public GitPushPreview previewGitPush(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable String workspaceId
+    ) {
+        return developerService.previewGitPush(user.id(), workspaceId);
+    }
+
 }

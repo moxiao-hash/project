@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.Instant;
 import java.util.Optional;
+import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -176,6 +177,82 @@ class WorkspaceDeveloperServiceTest {
         assertTrue(log.content().contains("initial"));
         assertTrue(sensitivePreview.conflict());
         assertNull(sensitivePreview.unifiedDiff());
+    }
+
+    @Test
+    void recommendsOnlyFixedRunnerTemplatesForChangedTechnologyAreas() throws Exception {
+        Files.createDirectories(workspaceRoot.resolve("backend"));
+        Files.createDirectories(workspaceRoot.resolve("web"));
+        Files.createDirectories(workspaceRoot.resolve("ai-service"));
+        Files.writeString(workspaceRoot.resolve("backend/pom.xml"), "<project/>");
+        Files.writeString(workspaceRoot.resolve("web/package.json"), "{}");
+        Files.writeString(workspaceRoot.resolve("ai-service/pyproject.toml"), "[project]\n");
+
+        DeveloperTestRecommendation recommendation = service.recommendTests(
+                OWNER_ID, WORKSPACE_ID,
+                List.of("backend/src/main/java/Example.java", "web/src/App.vue"));
+
+        assertEquals(List.of(
+                com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST,
+                com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST),
+                recommendation.templates());
+        assertFalse(recommendation.requiresDependencyPreparation());
+    }
+
+    @Test
+    void commitAndPushRequireFreshIndependentPreviews() throws Exception {
+        Path remote = Files.createTempDirectory("studypilot-git-remote");
+        runGit("init", "-b", "main");
+        runGit("config", "user.name", "StudyPilot");
+        runGit("config", "user.email", "test@example.com");
+        runGit("init", "--bare", remote.toString());
+        runGit("remote", "add", "origin", remote.toUri().toString());
+        Files.writeString(workspaceRoot.resolve("tracked.txt"), "first\n");
+        runGit("add", "tracked.txt");
+        runGit("commit", "-m", "initial");
+        runGit("push", "-u", "origin", "main");
+        Files.writeString(workspaceRoot.resolve("tracked.txt"), "changed\n");
+
+        GitCommitPreview commitPreview = service.previewGitCommit(
+                OWNER_ID, WORKSPACE_ID, List.of("tracked.txt"), "feat: change tracked file");
+        GitCommitResult commit = service.commitConfirmed(OWNER_ID,
+                new GitCommitRequest(WORKSPACE_ID, List.of("tracked.txt"),
+                        "feat: change tracked file", commitPreview.expectedHead(),
+                        commitPreview.changeFingerprint()));
+
+        assertEquals("feat: change tracked file", commit.message());
+        GitPushPreview pushPreview = service.previewGitPush(OWNER_ID, WORKSPACE_ID);
+        assertTrue(pushPreview.aheadCount() >= 1);
+        GitPushResult push = service.pushConfirmed(OWNER_ID,
+                new GitPushRequest(WORKSPACE_ID, pushPreview.remoteName(),
+                        pushPreview.branch(), pushPreview.expectedHead()));
+        assertEquals(pushPreview.expectedHead(), push.pushedCommit());
+
+        assertThrows(com.moxiao.studypilot.shared.error.ConflictException.class,
+                () -> service.pushConfirmed(OWNER_ID,
+                        new GitPushRequest(WORKSPACE_ID, "origin", "main",
+                                commitPreview.expectedHead())));
+    }
+
+    @Test
+    void commitPreviewRejectsSensitiveOrPreStagedFiles() throws Exception {
+        runGit("init", "-b", "main");
+        runGit("config", "user.name", "StudyPilot");
+        runGit("config", "user.email", "test@example.com");
+        Files.writeString(workspaceRoot.resolve("safe.txt"), "first\n");
+        runGit("add", "safe.txt");
+        runGit("commit", "-m", "initial");
+        Files.writeString(workspaceRoot.resolve("safe.txt"), "changed\n");
+        Files.writeString(workspaceRoot.resolve(".env"), "TOKEN=secret\n");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.previewGitCommit(OWNER_ID, WORKSPACE_ID,
+                        List.of(".env"), "feat: unsafe"));
+
+        runGit("add", "safe.txt");
+        assertThrows(IllegalArgumentException.class,
+                () -> service.previewGitCommit(OWNER_ID, WORKSPACE_ID,
+                        List.of("safe.txt"), "feat: already staged"));
     }
 
     private void runGit(String... arguments) throws Exception {
