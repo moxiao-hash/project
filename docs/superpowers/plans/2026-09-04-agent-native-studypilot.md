@@ -27,7 +27,7 @@
 - [x] Task 23：Runner 证据、文件清单确认、敏感扫描、DeepSeek 固定 Rubric 和用户最终验收闭环已完成。
 - [x] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
 - [x] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
-- [ ] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
+- [x] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
 
 ## Task 12 验收证据
 
@@ -164,6 +164,22 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 新增 API 优先的界面兜底策略：存在业务 API 时强制选择 `BUSINESS_API`；只有无 API 时才允许预注册的 Playwright DOM 或 IDEA Accessibility 动作。
 - [x] 界面兜底拒绝任意 URL、CSS selector、文件路径、脚本和键鼠参数；当前只发布安全预览策略，不把宿主机任意控制能力暴露给模型。
 - [x] Java 全量 361 项、AI 服务 302 项、Runner 21 项、前端 124 项测试通过；两套 Ruff、TypeScript、生产构建和 `git diff --check` 通过。
+
+## Task 26 验收证据
+
+- [x] 验证真实 MySQL 9.6、Java (8080)、FastAPI (8000)、Vue (5173)、Local Runner 运行环境与健康探针。
+- [x] 验证 Java Facade 强制注入登录用户身份，客户端伪造 `ownerId` 不被信任。
+- [x] 验证 AI 凭据脱敏安全，`/api/ai-settings` 响应不返回明文 Key。
+- [x] 验证统一 Assistant 会话创建、动态学习上下文注入与白名单前端 UI Action 路由。
+- [x] 验证受治理写动作卡返回 `WAITING_CONFIRMATION`，聊天文本不能代替专用确认卡接口。
+- [x] 验证专用确认接口生效与重复确认幂等性，任务状态由 `TODO` 安全流转为 `COMPLETED`。
+- [x] 验证 SSE 流式事件具备单调递增 `sequence`，并通过 `Last-Event-ID` 支持断线续传重放。
+- [x] 验证 Local Runner `MAVEN_TEST` 白名单只读测试预览无副作用且绑定登记工作区。
+- [x] 验证隔离 Runner 容器策略、Unix Socket 鉴权与断网 tmpfs 执行机制。
+- [x] 新增全链路端到端集成测试 `AgentNativeWorkflowE2ETest`（Java 测试套件增至 362 项全绿）。
+- [x] 整理并交付 `docs/agent-native-e2e.http` 与 `docs/agent-native-e2e-result.md` 验收结果文档。
+- [x] 更新 `docs/部署与演示指南.md`，补齐 Agent 原生架构五分钟演示路线与环境约束。
+- [x] Java 362 项、AI 服务 302 项、Runner 21 项、前端 124 项测试全量通过；两套 Ruff、TypeScript、生产构建和 `git diff --check` 全部通过。
 
 ## 提交映射（按任务）
 

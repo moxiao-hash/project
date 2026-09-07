@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from studypilot_runner.container_engine import (
     ContainerEngine,
     ContainerUnavailable,

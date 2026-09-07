@@ -1,0 +1,201 @@
+### StudyPilot Agent 原生架构：全链路公共 API 验收脚本
+### 对应 Task 26 验收标准：端到端验证统一助手、受治理动作卡、Runner 隔离与运行健康。
+### 
+### IntelliJ HTTP Client 环境变量：
+###   javaHost = http://127.0.0.1:8080
+###   demoPassword = <符合后端规则的临时密码，如 StudyPilot123!>
+###
+### 安全契约：浏览器仅调用 Java /api/**，绝不暴露 internal token，不信任客户端传入的 ownerId。
+
+@javaHost = http://127.0.0.1:8080
+
+### =========================================================================
+### 0. 基础服务健康检查
+### =========================================================================
+
+### 0.1 Java 后端健康检查（运维公开探针）
+GET {{javaHost}}/actuator/health
+
+> {%
+  client.test("Java 状态为 UP", function() {
+    client.assert(response.status === 200, "Actuator 应返回 200");
+    client.assert(response.body.status === "UP", "系统应处于 UP 状态");
+  });
+%}
+
+### =========================================================================
+### 1. 认证与用户注册
+### =========================================================================
+
+### 1.1 注册唯一全链路演示用户
+POST {{javaHost}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "agent-native-e2e-{{$timestamp}}@example.com",
+  "password": "{{demoPassword}}",
+  "displayName": "Agent Native 全链路验收"
+}
+
+> {%
+  client.test("注册成功并返回 Bearer Token", function() {
+    client.assert(response.status === 201, "注册成功应返回 201");
+    client.assert(Boolean(response.body.accessToken), "应返回 accessToken");
+    client.assert(Boolean(response.body.user.id), "应返回用户实体 ID");
+  });
+  client.global.set("accessToken", response.body.accessToken);
+  client.global.set("userId", response.body.user.id);
+%}
+
+### =========================================================================
+### 2. AI 凭据状态与保护边界
+### =========================================================================
+
+### 2.1 查询 AI 凭据状态（验证服务端主密钥加密与脱敏，不得返回明文 Key）
+GET {{javaHost}}/api/ai-settings
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("凭据查询脱敏安全验证", function() {
+    client.assert(response.status === 200, "设置查询应成功");
+    client.assert(JSON.stringify(response.body).indexOf("apiKey") === -1, "响应严禁包含明文 apiKey");
+  });
+%}
+
+### =========================================================================
+### 3. 学习目标与工作区基础数据
+### =========================================================================
+
+### 3.1 创建未来学习目标
+POST {{javaHost}}/api/learning-goals
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "title": "精通 Java Spring Boot 与 AI 原生应用开发",
+  "targetDate": "2026-12-31",
+  "weeklyStudyHours": 12
+}
+
+> {%
+  client.test("学习目标创建成功", function() {
+    client.assert(response.status === 201, "目标创建应返回 201");
+  });
+  client.global.set("goalId", response.body.id);
+%}
+
+### 3.2 登记受控开发工作区
+POST {{javaHost}}/api/workspaces
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "name": "StudyPilot 演示工作区",
+  "rootPath": "/Users/moxiao/IdeaProjects/project"
+}
+
+> {%
+  client.test("工作区登记成功", function() {
+    client.assert(response.status === 201, "工作区创建应返回 201");
+  });
+  client.global.set("workspaceId", response.body.id);
+%}
+
+### =========================================================================
+### 4. 统一 Agent 会话生命周期与安全边界
+### =========================================================================
+
+### 4.1 创建统一 Assistant 会话（伪造 ownerId 将被 Java 强行替换）
+POST {{javaHost}}/api/assistant/conversations
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "ownerId": "attacker-trying-to-spoof"
+}
+
+> {%
+  client.test("会话创建成功且受登录身份隔离", function() {
+    client.assert(response.status === 201, "统一会话创建应返回 201");
+    client.assert(Boolean(response.body.conversationId), "应返回会话 ID");
+  });
+  client.global.set("conversationId", response.body.conversationId);
+%}
+
+### 4.2 查询当前会话快照
+GET {{javaHost}}/api/assistant/conversations/{{conversationId}}
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("会话快照结构完备", function() {
+    client.assert(response.status === 200, "会话查询应返回 200");
+  });
+%}
+
+### 4.3 发送消息：表达业务目标并触发只读查询与受治理写动作预览卡
+POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "message": "请查看我当前的学习路线进度，并为我规划今日任务",
+  "idempotencyKey": "msg-turn-e2e-1"
+}
+
+> {%
+  client.test("对话轮次触发正常", function() {
+    client.assert(response.status === 200, "消息发送应成功");
+  });
+  if (response.body.action && response.body.action.actionId) {
+    client.global.set("pendingActionId", response.body.action.actionId);
+  }
+%}
+
+### 4.4 监听 SSE 流式事件与断线重连（支持 Last-Event-ID 游标）
+GET {{javaHost}}/api/assistant/conversations/{{conversationId}}/events
+Authorization: Bearer {{accessToken}}
+Last-Event-ID: 0
+
+### 4.5 专用操作确认卡确认（普通聊天文本不能代替确认接口）
+POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/actions/{{pendingActionId}}/confirm
+Authorization: Bearer {{accessToken}}
+
+### =========================================================================
+### 5. Local Runner 隔离执行预览与测试
+### =========================================================================
+
+### 5.1 Runner 执行预览（只读、无副作用、模板白名单校验）
+POST {{javaHost}}/api/runner/preview
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "workspaceId": "{{workspaceId}}",
+  "templateType": "MAVEN_TEST",
+  "idempotencyKey": "runner-preview-{{$timestamp}}",
+  "explanation": "验收 Maven 单元测试安全预览"
+}
+
+> {%
+  client.test("Runner 预览合规且低风险", function() {
+    client.assert(response.status === 200, "Runner 预览应返回 200");
+    client.assert(response.body.riskLevel === "LOW", "MAVEN_TEST 应为 LOW 风险");
+    client.assert(response.body.confirmationRequired === false, "白名单只读测试无需额外确认");
+  });
+%}
+
+### =========================================================================
+### 6. 运行健康与执行指标
+### =========================================================================
+
+### 6.1 查询个人 Agent 运行健康指标
+GET {{javaHost}}/api/assistant/health
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("运行健康指标正常返回", function() {
+    client.assert(response.status === 200, "健康指标查询应成功");
+    client.assert(response.body.totalExecutions !== undefined, "应包含 totalExecutions");
+    client.assert(response.body.successRate !== undefined, "应包含 successRate");
+  });
+%}
