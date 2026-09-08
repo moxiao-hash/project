@@ -57,7 +57,7 @@
 | agent-plan | PLAN_ASSISTANT | AUTO_NAVIGATE | - | - | NONE | AGENT_PERMITTED | 传统计划生成对话入口，已统一合并至 Assistant 架构 |
 | agent-tasks | TASK_ASSISTANT | AUTO_NAVIGATE | `schedule.unfinished.get` | - | NONE | AGENT_PERMITTED | 传统任务助手对话入口，已统一合并至 Assistant 架构 |
 | activity | AGENT_ACTIVITY | AUTO_NAVIGATE | `governance.executions.list` | - | NONE | AGENT_PERMITTED | 执行历史与状态流转审计日志，提供完全只读回溯 |
-| assistant-health | ASSISTANT_HEALTH | AUTO_NAVIGATE | `governance.audit.list` | - | NONE | AGENT_PERMITTED | 运行健康度与个人用量/延迟/成本监控指标 |
+| assistant-health | ASSISTANT_HEALTH | AUTO_NAVIGATE | `governance.health.get` | - | NONE | AGENT_PERMITTED | 运行健康度与个人用量/延迟/成本监控指标；该页数据源为 `governance.health.get`，执行审计明细属 `activity` 页 |
 | notifications | NOTIFICATIONS | AUTO_NAVIGATE | `notifications.list` | `notifications.mark_read` | LOW | AGENT_PERMITTED | 系统通知与确认待办，标记已读为低风险操作 |
 | settings | LEARNING_SETTINGS | AUTO_NAVIGATE | `settings.learning.get` | `settings.learning.update` | HIGH | AGENT_PERMITTED | 学习节奏与主动自动化规则配置，变更规则需专用确认 |
 | settings-ai | AI_SETTINGS | AUTO_NAVIGATE | `settings.ai_status.get` | - | NONE | USER_ONLY_DECISION | AI 凭据与主密钥脱敏状态，API Key 明文提交与删除必须由用户亲自输入，严禁 Agent 代填凭据 |
@@ -66,9 +66,9 @@
 
 ---
 
-## 3. Java 类型化工具目录与能力映射 (全量 58 个已注册工具)
+## 3. Java 类型化工具目录与能力映射 (全量 64 个已注册工具)
 
-### 3.1 只读工具 (40 个)
+### 3.1 只读工具 (43 个)
 1. `learning.context.get` - 获取用户全局学习上下文、未完成节点与当天任务概要（EFFECT: READ, RISK: NONE）。
 2. `learning.goals.list` - 列出用户历史与当前激活的学习目标（EFFECT: READ, RISK: NONE）。
 3. `learning.plans.list` - 列出关联目标的结构化学习计划（EFFECT: READ, RISK: NONE）。
@@ -109,8 +109,11 @@
 38. `developer.git.commit.preview` - 预检待提交文件清单与 HEAD，生成 commit 预览（EFFECT: LOCAL, RISK: NONE）。
 39. `developer.git.push.preview` - 预检待推送分支与 origin，生成 push 预览（EFFECT: LOCAL, RISK: NONE）。
 40. `developer.interface_fallback.preview` - 按照 API 优先原则，确定性生成界面兜底操作预览（EFFECT: LOCAL, RISK: NONE）。
+41. `governance.health.get` - 获取当前用户的 Agent 运行健康、执行成功率与已上报用量摘要（EFFECT: READ, RISK: NONE）。
+42. `learning.tasks.list` - 按可选日期列出用户学习任务（EFFECT: READ, RISK: NONE）。
+43. `assessment.wrong_questions.summary` - 获取错题归档的汇总统计与薄弱知识点分布（EFFECT: READ, RISK: NONE）。
 
-### 3.2 写入与本地执行工具 (18 个)
+### 3.2 写入与本地执行工具 (20 个)
 1. `roadmap.enroll` - 加入或绑定发布版路线（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
 2. `roadmap.upgrade` - 升级当前路线版本（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
 3. `learning.goal.create` - 创建结构化学习目标（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
@@ -130,6 +133,11 @@
 17. `developer.patch.apply` - 原子应用受控 Unified Diff 代码补丁（EFFECT: LOCAL, RISK: HIGH, 需专用确认）。
 18. `developer.git.commit` - 独立执行安全 Git commit（EFFECT: LOCAL, RISK: HIGH, 需专用确认）。
 19. `developer.git.push` - 独立执行受限 Git push 至 `origin`（EFFECT: LOCAL, RISK: HIGH, 需独立专用确认）。
+20. `assessment.node_quiz.retry` - 为路线节点重新生成五题测验（EFFECT: WRITE, RISK: LOW, 受治理写操作）。
+
+### 3.3 导航工具 (1 个)
+
+1. `navigation.resolve` - 校验白名单 routeKey 与实体参数，返回可导航的界面动作（EFFECT: NAVIGATE, RISK: NONE）。
 
 ---
 
