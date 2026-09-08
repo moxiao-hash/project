@@ -110,13 +110,13 @@ Task 28 与 29 可在契约冻结后分支并行；Task 30 与 31 可并行；Ta
 - Test: `web/src/modules/assistant/uiActionDispatcher.spec.ts`
 - Test: `backend/src/test/java/com/moxiao/studypilot/agent/tool/AgentToolCoverageTest.java`
 
-- [ ] **Step 1: 写能力矩阵失败校验。** 脚本必须读取 Vue route name、Java tool catalog 测试清单和矩阵中的 `routeKey/readTool/writeTool/risk/authenticity`；缺任何已注册页面或工具时以退出码 1 失败。
-- [ ] **Step 2: 运行 `node scripts/verify-agent-capability-matrix.mjs`。** 预期因矩阵文件尚不存在或覆盖不全而失败。
-- [ ] **Step 3: 建立完整矩阵。** 每个页面逐项标记 `AUTO_READ / AUTO_NAVIGATE / PREVIEW_WRITE / USER_ONLY / UNSUPPORTED`；所有 `USER_ONLY` 写明原因，例如答题和打卡总结不能代办。
-- [ ] **Step 4: 冻结 v2 契约。** 固定 `AssistantPlan/AssistantPlanStep/AssistantEvent/UiAction/PendingToolAction/Usage` 字段和枚举；禁止模型产生 URL、CSS selector、SQL、shell 或 ownerId。
-- [ ] **Step 5: 建立验证证据模板。** 模板必须包含环境、真实/模拟标签、RED/GREEN、数据回查、模型 id、Token/成本、未覆盖项和提交号。
-- [ ] **Step 6: 运行矩阵脚本、Java coverage test、前端 dispatcher test 与 `git diff --check`。** 预期全部通过。
-- [ ] **Step 7: 提交。** `docs: define agent productization and collaboration gates`
+- [x] **Step 1: 写能力矩阵失败校验。** 脚本必须读取 Vue route name、Java tool catalog 测试清单和矩阵中的 `routeKey/readTool/writeTool/risk/authenticity`；缺任何已注册页面或工具时以退出码 1 失败。
+- [x] **Step 2: 运行 `node scripts/verify-agent-capability-matrix.mjs`。** 预期因矩阵文件尚不存在或覆盖不全而失败。
+- [x] **Step 3: 建立完整矩阵。** 每个页面逐项标记 `AUTO_READ / AUTO_NAVIGATE / PREVIEW_WRITE / USER_ONLY / UNSUPPORTED`；所有 `USER_ONLY` 写明原因，例如答题和打卡总结不能代办。
+- [x] **Step 4: 冻结 v2 契约。** 固定 `AssistantPlan/AssistantPlanStep/AssistantEvent/UiAction/PendingToolAction/Usage` 字段和枚举；禁止模型产生 URL、CSS selector、SQL、shell 或 ownerId。
+- [x] **Step 5: 建立验证证据模板。** 模板必须包含环境、真实/模拟标签、RED/GREEN、数据回查、模型 id、Token/成本、未覆盖项和提交号。
+- [x] **Step 6: 运行矩阵脚本、Java coverage test、前端 dispatcher test 与 `git diff --check`。** 预期全部通过。
+- [x] **Step 7: 提交。** `docs: define agent productization and collaboration gates`
 
 **完成标准:** 任意开发者可从一个矩阵判断用户意图对应哪个 Java 工具、哪个页面动作、风险和是否允许 Agent 代办。
 
