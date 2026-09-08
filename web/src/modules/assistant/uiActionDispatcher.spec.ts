@@ -35,11 +35,15 @@ describe('assistant UI action dispatcher', () => {
 
   it('covers every current StudyPilot page family through fixed route keys', async () => {
     const cases = [
+      ['ASSISTANT', {}, 'assistant', undefined],
       ['LEARNING_GOALS', {}, 'goals', undefined],
       ['LEARNING_PLANS', {}, 'plans', undefined],
       ['LEARNING_PLAN', { planId: 'plan-1' }, 'plan-detail', { id: 'plan-1' }],
       ['PLAN_ASSISTANT', {}, 'agent-plan', undefined],
       ['TASK_ASSISTANT', {}, 'agent-tasks', undefined],
+      ['COURSES', {}, 'courses', undefined],
+      ['COURSE_DETAIL', { courseSlug: 'spring-boot' }, 'course-detail', { slug: 'spring-boot' }],
+      ['LESSON', { lessonId: 'lesson-1' }, 'lesson', { lessonId: 'lesson-1' }],
       ['WORKSPACE_ARTIFACTS', {}, 'workspace-artifacts', undefined],
     ] as const
 

@@ -11,6 +11,7 @@ import java.util.Set;
 public class NavigationToolHandler implements AgentToolHandler {
     private static final Map<String, Set<String>> ROUTES = Map.ofEntries(
             Map.entry("DASHBOARD", Set.of()),
+            Map.entry("ASSISTANT", Set.of()),
             Map.entry("ASSISTANT_HEALTH", Set.of()),
             Map.entry("ROADMAP", Set.of()),
             Map.entry("ROADMAP_STAGE", Set.of("stageId")),
@@ -19,6 +20,9 @@ public class NavigationToolHandler implements AgentToolHandler {
             Map.entry("LEARNING_GOALS", Set.of()),
             Map.entry("LEARNING_PLANS", Set.of()),
             Map.entry("LEARNING_PLAN", Set.of("planId")),
+            Map.entry("COURSES", Set.of()),
+            Map.entry("COURSE_DETAIL", Set.of("courseSlug")),
+            Map.entry("LESSON", Set.of("lessonId")),
             Map.entry("TODAY", Set.of()),
             Map.entry("MATERIALS", Set.of()),
             Map.entry("MATERIAL_DETAIL", Set.of("materialId")),
@@ -27,6 +31,8 @@ public class NavigationToolHandler implements AgentToolHandler {
             Map.entry("WRONG_QUESTIONS", Set.of()),
             Map.entry("MASTERY", Set.of()),
             Map.entry("KNOWLEDGE", Set.of()),
+            Map.entry("PLAN_ASSISTANT", Set.of()),
+            Map.entry("TASK_ASSISTANT", Set.of()),
             Map.entry("AGENT_ACTIVITY", Set.of()),
             Map.entry("NOTIFICATIONS", Set.of()),
             Map.entry("LEARNING_SETTINGS", Set.of()),

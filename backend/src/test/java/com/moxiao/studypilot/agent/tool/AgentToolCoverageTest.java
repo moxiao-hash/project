@@ -7,6 +7,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
@@ -91,6 +92,23 @@ class AgentToolCoverageTest {
                 "developer.patch.apply",
                 "developer.git.commit",
                 "developer.git.push"
+        )));
+    }
+
+    @Test
+    void frozenCatalogContainsEveryProductionToolExactlyOnce() {
+        Set<String> names = registry.catalog().stream()
+                .map(AgentToolDescriptor::name)
+                .collect(Collectors.toSet());
+
+        assertEquals(64, registry.catalog().size());
+        assertEquals(64, names.size());
+        assertTrue(names.containsAll(Set.of(
+                "governance.health.get",
+                "learning.tasks.list",
+                "assessment.wrong_questions.summary",
+                "assessment.node_quiz.retry",
+                "navigation.resolve"
         )));
     }
 }

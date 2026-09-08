@@ -11,6 +11,7 @@ interface RouteDefinition {
 
 const routes: Record<string, RouteDefinition> = {
   DASHBOARD: { name: 'dashboard', params: {} },
+  ASSISTANT: { name: 'assistant', params: {} },
   ASSISTANT_HEALTH: { name: 'assistant-health', params: {} },
   ROADMAP: { name: 'roadmap', params: {} },
   ROADMAP_STAGE: { name: 'roadmap-stage', params: { stageId: 'id' } },
@@ -19,6 +20,9 @@ const routes: Record<string, RouteDefinition> = {
   LEARNING_GOALS: { name: 'goals', params: {} },
   LEARNING_PLANS: { name: 'plans', params: {} },
   LEARNING_PLAN: { name: 'plan-detail', params: { planId: 'id' } },
+  COURSES: { name: 'courses', params: {} },
+  COURSE_DETAIL: { name: 'course-detail', params: { courseSlug: 'slug' } },
+  LESSON: { name: 'lesson', params: { lessonId: 'lessonId' } },
   TODAY: { name: 'today', params: {} },
   MATERIALS: { name: 'materials', params: {} },
   MATERIAL_DETAIL: { name: 'material-detail', params: { materialId: 'id' } },
