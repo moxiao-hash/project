@@ -26,8 +26,8 @@
 - [x] Task 22：协议、Unix Socket、容器策略与 Maven/npm/pytest 真实容器执行均已验收。
 - [x] Task 23：Runner 证据、文件清单确认、敏感扫描、DeepSeek 固定 Rubric 和用户最终验收闭环已完成。
 - [x] Task 24：受控文件树、读取、搜索、Git 状态和 Unified Diff 补丁预览/冲突保护。
-- [x] Task 25：白名单测试、独立 commit/push 确认和 API 优先的 Playwright/IDE 兜底。
-- [x] Task 26：真实 MySQL、Java、FastAPI、DeepSeek、Tavily、Vue、Qdrant、容器 Runner 全链路验收与文档。
+- [ ] Task 25：测试与独立 commit/push 已交付；Playwright/IDE 目前只有兜底预览策略，实际适配器未完成。
+- [ ] Task 26：部分完成。公共 API 真实业务冒烟已通过，完整模型/前端/容器链路仍待验收。
 
 ## Task 12 验收证据
 
@@ -165,21 +165,19 @@ Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实�
 - [x] 界面兜底拒绝任意 URL、CSS selector、文件路径、脚本和键鼠参数；当前只发布安全预览策略，不把宿主机任意控制能力暴露给模型。
 - [x] Java 全量 361 项、AI 服务 302 项、Runner 21 项、前端 124 项测试通过；两套 Ruff、TypeScript、生产构建和 `git diff --check` 通过。
 
-## Task 26 验收证据
+## Task 26 验收证据（2026-09-08 重新核验）
 
-- [x] 验证真实 MySQL 9.6、Java (8080)、FastAPI (8000)、Vue (5173)、Local Runner 运行环境与健康探针。
-- [x] 验证 Java Facade 强制注入登录用户身份，客户端伪造 `ownerId` 不被信任。
-- [x] 验证 AI 凭据脱敏安全，`/api/ai-settings` 响应不返回明文 Key。
-- [x] 验证统一 Assistant 会话创建、动态学习上下文注入与白名单前端 UI Action 路由。
-- [x] 验证受治理写动作卡返回 `WAITING_CONFIRMATION`，聊天文本不能代替专用确认卡接口。
-- [x] 验证专用确认接口生效与重复确认幂等性，任务状态由 `TODO` 安全流转为 `COMPLETED`。
-- [x] 验证 SSE 流式事件具备单调递增 `sequence`，并通过 `Last-Event-ID` 支持断线续传重放。
-- [x] 验证 Local Runner `MAVEN_TEST` 白名单只读测试预览无副作用且绑定登记工作区。
-- [x] 验证隔离 Runner 容器策略、Unix Socket 鉴权与断网 tmpfs 执行机制。
-- [x] 新增全链路端到端集成测试 `AgentNativeWorkflowE2ETest`（Java 测试套件增至 362 项全绿）。
-- [x] 整理并交付 `docs/agent-native-e2e.http` 与 `docs/agent-native-e2e-result.md` 验收结果文档。
-- [x] 更新 `docs/部署与演示指南.md`，补齐 Agent 原生架构五分钟演示路线与环境约束。
-- [x] Java 362 项、AI 服务 302 项、Runner 21 项、前端 124 项测试全量通过；两套 Ruff、TypeScript、生产构建和 `git diff --check` 全部通过。
+- [x] 修正模拟上游的错误 DTO 字段；测试更名 `AssistantFacadeContractTest`，仅代表 H2/模拟上游门面契约。
+- [x] 真实 Java 治理测试验证任务确认后状态、完成时间、版本、唯一历史、执行及审计；重复确认不新增记录。
+- [x] 新用户无路线的真实上下文集成测试先复现事务回滚，再修复为可恢复提示。
+- [x] `scripts/agent-native-smoke.py` 真实 Java→Python→MySQL 验证学习时长 60→30、聊天不确认、专用确认、重复确认、事件游标精确续传。
+- [x] 更正 HTTP 脚本、交接记录、演示指南和结果报告；独立列明测试层级。
+- [ ] DeepSeek、Tavily、Qdrant、Vue、容器 Runner、Rubric 和安全临时 Git 仓库的一次完整串联验收。
+- [ ] 浏览器/IDE 真实适配器执行证据；仅有预览策略不算完成。
+- [ ] 持续实时 SSE 推送与完整演示录像；当前仅验证有限事件重放。
+
+旧 2026-09-07 全栈 PASS 结论撤回，以 [最新结果](../../agent-native-e2e-result.md) 为准。
+自动化套件通过与真实端到端覆盖是两个不同维度。
 
 ## 提交映射（按任务）
 

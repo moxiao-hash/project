@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -34,7 +35,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(webEnvironment = WebEnvironment.MOCK)
 @AutoConfigureMockMvc
-class AgentNativeWorkflowE2ETest {
+// H2 + 模拟 Python HTTP 上游：只验证 Java 门面契约，不代表真实模型或 Runner E2E。
+class AssistantFacadeContractTest {
 
     private static final HttpServer AI_SERVER = createServer();
     private static final AtomicReference<CapturedRequest> LAST_REQUEST = new AtomicReference<>();
@@ -59,7 +61,7 @@ class AgentNativeWorkflowE2ETest {
 
     @BeforeAll
     static void startServer() {
-        AI_SERVER.createContext("/", AgentNativeWorkflowE2ETest::handle);
+        AI_SERVER.createContext("/", AssistantFacadeContractTest::handle);
         AI_SERVER.start();
     }
 
@@ -69,7 +71,7 @@ class AgentNativeWorkflowE2ETest {
     }
 
     @Test
-    void completeAgentNativeEndToEndWorkflow() throws Exception {
+    void forwardsSnapshotsConfirmationAndReplayCursorWithoutClaimingBusinessExecution() throws Exception {
         // 1. 注册新用户，验证仅生成受控 Bearer Token，前端不可伪造 ownerId
         Registration user = registerUser();
         String authHeader = "Bearer " + user.token();
@@ -92,7 +94,7 @@ class AgentNativeWorkflowE2ETest {
                 {
                   "conversationId": "%s",
                   "ownerId": "%s",
-                  "status": "IDLE",
+                  "status": "READY",
                   "reply": "你好！我是你的 StudyPilot 专属导师，已准备好协助你学习。",
                   "modelName": "deepseek-v4-flash"
                 }
@@ -108,6 +110,7 @@ class AgentNativeWorkflowE2ETest {
                                 """))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.conversationId").value(CONVERSATION_ID))
+                .andExpect(jsonPath("$.status").value("READY"))
                 .andExpect(jsonPath("$.reply").isNotEmpty());
 
         CapturedRequest createReq = LAST_REQUEST.get();
@@ -125,9 +128,12 @@ class AgentNativeWorkflowE2ETest {
                   "status": "WAITING_CONFIRMATION",
                   "reply": "我已经为你准备好了完成该任务的申请，请在下方确认卡片中核对并点击确认。",
                   "modelName": "deepseek-v4-flash",
-                  "action": {
+                  "pendingAction": {
                     "actionId": "%s",
+                    "executionId": "execution-task-finish-1",
                     "toolName": "learning.task.update",
+                    "toolVersion": 1,
+                    "expiresAt": "2099-01-01T00:00:00Z",
                     "riskLevel": "HIGH",
                     "status": "WAITING_CONFIRMATION",
                     "summary": "将任务状态更新为已完成",
@@ -137,11 +143,12 @@ class AgentNativeWorkflowE2ETest {
                       "status": "COMPLETED"
                     }
                   },
-                  "uiAction": {
+                  "uiActions": [{
                     "type": "NAVIGATE",
-                    "routeKey": "TODAY_TASKS",
-                    "payload": {}
-                  }
+                    "routeKey": "TODAY",
+                    "params": {},
+                    "reason": "查看今日任务"
+                  }]
                 }
                 """.formatted(CONVERSATION_ID, user.userId(), ACTION_ID, taskId);
 
@@ -156,12 +163,12 @@ class AgentNativeWorkflowE2ETest {
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("WAITING_CONFIRMATION"))
-                .andExpect(jsonPath("$.action.actionId").value(ACTION_ID))
-                .andExpect(jsonPath("$.action.riskLevel").value("HIGH"))
-                .andExpect(jsonPath("$.uiAction.type").value("NAVIGATE"))
-                .andExpect(jsonPath("$.uiAction.routeKey").value("TODAY_TASKS"));
+                .andExpect(jsonPath("$.pendingAction.actionId").value(ACTION_ID))
+                .andExpect(jsonPath("$.pendingAction.riskLevel").value("HIGH"))
+                .andExpect(jsonPath("$.uiActions[0].type").value("NAVIGATE"))
+                .andExpect(jsonPath("$.uiActions[0].routeKey").value("TODAY"));
 
-        // 验证聊天文本中的“确认”不能代替专用确认接口（业务数据在确认前不得发生变更）
+        // 模拟上游不会修改 Java 数据。真实写入、版本和幂等由 GovernedAgentToolWorkflowTest 验证。
         mockMvc.perform(get("/api/learning-tasks")
                         .header("Authorization", authHeader))
                 .andExpect(status().isOk())
@@ -191,13 +198,20 @@ class AgentNativeWorkflowE2ETest {
                 ]
                 """.formatted(CONVERSATION_ID, CONVERSATION_ID, ACTION_ID, CONVERSATION_ID);
 
-        mockMvc.perform(get("/api/assistant/conversations/{id}/events", CONVERSATION_ID)
+        MvcResult replay = mockMvc.perform(get("/api/assistant/conversations/{id}/events", CONVERSATION_ID)
                         .header("Authorization", authHeader)
                         .header("Last-Event-ID", "1"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
                 .andExpect(content().string(containsString("id: 2")))
-                .andExpect(content().string(containsString("id: 3")));
+                .andExpect(content().string(containsString("id: 3")))
+                .andReturn();
+        String stream = replay.getResponse().getContentAsString();
+        assertFalse(stream.contains("id: 1\n"), "已消费事件不得重放");
+        assertTrue(stream.indexOf("id: 2\n") < stream.indexOf("id: 3\n"));
+        assertTrue(LAST_REQUEST.get().path().contains("afterSequence=1"));
+        assertTrue(LAST_REQUEST.get().path().contains("ownerId=" + user.userId()));
+        assertEquals(INTERNAL_TOKEN, LAST_REQUEST.get().token());
 
         // 7. 用户点击专用确认接口：POST /api/assistant/conversations/{id}/actions/{actionId}/confirm
         upstreamStatus = 200;
@@ -221,6 +235,11 @@ class AgentNativeWorkflowE2ETest {
         assertEquals("POST", confirmReq.method());
         assertEquals("/internal/assistant/conversations/" + CONVERSATION_ID + "/actions/" + ACTION_ID + "/confirm",
                 confirmReq.path());
+        assertEquals(user.userId(), objectMapper.readTree(confirmReq.body()).get("ownerId").asText());
+        // COMPLETED 是模拟上游的返回值，不等于任务已执行；显式断言，避免再次误报 E2E。
+        mockMvc.perform(get("/api/learning-tasks").header("Authorization", authHeader))
+                .andExpect(jsonPath("$[0].status").value("TODO"))
+                .andExpect(jsonPath("$[0].version").value(1));
 
         // 8. 验证 Local Runner 执行预览与安全边界
         String workspaceId = createWorkspace(authHeader);
@@ -274,10 +293,10 @@ class AgentNativeWorkflowE2ETest {
                         .content("""
                                 {
                                   "title": "Agent 原生全栈实战目标",
-                                  "targetDate": "2026-12-31",
+                                  "targetDate": "%s",
                                   "weeklyStudyHours": 10
                                 }
-                                """))
+                                """.formatted(LocalDate.now().plusMonths(2))))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();

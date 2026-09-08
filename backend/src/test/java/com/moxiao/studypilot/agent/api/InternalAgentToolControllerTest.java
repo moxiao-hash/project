@@ -19,6 +19,27 @@ class InternalAgentToolControllerTest {
     private MockMvc mockMvc;
 
     @Test
+    void newUserWithoutRoadmapReceivesContextWarningInsteadOfTransactionRollback() throws Exception {
+        String registration = mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"email":"context-%d@example.com","password":"Password123!",
+                                 "displayName":"新用户"}
+                                """.formatted(System.nanoTime())))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        String ownerId = new tools.jackson.databind.ObjectMapper().readTree(registration)
+                .get("user").get("id").asText();
+        mockMvc.perform(post("/internal/agent-tools/learning.context.get/invoke")
+                        .header("X-Internal-Service-Token", "test-internal-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ownerId\":\"" + ownerId + "\",\"arguments\":{}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.roadmap").doesNotExist())
+                .andExpect(jsonPath("$.data.warnings").isNotEmpty())
+                .andExpect(jsonPath("$.data.learning.goals").isArray());
+    }
+
+    @Test
     void catalogAndInvocationRequireInternalToken() throws Exception {
         mockMvc.perform(get("/internal/agent-tools/catalog"))
                 .andExpect(status().isUnauthorized());

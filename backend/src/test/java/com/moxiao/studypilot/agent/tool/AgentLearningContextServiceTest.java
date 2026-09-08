@@ -17,11 +17,11 @@ import com.moxiao.studypilot.notification.infrastructure.NotificationEntity;
 import com.moxiao.studypilot.roadmap.api.RoadmapMapResponse;
 import com.moxiao.studypilot.roadmap.application.RoadmapArtifactService;
 import com.moxiao.studypilot.roadmap.application.RoadmapQueryService;
-import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -57,7 +57,7 @@ class AgentLearningContextServiceTest {
                 TriggerType.USER_REQUEST, RiskLevel.HIGH, AgentScope.LARGE_PLAN_ADJUSTMENT,
                 ExecutionStatus.WAITING_CONFIRMATION, "summary", Instant.now());
         when(learning.get("user-1")).thenReturn(base);
-        when(roadmap.currentMap("user-1")).thenReturn(map);
+        when(roadmap.currentMapIfPresent("user-1")).thenReturn(Optional.of(map));
         when(wrongQuestions.summary("user-1")).thenReturn(wrong);
         when(notifications.list("user-1")).thenReturn(List.of(unread));
         when(governance.listExecutions("user-1")).thenReturn(List.of(pending));
@@ -71,7 +71,7 @@ class AgentLearningContextServiceTest {
         assertEquals(1, result.unreadNotificationCount());
         assertEquals(1, result.pendingConfirmationCount());
         verify(learning).get("user-1");
-        verify(roadmap).currentMap("user-1");
+        verify(roadmap).currentMapIfPresent("user-1");
         verify(wrongQuestions).summary("user-1");
         verify(notifications).list("user-1");
         verify(governance).listExecutions("user-1");
@@ -82,8 +82,7 @@ class AgentLearningContextServiceTest {
     void representsMissingRoadmapAsARecoverableWarning() {
         when(learning.get("user-2")).thenReturn(new InternalLearningContextResponse(
                 "Asia/Shanghai", List.of(), List.of(), List.of(), List.of(), List.of()));
-        when(roadmap.currentMap("user-2"))
-                .thenThrow(new ResourceNotFoundException("当前学习路线不存在"));
+        when(roadmap.currentMapIfPresent("user-2")).thenReturn(Optional.empty());
         when(wrongQuestions.summary("user-2"))
                 .thenReturn(new WrongQuestionSummaryResponse(0, 0, List.of(), null));
         when(notifications.list("user-2")).thenReturn(List.of());
@@ -93,6 +92,6 @@ class AgentLearningContextServiceTest {
         AgentLearningContextService.AgentLearningContext result = service.get("user-2");
 
         assertNull(result.roadmap());
-        assertTrue(result.warnings().contains("当前学习路线不存在"));
+        assertTrue(result.warnings().contains("尚未加入学习路线，请先在学习路线页面选择路线"));
     }
 }

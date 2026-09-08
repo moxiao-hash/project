@@ -1,201 +1,156 @@
-### StudyPilot Agent 原生架构：全链路公共 API 验收脚本
-### 对应 Task 26 验收标准：端到端验证统一助手、受治理动作卡、Runner 隔离与运行健康。
-### 
-### IntelliJ HTTP Client 环境变量：
-###   javaHost = http://127.0.0.1:8080
-###   demoPassword = <符合后端规则的临时密码，如 StudyPilot123!>
-###
-### 安全契约：浏览器仅调用 Java /api/**，绝不暴露 internal token，不信任客户端传入的 ownerId。
+### Task 26：真实 Java → Python → Java/MySQL 公共 API 冒烟
+### 仅覆盖会话、学习设置治理和事件重放，不代表 DeepSeek/容器/浏览器已验收。
+### 先启动 Java(local profile)、FastAPI。注册独立账户，不使用个人正式账户。
+### 在 HTTP Client 私有环境中设置 demoPassword（强密码）。不要提交环境文件。
+### 自动断言更完整的等价版本：ai-service/.venv/bin/python scripts/agent-native-smoke.py
 
 @javaHost = http://127.0.0.1:8080
 
-### =========================================================================
-### 0. 基础服务健康检查
-### =========================================================================
-
-### 0.1 Java 后端健康检查（运维公开探针）
+### 1. Java 健康检查
 GET {{javaHost}}/actuator/health
 
 > {%
-  client.test("Java 状态为 UP", function() {
-    client.assert(response.status === 200, "Actuator 应返回 200");
-    client.assert(response.body.status === "UP", "系统应处于 UP 状态");
-  });
+  client.test("Java UP", () => client.assert(response.status === 200 && response.body.status === "UP"));
 %}
 
-### =========================================================================
-### 1. 认证与用户注册
-### =========================================================================
-
-### 1.1 注册唯一全链路演示用户
+### 2. 注册独立验收账户
 POST {{javaHost}}/api/auth/register
 Content-Type: application/json
 
 {
   "email": "agent-native-e2e-{{$timestamp}}@example.com",
   "password": "{{demoPassword}}",
-  "displayName": "Agent Native 全链路验收"
+  "displayName": "Task26 独立验收"
 }
 
 > {%
-  client.test("注册成功并返回 Bearer Token", function() {
-    client.assert(response.status === 201, "注册成功应返回 201");
-    client.assert(Boolean(response.body.accessToken), "应返回 accessToken");
-    client.assert(Boolean(response.body.user.id), "应返回用户实体 ID");
-  });
+  client.test("注册成功", () => client.assert(response.status === 201));
   client.global.set("accessToken", response.body.accessToken);
-  client.global.set("userId", response.body.user.id);
+  client.global.set("pendingActionId", "");
 %}
 
-### =========================================================================
-### 2. AI 凭据状态与保护边界
-### =========================================================================
-
-### 2.1 查询 AI 凭据状态（验证服务端主密钥加密与脱敏，不得返回明文 Key）
-GET {{javaHost}}/api/ai-settings
-Authorization: Bearer {{accessToken}}
-
-> {%
-  client.test("凭据查询脱敏安全验证", function() {
-    client.assert(response.status === 200, "设置查询应成功");
-    client.assert(JSON.stringify(response.body).indexOf("apiKey") === -1, "响应严禁包含明文 apiKey");
-  });
-%}
-
-### =========================================================================
-### 3. 学习目标与工作区基础数据
-### =========================================================================
-
-### 3.1 创建未来学习目标
-POST {{javaHost}}/api/learning-goals
+### 3. 初始化该演示用户设置（新用户查询设置可能返回 404）
+PUT {{javaHost}}/api/user-settings
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
 {
-  "title": "精通 Java Spring Boot 与 AI 原生应用开发",
-  "targetDate": "2026-12-31",
-  "weeklyStudyHours": 12
+  "timeZone": "Asia/Shanghai",
+  "dailyStudyLimitMinutes": 60,
+  "weekendPreference": "SAME",
+  "defaultPrivacyLevel": "NORMAL",
+  "weeklyAvailability": []
 }
 
-> {%
-  client.test("学习目标创建成功", function() {
-    client.assert(response.status === 201, "目标创建应返回 201");
-  });
-  client.global.set("goalId", response.body.id);
-%}
-
-### 3.2 登记受控开发工作区
-POST {{javaHost}}/api/workspaces
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "name": "StudyPilot 演示工作区",
-  "rootPath": "/Users/moxiao/IdeaProjects/project"
-}
-
-> {%
-  client.test("工作区登记成功", function() {
-    client.assert(response.status === 201, "工作区创建应返回 201");
-  });
-  client.global.set("workspaceId", response.body.id);
-%}
-
-### =========================================================================
-### 4. 统一 Agent 会话生命周期与安全边界
-### =========================================================================
-
-### 4.1 创建统一 Assistant 会话（伪造 ownerId 将被 Java 强行替换）
+### 4. 创建会话，伪造 ownerId 不应生效；公共响应不暴露 ownerId
 POST {{javaHost}}/api/assistant/conversations
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
-{
-  "ownerId": "attacker-trying-to-spoof"
-}
+{"ownerId": "attacker"}
 
 > {%
-  client.test("会话创建成功且受登录身份隔离", function() {
-    client.assert(response.status === 201, "统一会话创建应返回 201");
-    client.assert(Boolean(response.body.conversationId), "应返回会话 ID");
+  client.test("READY 且身份字段已移除", () => {
+    client.assert(response.status === 201);
+    client.assert(response.body.status === "READY");
+    client.assert(response.body.ownerId === undefined);
   });
   client.global.set("conversationId", response.body.conversationId);
 %}
 
-### 4.2 查询当前会话快照
-GET {{javaHost}}/api/assistant/conversations/{{conversationId}}
-Authorization: Bearer {{accessToken}}
-
-> {%
-  client.test("会话快照结构完备", function() {
-    client.assert(response.status === 200, "会话查询应返回 200");
-  });
-%}
-
-### 4.3 发送消息：表达业务目标并触发只读查询与受治理写动作预览卡
+### 5. 确定性的 HIGH 风险动作，不用含糊的“规划今日任务”触发确认
 POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/messages
 Authorization: Bearer {{accessToken}}
 Content-Type: application/json
 
-{
-  "message": "请查看我当前的学习路线进度，并为我规划今日任务",
-  "idempotencyKey": "msg-turn-e2e-1"
-}
+{"message": "把每天学习时间调整为 30 分钟", "idempotencyKey": "task26-settings-preview"}
 
 > {%
-  client.test("对话轮次触发正常", function() {
-    client.assert(response.status === 200, "消息发送应成功");
+  client.test("真实待确认契约", () => {
+    client.assert(response.status === 200);
+    client.assert(response.body.status === "WAITING_CONFIRMATION");
+    client.assert(response.body.pendingAction.toolName === "settings.learning.update");
+    client.assert(response.body.pendingAction.riskLevel === "HIGH");
   });
-  if (response.body.action && response.body.action.actionId) {
-    client.global.set("pendingActionId", response.body.action.actionId);
-  }
+  client.global.set("pendingActionId", response.body.pendingAction.actionId);
 %}
 
-### 4.4 监听 SSE 流式事件与断线重连（支持 Last-Event-ID 游标）
+### 6. 普通聊天中的“确认”不能写入
+POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/messages
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{"message": "确认", "idempotencyKey": "task26-chat-confirm"}
+
+> {%
+  client.test("仍需专用确认", () => client.assert(response.body.status === "WAITING_CONFIRMATION"));
+%}
+
+### 7. 确认前必须仍为 60
+GET {{javaHost}}/api/user-settings
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("未提前修改", () => client.assert(response.body.dailyStudyLimitMinutes === 60));
+%}
+
+### 8. 专用确认
+POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/actions/{{pendingActionId}}/confirm
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("执行完成", () => client.assert(response.status === 200 && response.body.status === "COMPLETED"));
+%}
+
+### 9. 查业务数据，不只看 COMPLETED 字样
+GET {{javaHost}}/api/user-settings
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("真实写入 30 分钟", () => client.assert(response.body.dailyStudyLimitMinutes === 30));
+%}
+
+### 10. 保存执行与审计快照
+GET {{javaHost}}/api/agent-executions
+Authorization: Bearer {{accessToken}}
+
+> {% client.global.set("executionsBeforeRepeat", JSON.stringify(response.body)); %}
+
+###
+GET {{javaHost}}/api/audit-logs
+Authorization: Bearer {{accessToken}}
+
+> {% client.global.set("auditBeforeRepeat", JSON.stringify(response.body)); %}
+
+### 11. 重复确认
+POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/actions/{{pendingActionId}}/confirm
+Authorization: Bearer {{accessToken}}
+
+### 12. 确认没有新增执行或审计
+GET {{javaHost}}/api/agent-executions
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("执行幂等", () => client.assert(JSON.stringify(response.body) === client.global.get("executionsBeforeRepeat")));
+%}
+
+###
+GET {{javaHost}}/api/audit-logs
+Authorization: Bearer {{accessToken}}
+
+> {%
+  client.test("审计幂等", () => client.assert(JSON.stringify(response.body) === client.global.get("auditBeforeRepeat")));
+%}
+
+### 13. 有限事件重放（当前不是长连接 token 实时推送）
 GET {{javaHost}}/api/assistant/conversations/{{conversationId}}/events
 Authorization: Bearer {{accessToken}}
 Last-Event-ID: 0
 
-### 4.5 专用操作确认卡确认（普通聊天文本不能代替确认接口）
-POST {{javaHost}}/api/assistant/conversations/{{conversationId}}/actions/{{pendingActionId}}/confirm
+### 14. 游标后只返回 sequence > 1；精确集合与顺序由 smoke.py 自动比较
+GET {{javaHost}}/api/assistant/conversations/{{conversationId}}/events
 Authorization: Bearer {{accessToken}}
+Last-Event-ID: 1
 
-### =========================================================================
-### 5. Local Runner 隔离执行预览与测试
-### =========================================================================
-
-### 5.1 Runner 执行预览（只读、无副作用、模板白名单校验）
-POST {{javaHost}}/api/runner/preview
-Authorization: Bearer {{accessToken}}
-Content-Type: application/json
-
-{
-  "workspaceId": "{{workspaceId}}",
-  "templateType": "MAVEN_TEST",
-  "idempotencyKey": "runner-preview-{{$timestamp}}",
-  "explanation": "验收 Maven 单元测试安全预览"
-}
-
-> {%
-  client.test("Runner 预览合规且低风险", function() {
-    client.assert(response.status === 200, "Runner 预览应返回 200");
-    client.assert(response.body.riskLevel === "LOW", "MAVEN_TEST 应为 LOW 风险");
-    client.assert(response.body.confirmationRequired === false, "白名单只读测试无需额外确认");
-  });
-%}
-
-### =========================================================================
-### 6. 运行健康与执行指标
-### =========================================================================
-
-### 6.1 查询个人 Agent 运行健康指标
-GET {{javaHost}}/api/assistant/health
-Authorization: Bearer {{accessToken}}
-
-> {%
-  client.test("运行健康指标正常返回", function() {
-    client.assert(response.status === 200, "健康指标查询应成功");
-    client.assert(response.body.totalExecutions !== undefined, "应包含 totalExecutions");
-    client.assert(response.body.successRate !== undefined, "应包含 successRate");
-  });
-%}
+### Runner 实际执行、Rubric、Git、浏览器验收另按 task26 结果文档的未验收清单逐项完成。
+### 此脚本不登记用户真实源码目录，不执行 commit/push，也不把预览写成容器执行成功。

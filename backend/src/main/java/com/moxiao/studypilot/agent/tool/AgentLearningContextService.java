@@ -11,7 +11,6 @@ import com.moxiao.studypilot.roadmap.api.ProjectWorkspaceResponse;
 import com.moxiao.studypilot.roadmap.api.RoadmapMapResponse;
 import com.moxiao.studypilot.roadmap.application.RoadmapArtifactService;
 import com.moxiao.studypilot.roadmap.application.RoadmapQueryService;
-import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,11 +47,9 @@ public class AgentLearningContextService {
     public AgentLearningContext get(String ownerId) {
         InternalLearningContextResponse learning = learningContextService.get(ownerId);
         List<String> warnings = new ArrayList<>();
-        RoadmapMapResponse roadmap = null;
-        try {
-            roadmap = roadmapQueryService.currentMap(ownerId);
-        } catch (ResourceNotFoundException exception) {
-            warnings.add(exception.getMessage());
+        RoadmapMapResponse roadmap = roadmapQueryService.currentMapIfPresent(ownerId).orElse(null);
+        if (roadmap == null) {
+            warnings.add("尚未加入学习路线，请先在学习路线页面选择路线");
         }
         WrongQuestionSummaryResponse wrongQuestions = wrongQuestionService.summary(ownerId);
         long unreadNotifications = notificationService.list(ownerId).stream()

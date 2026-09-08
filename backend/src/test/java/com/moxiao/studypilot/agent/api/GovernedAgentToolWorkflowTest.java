@@ -12,6 +12,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
 
+import static org.hamcrest.Matchers.hasItems;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -40,8 +42,9 @@ class GovernedAgentToolWorkflowTest {
                 .andExpect(jsonPath("$.action.riskLevel").value("HIGH"))
                 .andExpect(jsonPath("$.data").doesNotExist())
                 .andReturn();
-        String actionId = objectMapper.readTree(preview.getResponse().getContentAsString())
-                .get("action").get("actionId").asText();
+        JsonNode action = objectMapper.readTree(preview.getResponse().getContentAsString()).get("action");
+        String actionId = action.get("actionId").asText();
+        String executionId = action.get("executionId").asText();
 
         listTasks(owner.token())
                 .andExpect(jsonPath("$[0].status").value("TODO"))
@@ -51,17 +54,33 @@ class GovernedAgentToolWorkflowTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.result.status").value("COMPLETED"));
+        String auditBeforeRepeat = audit(owner);
         confirm(owner.userId(), actionId)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"));
 
         listTasks(owner.token())
                 .andExpect(jsonPath("$[0].status").value("COMPLETED"))
+                .andExpect(jsonPath("$[0].completedAt").isNotEmpty())
                 .andExpect(jsonPath("$[0].version").value(2));
         mockMvc.perform(get("/api/learning-tasks/{id}/history", taskId)
                         .header("Authorization", "Bearer " + owner.token()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1));
+        assertEquals(auditBeforeRepeat, audit(owner), "重复确认不得新增审计记录");
+        mockMvc.perform(get("/api/agent-executions")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[?(@.id == '" + executionId + "')].status", hasItems("SUCCEEDED")));
+    }
+
+    private String audit(Registration owner) throws Exception {
+        return mockMvc.perform(get("/api/audit-logs")
+                        .header("Authorization", "Bearer " + owner.token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].action", hasItems(
+                        "EXECUTION_CREATED", "EXECUTION_CONFIRMED", "EXECUTION_STATUS_CHANGED")))
+                .andReturn().getResponse().getContentAsString();
     }
 
     @Test

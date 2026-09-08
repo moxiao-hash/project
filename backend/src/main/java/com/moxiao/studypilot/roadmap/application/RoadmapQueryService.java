@@ -36,6 +36,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -81,7 +82,13 @@ public class RoadmapQueryService {
     }
 
     public RoadmapMapResponse currentMap(String ownerId) {
-        return loadCurrentMap(ownerId);
+        return loadCurrentMap(currentEnrollment(ownerId));
+    }
+
+    /** 聚合上下文允许用户尚未加入路线，不抛异常污染调用方的只读事务。 */
+    public Optional<RoadmapMapResponse> currentMapIfPresent(String ownerId) {
+        return userRoadmapRepository.findByOwnerIdAndActiveSlot(ownerId, CURRENT)
+                .map(this::loadCurrentMap);
     }
 
     public RoadmapStageResponse currentStage(String ownerId, String stageId) {
@@ -162,8 +169,7 @@ public class RoadmapQueryService {
                         .getOrDefault(nodeId, List.of()));
     }
 
-    private RoadmapMapResponse loadCurrentMap(String ownerId) {
-        UserRoadmapEntity enrollment = currentEnrollment(ownerId);
+    private RoadmapMapResponse loadCurrentMap(UserRoadmapEntity enrollment) {
         RoadmapTemplateEntity template = template(enrollment.getTemplateId());
         List<RoadmapStageEntity> stages = stageRepository
                 .findAllByTemplateIdOrderByStageOrderAsc(template.getId());
