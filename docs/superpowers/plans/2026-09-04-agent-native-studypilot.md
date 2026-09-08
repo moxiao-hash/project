@@ -29,6 +29,21 @@
 - [ ] Task 25：测试与独立 commit/push 已交付；Playwright/IDE 目前只有兜底预览策略，实际适配器未完成。
 - [ ] Task 26：部分完成。公共 API 真实业务冒烟已通过，完整模型/前端/容器链路仍待验收。
 
+## Agent 产品化后续任务（2026-09-08 规划）
+
+Task 20、25、26 的缺口不再零散修补，统一纳入 [Agent 产品化与三 Agent 协作实施计划](2026-09-08-agent-productization-and-multi-agent-collaboration.md)。以下任务均为“已规划、未开发”，不得提前标记完成：
+
+- [ ] Task 27：能力矩阵、契约冻结与协作门禁。
+- [ ] Task 28：模型驱动的多步 Planner 与确定性策略验证。
+- [ ] Task 29：真正的持续 SSE 与断线恢复。
+- [ ] Task 30：全部 StudyPilot 能力工具化与完整 UI Action。
+- [ ] Task 31：真实 Token、价格、预算与可观测性，并关闭 Task 20。
+- [ ] Task 32：Developer Agent 安全加固与临时 Git 全链路。
+- [ ] Task 33：受控界面适配器，并关闭 Task 25。
+- [ ] Task 34：真实全栈验收与发布门禁；通过后才关闭 Task 26。
+
+实施顺序固定为 `27 → (28、29) → (30、31) → (32、33) → 34`。括号内只允许在契约和文件 Owner 已冻结后使用独立 worktree 并行；Codex 负责最终审查、真实复跑和合并 `main`。
+
 ## Task 12 验收证据
 
 - [x] 工具效果限定为 `READ / NAVIGATE / WRITE / LOCAL`，风险限定为 `NONE / LOW / HIGH`。
