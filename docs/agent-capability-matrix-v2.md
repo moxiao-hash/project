@@ -1,7 +1,7 @@
 # StudyPilot Agent 原生能力矩阵 (v2)
 
 > 版本：2.0.0 (Wave 0 冻结基线)  
-> 适用对象：Codex (总架构师)、DeepSeek Harness (后端/模型规划)、Claude/ZCode (前端/体验)  
+> 适用对象：Codex（总架构师/验收）、DeepSeek Harness（后端与模型辅助）、ZCode（Gemini 3.8 Flash，前端与轻量实现）
 > 约束规范：本矩阵受 `scripts/verify-agent-capability-matrix.mjs` 自动化强校验。任何未在此矩阵登记的路由或工具，门禁将直接拒绝集成。
 
 ---
@@ -36,28 +36,28 @@
 | register | NONE | USER_ONLY | - | - | NONE | USER_ONLY_DECISION | 新用户注册，必须由用户自主同意服务协议并输入合法密码 |
 | assistant | ASSISTANT | AUTO_READ | `learning.context.get` | - | NONE | AGENT_PERMITTED | 统一 Agent 首页，自主加载用户当前全局动态上下文 |
 | dashboard | DASHBOARD | AUTO_NAVIGATE | `schedule.today.get` | - | NONE | AGENT_PERMITTED | 工作台页面，展示今日总览与路线进度，支持自动导航与只读展示 |
-| roadmap | ROADMAP | AUTO_NAVIGATE | `roadmap.current.get` | `roadmap.enroll` | HIGH | AGENT_PERMITTED | 路线大图，加入新路线属于高风险业务写操作，需预览确认 |
+| roadmap | ROADMAP | AUTO_NAVIGATE | `roadmap.current.get` | `roadmap.enroll`、`roadmap.upgrade` | HIGH | AGENT_PERMITTED | 路线大图，加入或升级路线属于高风险业务写操作，需预览确认 |
 | roadmap-stage | ROADMAP_STAGE | AUTO_NAVIGATE | `roadmap.stage.get` | - | NONE | AGENT_PERMITTED | 路线阶段详情，支持按 stageId 导航与阶段进度查询 |
 | roadmap-module | ROADMAP_MODULE | AUTO_NAVIGATE | `roadmap.module.get` | - | NONE | AGENT_PERMITTED | 路线模块详情，支持按 moduleId 导航与模块节点树查询 |
-| roadmap-node | ROADMAP_NODE | AUTO_NAVIGATE | `roadmap.node.get` | `roadmap.upgrade` | HIGH | AGENT_PERMITTED | 节点学习页面，节点升级属于高风险写操作，需预览确认 |
-| goals | LEARNING_GOALS | AUTO_NAVIGATE | `learning.goals.list` | `learning.goal.create` | HIGH | AGENT_PERMITTED | 学习目标管理，创建长期目标需明确日期与预算，需预览确认 |
+| roadmap-node | ROADMAP_NODE | AUTO_NAVIGATE | `roadmap.node.get`、`assessment.node_quiz_status.get` | `assessment.node_quiz.generate`、`assessment.node_quiz.retry` | LOW | AGENT_PERMITTED | Agent 可生成或重新生成节点测验，但不能代替用户打卡、作答或提交总结 |
+| goals | LEARNING_GOALS | AUTO_NAVIGATE | `learning.goals.list` | `learning.goal.create` | LOW | AGENT_PERMITTED | 学习目标创建走受治理工具；用户约束缺失时必须先澄清 |
 | courses | COURSES | AUTO_NAVIGATE | - | - | NONE | AGENT_PERMITTED | 传统阶段 8 课程目录，保留历史只读兼容与导航 |
 | course-detail | COURSE_DETAIL | AUTO_NAVIGATE | - | - | NONE | AGENT_PERMITTED | 传统阶段 8 课程详情，保留历史只读兼容与导航 |
 | lesson | LESSON | AUTO_NAVIGATE | - | - | NONE | AGENT_PERMITTED | 传统课时学习页，包含课时练习与视频播放，保留历史只读兼容 |
-| plans | LEARNING_PLANS | AUTO_NAVIGATE | `learning.plans.list` | `learning.plan.create` | HIGH | AGENT_PERMITTED | 计划列表，创建新学习计划为多日结构化写操作，需预览确认 |
+| plans | LEARNING_PLANS | AUTO_NAVIGATE | `learning.plans.list` | `learning.plan.create` | LOW | AGENT_PERMITTED | 计划列表，创建计划走受治理低风险工具，超出用户约束时必须澄清 |
 | plan-detail | LEARNING_PLAN | AUTO_NAVIGATE | `learning.plan.get` | `schedule.refresh` | LOW | AGENT_PERMITTED | 计划详情与日程刷新，支持计划内任务重排 |
-| today | TODAY | AUTO_NAVIGATE | `schedule.today.get` | `learning.task.update` | HIGH | AGENT_PERMITTED | 今日任务流，将任务标记完成或改期需生成动作卡并专用确认 |
+| today | TODAY | AUTO_NAVIGATE | `schedule.today.get`、`learning.tasks.list` | `learning.task.update` | HIGH | AGENT_PERMITTED | 今日任务流，将任务标记完成或改期需生成动作卡并专用确认 |
 | materials | MATERIALS | AUTO_NAVIGATE | `materials.list` | `materials.text.import` | LOW | AGENT_PERMITTED | 资料管理，文本导入需切片与向量索引处理，需操作卡确认 |
 | material-detail | MATERIAL_DETAIL | AUTO_NAVIGATE | `materials.get` | `materials.web.import` | LOW | AGENT_PERMITTED | 资料切片详情，外链资料导入受安全协议白名单校验 |
 | quiz | QUIZ | USER_ONLY | `assessment.quiz.get` | - | NONE | USER_ONLY_SUBMISSION | 测验作答是学习掌握度检验核心，必须由用户真实作答，严禁 Agent 伪造答案或代答提交 |
 | attempt | QUIZ_ATTEMPT | AUTO_NAVIGATE | `assessment.attempt.get` | - | NONE | AGENT_PERMITTED | 测验结果评估与得分解析报告，支持只读查看与分析 |
-| wrong-questions | WRONG_QUESTIONS | AUTO_NAVIGATE | `assessment.wrong_questions.list` | `assessment.wrong_question_review.create` | LOW | AGENT_PERMITTED | 错题本，生成错题复习卷为低风险写操作，可由 Agent 生成待办 |
+| wrong-questions | WRONG_QUESTIONS | AUTO_NAVIGATE | `assessment.wrong_questions.summary`、`assessment.wrong_questions.list` | `assessment.wrong_question_review.create` | LOW | AGENT_PERMITTED | 错题本，生成错题复习卷为低风险写操作，可由 Agent 生成待办 |
 | mastery | MASTERY | AUTO_NAVIGATE | `assessment.mastery.list` | - | NONE | AGENT_PERMITTED | 知识点掌握度雷达图与弱项分析，只读展示 |
 | knowledge | KNOWLEDGE | AUTO_NAVIGATE | - | - | NONE | AGENT_PERMITTED | 传统 RAG 问答入口，已统一合并至 Assistant 架构 |
 | agent-plan | PLAN_ASSISTANT | AUTO_NAVIGATE | - | - | NONE | AGENT_PERMITTED | 传统计划生成对话入口，已统一合并至 Assistant 架构 |
 | agent-tasks | TASK_ASSISTANT | AUTO_NAVIGATE | `schedule.unfinished.get` | - | NONE | AGENT_PERMITTED | 传统任务助手对话入口，已统一合并至 Assistant 架构 |
 | activity | AGENT_ACTIVITY | AUTO_NAVIGATE | `governance.executions.list` | - | NONE | AGENT_PERMITTED | 执行历史与状态流转审计日志，提供完全只读回溯 |
-| assistant-health | ASSISTANT_HEALTH | AUTO_NAVIGATE | `governance.audit.list` | - | NONE | AGENT_PERMITTED | 运行健康度与个人用量/延迟/成本监控指标 |
+| assistant-health | ASSISTANT_HEALTH | AUTO_NAVIGATE | `governance.health.get`、`governance.audit.list` | - | NONE | AGENT_PERMITTED | 运行健康度与个人用量、延迟和成本监控指标 |
 | notifications | NOTIFICATIONS | AUTO_NAVIGATE | `notifications.list` | `notifications.mark_read` | LOW | AGENT_PERMITTED | 系统通知与确认待办，标记已读为低风险操作 |
 | settings | LEARNING_SETTINGS | AUTO_NAVIGATE | `settings.learning.get` | `settings.learning.update` | HIGH | AGENT_PERMITTED | 学习节奏与主动自动化规则配置，变更规则需专用确认 |
 | settings-ai | AI_SETTINGS | AUTO_NAVIGATE | `settings.ai_status.get` | - | NONE | USER_ONLY_DECISION | AI 凭据与主密钥脱敏状态，API Key 明文提交与删除必须由用户亲自输入，严禁 Agent 代填凭据 |
@@ -66,9 +66,9 @@
 
 ---
 
-## 3. Java 类型化工具目录与能力映射 (全量 58 个已注册工具)
+## 3. Java 类型化工具目录与能力映射（全量 64 个已注册工具）
 
-### 3.1 只读工具 (40 个)
+### 3.1 查询与无副作用预览工具（43 个）
 1. `learning.context.get` - 获取用户全局学习上下文、未完成节点与当天任务概要（EFFECT: READ, RISK: NONE）。
 2. `learning.goals.list` - 列出用户历史与当前激活的学习目标（EFFECT: READ, RISK: NONE）。
 3. `learning.plans.list` - 列出关联目标的结构化学习计划（EFFECT: READ, RISK: NONE）。
@@ -109,8 +109,11 @@
 38. `developer.git.commit.preview` - 预检待提交文件清单与 HEAD，生成 commit 预览（EFFECT: LOCAL, RISK: NONE）。
 39. `developer.git.push.preview` - 预检待推送分支与 origin，生成 push 预览（EFFECT: LOCAL, RISK: NONE）。
 40. `developer.interface_fallback.preview` - 按照 API 优先原则，确定性生成界面兜底操作预览（EFFECT: LOCAL, RISK: NONE）。
+41. `governance.health.get` - 查询统一 Agent 的个人健康、延迟、用量与错误摘要（EFFECT: READ, RISK: NONE）。
+42. `learning.tasks.list` - 按可选日期查询用户学习任务（EFFECT: READ, RISK: NONE）。
+43. `assessment.wrong_questions.summary` - 查询待重做、已掌握和章节聚合统计（EFFECT: READ, RISK: NONE）。
 
-### 3.2 写入与本地执行工具 (18 个)
+### 3.2 写入与本地执行工具（20 个）
 1. `roadmap.enroll` - 加入或绑定发布版路线（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
 2. `roadmap.upgrade` - 升级当前路线版本（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
 3. `learning.goal.create` - 创建结构化学习目标（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
@@ -130,6 +133,11 @@
 17. `developer.patch.apply` - 原子应用受控 Unified Diff 代码补丁（EFFECT: LOCAL, RISK: HIGH, 需专用确认）。
 18. `developer.git.commit` - 独立执行安全 Git commit（EFFECT: LOCAL, RISK: HIGH, 需专用确认）。
 19. `developer.git.push` - 独立执行受限 Git push 至 `origin`（EFFECT: LOCAL, RISK: HIGH, 需独立专用确认）。
+20. `assessment.node_quiz.retry` - 为节点重新生成一组测验，保留历史作答（EFFECT: WRITE, RISK: LOW）。
+
+### 3.3 导航解析工具（1 个）
+
+1. `navigation.resolve` - 仅接受 Java 与 Vue 共同登记的 routeKey 和安全标识参数，返回确定性的导航目标（EFFECT: NAVIGATE, RISK: NONE）。
 
 ---
 

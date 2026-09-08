@@ -1,158 +1,147 @@
 #!/usr/bin/env node
 
 /**
- * scripts/verify-agent-capability-matrix.mjs
- *
- * Task 27: 自动化校验全系统 Vue 路由、Java 工具与能力矩阵 (docs/agent-capability-matrix-v2.md) 的完备性与一致性。
- * 若文件不存在、缺少任何已注册页面或工具，以退出码 1 退出。
+ * 校验 Agent 能力矩阵是否与生产路由、导航白名单和工具注册代码一致。
+ * 测试清单自身可能漏项，因此只把生产配置作为事实来源。
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
-
-const routerFile = path.join(rootDir, 'web/src/app/router.ts');
-const javaCoverageTestFile = path.join(
-  rootDir,
-  'backend/src/test/java/com/moxiao/studypilot/agent/tool/AgentToolCoverageTest.java'
-);
-const matrixFile = path.join(rootDir, 'docs/agent-capability-matrix-v2.md');
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const VALID_CAPABILITIES = new Set([
-  'AUTO_READ',
-  'AUTO_NAVIGATE',
-  'PREVIEW_WRITE',
-  'USER_ONLY',
-  'UNSUPPORTED',
-]);
-
-const VALID_RISK_LEVELS = new Set(['NONE', 'LOW', 'HIGH']);
-
+  'AUTO_READ', 'AUTO_NAVIGATE', 'PREVIEW_WRITE', 'USER_ONLY', 'UNSUPPORTED',
+])
+const VALID_RISK_LEVELS = new Set(['NONE', 'LOW', 'HIGH'])
 const VALID_AUTHENTICITIES = new Set([
-  'AGENT_PERMITTED',
-  'USER_ONLY_SUBMISSION',
-  'USER_ONLY_REVIEW',
-  'USER_ONLY_DECISION',
-]);
+  'AGENT_PERMITTED', 'USER_ONLY_SUBMISSION', 'USER_ONLY_REVIEW', 'USER_ONLY_DECISION',
+])
 
-function fail(message) {
-  console.error(`[ERROR] 矩阵校验失败: ${message}`);
-  process.exit(1);
+function rootPath(root) {
+  return root instanceof URL ? fileURLToPath(root) : path.resolve(root)
 }
 
-// 1. 提取 Vue 路由名
-if (!fs.existsSync(routerFile)) {
-  fail(`找不到 Vue 路由定义文件: ${routerFile}`);
+function read(root, relativePath) {
+  return fs.readFileSync(path.join(rootPath(root), relativePath), 'utf8')
 }
 
-const routerContent = fs.readFileSync(routerFile, 'utf8');
-const routeNameRegex = /name:\s*['"]([^'"]+)['"]/g;
-const vueRouteNames = new Set();
-let match;
-while ((match = routeNameRegex.exec(routerContent)) !== null) {
-  vueRouteNames.add(match[1]);
+function extractMatches(content, regex, group = 1) {
+  return new Set(Array.from(content.matchAll(regex), (match) => match[group]))
 }
 
-if (vueRouteNames.size === 0) {
-  fail('未能从 router.ts 中解析出任何路由名称');
+function parseRows(matrixContent) {
+  const lines = matrixContent.split('\n')
+  const headerIndex = lines.findIndex((line) => line.includes('| 路由名 (name) |'))
+  if (headerIndex < 0) throw new Error('找不到页面能力矩阵表头')
+
+  const rows = []
+  for (const line of lines.slice(headerIndex + 2)) {
+    if (!line.trim().startsWith('|')) break
+    const columns = line.split('|').slice(1, -1).map((column) => column.trim())
+    if (columns.length !== 8) throw new Error(`能力矩阵列数不是 8: ${line}`)
+    const [routeName, routeKey, capability, readTool, writeTool, risk, authenticity, reason] = columns
+    rows.push({ routeName, routeKey, capability, readTool, writeTool, risk, authenticity, reason })
+  }
+  return rows
 }
 
-// 2. 提取 Java Tool 列表
-if (!fs.existsSync(javaCoverageTestFile)) {
-  fail(`找不到 Java 工具覆盖测试文件: ${javaCoverageTestFile}`);
+function toolReferences(value) {
+  if (value === '-') return []
+  return Array.from(value.matchAll(/`([a-z0-9_]+(?:\.[a-z0-9_]+)+)`/gu), (match) => match[1])
 }
 
-const javaTestContent = fs.readFileSync(javaCoverageTestFile, 'utf8');
-const toolNameRegex = /"([a-z0-9_]+(?:\.[a-z0-9_]+)+)"/g;
-const javaToolNames = new Set();
-while ((match = toolNameRegex.exec(javaTestContent)) !== null) {
-  javaToolNames.add(match[1]);
-}
+export function loadProjectInputs(root) {
+  const javaToolDirectory = path.join(rootPath(root), 'backend/src/main/java/com/moxiao/studypilot/agent/tool')
+  const javaToolContent = fs.readdirSync(javaToolDirectory)
+    .filter((name) => name.endsWith('.java'))
+    .map((name) => fs.readFileSync(path.join(javaToolDirectory, name), 'utf8'))
+    .join('\n')
 
-if (javaToolNames.size === 0) {
-  fail('未能从 AgentToolCoverageTest.java 中解析出任何已注册工具');
-}
-
-// 3. 检查矩阵文件是否存在
-if (!fs.existsSync(matrixFile)) {
-  fail(`能力矩阵文件不存在: ${matrixFile}`);
-}
-
-const matrixContent = fs.readFileSync(matrixFile, 'utf8');
-
-// 4. 校验 Vue 路由覆盖
-const missingRoutes = [];
-for (const routeName of vueRouteNames) {
-  // 匹配 `| ` + routeName + ` |`
-  const regex = new RegExp(`\\|\\s*${routeName}\\s*\\|`);
-  if (!regex.test(matrixContent)) {
-    missingRoutes.push(routeName);
+  return {
+    routerContent: read(root, 'web/src/app/router.ts'),
+    dispatcherContent: read(root, 'web/src/modules/assistant/uiActionDispatcher.ts'),
+    navigationContent: read(root, 'backend/src/main/java/com/moxiao/studypilot/agent/tool/NavigationToolHandler.java'),
+    javaToolContent,
+    matrixContent: read(root, 'docs/agent-capability-matrix-v2.md'),
   }
 }
 
-if (missingRoutes.length > 0) {
-  fail(`能力矩阵缺少以下 Vue 路由映射 (${missingRoutes.length} 个): ${missingRoutes.join(', ')}`);
-}
-
-// 5. 校验 Java 工具覆盖
-const missingTools = [];
-for (const toolName of javaToolNames) {
-  const regex = new RegExp(`\`${toolName.replace('.', '\\.')}\``);
-  if (!regex.test(matrixContent)) {
-    missingTools.push(toolName);
+export function verifyCapabilityMatrix(inputs) {
+  const vueRoutes = extractMatches(inputs.routerContent, /name:\s*['"]([^'"]+)['"]/gu)
+  const dispatcherEntries = new Map(Array.from(
+    inputs.dispatcherContent.matchAll(/^\s*([A-Z][A-Z0-9_]+):\s*\{\s*name:\s*'([^']+)'/gmu),
+    (match) => [match[1], match[2]],
+  ))
+  const javaRouteKeys = extractMatches(inputs.navigationContent, /Map\.entry\("([A-Z][A-Z0-9_]+)"/gu)
+  const configuredTools = extractMatches(
+    inputs.javaToolContent,
+    /(?:read|write|writeValidated)\(mapper,\s*"([a-z0-9_]+(?:\.[a-z0-9_]+)+)"/gu,
+  )
+  const descriptorTools = extractMatches(
+    inputs.javaToolContent,
+    /new AgentToolDescriptor\(\s*"([a-z0-9_]+(?:\.[a-z0-9_]+)+)"/gu,
+  )
+  const productionTools = new Set([...configuredTools, ...descriptorTools])
+  if (vueRoutes.size === 0 || productionTools.size === 0) {
+    throw new Error('未能解析生产路由或 Java 工具注册表')
   }
-}
 
-if (missingTools.length > 0) {
-  fail(`能力矩阵缺少以下 Java 工具映射 (${missingTools.length} 个): ${missingTools.join(', ')}`);
-}
-
-// 6. 校验能力枚举合法性与 USER_ONLY 原因
-const lines = matrixContent.split('\n');
-let tableHeaderFound = false;
-let verifiedRows = 0;
-
-for (const line of lines) {
-  if (line.includes('| 路由名 (name) |')) {
-    tableHeaderFound = true;
-    continue;
-  }
-  if (!tableHeaderFound) continue;
-  if (!line.trim().startsWith('|')) {
-    // 遇到非表格行，页面表格结束
-    if (verifiedRows > 0) break;
-    continue;
-  }
-  if (line.includes('---')) continue;
-
-  const cols = line.split('|').map((c) => c.trim()).filter(Boolean);
-  if (cols.length >= 6) {
-    const [routeName, routeKey, capability, readTool, writeTool, risk, authenticity, reason] = cols;
-    if (!vueRouteNames.has(routeName)) continue;
-
-    if (!VALID_CAPABILITIES.has(capability)) {
-      fail(`路由 [${routeName}] 的 capability [${capability}] 不合法`);
+  const rows = parseRows(inputs.matrixContent)
+  const rowsByRoute = new Map()
+  for (const row of rows) {
+    if (rowsByRoute.has(row.routeName)) throw new Error(`路由 ${row.routeName} 在矩阵中重复`)
+    rowsByRoute.set(row.routeName, row)
+    if (!VALID_CAPABILITIES.has(row.capability)) {
+      throw new Error(`路由 ${row.routeName} 的 capability ${row.capability} 不合法`)
     }
-    if (risk && !VALID_RISK_LEVELS.has(risk)) {
-      fail(`路由 [${routeName}] 的 risk [${risk}] 不合法`);
+    if (!VALID_RISK_LEVELS.has(row.risk)) {
+      throw new Error(`路由 ${row.routeName} 的 risk ${row.risk} 不合法`)
     }
-    if (authenticity && !VALID_AUTHENTICITIES.has(authenticity)) {
-      fail(`路由 [${routeName}] 的 authenticity [${authenticity}] 不合法`);
+    if (!VALID_AUTHENTICITIES.has(row.authenticity)) {
+      throw new Error(`路由 ${row.routeName} 的 authenticity ${row.authenticity} 不合法`)
     }
-    if ((capability === 'USER_ONLY' || capability === 'UNSUPPORTED') && (!reason || reason === '-' || reason === '无')) {
-      fail(`路由 [${routeName}] 标记为 ${capability}，但未提供拒绝代办的明确原因 (reason)`);
+    if (['USER_ONLY', 'UNSUPPORTED'].includes(row.capability)
+        && (!row.reason || ['-', '无'].includes(row.reason))) {
+      throw new Error(`路由 ${row.routeName} 缺少拒绝代办原因`)
     }
-    verifiedRows++;
+
+    if (row.routeKey !== 'NONE') {
+      if (!javaRouteKeys.has(row.routeKey) || !dispatcherEntries.has(row.routeKey)) {
+        throw new Error(`路由 ${row.routeName} 的 routeKey ${row.routeKey} 未同时注册到 Java 与 Vue`)
+      }
+      if (dispatcherEntries.get(row.routeKey) !== row.routeName) {
+        throw new Error(`routeKey ${row.routeKey} 实际映射 ${dispatcherEntries.get(row.routeKey)}，不是 ${row.routeName}`)
+      }
+    }
+
+    for (const tool of [...toolReferences(row.readTool), ...toolReferences(row.writeTool)]) {
+      if (!productionTools.has(tool)) throw new Error(`工具 ${tool} 未注册到生产 Java Tool Registry`)
+    }
+  }
+
+  const missingRoutes = [...vueRoutes].filter((name) => !rowsByRoute.has(name))
+  if (missingRoutes.length > 0) throw new Error(`能力矩阵缺少 Vue 路由: ${missingRoutes.join(', ')}`)
+  const extraRoutes = [...rowsByRoute.keys()].filter((name) => !vueRoutes.has(name))
+  if (extraRoutes.length > 0) throw new Error(`能力矩阵存在无效 Vue 路由: ${extraRoutes.join(', ')}`)
+
+  const allDocumentedTools = extractMatches(
+    inputs.matrixContent,
+    /`([a-z0-9_]+(?:\.[a-z0-9_]+)+)`/gu,
+  )
+  const missingTools = [...productionTools].filter((tool) => !allDocumentedTools.has(tool))
+  if (missingTools.length > 0) throw new Error(`能力矩阵缺少生产工具: ${missingTools.join(', ')}`)
+
+  return { routeCount: vueRoutes.size, toolCount: productionTools.size }
+}
+
+function main() {
+  try {
+    const result = verifyCapabilityMatrix(loadProjectInputs(new URL('..', import.meta.url)))
+    console.log(`[SUCCESS] 能力矩阵校验通过！覆盖全部 ${result.routeCount} 个页面路由与 ${result.toolCount} 个 Java 工具。`)
+  } catch (error) {
+    console.error(`[ERROR] 矩阵校验失败: ${error.message}`)
+    process.exitCode = 1
   }
 }
 
-if (verifiedRows < vueRouteNames.size) {
-  fail(`校验的页面表格行数 (${verifiedRows}) 少于已定义的 Vue 路由总数 (${vueRouteNames.size})`);
-}
-
-console.log(`[SUCCESS] 能力矩阵校验通过！覆盖全部 ${vueRouteNames.size} 个页面路由与 ${javaToolNames.size} 个 Java 工具。`);
-process.exit(0);
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) main()

@@ -38,4 +38,27 @@ class NavigationToolHandlerTest {
                         .put("routeKey", "ROADMAP_NODE")
                         .putObject("params").put("nodeId", "javascript:alert(1)")));
     }
+
+    @Test
+    void resolvesEveryAgentNavigableApplicationRoute() {
+        assertRoute("ASSISTANT", null, null);
+        assertRoute("PLAN_ASSISTANT", null, null);
+        assertRoute("TASK_ASSISTANT", null, null);
+        assertRoute("COURSES", null, null);
+        assertRoute("COURSE_DETAIL", "courseSlug", "spring-boot");
+        assertRoute("LESSON", "lessonId", "lesson-1");
+    }
+
+    private void assertRoute(String routeKey, String parameterName, String parameterValue) {
+        var arguments = objectMapper.createObjectNode().put("routeKey", routeKey);
+        if (parameterName != null) {
+            arguments.putObject("params").put(parameterName, parameterValue);
+        }
+
+        NavigationToolHandler.NavigationTarget target =
+                (NavigationToolHandler.NavigationTarget) handler.invoke(
+                        new AgentToolContext("user-1"), arguments);
+
+        assertEquals(routeKey, target.routeKey());
+    }
 }
