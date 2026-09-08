@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     langgraph_aes_key: SecretStr = SecretStr("")
     agent_worker_count: int = 1
 
+    # Task 28 多步规划器：模型只提出计划，确定性策略层可随时关闭它并回落到降级层。
+    agent_planner_enabled: bool = True
+    # Java 门面调用 Python 的请求超时为 120 秒；规划器必须留出安全余量。
+    agent_planner_timeout_seconds: float = 90.0
+    agent_planner_min_confidence: float = 0.7
+    agent_planner_max_steps: int = 8
+    agent_planner_max_context_chars: int = 6_000
+
     @property
     def model_is_configured(self) -> bool:
         """只暴露是否配置 Key，不暴露 Key 的实际内容。"""

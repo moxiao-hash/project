@@ -65,6 +65,7 @@ from app.scheduler.proactive_automation import ProactiveAutomationWorker
 from app.search.service import WebSearchService
 from app.search.tavily import TavilySearchClient
 from app.search.web_fetcher import SafeWebFetcher
+from app.unified_agent.planner import OwnerScopedAssistantPlannerFactory
 from app.unified_agent.supervisor import UnifiedAgentSupervisor
 
 logger = logging.getLogger(__name__)
@@ -284,11 +285,17 @@ async def lifespan(application: FastAPI):
             settings,
             persistence=persistence,
         )
+        unified_java = JavaBackendClient(settings)
         application.state.unified_agent_service = UnifiedAgentSupervisor(
-            JavaBackendClient(settings),
+            unified_java,
             model_name=settings.model_name,
             persistence=persistence,
             knowledge_services=application.state.knowledge_conversation_service,
+            # Task 28：多步 Planner 按 owner 解析模型凭据；不可用时 Supervisor
+            # 自动回落到已验证的确定性关键词层。
+            planner_provider=OwnerScopedAssistantPlannerFactory(
+                settings, unified_java
+            ).for_owner,
         )
         scheduler = AsyncIOScheduler(timezone="UTC")
         scheduler.add_job(

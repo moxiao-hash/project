@@ -6,11 +6,52 @@ import pytest
 from app.knowledge.models import KnowledgeConversationSnapshot, KnowledgeMode
 from app.unified_agent.models import (
     AssistantConversationStatus,
+    AssistantIntent,
     ToolDescriptor,
     ToolEffect,
     ToolRiskLevel,
 )
+from app.unified_agent.planner import PlannerOutcome, PlannerStatus
+from app.unified_agent.planning_models import (
+    AssistantPlan,
+    AssistantPlanStep,
+    PlanIntent,
+)
 from app.unified_agent.supervisor import UnifiedAgentSupervisor
+
+
+class FakePlanner:
+    """返回固定规划结果，用于验证 Supervisor 的执行与降级分支。"""
+
+    def __init__(self, outcome: PlannerOutcome) -> None:
+        self.outcome = outcome
+        self.calls: list[dict] = []
+
+    async def propose(self, *, message, context, client_context):
+        self.calls.append(
+            {"message": message, "context": context, "client_context": client_context}
+        )
+        return self.outcome
+
+
+def model_plan(steps: list[AssistantPlanStep], **overrides) -> AssistantPlan:
+    payload = {
+        "intent": PlanIntent.LEARNING_QUERY,
+        "confidence": 0.95,
+        "summary": "模型生成的公开计划",
+        "steps": steps,
+    }
+    payload.update(overrides)
+    return AssistantPlan(**payload)
+
+
+def planned_step(step_id: str, tool_name: str, arguments=None, depends_on=None):
+    return AssistantPlanStep(
+        step_id=step_id,
+        tool_name=tool_name,
+        arguments=arguments or {},
+        depends_on=depends_on or [],
+    )
 
 
 class FakeJavaBackend:
@@ -785,5 +826,461 @@ def test_cancel_during_context_fetch_prevents_subsequent_write_tool():
         assert result.status == AssistantConversationStatus.FAILED
         assert result.pending_action is None
         assert "取消" in result.reply
+
+    asyncio.run(run())
+
+
+def test_model_plan_executes_multiple_read_steps_in_declared_order():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step("s1", "learning.goals.list"),
+                        planned_step("s2", "learning.plans.list", depends_on=["s1"]),
+                    ]
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "继续昨天的章节，学完后准备测验，并告诉我薄弱点",
+            "assistant-turn:plan-read-1",
+            "user-1",
+            {},
+        )
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "learning.goals.list",
+            "learning.plans.list",
+        ]
+        assert [step.tool_name for step in result.tool_steps] == [
+            "learning.context.get",
+            "learning.goals.list",
+            "learning.plans.list",
+        ]
+        assert result.status == AssistantConversationStatus.COMPLETED
+        assert result.pending_action is None
+        assert planner.calls[0]["message"].startswith("继续昨天的章节")
+
+    asyncio.run(run())
+
+
+def test_model_plan_write_step_surfaces_preview_and_stops_remaining_steps():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step(
+                            "s1",
+                            "settings.learning.update",
+                            {"dailyStudyLimitMinutes": 30},
+                        ),
+                        planned_step("s2", "assessment.mastery.list"),
+                    ],
+                    intent=PlanIntent.PLAN_ADJUSTMENT,
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "把每日时长改成 30 分钟",
+            "assistant-turn:plan-write-1",
+            "user-1",
+            {},
+        )
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "settings.learning.update",
+        ]
+        assert result.status == AssistantConversationStatus.WAITING_CONFIRMATION
+        assert result.pending_action is not None
+        assert result.pending_action.action_id == "action-settings-1"
+
+    asyncio.run(run())
+
+
+def test_planner_unavailable_falls_back_to_deterministic_keyword_layer():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.UNAVAILABLE))
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "打开我的错题集",
+            "assistant-turn:fallback-1",
+            "user-1",
+            {},
+        )
+
+        assert result.ui_actions[0].route_key == "WRONG_QUESTIONS"
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "navigation.resolve",
+        ]
+
+    asyncio.run(run())
+
+
+def test_planner_clarify_stops_before_any_tool_call():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(status=PlannerStatus.CLARIFY, reason="请说明具体节点")
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "帮我搞一下那个",
+            "assistant-turn:clarify-1",
+            "user-1",
+            {},
+        )
+
+        assert result.intent == AssistantIntent.CLARIFY
+        assert "请说明具体节点" in result.reply
+        assert [call[0] for call in java.calls] == ["learning.context.get"]
+
+    asyncio.run(run())
+
+
+def test_model_plan_navigation_step_emits_only_whitelisted_ui_action():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step(
+                            "s1",
+                            "navigation.resolve",
+                            {"routeKey": "WRONG_QUESTIONS"},
+                        )
+                    ],
+                    intent=PlanIntent.ROADMAP_NAVIGATE,
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "打开错题集",
+            "assistant-turn:plan-nav-1",
+            "user-1",
+            {},
+        )
+
+        assert [action.route_key for action in result.ui_actions] == ["WRONG_QUESTIONS"]
+
+    asyncio.run(run())
+
+
+def test_cancel_between_plan_steps_stops_remaining_tool_calls():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step("s1", "learning.goals.list"),
+                        planned_step("s2", "learning.plans.list", depends_on=["s1"]),
+                    ]
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+        entered, release = asyncio.Event(), asyncio.Event()
+        original = java.invoke_agent_tool
+
+        async def invoke(name, *args):
+            if name == "learning.goals.list":
+                entered.set()
+                await release.wait()
+            return await original(name, *args)
+
+        java.invoke_agent_tool = invoke
+        turn = asyncio.create_task(
+            service.send_message(
+                convo.conversation_id,
+                "读取目标和计划",
+                "assistant-turn:plan-cancel-1",
+                "user-1",
+                {},
+            )
+        )
+        await entered.wait()
+        await service.cancel_turn(
+            convo.conversation_id, "assistant-turn:plan-cancel-1", "user-1"
+        )
+        release.set()
+        result = await turn
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "learning.goals.list",
+        ]
+        assert result.status == AssistantConversationStatus.FAILED
+        assert result.pending_action is None
+        assert "取消" in result.reply
+
+    asyncio.run(run())
+
+
+def test_confirmed_plan_step_resumes_remaining_steps():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step(
+                            "s1",
+                            "settings.learning.update",
+                            {"dailyStudyLimitMinutes": 30},
+                        ),
+                        planned_step("s2", "assessment.mastery.list", depends_on=["s1"]),
+                    ],
+                    intent=PlanIntent.PLAN_ADJUSTMENT,
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+        preview = await service.send_message(
+            convo.conversation_id,
+            "把每日时长改成 30 分钟并告诉我薄弱点",
+            "assistant-turn:plan-resume-1",
+            "user-1",
+            {},
+        )
+        assert preview.pending_action is not None
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "settings.learning.update",
+        ]
+
+        async def confirm(action_id, owner_id):
+            return preview.pending_action.model_copy(
+                update={"status": "SUCCEEDED", "result": {"dailyStudyLimitMinutes": 30}}
+            ).model_dump(mode="json", by_alias=True)
+
+        java.confirm_agent_tool_action = confirm
+        result = await service.confirm_action(
+            convo.conversation_id, "action-settings-1", "user-1"
+        )
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "settings.learning.update",
+            "assessment.mastery.list",
+        ]
+        assert result.status == AssistantConversationStatus.COMPLETED
+        assert result.pending_action is None
+        assert [step.tool_name for step in result.tool_steps][-1] == (
+            "assessment.mastery.list"
+        )
+
+    asyncio.run(run())
+
+
+def test_rejected_plan_step_does_not_resume_remaining_steps():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step(
+                            "s1",
+                            "settings.learning.update",
+                            {"dailyStudyLimitMinutes": 30},
+                        ),
+                        planned_step("s2", "assessment.mastery.list", depends_on=["s1"]),
+                    ],
+                    intent=PlanIntent.PLAN_ADJUSTMENT,
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+        preview = await service.send_message(
+            convo.conversation_id,
+            "把每日时长改成 30 分钟并告诉我薄弱点",
+            "assistant-turn:plan-reject-1",
+            "user-1",
+            {},
+        )
+        assert preview.pending_action is not None
+
+        async def reject(action_id, owner_id):
+            return {"status": "REJECTED"}
+
+        java.reject_agent_tool_action = reject
+        result = await service.reject_action(
+            convo.conversation_id, "action-settings-1", "user-1"
+        )
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "settings.learning.update",
+        ]
+        assert result.pending_action is None
+
+    asyncio.run(run())
+
+
+def test_unresolvable_plan_reference_clarifies_without_calling_dependent_tool():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step("s1", "roadmap.current.get"),
+                        planned_step(
+                            "s2",
+                            "assessment.node_quiz_status.get",
+                            {"nodeId": "$s1.nextNodeId"},
+                            depends_on=["s1"],
+                        ),
+                    ]
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "继续学习",
+            "assistant-turn:plan-bad-ref-1",
+            "user-1",
+            {},
+        )
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "roadmap.current.get",
+        ]
+        assert result.intent == AssistantIntent.CLARIFY
+        assert result.pending_action is None
+
+    asyncio.run(run())
+
+
+def test_plan_repeating_loaded_context_step_reuses_data_without_gateway_error():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step("s1", "learning.context.get"),
+                        planned_step("s2", "assessment.mastery.list", depends_on=["s1"]),
+                    ]
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "继续学习并告诉我薄弱点",
+            "assistant-turn:plan-repeat-context-1",
+            "user-1",
+            {},
+        )
+
+        # learning.context.get 只真正调用一次，计划步骤复用已加载结果。
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "assessment.mastery.list",
+        ]
+        assert result.status == AssistantConversationStatus.COMPLETED
+        assert len(result.tool_steps) == 3
+
+    asyncio.run(run())
+
+
+def test_executor_converts_gateway_duplicate_call_into_clarify():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step("s1", "assessment.mastery.list"),
+                        planned_step("s2", "assessment.mastery.list", depends_on=["s1"]),
+                    ]
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "看看薄弱点",
+            "assistant-turn:plan-dup-1",
+            "user-1",
+            {},
+        )
+
+        assert [call[0] for call in java.calls] == [
+            "learning.context.get",
+            "assessment.mastery.list",
+        ]
+        assert result.intent == AssistantIntent.CLARIFY
+        assert result.pending_action is None
 
     asyncio.run(run())

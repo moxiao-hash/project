@@ -16,6 +16,7 @@ from app.knowledge.models import KnowledgeMode, WebSearchPolicy
 from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
 from app.persistence.agent_state import AgentPersistence
 from app.unified_agent.models import (
+    ALLOWED_UI_ROUTE_KEYS,
     AssistantConversationSnapshot,
     AssistantConversationStatus,
     AssistantEvent,
@@ -24,8 +25,13 @@ from app.unified_agent.models import (
     PublicToolStep,
     UiAction,
 )
+from app.unified_agent.planner import PlannerStatus
+from app.unified_agent.planning_models import AssistantPlan, PlanIntent
+from app.unified_agent.policy_validator import PLAN_REFERENCE_PATTERN
 from app.unified_agent.tool_gateway import (
+    DuplicateToolCallError,
     ToolBudget,
+    ToolBudgetExceededError,
     ToolTurnCancelledError,
     UnifiedToolGateway,
 )
@@ -53,6 +59,7 @@ class SupervisorState(TypedDict, total=False):
     warnings: list[str]
     citations: list[Any]
     knowledge_conversation_id: str | None
+    plan_resume: dict[str, Any] | None
 
 
 @dataclass
@@ -65,6 +72,8 @@ class _Conversation:
     knowledge_conversation_id: str | None = None
     active_turn_id: str | None = None
     cancel_requested_turn_id: str | None = None
+    # Task 28：写步骤需要确认时保存剩余计划，确认成功后继续执行。
+    plan_resume: dict[str, Any] | None = None
 
 
 class UnifiedAgentSupervisor:
@@ -78,14 +87,34 @@ class UnifiedAgentSupervisor:
         persistence: AgentPersistence | None = None,
         knowledge_services: Any | None = None,
         metrics: AgentRuntimeMetrics = AGENT_RUNTIME_METRICS,
+        planner: Any | None = None,
+        planner_provider: Any | None = None,
     ) -> None:
         self._java = java_backend
         self._model_name = model_name
         self._persistence = persistence
         self._knowledge_services = knowledge_services
         self._metrics = metrics
+        self._planner = planner
+        self._planner_provider = planner_provider
         self._conversations: dict[str, _Conversation] = {}
         self._graph = self._build_graph()
+
+    async def _planner_for_turn(self, owner_id: str) -> Any | None:
+        """优先使用固定 Planner（测试）；生产按 owner 解析凭据。
+
+        凭据服务或模型不可用时返回 ``None``，由确定性降级层继续服务，
+        不会让整轮会话失败。
+        """
+
+        if self._planner is not None:
+            return self._planner
+        if self._planner_provider is None:
+            return None
+        try:
+            return await self._planner_provider(owner_id)
+        except Exception:  # noqa: BLE001 - 降级优先于中断会话
+            return None
 
     async def create_conversation(self, owner_id: str) -> AssistantConversationSnapshot:
         conversation_id = str(uuid4())
@@ -153,6 +182,10 @@ class UnifiedAgentSupervisor:
         # 确认请求成功不等于业务执行成功；只相信 Java 的执行终态。
         succeeded = confirmed.status == "SUCCEEDED"
         failed = confirmed.status in {"FAILED", "REJECTED", "EXPIRED", "CANCELLED"}
+        if succeeded and conversation.plan_resume is not None:
+            return await self._resume_plan(
+                conversation, conversation_id, owner_id, action_id, confirmed
+            )
         status = (
             AssistantConversationStatus.COMPLETED if succeeded
             else AssistantConversationStatus.FAILED if failed
@@ -202,6 +235,89 @@ class UnifiedAgentSupervisor:
         await self._save(conversation)
         return snapshot
 
+    async def _resume_plan(
+        self,
+        conversation: _Conversation,
+        conversation_id: str,
+        owner_id: str,
+        action_id: str,
+        confirmed: Any,
+    ) -> AssistantConversationSnapshot:
+        """确认成功后继续执行计划剩余步骤。
+
+        剩余计划只来自服务端持久化的已验证计划，不接受客户端或模型补充的步骤；
+        若剩余步骤里还有写操作，会再次生成待确认动作并保留新的续跑状态。
+        """
+
+        resume = conversation.plan_resume or {}
+        conversation.plan_resume = None
+        try:
+            plan = AssistantPlan.model_validate(resume["plan"])
+            public_steps = [
+                PublicToolStep.model_validate(item) for item in resume["publicSteps"]
+            ]
+            outputs = dict(resume["outputs"])
+            ui_actions = [
+                UiAction.model_validate(item) for item in resume["uiActions"]
+            ]
+            start_index = int(resume["nextIndex"])
+        except (KeyError, TypeError, ValueError):
+            conversation.plan_resume = None
+            return conversation.snapshot.model_copy(
+                update={
+                    "status": AssistantConversationStatus.COMPLETED,
+                    "reply": "操作已确认并执行；剩余计划状态已失效，请重新描述目标。",
+                    "pending_action": None,
+                }
+            )
+
+        gateway = UnifiedToolGateway(self._java, owner_id, ToolBudget())
+        fields, next_resume = await self._run_plan(
+            gateway=gateway,
+            idempotency_key=f"assistant-resume:{action_id}",
+            plan=plan,
+            public_steps=public_steps,
+            outputs=outputs,
+            ui_actions=ui_actions,
+            start_index=start_index,
+        )
+        conversation.plan_resume = next_resume
+        pending_action = fields["pending_action"]
+        status = (
+            AssistantConversationStatus.WAITING_CONFIRMATION
+            if pending_action is not None
+            else AssistantConversationStatus.COMPLETED
+        )
+        reply = "操作已确认并执行。" + str(fields["reply"])
+        snapshot = conversation.snapshot.model_copy(
+            update={
+                "status": status,
+                "reply": reply,
+                "pending_action": pending_action,
+                "ui_actions": fields["ui_actions"],
+                "tool_steps": fields["tool_steps"],
+                "messages": [
+                    *conversation.snapshot.messages,
+                    AssistantMessage(role="assistant", content=reply),
+                ],
+            }
+        )
+        conversation.snapshot = snapshot
+        conversation.events.append(
+            AssistantEvent(
+                sequence=len(conversation.events) + 1,
+                type=(
+                    "TURN_COMPLETED"
+                    if status == AssistantConversationStatus.COMPLETED
+                    else "ACTION_PREVIEW"
+                ),
+                conversation_id=conversation_id,
+                payload={"actionId": action_id, "actionStatus": confirmed.status},
+            )
+        )
+        await self._save(conversation)
+        return snapshot
+
     async def reject_action(
         self, conversation_id: str, action_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
@@ -224,6 +340,8 @@ class UnifiedAgentSupervisor:
         if pending is None or pending.action_id != action_id:
             raise AssistantConversationNotFoundError("待确认操作不存在")
         await self._java.reject_agent_tool_action(action_id, owner_id)
+        # 用户拒绝后不再执行计划剩余步骤。
+        conversation.plan_resume = None
         snapshot = conversation.snapshot.model_copy(
             update={
                 "status": AssistantConversationStatus.COMPLETED,
@@ -365,6 +483,9 @@ class UnifiedAgentSupervisor:
                     await self._save(conversation)
                     return result
                 pending_action = values.get("pending_action")
+                if "plan_resume" in values:
+                    # 只有模型计划轮次会写入该键；关键词降级层保持原有状态。
+                    conversation.plan_resume = values["plan_resume"]
                 conversation.knowledge_conversation_id = values.get(
                     "knowledge_conversation_id",
                     conversation.knowledge_conversation_id,
@@ -426,6 +547,7 @@ class UnifiedAgentSupervisor:
                     knowledge_conversation_id=payload.get("knowledgeConversationId"),
                     active_turn_id=None,
                     cancel_requested_turn_id=None,
+                    plan_resume=payload.get("planResume"),
                 )
                 self._conversations[conversation_id] = conversation
         if conversation is None or conversation.snapshot.owner_id != owner_id:
@@ -454,6 +576,7 @@ class UnifiedAgentSupervisor:
                     for event in conversation.events
                 ],
                 "knowledgeConversationId": conversation.knowledge_conversation_id,
+                "planResume": conversation.plan_resume,
             },
         )
 
@@ -508,6 +631,38 @@ class UnifiedAgentSupervisor:
                 )
             )
             message = state["message"].strip()
+
+            # Task 28：先尝试模型多步规划。计划必须已通过确定性策略校验；
+            # 模型不可用时保持原有已验证的关键词降级层。
+            planner = await self._planner_for_turn(state["owner_id"])
+            if planner is not None:
+                planner_outcome = await planner.propose(
+                    message=message,
+                    context=context_result.data,
+                    client_context=state.get("client_context", {}),
+                )
+                if (
+                    planner_outcome.status == PlannerStatus.PLAN
+                    and planner_outcome.plan is not None
+                ):
+                    return await self._execute_plan(
+                        state,
+                        planner_outcome.plan,
+                        steps,
+                        context_data=context_result.data,
+                    )
+                if planner_outcome.status == PlannerStatus.CLARIFY:
+                    return {
+                        "intent": AssistantIntent.CLARIFY,
+                        "reply": planner_outcome.reason
+                        or "请把目标拆成更具体的单个操作。",
+                        "tool_steps": steps,
+                        "pending_action": None,
+                        "ui_actions": [],
+                        "warnings": [
+                            f"PLANNER_{issue.code}" for issue in planner_outcome.issues
+                        ],
+                    }
 
             if "推送" in message and any(word in message for word in ("提交", "代码", "分支")):
                 workspaces_result = await gateway.invoke("workspaces.list", {})
@@ -1064,6 +1219,217 @@ class UnifiedAgentSupervisor:
         graph.add_edge(START, "dispatch")
         graph.add_edge("dispatch", END)
         return graph.compile()
+
+    async def _execute_plan(
+        self,
+        state: SupervisorState,
+        plan: AssistantPlan,
+        steps: list[PublicToolStep],
+        *,
+        context_data: Any = None,
+    ) -> dict[str, Any]:
+        """按声明顺序执行已通过策略校验的计划。
+
+        只有 Planner 返回 ``PLAN`` 时才会进入这里。写工具只会生成待确认动作并立即停止
+        后续步骤，绝不自动执行；取消会在每个步骤前被网关拦截。
+        """
+
+        fields, resume = await self._run_plan(
+            gateway=state["gateway"],
+            idempotency_key=state["idempotency_key"],
+            plan=plan,
+            public_steps=steps,
+            outputs={},
+            ui_actions=[],
+            context_data=context_data,
+        )
+        fields["plan_resume"] = resume
+        return fields
+
+    async def _run_plan(
+        self,
+        *,
+        gateway: UnifiedToolGateway,
+        idempotency_key: str,
+        plan: AssistantPlan,
+        public_steps: list[PublicToolStep],
+        outputs: dict[str, Any],
+        ui_actions: list[UiAction],
+        start_index: int = 0,
+        context_data: Any = None,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """执行计划并从 ``start_index`` 开始；返回结果字段与待恢复状态。"""
+
+        pending_action = None
+        executed = 0
+        index = start_index
+        while index < len(plan.steps):
+            step = plan.steps[index]
+            try:
+                arguments = self._resolve_plan_arguments(step.arguments, outputs)
+            except ValueError:
+                return (
+                    {
+                        "intent": AssistantIntent.CLARIFY,
+                        "reply": "计划参数无法安全解析，请重新描述目标。",
+                        "tool_steps": public_steps,
+                        "pending_action": None,
+                        "ui_actions": ui_actions,
+                    },
+                    None,
+                )
+            # 本轮开始已经调用过 learning.context.get，网关禁止相同参数重复调用；
+            # 直接复用已加载的上下文，避免模型重复规划第一步导致整轮失败。
+            if (
+                step.tool_name == "learning.context.get"
+                and not arguments
+                and context_data is not None
+            ):
+                outputs[step.step_id] = context_data
+                executed += 1
+                index += 1
+                public_steps.append(
+                    PublicToolStep(
+                        tool_name=step.tool_name,
+                        status="SUCCEEDED",
+                        summary=f"复用已加载上下文（计划步骤 {step.step_id}）",
+                    )
+                )
+                continue
+            try:
+                invocation = await gateway.invoke(
+                    step.tool_name,
+                    arguments,
+                    idempotency_key=idempotency_key,
+                )
+            except (DuplicateToolCallError, ToolBudgetExceededError):
+                return (
+                    {
+                        "intent": AssistantIntent.CLARIFY,
+                        "reply": "计划包含重复调用或超出本轮预算的步骤，请拆成更具体的单个操作。",
+                        "tool_steps": public_steps,
+                        "pending_action": None,
+                        "ui_actions": ui_actions,
+                    },
+                    None,
+                )
+            outputs[step.step_id] = invocation.data
+            executed += 1
+            index += 1
+            public_steps.append(
+                PublicToolStep(
+                    tool_name=step.tool_name,
+                    status=(
+                        invocation.action.status
+                        if invocation.action is not None
+                        else "SUCCEEDED"
+                    ),
+                    summary=f"已执行计划步骤 {step.step_id}",
+                )
+            )
+            if step.tool_name == "navigation.resolve":
+                action = self._plan_navigation_action(arguments)
+                if action is not None:
+                    ui_actions.append(action)
+            if invocation.action is not None:
+                pending_action = invocation.action
+                break
+
+        resume = None
+        remaining = len(plan.steps) - index
+        if pending_action is not None and remaining > 0:
+            resume = {
+                "plan": plan.model_dump(mode="json", by_alias=True),
+                "publicSteps": [
+                    item.model_dump(mode="json", by_alias=True) for item in public_steps
+                ],
+                "outputs": outputs,
+                "uiActions": [
+                    item.model_dump(mode="json", by_alias=True) for item in ui_actions
+                ],
+                "nextIndex": index,
+            }
+        if pending_action is None:
+            reply = f"已按计划完成 {executed} 个步骤。"
+        elif resume is not None:
+            reply = (
+                f"已完成 {executed} 步；请确认这一步后，我继续执行剩余 {remaining} 步。"
+            )
+        else:
+            reply = f"已完成 {executed} 步；其中一步需要你在操作卡片中确认后才会执行。"
+        return (
+            {
+                "intent": self._plan_intent(plan),
+                "reply": reply,
+                "tool_steps": public_steps,
+                "pending_action": pending_action,
+                "ui_actions": ui_actions,
+            },
+            resume,
+        )
+
+    @staticmethod
+    def _plan_navigation_action(arguments: dict[str, Any]) -> UiAction | None:
+        """只把白名单 routeKey 和字符串参数转成界面动作。"""
+
+        route_key = arguments.get("routeKey")
+        if not isinstance(route_key, str) or route_key not in ALLOWED_UI_ROUTE_KEYS:
+            return None
+        raw_params = arguments.get("params")
+        params = (
+            {str(key): value for key, value in raw_params.items() if isinstance(value, str)}
+            if isinstance(raw_params, dict)
+            else {}
+        )
+        try:
+            return UiAction(
+                route_key=route_key,
+                params=params,
+                reason="按计划打开目标页面",
+            )
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _resolve_plan_arguments(arguments: Any, outputs: dict[str, Any]) -> Any:
+        """把 ``$sN.field`` 引用替换为前序步骤的真实输出值。"""
+
+        if isinstance(arguments, dict):
+            return {
+                key: UnifiedAgentSupervisor._resolve_plan_arguments(value, outputs)
+                for key, value in arguments.items()
+            }
+        if isinstance(arguments, list):
+            return [
+                UnifiedAgentSupervisor._resolve_plan_arguments(value, outputs)
+                for value in arguments
+            ]
+        if isinstance(arguments, str) and arguments.startswith("$s"):
+            match = PLAN_REFERENCE_PATTERN.match(arguments)
+            if match is None:
+                raise ValueError("计划参数包含非法引用")
+            source_id = f"s{int(match.group('step'))}"
+            if source_id not in outputs:
+                raise ValueError("计划参数引用了尚未执行的步骤")
+            resolved: Any = outputs[source_id]
+            for part in match.group("field").split("."):
+                if not isinstance(resolved, dict) or part not in resolved:
+                    raise ValueError("计划参数引用了未声明的输出字段")
+                resolved = resolved[part]
+            return resolved
+        return arguments
+
+    @staticmethod
+    def _plan_intent(plan: AssistantPlan) -> AssistantIntent:
+        return {
+            PlanIntent.LEARNING_QUERY: AssistantIntent.NAVIGATION,
+            PlanIntent.ROADMAP_NAVIGATE: AssistantIntent.NAVIGATION,
+            PlanIntent.PLAN_ADJUSTMENT: AssistantIntent.PLAN,
+            PlanIntent.QUIZ_PRACTICE: AssistantIntent.TEACHING,
+            PlanIntent.CODE_DEVELOPMENT: AssistantIntent.DEVELOPER,
+            PlanIntent.GENERAL_CHAT: AssistantIntent.KNOWLEDGE,
+            PlanIntent.CLARIFY: AssistantIntent.CLARIFY,
+        }[plan.intent]
 
     @staticmethod
     def _next_roadmap_node(context: Any) -> dict[str, Any] | None:

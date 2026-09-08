@@ -1,12 +1,46 @@
 """统一 Agent 与 Java 工具网关之间的稳定数据契约。"""
 
+import re
 from enum import StrEnum
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.knowledge.models import KnowledgeCitation
 from app.schemas.learning import JavaContractModel
+
+#: `docs/agent-native-contract.md` v2 冻结的界面动作白名单。
+ALLOWED_UI_ROUTE_KEYS = frozenset(
+    {
+        "DASHBOARD",
+        "ASSISTANT_HEALTH",
+        "ROADMAP",
+        "ROADMAP_STAGE",
+        "ROADMAP_MODULE",
+        "ROADMAP_NODE",
+        "LEARNING_GOALS",
+        "LEARNING_PLANS",
+        "LEARNING_PLAN",
+        "TODAY",
+        "MATERIALS",
+        "MATERIAL_DETAIL",
+        "QUIZ",
+        "QUIZ_ATTEMPT",
+        "WRONG_QUESTIONS",
+        "MASTERY",
+        "KNOWLEDGE",
+        "PLAN_ASSISTANT",
+        "TASK_ASSISTANT",
+        "NOTIFICATIONS",
+        "AGENT_ACTIVITY",
+        "LEARNING_SETTINGS",
+        "AI_SETTINGS",
+        "WORKSPACE_ARTIFACTS",
+    }
+)
+
+#: 界面动作参数只允许安全业务标识符，拒绝任意路径、选择器和脚本。
+UI_PARAM_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 
 class ToolEffect(StrEnum):
@@ -32,6 +66,12 @@ class ToolDescriptor(JavaContractModel):
     idempotency_required: bool = False
     input_schema: dict[str, Any]
     output_schema: dict[str, Any]
+
+    @property
+    def is_web_search(self) -> bool:
+        """联网搜索工具是唯一允许消耗网络预算的类别。"""
+
+        return self.name == "materials.web.search" or self.name.endswith(".web.search")
 
 
 class PendingToolAction(JavaContractModel):
@@ -80,6 +120,25 @@ class UiAction(JavaContractModel):
     route_key: str
     params: dict[str, str] = Field(default_factory=dict)
     reason: str
+
+    @field_validator("route_key")
+    @classmethod
+    def _validate_route_key(cls, value: str) -> str:
+        """只允许契约冻结的 routeKey；模型不能发明新页面。"""
+
+        if value not in ALLOWED_UI_ROUTE_KEYS:
+            raise ValueError(f"未注册的界面路由: {value}")
+        return value
+
+    @field_validator("params")
+    @classmethod
+    def _validate_params(cls, value: dict[str, str]) -> dict[str, str]:
+        """参数只能是安全业务标识符，拒绝路径、选择器和任意文本。"""
+
+        for item in value.values():
+            if not isinstance(item, str) or not UI_PARAM_VALUE_PATTERN.match(item):
+                raise ValueError("界面动作参数包含非法值")
+        return value
 
 
 class PublicToolStep(JavaContractModel):
