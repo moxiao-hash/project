@@ -1,4 +1,4 @@
-import { http, TOKEN_STORAGE_KEY, TOKEN_EXPIRES_KEY } from '@/services/http'
+import { handleUnauthorized, http, TOKEN_STORAGE_KEY } from '@/services/http'
 import type {
   AssistantConversation,
   AssistantEvent,
@@ -9,6 +9,7 @@ import type {
   AutomationRule,
   AutomationRuleType,
   AutomationSettings,
+  EventStreamStatus,
   SendAssistantMessage,
 } from '@/types/assistant'
 
@@ -17,9 +18,26 @@ export type {
   AssistantEventType,
   AssistantEventStreamController,
   AssistantEventStreamOptions,
+  EventStreamStatus,
 }
 
 const assistantRequest = { timeout: 120_000 } as const
+
+export const VALID_ASSISTANT_EVENT_TYPES: ReadonlySet<AssistantEventType> = new Set([
+  'HEARTBEAT',
+  'TURN_STARTED',
+  'CONTEXT_LOADED',
+  'PLAN_GENERATED',
+  'TOOL_STARTED',
+  'TOOL_SUCCEEDED',
+  'TOOL_FAILED',
+  'ACTION_PREVIEW',
+  'ASSISTANT_DELTA',
+  'UI_ACTION',
+  'TURN_COMPLETED',
+  'TURN_FAILED',
+  'TURN_CANCELLED',
+])
 
 export function subscribeAssistantEvents(
   conversationId: string,
@@ -32,8 +50,11 @@ export function subscribeAssistantEvents(
     onHeartbeat,
     onError,
     onClose,
+    onStatusChange,
     autoReconnect = true,
     reconnectIntervalMs = 1000,
+    maxReconnectIntervalMs = 10_000,
+    maxReconnectAttempts = 10,
   } = options
 
   let currentLastSequence = typeof lastEventId === 'number'
@@ -42,6 +63,16 @@ export function subscribeAssistantEvents(
   let isClosed = false
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let activeAbortController: AbortController | null = null
+  let currentReconnectDelay = reconnectIntervalMs
+  let reconnectAttempts = 0
+  let status: EventStreamStatus = 'disconnected'
+
+  function setStatus(next: EventStreamStatus) {
+    if (status !== next) {
+      status = next
+      onStatusChange?.(next)
+    }
+  }
 
   const baseUrl = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080').replace(/\/+$/, '')
   const endpoint = `${baseUrl}/api/assistant/conversations/${encodeURIComponent(conversationId)}/events`
@@ -57,6 +88,8 @@ export function subscribeAssistantEvents(
         return
       }
     }
+
+    setStatus(reconnectAttempts > 0 ? 'reconnecting' : 'connecting')
 
     const headers: Record<string, string> = {
       Accept: 'text/event-stream',
@@ -77,8 +110,8 @@ export function subscribeAssistantEvents(
       })
 
       if (response.status === 401) {
-        sessionStorage.removeItem(TOKEN_STORAGE_KEY)
-        sessionStorage.removeItem(TOKEN_EXPIRES_KEY)
+        handleUnauthorized()
+        setStatus('disconnected')
         const err = new Error('登录已过期，请重新登录')
         onError?.(err)
         close()
@@ -92,6 +125,10 @@ export function subscribeAssistantEvents(
       if (!response.body) {
         throw new Error('响应体为空，无法建立流式连接')
       }
+
+      setStatus('connected')
+      reconnectAttempts = 0
+      currentReconnectDelay = reconnectIntervalMs
 
       const reader = response.body.getReader()
       const decoder = new TextDecoder('utf-8')
@@ -172,53 +209,100 @@ export function subscribeAssistantEvents(
       }
     }
 
-    const frameSeq = frameId !== null ? parseInt(frameId, 10) : 0
+    if (dataLines.length === 0) {
+      return
+    }
 
-    if (dataLines.length > 0) {
-      const rawData = dataLines.join('\n')
-      let parsed: any = {}
-      try {
-        parsed = JSON.parse(rawData)
-      } catch {
-        parsed = { raw: rawData }
-      }
+    const rawData = dataLines.join('\n')
+    let parsed: any
+    try {
+      parsed = JSON.parse(rawData)
+    } catch {
+      // 拒绝格式非法的 JSON 数据，绝不提前推进游标
+      return
+    }
 
-      const seq = typeof parsed.sequence === 'number'
-        ? parsed.sequence
-        : (!isNaN(frameSeq) && frameSeq > 0 ? frameSeq : 0)
+    if (!parsed || typeof parsed !== 'object') {
+      return
+    }
 
-      // 幂等去重：序列号小于等于已消费序号时直接丢弃
-      if (seq > 0 && seq <= currentLastSequence) {
+    // 事件类型白名单校验
+    const eventType = (eventName || parsed.type) as AssistantEventType
+    if (!eventType || !VALID_ASSISTANT_EVENT_TYPES.has(eventType)) {
+      return
+    }
+    // event 声明与 payload.type 必须一致
+    if (eventName && parsed.type && eventName !== parsed.type) {
+      return
+    }
+
+    // 会话归属一致性校验
+    if (parsed.conversationId && parsed.conversationId !== conversationId) {
+      return
+    }
+
+    // 序列号与 frame ID 一致性校验
+    let frameSeq: number | null = null
+    if (frameId !== null) {
+      frameSeq = parseInt(frameId, 10)
+      if (isNaN(frameSeq) || frameSeq <= 0) {
         return
       }
-      if (seq > 0) {
-        currentLastSequence = seq
-      } else if (!isNaN(frameSeq) && frameSeq > currentLastSequence) {
-        currentLastSequence = frameSeq
-      }
-
-      const eventType = (eventName || parsed.type || 'message') as AssistantEventType
-      const event: AssistantEvent = {
-        sequence: seq || currentLastSequence,
-        type: eventType,
-        conversationId: parsed.conversationId || conversationId,
-        payload: (parsed.payload !== undefined && typeof parsed.payload === 'object' && parsed.payload !== null)
-          ? parsed.payload
-          : parsed,
-      }
-      onEvent?.(event)
-    } else if (!isNaN(frameSeq) && frameSeq > currentLastSequence) {
-      currentLastSequence = frameSeq
     }
+    let payloadSeq: number | null = null
+    if (typeof parsed.sequence === 'number') {
+      const parsedNum = parsed.sequence as number
+      if (parsedNum <= 0) {
+        return
+      }
+      payloadSeq = parsedNum
+    }
+    if (frameSeq !== null && payloadSeq !== null && frameSeq !== payloadSeq) {
+      return
+    }
+
+    const seq: number | null = payloadSeq !== null ? payloadSeq : frameSeq
+    if (seq === null || seq <= 0) {
+      return
+    }
+
+    // 幂等去重：序列号小于等于已消费序号时直接丢弃
+    if (seq <= currentLastSequence) {
+      return
+    }
+
+    // 全部严格校验通过后，才正式推进序号游标
+    currentLastSequence = seq
+
+    const event: AssistantEvent = {
+      sequence: seq,
+      type: eventType,
+      conversationId: parsed.conversationId || conversationId,
+      payload: (parsed.payload !== undefined && typeof parsed.payload === 'object' && parsed.payload !== null)
+        ? parsed.payload
+        : parsed,
+    }
+    onEvent?.(event)
   }
 
   function scheduleReconnect() {
-    if (isClosed || !autoReconnect) return
+    if (isClosed || !autoReconnect) {
+      setStatus('disconnected')
+      return
+    }
+    if (reconnectAttempts >= maxReconnectAttempts) {
+      setStatus('disconnected')
+      onError?.(new Error(`超出最大重连尝试次数 (${maxReconnectAttempts})，连接已断开`))
+      return
+    }
+    reconnectAttempts++
+    setStatus('reconnecting')
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null
       void connect()
-    }, reconnectIntervalMs)
+    }, currentReconnectDelay)
+    currentReconnectDelay = Math.min(currentReconnectDelay * 1.5, maxReconnectIntervalMs)
   }
 
   function close() {
@@ -231,6 +315,7 @@ export function subscribeAssistantEvents(
       activeAbortController.abort()
       activeAbortController = null
     }
+    setStatus('disconnected')
     onClose?.()
   }
 
@@ -239,6 +324,7 @@ export function subscribeAssistantEvents(
   return {
     close,
     getLastEventId: () => currentLastSequence,
+    getStatus: () => status,
   }
 }
 

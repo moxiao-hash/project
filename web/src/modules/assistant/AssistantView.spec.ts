@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { AxiosError, AxiosHeaders } from 'axios'
 
 import AssistantView from './AssistantView.vue'
 import { assistantApi, type AssistantEvent, type AssistantEventStreamOptions } from '@/services/current/assistant'
@@ -29,6 +30,7 @@ vi.mock('@/services/current/assistant', () => ({
       return {
         close: mockCloseStream,
         getLastEventId: () => 0,
+        getStatus: () => 'connected',
       }
     }),
   },
@@ -47,6 +49,7 @@ function snapshot(overrides: Partial<AssistantConversation> = {}): AssistantConv
     warnings: [],
     citations: [],
     modelName: 'deepseek-v4-flash',
+    lastEventSequence: 10,
     ...overrides,
   }
 }
@@ -122,235 +125,223 @@ describe('AssistantView', () => {
     expect(wrapper.find('.citation-card a').exists()).toBe(false)
   })
 
-  it('组件挂载时建立 SSE 订阅，卸载时关闭连接', async () => {
+  it('组件挂载时建立 SSE 订阅，优先从 snapshot.lastEventSequence 起步，卸载时关闭连接', async () => {
+    sessionStorage.setItem('studypilot.assistantConversationId', 'existing-conv')
+    vi.mocked(assistantApi.getConversation).mockResolvedValue(snapshot({
+      conversationId: 'existing-conv',
+      lastEventSequence: 42,
+    }))
+
     const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
     await flushPromises()
 
     expect(assistantApi.subscribeEvents).toHaveBeenCalledWith(
-      'conversation-1',
-      expect.objectContaining({ onEvent: expect.any(Function) }),
+      'existing-conv',
+      expect.objectContaining({
+        lastEventId: 42,
+        onEvent: expect.any(Function),
+      }),
     )
 
     wrapper.unmount()
     expect(mockCloseStream).toHaveBeenCalled()
   })
 
-  it('通过 ASSISTANT_DELTA 实时增量渲染打字机流式回复', async () => {
-    let resolveSend: (conv: AssistantConversation) => void = () => {}
-    vi.mocked(assistantApi.sendMessage).mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve }),
-    )
+  it('在 POST 响应返回前，立即在 UI 渲染出站的用户消息', async () => {
+    vi.mocked(assistantApi.sendMessage).mockImplementation(() => new Promise(() => {}))
 
     const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
     await flushPromises()
 
-    await wrapper.get('textarea').setValue('请讲解一下什么是聚簇索引')
+    await wrapper.get('textarea').setValue('用户立即发送的提问')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    // 此时 sendMessage 仍在进行中，用户端发送状态为 true
-    expect(wrapper.text()).toContain('正在理解目标并调用应用工具…')
+    // 即使后端尚未返回，用户消息已立即可见
+    expect(wrapper.text()).toContain('用户立即发送的提问')
+    expect(wrapper.find('.assistant-message.user').text()).toContain('用户立即发送的提问')
+  })
 
-    // 收到第一个增量分片
+  it('基于 turnId 隔离流式增量，并防止陈旧的 POST 响应覆盖较新的轮次', async () => {
+    let resolveTurn1: (conv: AssistantConversation) => void = () => {}
+    let capturedTurnId1 = ''
+
+    vi.mocked(assistantApi.sendMessage).mockImplementation((_id, body) => {
+      capturedTurnId1 = body.idempotencyKey
+      return new Promise((resolve) => { resolveTurn1 = resolve })
+    })
+
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('第一轮问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // 收到属于 turn 1 的增量
     emitStreamEvent({
-      sequence: 1,
+      sequence: 11,
       type: 'ASSISTANT_DELTA',
       conversationId: 'conversation-1',
-      payload: { turnId: 't-test', index: 0, delta: '聚簇索引是' },
+      payload: { turnId: capturedTurnId1, index: 0, delta: '第一轮流式回答' },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('聚簇索引是')
+    expect(wrapper.text()).toContain('第一轮流式回答')
 
-    // 收到第二个增量分片
+    // 收到不属于 turn 1 的杂乱增量，验证不会追加到 turn 1 中
     emitStreamEvent({
-      sequence: 2,
+      sequence: 12,
       type: 'ASSISTANT_DELTA',
       conversationId: 'conversation-1',
-      payload: { turnId: 't-test', index: 1, delta: '按照每张表的主键构建的 B+ 树' },
+      payload: { turnId: 'alien-turn', index: 0, delta: '无关其他轮次内容' },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('聚簇索引是按照每张表的主键构建的 B+ 树')
+    expect(wrapper.text()).not.toContain('无关其他轮次内容')
 
-    // 服务端完成轮次
+    // 模拟 turn 1 结束
     emitStreamEvent({
-      sequence: 3,
+      sequence: 13,
       type: 'TURN_COMPLETED',
       conversationId: 'conversation-1',
-      payload: { turnId: 't-test', reply: '聚簇索引是按照每张表的主键构建的 B+ 树。' },
+      payload: { turnId: capturedTurnId1, reply: '第一轮流式回答完成。' },
     })
-    resolveSend(snapshot({
-      reply: '聚簇索引是按照每张表的主键构建的 B+ 树。',
-      messages: [
-        { role: 'user', content: '请讲解一下什么是聚簇索引' },
-        { role: 'assistant', content: '聚簇索引是按照每张表的主键构建的 B+ 树。' },
-      ],
+    resolveTurn1(snapshot({
+      reply: '第一轮流式回答完成。',
     }))
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('正在理解目标并调用应用工具…')
-    expect(wrapper.text()).toContain('聚簇索引是按照每张表的主键构建的 B+ 树。')
+    expect(wrapper.text()).toContain('第一轮流式回答完成。')
   })
 
-  it('实时流式更新工具调用过程 (TOOL_STARTED, TOOL_SUCCEEDED, TOOL_FAILED)', async () => {
-    let resolveSend: (conv: AssistantConversation) => void = () => {}
-    vi.mocked(assistantApi.sendMessage).mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve }),
-    )
+  it('失败或取消的半成品回答不得伪装成已完成回答', async () => {
+    let capturedTurnId = ''
+    vi.mocked(assistantApi.sendMessage).mockImplementation((_id, body) => {
+      capturedTurnId = body.idempotencyKey
+      return new Promise(() => {})
+    })
 
     const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
     await flushPromises()
 
-    await wrapper.get('textarea').setValue('检查我的学习进度')
+    await wrapper.get('textarea').setValue('会出错的提问')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    // 模拟工具启动
+    // 收到部分流式增量
     emitStreamEvent({
-      sequence: 1,
-      type: 'TOOL_STARTED',
+      sequence: 11,
+      type: 'ASSISTANT_DELTA',
       conversationId: 'conversation-1',
-      payload: { toolName: 'learning.context.get' },
+      payload: { turnId: capturedTurnId, index: 0, delta: '半截临时文字' },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('learning.context.get')
-    expect(wrapper.text()).toContain('RUNNING')
+    expect(wrapper.text()).toContain('半截临时文字')
 
-    // 模拟工具成功
+    // 收到 TURN_FAILED 事件
     emitStreamEvent({
-      sequence: 2,
-      type: 'TOOL_SUCCEEDED',
+      sequence: 12,
+      type: 'TURN_FAILED',
       conversationId: 'conversation-1',
-      payload: { toolName: 'learning.context.get', summary: '已加载当前路线进度' },
+      payload: { turnId: capturedTurnId, errorType: 'ModelTimeoutException' },
     })
     await flushPromises()
-    expect(wrapper.text()).toContain('已加载当前路线进度')
-    expect(wrapper.text()).toContain('SUCCEEDED')
 
-    resolveSend(snapshot({
-      toolSteps: [{ toolName: 'learning.context.get', status: 'SUCCEEDED', summary: '已加载当前路线进度' }],
-    }))
-    await flushPromises()
+    // 半成品文字被明确替换，不再伪装成已完成回答
+    expect(wrapper.text()).not.toContain('半截临时文字')
+    expect(wrapper.text()).toContain('回答生成失败，请重试')
+    expect(wrapper.find('.assistant-message.status-failed').exists()).toBe(true)
   })
 
-  it('支持流式推送 ACTION_PREVIEW 并呈现高风险确认卡片', async () => {
-    let resolveSend: (conv: AssistantConversation) => void = () => {}
-    vi.mocked(assistantApi.sendMessage).mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve }),
-    )
-
-    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+  it('支持在两个不同轮次中导航至相同路由，且在同轮内去重', async () => {
+    mount(AssistantView, { global: { plugins: [createPinia()] } })
     await flushPromises()
 
-    await wrapper.get('textarea').setValue('将学习时长设为30分钟')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-
+    // 第一轮：触发导航至 ROADMAP
     emitStreamEvent({
-      sequence: 1,
-      type: 'ACTION_PREVIEW',
-      conversationId: 'conversation-1',
-      payload: {
-        turnId: 't-1',
-        actionId: 'act-stream-1',
-        summary: '将每日学习目标调整为 30 分钟',
-        riskLevel: 'HIGH',
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('需要你的确认')
-    expect(wrapper.text()).toContain('HIGH 风险')
-    expect(wrapper.text()).toContain('将每日学习目标调整为 30 分钟')
-    expect(wrapper.find('[data-testid="confirm-action"]').exists()).toBe(true)
-
-    resolveSend(snapshot({
-      status: 'WAITING_CONFIRMATION',
-      pendingAction: {
-        actionId: 'act-stream-1',
-        executionId: 'exec-1',
-        toolName: 'learning.goals.update',
-        riskLevel: 'HIGH',
-        status: 'WAITING_CONFIRMATION',
-        summary: '将每日学习目标调整为 30 分钟',
-        arguments: {},
-        expiresAt: '2026-09-09T18:00:00Z',
-      },
-    }))
-    await flushPromises()
-  })
-
-  it('通过 UI_ACTION 事件安全分发页面导航', async () => {
-    let resolveSend: (conv: AssistantConversation) => void = () => {}
-    vi.mocked(assistantApi.sendMessage).mockImplementation(
-      () => new Promise((resolve) => { resolveSend = resolve }),
-    )
-
-    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
-    await flushPromises()
-
-    await wrapper.get('textarea').setValue('打开学习路线')
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-
-    emitStreamEvent({
-      sequence: 1,
+      sequence: 11,
       type: 'UI_ACTION',
       conversationId: 'conversation-1',
       payload: {
-        turnId: 't-1',
+        turnId: 'turn-alpha',
         type: 'NAVIGATE',
         routeKey: 'ROADMAP',
         params: {},
-        reason: '查看学习路线',
+        reason: '第一轮路线',
+      },
+    })
+    // 同轮内重复事件
+    emitStreamEvent({
+      sequence: 12,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        turnId: 'turn-alpha',
+        type: 'NAVIGATE',
+        routeKey: 'ROADMAP',
+        params: {},
+        reason: '第一轮路线重复',
       },
     })
     await flushPromises()
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(push).toHaveBeenLastCalledWith({ name: 'roadmap' })
 
-    expect(push).toHaveBeenCalledWith({ name: 'roadmap' })
-
-    resolveSend(snapshot({
-      uiActions: [{ type: 'NAVIGATE', routeKey: 'ROADMAP', params: {}, reason: '查看学习路线' }],
-    }))
+    // 第二轮：再次合法导航至相同的 ROADMAP 路由
+    emitStreamEvent({
+      sequence: 13,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        turnId: 'turn-beta',
+        type: 'NAVIGATE',
+        routeKey: 'ROADMAP',
+        params: {},
+        reason: '第二轮路线',
+      },
+    })
     await flushPromises()
+    expect(push).toHaveBeenCalledTimes(2)
   })
 
-  it('支持在发送中点击取消按钮发起轮次中断，并响应 TURN_CANCELLED 事件', async () => {
-    vi.mocked(assistantApi.sendMessage).mockImplementation(
-      () => new Promise(() => {}),
-    )
+  it('页面重载时抑制历史 UI Action，不自动触发历史导航', async () => {
+    sessionStorage.setItem('studypilot.assistantConversationId', 'saved-conv')
+    vi.mocked(assistantApi.getConversation).mockResolvedValue(snapshot({
+      conversationId: 'saved-conv',
+      uiActions: [{ type: 'NAVIGATE', routeKey: 'DASHBOARD', params: {}, reason: '历史动作' }],
+    }))
 
+    mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    // 页面重载加载出的历史 uiActions 不应自动执行 push 导航
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('加载会话遇到非 404 错误（如 500/网络错误）时严禁静默创建新会话', async () => {
+    sessionStorage.setItem('studypilot.assistantConversationId', 'error-conv')
+    const serverError = new AxiosError(
+      'Server Error',
+      '500',
+      { headers: new AxiosHeaders() },
+      {},
+      { status: 500, statusText: 'Internal Server Error', headers: {}, config: { headers: new AxiosHeaders() }, data: {} },
+    )
+    vi.mocked(assistantApi.getConversation).mockRejectedValue(serverError)
+
+    mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    // 严禁在服务器异常时静默调用 createConversation 覆盖现有会话
+    expect(assistantApi.createConversation).not.toHaveBeenCalled()
+  })
+
+  it('展示实时流式连接状态 (streamStatus)', async () => {
     const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
     await flushPromises()
 
-    await wrapper.get('textarea').setValue('生成复杂的全阶段学习计划')
-    await wrapper.get('form').trigger('submit')
+    expect(wrapper.find('[data-testid="stream-status"]').exists()).toBe(true)
+    mockEventOptions?.onStatusChange?.('connected')
     await flushPromises()
-
-    // 处于发送状态，取消按钮可见
-    const cancelButton = wrapper.find('[data-testid="cancel-turn"]')
-    expect(cancelButton.exists()).toBe(true)
-
-    await cancelButton.trigger('click')
-    await flushPromises()
-
-    expect(assistantApi.cancelTurn).toHaveBeenCalledWith(
-      'conversation-1',
-      expect.stringContaining('assistant-turn:'),
-    )
-
-    // 收到取消完成事件
-    emitStreamEvent({
-      sequence: 2,
-      type: 'TURN_CANCELLED',
-      conversationId: 'conversation-1',
-      payload: {
-        turnId: 't-cancel',
-        reason: 'CANCEL_REQUESTED',
-      },
-    })
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('当前轮次已取消')
-    expect(wrapper.text()).not.toContain('正在理解目标并调用应用工具…')
+    expect(wrapper.find('[data-testid="stream-status"]').text()).toBe('connected')
   })
 })

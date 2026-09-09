@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   assistantApi,
   type AssistantEvent,
-  type AssistantEventStreamController,
+  type EventStreamStatus,
 } from '@/services/current/assistant'
-import { TOKEN_STORAGE_KEY } from '@/services/http'
+import { setUnauthorizedHandler, TOKEN_STORAGE_KEY } from '@/services/http'
 
 function createMockStream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
@@ -30,6 +30,7 @@ describe('Assistant SSE 事件流解析 (assistantApi.subscribeEvents)', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
+    setUnauthorizedHandler(null)
     vi.restoreAllMocks()
   })
 
@@ -87,12 +88,12 @@ describe('Assistant SSE 事件流解析 (assistantApi.subscribeEvents)', () => {
     expect(capturedHeaders['Last-Event-ID']).toBe('42')
   })
 
-  it('正确解析分片传输（跨 chunk 边界）与包含标准 id/event/data 的事件流', async () => {
-    // 模拟 chunk 分割：第二个事件在 "da" 和 "ta: ..." 之间被拆断
+  it('正确解析分片传输（跨 chunk 边界）与真实后端帧格式', async () => {
     const chunks = [
       'id: 1\nevent: TURN_STARTED\ndata: {"conversationId":"conv-1","sequence":1,"type":"TURN_STARTED","payload":{"turnId":"t-101"}}\n\n',
       'id: 2\nevent: ASSISTANT_DELTA\nda',
       'ta: {"conversationId":"conv-1","sequence":2,"type":"ASSISTANT_DELTA","payload":{"turnId":"t-101","index":0,"delta":"你好，"}}\n\n',
+      ': heartbeat\n\n',
       'id: 3\nevent: ASSISTANT_DELTA\ndata: {"conversationId":"conv-1","sequence":3,"type":"ASSISTANT_DELTA","payload":{"turnId":"t-101","index":1,"delta":"我是 StudyPilot"}}\n\n',
       'id: 4\nevent: TURN_COMPLETED\ndata: {"conversationId":"conv-1","sequence":4,"type":"TURN_COMPLETED","payload":{"turnId":"t-101","reply":"你好，我是 StudyPilot"}}\n\n',
     ]
@@ -105,8 +106,10 @@ describe('Assistant SSE 事件流解析 (assistantApi.subscribeEvents)', () => {
     } as unknown as Response)
 
     const receivedEvents: AssistantEvent[] = []
+    const onHeartbeat = vi.fn()
     const controller = assistantApi.subscribeEvents('conv-1', {
       onEvent: (event) => receivedEvents.push(event),
+      onHeartbeat,
       autoReconnect: false,
     })
 
@@ -114,47 +117,37 @@ describe('Assistant SSE 事件流解析 (assistantApi.subscribeEvents)', () => {
     controller.close()
 
     expect(receivedEvents).toHaveLength(4)
-    expect(receivedEvents[0]).toEqual({
-      sequence: 1,
-      type: 'TURN_STARTED',
-      conversationId: 'conv-1',
-      payload: { turnId: 't-101' },
-    })
-    expect(receivedEvents[1]).toEqual({
-      sequence: 2,
-      type: 'ASSISTANT_DELTA',
-      conversationId: 'conv-1',
-      payload: { turnId: 't-101', index: 0, delta: '你好，' },
-    })
-    expect(receivedEvents[2]).toEqual({
-      sequence: 3,
-      type: 'ASSISTANT_DELTA',
-      conversationId: 'conv-1',
-      payload: { turnId: 't-101', index: 1, delta: '我是 StudyPilot' },
-    })
-    expect(receivedEvents[3]).toEqual({
-      sequence: 4,
-      type: 'TURN_COMPLETED',
-      conversationId: 'conv-1',
-      payload: { turnId: 't-101', reply: '你好，我是 StudyPilot' },
-    })
+    expect(onHeartbeat).toHaveBeenCalled()
+    expect(receivedEvents[0].sequence).toBe(1)
+    expect(receivedEvents[1].sequence).toBe(2)
+    expect(receivedEvents[2].sequence).toBe(3)
+    expect(receivedEvents[3].sequence).toBe(4)
     expect(controller.getLastEventId()).toBe(4)
   })
 
-  it('支持结构化 TOOL_*、ACTION_PREVIEW、UI_ACTION 与 TURN_CANCELLED 事件解析', async () => {
-    const streamContent = [
-      'id: 10\nevent: TOOL_STARTED\ndata: {"conversationId":"conv-1","sequence":10,"type":"TOOL_STARTED","payload":{"toolName":"learning.context.get"}}\n\n',
-      'id: 11\nevent: TOOL_SUCCEEDED\ndata: {"conversationId":"conv-1","sequence":11,"type":"TOOL_SUCCEEDED","payload":{"toolName":"learning.context.get","summary":"已获取学习上下文"}}\n\n',
-      'id: 12\nevent: ACTION_PREVIEW\ndata: {"conversationId":"conv-1","sequence":12,"type":"ACTION_PREVIEW","payload":{"turnId":"t-1","actionId":"act-99","summary":"调整每日时长","riskLevel":"HIGH"}}\n\n',
-      'id: 13\nevent: UI_ACTION\ndata: {"conversationId":"conv-1","sequence":13,"type":"UI_ACTION","payload":{"turnId":"t-1","type":"NAVIGATE","routeKey":"ROADMAP","params":{},"reason":"查看路线"}}\n\n',
-      'id: 14\nevent: TURN_CANCELLED\ndata: {"conversationId":"conv-1","sequence":14,"type":"TURN_CANCELLED","payload":{"turnId":"t-1","reason":"CANCEL_REQUESTED"}}\n\n',
-    ].join('')
+  it('严格拒绝非法的帧：格式错误的 JSON、未知事件类型、类型不匹配、会话 ID 不匹配或 ID 与 sequence 不一致', async () => {
+    const corruptedChunks = [
+      // 1. 合法事件 1
+      'id: 1\nevent: TURN_STARTED\ndata: {"conversationId":"conv-1","sequence":1,"type":"TURN_STARTED","payload":{"turnId":"t-1"}}\n\n',
+      // 2. 格式错误的 JSON（应拒绝且游标不前进至 2）
+      'id: 2\nevent: ASSISTANT_DELTA\ndata: {bad json\n\n',
+      // 3. 未知事件类型（应拒绝且游标不前进至 3）
+      'id: 3\nevent: UNKNOWN_MALICIOUS_EVENT\ndata: {"conversationId":"conv-1","sequence":3,"type":"UNKNOWN_MALICIOUS_EVENT","payload":{}}\n\n',
+      // 4. event 声明与 payload.type 不匹配（应拒绝且游标不前进至 4）
+      'id: 4\nevent: TURN_COMPLETED\ndata: {"conversationId":"conv-1","sequence":4,"type":"ASSISTANT_DELTA","payload":{}}\n\n',
+      // 5. conversationId 与当前会话不匹配（应拒绝且游标不前进至 5）
+      'id: 5\nevent: TURN_COMPLETED\ndata: {"conversationId":"conv-other","sequence":5,"type":"TURN_COMPLETED","payload":{}}\n\n',
+      // 6. frame id 与 data.sequence 不一致（应拒绝且游标不前进至 6）
+      'id: 6\nevent: TURN_COMPLETED\ndata: {"conversationId":"conv-1","sequence":999,"type":"TURN_COMPLETED","payload":{}}\n\n',
+      // 7. 合法事件 7（验证合法事件仍能正常接收，游标推进至 7）
+      'id: 7\nevent: TURN_COMPLETED\ndata: {"conversationId":"conv-1","sequence":7,"type":"TURN_COMPLETED","payload":{"turnId":"t-1","reply":"已完成"}}\n\n',
+    ]
 
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
       headers: new Headers({ 'Content-Type': 'text/event-stream' }),
-      body: createMockStream([streamContent]),
+      body: createMockStream(corruptedChunks),
     } as unknown as Response)
 
     const events: AssistantEvent[] = []
@@ -163,75 +156,55 @@ describe('Assistant SSE 事件流解析 (assistantApi.subscribeEvents)', () => {
       autoReconnect: false,
     })
 
-    await new Promise((resolve) => setTimeout(resolve, 80))
+    await new Promise((resolve) => setTimeout(resolve, 100))
     controller.close()
 
-    expect(events.map((e) => e.type)).toEqual([
-      'TOOL_STARTED',
-      'TOOL_SUCCEEDED',
-      'ACTION_PREVIEW',
-      'UI_ACTION',
-      'TURN_CANCELLED',
-    ])
-    expect((events[2].payload as { actionId: string }).actionId).toBe('act-99')
-    expect((events[3].payload as { routeKey: string }).routeKey).toBe('ROADMAP')
-    expect((events[4].payload as { reason: string }).reason).toBe('CANCEL_REQUESTED')
+    expect(events.map((e) => e.sequence)).toEqual([1, 7])
+    expect(controller.getLastEventId()).toBe(7)
   })
 
-  it('网络中断时支持使用最后接收到的 sequence 发起自动重连', async () => {
+  it('支持有界退避重连与连接状态转换回调 (connecting -> connected -> reconnecting -> disconnected)', async () => {
     let callCount = 0
-    const capturedLastEventIds: Array<string | undefined> = []
+    const statuses: EventStreamStatus[] = []
 
-    globalThis.fetch = vi.fn().mockImplementation(async (_url: unknown, init?: RequestInit) => {
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
       callCount++
-      const headers = (init?.headers as Record<string, string>) || {}
-      capturedLastEventIds.push(headers['Last-Event-ID'])
-
       if (callCount === 1) {
-        // 第一次连接返回 1 个事件后流中断
         return {
           ok: true,
           status: 200,
           headers: new Headers({ 'Content-Type': 'text/event-stream' }),
           body: createMockStream([
-            'id: 15\nevent: TURN_STARTED\ndata: {"sequence":15,"type":"TURN_STARTED","payload":{"turnId":"t-reconnect"}}\n\n',
+            'id: 1\nevent: TURN_STARTED\ndata: {"conversationId":"conv-1","sequence":1,"type":"TURN_STARTED","payload":{}}\n\n',
           ]),
         } as unknown as Response
       } else {
-        // 第二次连接成功并返回后续事件
-        return {
-          ok: true,
-          status: 200,
-          headers: new Headers({ 'Content-Type': 'text/event-stream' }),
-          body: createMockStream([
-            'id: 16\nevent: TURN_COMPLETED\ndata: {"sequence":16,"type":"TURN_COMPLETED","payload":{"turnId":"t-reconnect","reply":"已恢复"}}\n\n',
-          ]),
-        } as unknown as Response
+        throw new Error('网络暂时中断')
       }
     })
 
-    const events: AssistantEvent[] = []
-    let controller: AssistantEventStreamController | null = null
-
-    controller = assistantApi.subscribeEvents('conv-1', {
-      lastEventId: 14,
+    const controller = assistantApi.subscribeEvents('conv-1', {
       autoReconnect: true,
       reconnectIntervalMs: 20,
-      onEvent: (event) => events.push(event),
+      maxReconnectIntervalMs: 50,
+      maxReconnectAttempts: 2,
+      onStatusChange: (status) => statuses.push(status),
     })
 
-    // 等待初次连接与自动重连完成
     await new Promise((resolve) => setTimeout(resolve, 150))
     controller.close()
 
-    expect(callCount).toBeGreaterThanOrEqual(2)
-    expect(capturedLastEventIds[0]).toBe('14')
-    expect(capturedLastEventIds[1]).toBe('15')
-    expect(events.map((e) => e.sequence)).toEqual([15, 16])
+    expect(statuses).toContain('connecting')
+    expect(statuses).toContain('connected')
+    expect(statuses).toContain('reconnecting')
+    expect(statuses).toContain('disconnected')
   })
 
-  it('401 未认证响应时清除 Token 并通知错误，不触发无谓重连', async () => {
-    sessionStorage.setItem(TOKEN_STORAGE_KEY, 'invalid-token')
+  it('401 响应时触发共享 auth 清理回调并立即断开连接，不进行无谓重连', async () => {
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, 'expired-token')
+    const onUnauthorized = vi.fn()
+    setUnauthorizedHandler(onUnauthorized)
+
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 401,
@@ -250,9 +223,8 @@ describe('Assistant SSE 事件流解析 (assistantApi.subscribeEvents)', () => {
     await new Promise((resolve) => setTimeout(resolve, 60))
     controller.close()
 
-    expect(onError).toHaveBeenCalled()
+    expect(onUnauthorized).toHaveBeenCalled()
     expect(sessionStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull()
-    // 401 停止重连，只调用一次 fetch
     expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 })

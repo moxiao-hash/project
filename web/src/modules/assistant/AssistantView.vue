@@ -7,7 +7,10 @@
         <p>一句话打开章节、开始测验、整理错题，或查询你的学习状态。</p>
       </div>
       <div v-if="conversation" class="model-pill">
-        <span class="model-dot" />{{ conversation.modelName }}
+        <span class="model-dot" :class="streamStatus" />
+        <span class="stream-status-text" data-testid="stream-status">{{ streamStatus }}</span>
+        <span class="pill-divider">·</span>
+        <span>{{ conversation.modelName }}</span>
       </div>
     </section>
 
@@ -34,15 +37,15 @@
             </div>
           </div>
           <div
-            v-for="(message, index) in conversation.messages"
+            v-for="(msg, index) in conversation.messages"
             :key="index"
             class="assistant-message"
-            :class="message.role"
+            :class="[msg.role, msg.status ? `status-${msg.status}` : '']"
           >
-            <div class="message-label">{{ message.role === 'user' ? '你' : 'StudyPilot' }}</div>
+            <div class="message-label">{{ msg.role === 'user' ? '你' : 'StudyPilot' }}</div>
             <div class="message-content">
-              <AiMarkdownMessage v-if="message.role === 'assistant'" :content="message.content" />
-              <span v-else>{{ message.content }}</span>
+              <AiMarkdownMessage v-if="msg.role === 'assistant'" :content="msg.content" />
+              <span v-else>{{ msg.content }}</span>
             </div>
           </div>
 
@@ -123,11 +126,13 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { AxiosError } from 'axios'
 import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
 import {
   assistantApi,
   type AssistantEvent,
   type AssistantEventStreamController,
+  type EventStreamStatus,
 } from '@/services/current/assistant'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
@@ -145,6 +150,7 @@ const loading = ref(true)
 const sending = ref(false)
 const actionBusy = ref(false)
 const activeTurnId = ref<string | null>(null)
+const streamStatus = ref<EventStreamStatus>('disconnected')
 
 let streamController: AssistantEventStreamController | null = null
 const dispatchedActions = new Set<string>()
@@ -166,15 +172,19 @@ function safeCitationUrl(value?: string | null): string | null {
   }
 }
 
-function startSubscription(convId: string) {
+function startSubscription(convId: string, initialLastEventId = 0) {
   streamController?.close()
   streamController = assistantApi.subscribeEvents(convId, {
+    lastEventId: initialLastEventId,
     onEvent: handleStreamEvent,
+    onStatusChange: (status) => {
+      streamStatus.value = status
+    },
     onError: (err) => {
       console.warn('SSE stream error:', err)
     },
     onHeartbeat: () => {
-      // 保活响应
+      // 心跳响应
     },
   })
 }
@@ -184,12 +194,23 @@ async function handleStreamEvent(event: AssistantEvent) {
     return
   }
 
+  // 记录最新的服务端 sequence
+  if (event.sequence > 0) {
+    conversation.value.lastEventSequence = event.sequence
+    try {
+      sessionStorage.setItem(`studypilot.lastSeq.${event.conversationId}`, String(event.sequence))
+    } catch {
+      // 忽略存储受限异常
+    }
+  }
+
   const payload = (event.payload || {}) as Record<string, any>
+  const eventTurnId = payload.turnId as string | undefined
 
   switch (event.type) {
     case 'TURN_STARTED': {
-      if (payload.turnId) {
-        activeTurnId.value = payload.turnId
+      if (eventTurnId) {
+        activeTurnId.value = eventTurnId
         sending.value = true
       }
       break
@@ -305,70 +326,137 @@ async function handleStreamEvent(event: AssistantEvent) {
       if (!exists) {
         conversation.value.uiActions.push(uiAction)
       }
-      await safeDispatchUiAction(uiAction)
+      await safeDispatchUiAction(uiAction, eventTurnId)
       break
     }
     case 'ASSISTANT_DELTA': {
       const delta = payload.delta || ''
-      if (!delta) break
+      if (!eventTurnId || !delta) break
+      // 仅接收与当前活跃轮次一致的流式增量，严格隔离外来或陈旧轮次
+      if (activeTurnId.value && eventTurnId !== activeTurnId.value) {
+        break
+      }
 
       const msgs = conversation.value.messages
-      const lastMsg = msgs[msgs.length - 1]
-      if (lastMsg && lastMsg.role === 'assistant') {
-        lastMsg.content += delta
-      } else {
-        msgs.push({ role: 'assistant', content: delta })
+      let assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
+      if (!assistantMsg) {
+        assistantMsg = {
+          role: 'assistant',
+          content: '',
+          turnId: eventTurnId,
+          status: 'streaming',
+        }
+        msgs.push(assistantMsg)
       }
-      conversation.value.reply = msgs[msgs.length - 1].content
+      assistantMsg.content += delta
+      conversation.value.reply = assistantMsg.content
       break
     }
     case 'TURN_COMPLETED': {
-      if (payload.reply) {
+      if (eventTurnId) {
         const msgs = conversation.value.messages
-        const lastMsg = msgs[msgs.length - 1]
-        if (lastMsg && lastMsg.role === 'assistant') {
-          lastMsg.content = payload.reply
-        } else {
-          msgs.push({ role: 'assistant', content: payload.reply })
+        const assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
+        if (assistantMsg) {
+          if (payload.reply) {
+            assistantMsg.content = payload.reply
+          }
+          assistantMsg.status = 'completed'
+          conversation.value.reply = assistantMsg.content
         }
-        conversation.value.reply = payload.reply
       }
       if (payload.actionStatus === 'REJECTED' || payload.actionStatus === 'SUCCEEDED') {
         conversation.value.pendingAction = null
       }
-      sending.value = false
-      activeTurnId.value = null
+      if (activeTurnId.value === eventTurnId) {
+        sending.value = false
+        activeTurnId.value = null
+      }
       break
     }
     case 'TURN_FAILED': {
-      sending.value = false
-      activeTurnId.value = null
-      const errorMsg = payload.errorType ? `轮次执行异常 (${payload.errorType})` : '轮次执行失败'
-      if (!conversation.value.warnings.includes(errorMsg)) {
-        conversation.value.warnings.push(errorMsg)
-      }
+      handleTurnFailure(eventTurnId, payload.errorType)
       break
     }
     case 'TURN_CANCELLED': {
-      sending.value = false
-      activeTurnId.value = null
-      const cancelMsg = '当前轮次已取消。'
-      if (!conversation.value.warnings.includes(cancelMsg)) {
-        conversation.value.warnings.push(cancelMsg)
-      }
+      handleTurnCancellation(eventTurnId, payload.reason)
       break
     }
+  }
+}
+
+function handleTurnFailure(turnId?: string, errorType?: string) {
+  if (turnId) {
+    const msgs = conversation.value?.messages
+    const assistantMsg = msgs?.find((m) => m.role === 'assistant' && m.turnId === turnId)
+    if (assistantMsg) {
+      // 严禁将失败的半成品增量视为已完成回答，替换为明确失败提示
+      assistantMsg.status = 'failed'
+      assistantMsg.content = '（回答生成失败，请重试）'
+    }
+  }
+  if (activeTurnId.value === turnId) {
+    sending.value = false
+    activeTurnId.value = null
+  }
+  const errorMsg = errorType ? `轮次执行异常 (${errorType})` : '轮次执行失败'
+  if (conversation.value && !conversation.value.warnings.includes(errorMsg)) {
+    conversation.value.warnings.push(errorMsg)
+  }
+}
+
+function handleTurnCancellation(turnId?: string, _reason?: string) {
+  if (turnId) {
+    const msgs = conversation.value?.messages
+    const assistantMsg = msgs?.find((m) => m.role === 'assistant' && m.turnId === turnId)
+    if (assistantMsg) {
+      assistantMsg.status = 'cancelled'
+      assistantMsg.content = '当前轮次已取消。'
+    }
+  }
+  if (activeTurnId.value === turnId) {
+    sending.value = false
+    activeTurnId.value = null
+  }
+  const cancelMsg = '当前轮次已取消。'
+  if (conversation.value && !conversation.value.warnings.includes(cancelMsg)) {
+    conversation.value.warnings.push(cancelMsg)
   }
 }
 
 onMounted(async () => {
   try {
     const saved = sessionStorage.getItem(STORAGE_KEY)
-    conversation.value = saved
-      ? await assistantApi.getConversation(saved).catch(() => assistantApi.createConversation())
-      : await assistantApi.createConversation()
+    if (saved) {
+      try {
+        conversation.value = await assistantApi.getConversation(saved)
+      } catch (err: unknown) {
+        // 仅在 404（会话不存在/已过期）时创建新会话，其他网络/服务端错误严禁静默覆盖
+        if (err instanceof AxiosError && err.response?.status === 404) {
+          conversation.value = await assistantApi.createConversation()
+        } else {
+          throw err
+        }
+      }
+    } else {
+      conversation.value = await assistantApi.createConversation()
+    }
     sessionStorage.setItem(STORAGE_KEY, conversation.value.conversationId)
-    startSubscription(conversation.value.conversationId)
+
+    // 抑制历史动作重放：初始化时将快照中已有的 uiActions 标记为历史动作，避免重载时重复导航
+    for (const action of conversation.value.uiActions) {
+      dispatchedActions.add(`historical:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`)
+    }
+
+    // 协调起点游标：优先使用快照中的 lastEventSequence，防止从 0 重放历史事件
+    let startCursor = conversation.value.lastEventSequence ?? 0
+    if (!startCursor) {
+      const stored = sessionStorage.getItem(`studypilot.lastSeq.${conversation.value.conversationId}`)
+      if (stored) {
+        startCursor = parseInt(stored, 10) || 0
+      }
+    }
+
+    startSubscription(conversation.value.conversationId, startCursor)
   } catch (error) {
     toast.error(describeError(error))
   } finally {
@@ -394,6 +482,21 @@ async function send() {
   const turnId = `assistant-turn:${crypto.randomUUID()}`
   activeTurnId.value = turnId
 
+  // 1. 立即展示出站用户消息，不等 POST 响应
+  conversation.value.messages.push({
+    role: 'user',
+    content: outgoing,
+    turnId,
+  })
+
+  // 2. 准备该 turnId 的助手回复槽位
+  conversation.value.messages.push({
+    role: 'assistant',
+    content: '',
+    turnId,
+    status: 'streaming',
+  })
+
   try {
     const result = await assistantApi.sendMessage(conversation.value.conversationId, {
       message: outgoing,
@@ -406,36 +509,61 @@ async function send() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai',
       },
     })
-    conversation.value = result
-    await executeUiActions()
+
+    // 防陈旧覆盖：若该轮次仍是活跃轮次，安全合并服务端结果
+    if (activeTurnId.value === turnId || !activeTurnId.value) {
+      mergeTurnResult(turnId, result)
+      await executeUiActions(turnId)
+    }
   } catch (error) {
-    if (activeTurnId.value !== null) {
+    if (activeTurnId.value === turnId) {
+      handleTurnFailure(turnId, describeError(error))
       toast.error(describeError(error))
     }
   } finally {
-    sending.value = false
-    activeTurnId.value = null
+    if (activeTurnId.value === turnId) {
+      sending.value = false
+      activeTurnId.value = null
+    }
+  }
+}
+
+function mergeTurnResult(turnId: string, result: AssistantConversation) {
+  if (!conversation.value) return
+  conversation.value.status = result.status
+  conversation.value.pendingAction = result.pendingAction
+  conversation.value.uiActions = result.uiActions
+  conversation.value.warnings = result.warnings
+  conversation.value.citations = result.citations
+  conversation.value.modelName = result.modelName
+  conversation.value.toolSteps = result.toolSteps
+  conversation.value.lastEventSequence = result.lastEventSequence ?? conversation.value.lastEventSequence
+
+  const assistantMsg = conversation.value.messages.find(
+    (m) => m.role === 'assistant' && m.turnId === turnId,
+  )
+  if (assistantMsg) {
+    if (assistantMsg.status !== 'failed' && assistantMsg.status !== 'cancelled') {
+      assistantMsg.content = result.reply || assistantMsg.content
+      assistantMsg.status = 'completed'
+    }
   }
 }
 
 async function cancelCurrentTurn() {
   if (!conversation.value || !activeTurnId.value) return
   const turnId = activeTurnId.value
-  activeTurnId.value = null
-  sending.value = false
+  handleTurnCancellation(turnId)
   try {
     await assistantApi.cancelTurn(conversation.value.conversationId, turnId)
-    const cancelMsg = '当前轮次已取消。'
-    if (!conversation.value.warnings.includes(cancelMsg)) {
-      conversation.value.warnings.push(cancelMsg)
-    }
   } catch (error) {
     toast.error(describeError(error))
   }
 }
 
-async function safeDispatchUiAction(action: AssistantUiAction) {
-  const key = `${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
+async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) {
+  // 基于 turnId + routeKey + params 联合去重，既防止同轮内重复触发，又支持不同新轮次访问同一路由
+  const key = `${turnId || 'global'}:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
   if (dispatchedActions.has(key)) return
   dispatchedActions.add(key)
   try {
@@ -445,10 +573,10 @@ async function safeDispatchUiAction(action: AssistantUiAction) {
   }
 }
 
-async function executeUiActions() {
+async function executeUiActions(turnId?: string) {
   if (!conversation.value) return
   for (const action of conversation.value.uiActions) {
-    await safeDispatchUiAction(action)
+    await safeDispatchUiAction(action, turnId)
   }
 }
 
@@ -486,8 +614,13 @@ async function rejectAction() {
 .eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 800; letter-spacing: .16em; }
 .assistant-hero h1 { margin-top: 8px; font-size: clamp(30px, 4vw, 48px); letter-spacing: -.04em; }
 .assistant-hero p { margin: 8px 0 0; color: var(--color-text-secondary); font-size: 15px; }
-.model-pill { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 12px; }
-.model-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-success); box-shadow: 0 0 0 4px var(--color-success-soft); }
+.model-pill { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: #fff; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 12px; }
+.model-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-secondary); }
+.model-dot.connected { background: var(--color-success); box-shadow: 0 0 0 4px var(--color-success-soft); }
+.model-dot.connecting, .model-dot.reconnecting { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, .15); }
+.model-dot.disconnected { background: #ef4444; }
+.stream-status-text { text-transform: lowercase; font-family: 'SF Mono', monospace; font-size: 11px; }
+.pill-divider { color: var(--color-border); }
 .citation-panel { margin: 0 20px 16px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-bg); }
 .citation-card + .citation-card { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .citation-card small { display: block; margin-top: 3px; color: var(--color-text-secondary); }
@@ -512,6 +645,8 @@ async function rejectAction() {
 .assistant-message.user .message-label { text-align: right; }
 .message-content { padding: 13px 16px; border-radius: 14px; background: #f1f3f8; }
 .assistant-message.user .message-content { background: var(--color-primary); color: #fff; }
+.assistant-message.status-failed .message-content { background: #fee2e2; color: #991b1b; }
+.assistant-message.status-cancelled .message-content { background: #f3f4f6; color: #6b7280; font-style: italic; }
 .working-row { display: flex; align-items: center; gap: 9px; color: var(--color-text-secondary); }
 .btn-cancel-turn {
   margin-left: 10px;

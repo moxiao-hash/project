@@ -8,6 +8,8 @@ export type AssistantStatus =
 export interface AssistantMessage {
   role: 'user' | 'assistant'
   content: string
+  turnId?: string
+  status?: 'streaming' | 'completed' | 'failed' | 'cancelled'
 }
 
 export interface AssistantToolStep {
@@ -54,7 +56,11 @@ export interface AssistantConversation {
     url?: string | null
   }>
   modelName: string
+  lastEventSequence?: number | null
+  activeTurnId?: string | null
 }
+
+export type EventStreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 
 export interface SendAssistantMessage {
   message: string
@@ -134,12 +140,15 @@ export interface AssistantEventStreamOptions {
   onHeartbeat?: () => void
   onError?: (error: unknown) => void
   onClose?: () => void
+  onStatusChange?: (status: EventStreamStatus) => void
   autoReconnect?: boolean
   reconnectIntervalMs?: number
+  maxReconnectIntervalMs?: number
   maxReconnectAttempts?: number
 }
 
 export interface AssistantEventStreamController {
   close: () => void
   getLastEventId: () => number
+  getStatus: () => EventStreamStatus
 }
