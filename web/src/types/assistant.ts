@@ -104,3 +104,42 @@ export interface AssistantHealth {
   averageLatencyMs: number
   pendingConfirmations: number
 }
+
+export type AssistantEventType =
+  | 'HEARTBEAT'
+  | 'TURN_STARTED'
+  | 'CONTEXT_LOADED'
+  | 'PLAN_GENERATED'
+  | 'TOOL_STARTED'
+  | 'TOOL_SUCCEEDED'
+  | 'TOOL_FAILED'
+  | 'ACTION_PREVIEW'
+  | 'ASSISTANT_DELTA'
+  | 'UI_ACTION'
+  | 'TURN_COMPLETED'
+  | 'TURN_FAILED'
+  | 'TURN_CANCELLED'
+
+export interface AssistantEvent<T = Record<string, unknown>> {
+  sequence: number
+  type: AssistantEventType
+  conversationId: string
+  payload: T
+}
+
+export interface AssistantEventStreamOptions {
+  lastEventId?: string | number | null
+  signal?: AbortSignal
+  onEvent?: (event: AssistantEvent) => void
+  onHeartbeat?: () => void
+  onError?: (error: unknown) => void
+  onClose?: () => void
+  autoReconnect?: boolean
+  reconnectIntervalMs?: number
+  maxReconnectAttempts?: number
+}
+
+export interface AssistantEventStreamController {
+  close: () => void
+  getLastEventId: () => number
+}

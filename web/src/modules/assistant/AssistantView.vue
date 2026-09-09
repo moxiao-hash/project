@@ -48,15 +48,31 @@
 
           <div v-if="sending" class="working-row">
             <span class="spinner" /> 正在理解目标并调用应用工具…
+            <button
+              v-if="activeTurnId"
+              type="button"
+              class="btn-cancel-turn"
+              data-testid="cancel-turn"
+              @click="cancelCurrentTurn"
+            >
+              取消
+            </button>
           </div>
         </div>
 
         <div v-if="conversation.toolSteps.length" class="process-panel">
           <div class="process-title">本轮执行过程</div>
           <div v-for="step in conversation.toolSteps" :key="step.toolName" class="process-step">
-            <span class="step-check">✓</span>
+            <span class="step-check" :class="{ 'is-running': step.status === 'RUNNING', 'is-failed': step.status === 'FAILED' }">
+              {{ step.status === 'SUCCEEDED' ? '✓' : step.status === 'RUNNING' ? '⋯' : '✗' }}
+            </span>
             <div><strong>{{ step.summary }}</strong><small>{{ step.toolName }}</small></div>
-            <span class="badge badge-success">{{ step.status }}</span>
+            <span
+              class="badge"
+              :class="step.status === 'SUCCEEDED' ? 'badge-success' : step.status === 'RUNNING' ? 'badge-warning' : 'badge-danger'"
+            >
+              {{ step.status }}
+            </span>
           </div>
         </div>
 
@@ -105,24 +121,33 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
-import { assistantApi } from '@/services/current/assistant'
+import {
+  assistantApi,
+  type AssistantEvent,
+  type AssistantEventStreamController,
+} from '@/services/current/assistant'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
-import type { AssistantConversation } from '@/types/assistant'
+import type { AssistantConversation, AssistantUiAction } from '@/types/assistant'
 import { dispatchUiAction } from './uiActionDispatcher'
 
 const STORAGE_KEY = 'studypilot.assistantConversationId'
 const router = useRouter()
 const route = useRoute()
 const toast = useToastStore()
+
 const conversation = ref<AssistantConversation | null>(null)
 const message = ref('')
 const loading = ref(true)
 const sending = ref(false)
 const actionBusy = ref(false)
+const activeTurnId = ref<string | null>(null)
+
+let streamController: AssistantEventStreamController | null = null
+const dispatchedActions = new Set<string>()
 
 const prompts = [
   { icon: '↗', title: '继续学习', text: '继续昨天没学完的章节' },
@@ -141,6 +166,201 @@ function safeCitationUrl(value?: string | null): string | null {
   }
 }
 
+function startSubscription(convId: string) {
+  streamController?.close()
+  streamController = assistantApi.subscribeEvents(convId, {
+    onEvent: handleStreamEvent,
+    onError: (err) => {
+      console.warn('SSE stream error:', err)
+    },
+    onHeartbeat: () => {
+      // 保活响应
+    },
+  })
+}
+
+async function handleStreamEvent(event: AssistantEvent) {
+  if (!conversation.value || conversation.value.conversationId !== event.conversationId) {
+    return
+  }
+
+  const payload = (event.payload || {}) as Record<string, any>
+
+  switch (event.type) {
+    case 'TURN_STARTED': {
+      if (payload.turnId) {
+        activeTurnId.value = payload.turnId
+        sending.value = true
+      }
+      break
+    }
+    case 'CONTEXT_LOADED': {
+      const toolName = payload.toolName || 'learning.context.get'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'SUCCEEDED'
+        existing.summary = '已加载学习上下文'
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'SUCCEEDED',
+          summary: '已加载学习上下文',
+        })
+      }
+      break
+    }
+    case 'PLAN_GENERATED': {
+      if (payload.intent) {
+        conversation.value.intent = payload.intent
+      }
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === 'planner.plan')
+      const summary = payload.summary || '已规划执行步骤'
+      if (existing) {
+        existing.status = 'SUCCEEDED'
+        existing.summary = summary
+      } else {
+        conversation.value.toolSteps.push({
+          toolName: 'planner.plan',
+          status: 'SUCCEEDED',
+          summary,
+        })
+      }
+      break
+    }
+    case 'TOOL_STARTED': {
+      const toolName = payload.toolName || 'unknown.tool'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'RUNNING'
+        existing.summary = `正在调用 ${toolName}…`
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'RUNNING',
+          summary: `正在调用 ${toolName}…`,
+        })
+      }
+      break
+    }
+    case 'TOOL_SUCCEEDED': {
+      const toolName = payload.toolName || 'unknown.tool'
+      const summary = payload.summary || '已完成调用'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'SUCCEEDED'
+        existing.summary = summary
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'SUCCEEDED',
+          summary,
+        })
+      }
+      break
+    }
+    case 'TOOL_FAILED': {
+      const toolName = payload.toolName || 'unknown.tool'
+      const summary = payload.error || '调用失败'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'FAILED'
+        existing.summary = summary
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'FAILED',
+          summary,
+        })
+      }
+      break
+    }
+    case 'ACTION_PREVIEW': {
+      if (payload.actionStatus === 'REJECTED' || payload.actionStatus === 'SUCCEEDED') {
+        conversation.value.pendingAction = null
+      } else if (payload.actionId) {
+        conversation.value.pendingAction = {
+          actionId: payload.actionId,
+          executionId: payload.executionId || payload.actionId,
+          toolName: payload.toolName || 'agent.action',
+          riskLevel: payload.riskLevel || 'HIGH',
+          status: payload.actionStatus || 'WAITING_CONFIRMATION',
+          summary: payload.summary || '需要操作确认',
+          arguments: payload.arguments || {},
+          expiresAt: payload.expiresAt || '',
+        }
+        conversation.value.status = 'WAITING_CONFIRMATION'
+      }
+      break
+    }
+    case 'UI_ACTION': {
+      const uiAction: AssistantUiAction = {
+        type: payload.type || 'NAVIGATE',
+        routeKey: payload.routeKey,
+        params: payload.params || {},
+        reason: payload.reason || '',
+      }
+      const exists = conversation.value.uiActions.some(
+        (a) => a.type === uiAction.type && a.routeKey === uiAction.routeKey && JSON.stringify(a.params) === JSON.stringify(uiAction.params),
+      )
+      if (!exists) {
+        conversation.value.uiActions.push(uiAction)
+      }
+      await safeDispatchUiAction(uiAction)
+      break
+    }
+    case 'ASSISTANT_DELTA': {
+      const delta = payload.delta || ''
+      if (!delta) break
+
+      const msgs = conversation.value.messages
+      const lastMsg = msgs[msgs.length - 1]
+      if (lastMsg && lastMsg.role === 'assistant') {
+        lastMsg.content += delta
+      } else {
+        msgs.push({ role: 'assistant', content: delta })
+      }
+      conversation.value.reply = msgs[msgs.length - 1].content
+      break
+    }
+    case 'TURN_COMPLETED': {
+      if (payload.reply) {
+        const msgs = conversation.value.messages
+        const lastMsg = msgs[msgs.length - 1]
+        if (lastMsg && lastMsg.role === 'assistant') {
+          lastMsg.content = payload.reply
+        } else {
+          msgs.push({ role: 'assistant', content: payload.reply })
+        }
+        conversation.value.reply = payload.reply
+      }
+      if (payload.actionStatus === 'REJECTED' || payload.actionStatus === 'SUCCEEDED') {
+        conversation.value.pendingAction = null
+      }
+      sending.value = false
+      activeTurnId.value = null
+      break
+    }
+    case 'TURN_FAILED': {
+      sending.value = false
+      activeTurnId.value = null
+      const errorMsg = payload.errorType ? `轮次执行异常 (${payload.errorType})` : '轮次执行失败'
+      if (!conversation.value.warnings.includes(errorMsg)) {
+        conversation.value.warnings.push(errorMsg)
+      }
+      break
+    }
+    case 'TURN_CANCELLED': {
+      sending.value = false
+      activeTurnId.value = null
+      const cancelMsg = '当前轮次已取消。'
+      if (!conversation.value.warnings.includes(cancelMsg)) {
+        conversation.value.warnings.push(cancelMsg)
+      }
+      break
+    }
+  }
+}
+
 onMounted(async () => {
   try {
     const saved = sessionStorage.getItem(STORAGE_KEY)
@@ -148,11 +368,17 @@ onMounted(async () => {
       ? await assistantApi.getConversation(saved).catch(() => assistantApi.createConversation())
       : await assistantApi.createConversation()
     sessionStorage.setItem(STORAGE_KEY, conversation.value.conversationId)
+    startSubscription(conversation.value.conversationId)
   } catch (error) {
     toast.error(describeError(error))
   } finally {
     loading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  streamController?.close()
+  streamController = null
 })
 
 function usePrompt(value: string) {
@@ -165,10 +391,13 @@ async function send() {
   const outgoing = message.value
   message.value = ''
   sending.value = true
+  const turnId = `assistant-turn:${crypto.randomUUID()}`
+  activeTurnId.value = turnId
+
   try {
-    conversation.value = await assistantApi.sendMessage(conversation.value.conversationId, {
+    const result = await assistantApi.sendMessage(conversation.value.conversationId, {
       message: outgoing,
-      idempotencyKey: `assistant-turn:${crypto.randomUUID()}`,
+      idempotencyKey: turnId,
       clientContext: {
         routeName: String(route.name ?? 'assistant'),
         routeParams: Object.fromEntries(
@@ -177,22 +406,49 @@ async function send() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai',
       },
     })
+    conversation.value = result
     await executeUiActions()
   } catch (error) {
-    toast.error(describeError(error))
+    if (activeTurnId.value !== null) {
+      toast.error(describeError(error))
+    }
   } finally {
     sending.value = false
+    activeTurnId.value = null
+  }
+}
+
+async function cancelCurrentTurn() {
+  if (!conversation.value || !activeTurnId.value) return
+  const turnId = activeTurnId.value
+  activeTurnId.value = null
+  sending.value = false
+  try {
+    await assistantApi.cancelTurn(conversation.value.conversationId, turnId)
+    const cancelMsg = '当前轮次已取消。'
+    if (!conversation.value.warnings.includes(cancelMsg)) {
+      conversation.value.warnings.push(cancelMsg)
+    }
+  } catch (error) {
+    toast.error(describeError(error))
+  }
+}
+
+async function safeDispatchUiAction(action: AssistantUiAction) {
+  const key = `${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
+  if (dispatchedActions.has(key)) return
+  dispatchedActions.add(key)
+  try {
+    await dispatchUiAction(action, router)
+  } catch {
+    toast.warning('自动打开页面失败，你仍可通过左侧菜单继续操作')
   }
 }
 
 async function executeUiActions() {
   if (!conversation.value) return
   for (const action of conversation.value.uiActions) {
-    try {
-      await dispatchUiAction(action, router)
-    } catch {
-      toast.warning('自动打开页面失败，你仍可通过左侧菜单继续操作')
-    }
+    await safeDispatchUiAction(action)
   }
 }
 
@@ -257,13 +513,30 @@ async function rejectAction() {
 .message-content { padding: 13px 16px; border-radius: 14px; background: #f1f3f8; }
 .assistant-message.user .message-content { background: var(--color-primary); color: #fff; }
 .working-row { display: flex; align-items: center; gap: 9px; color: var(--color-text-secondary); }
+.btn-cancel-turn {
+  margin-left: 10px;
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all .16s;
+}
+.btn-cancel-turn:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
 .process-panel { margin: 0 28px 18px; padding: 15px; background: #f8f9fc; border: 1px solid var(--color-border); border-radius: 12px; }
 .process-title { margin-bottom: 10px; font-size: 12px; color: var(--color-text-secondary); font-weight: 700; }
 .process-step { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
 .process-step div { min-width: 0; flex: 1; }
 .process-step strong, .process-step small { display: block; }
 .process-step small { color: var(--color-text-secondary); font-family: 'SF Mono', monospace; }
-.step-check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; }
+.step-check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; font-size: 12px; }
+.step-check.is-running { background: #fef3c7; color: #d97706; }
+.step-check.is-failed { background: #fee2e2; color: #ef4444; }
 .action-preview { margin: 0 28px 18px; padding: 18px; border: 1px solid #f2d299; border-radius: 12px; background: #fffbf3; }
 .action-heading { display: flex; justify-content: space-between; gap: 12px; font-weight: 750; }
 .action-preview p { color: #74521b; }
