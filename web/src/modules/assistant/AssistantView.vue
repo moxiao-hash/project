@@ -152,6 +152,10 @@ const actionBusy = ref(false)
 const activeTurnId = ref<string | null>(null)
 const streamStatus = ref<EventStreamStatus>('disconnected')
 
+let latestTurnGeneration = 0
+let activeGeneration = 0
+const terminalTurns = new Set<string>()
+
 let streamController: AssistantEventStreamController | null = null
 const dispatchedActions = new Set<string>()
 
@@ -332,36 +336,55 @@ async function handleStreamEvent(event: AssistantEvent) {
     case 'ASSISTANT_DELTA': {
       const delta = payload.delta || ''
       if (!eventTurnId || !delta) break
-      // 仅接收与当前活跃轮次一致的流式增量，严格隔离外来或陈旧轮次
+      // 终态隔离：已失败或取消的轮次绝不允许迟到的增量复活
+      if (terminalTurns.has(eventTurnId)) {
+        break
+      }
+      // 轮次隔离：若存在当前活跃轮次且非本轮增量，直接丢弃
       if (activeTurnId.value && eventTurnId !== activeTurnId.value) {
         break
       }
 
       const msgs = conversation.value.messages
       let assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
-      if (!assistantMsg) {
+      if (assistantMsg) {
+        if (assistantMsg.status === 'failed' || assistantMsg.status === 'cancelled') {
+          break
+        }
+        assistantMsg.content += delta
+      } else {
         assistantMsg = {
           role: 'assistant',
-          content: '',
+          content: delta,
           turnId: eventTurnId,
           status: 'streaming',
         }
         msgs.push(assistantMsg)
       }
-      assistantMsg.content += delta
       conversation.value.reply = assistantMsg.content
       break
     }
     case 'TURN_COMPLETED': {
       if (eventTurnId) {
+        terminalTurns.add(eventTurnId)
         const msgs = conversation.value.messages
-        const assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
+        let assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
         if (assistantMsg) {
           if (payload.reply) {
             assistantMsg.content = payload.reply
           }
           assistantMsg.status = 'completed'
           conversation.value.reply = assistantMsg.content
+        } else if (payload.reply) {
+          // 终态兜底：无预先槽位时（如刷新恰逢终态），恢复最终回复至消息流
+          assistantMsg = {
+            role: 'assistant',
+            content: payload.reply,
+            turnId: eventTurnId,
+            status: 'completed',
+          }
+          msgs.push(assistantMsg)
+          conversation.value.reply = payload.reply
         }
       }
       if (payload.actionStatus === 'REJECTED' || payload.actionStatus === 'SUCCEEDED') {
@@ -370,6 +393,7 @@ async function handleStreamEvent(event: AssistantEvent) {
       if (activeTurnId.value === eventTurnId) {
         sending.value = false
         activeTurnId.value = null
+        activeGeneration = 0
       }
       break
     }
@@ -386,6 +410,7 @@ async function handleStreamEvent(event: AssistantEvent) {
 
 function handleTurnFailure(turnId?: string, errorType?: string) {
   if (turnId) {
+    terminalTurns.add(turnId)
     const msgs = conversation.value?.messages
     const assistantMsg = msgs?.find((m) => m.role === 'assistant' && m.turnId === turnId)
     if (assistantMsg) {
@@ -397,6 +422,7 @@ function handleTurnFailure(turnId?: string, errorType?: string) {
   if (activeTurnId.value === turnId) {
     sending.value = false
     activeTurnId.value = null
+    activeGeneration = 0
   }
   const errorMsg = errorType ? `轮次执行异常 (${errorType})` : '轮次执行失败'
   if (conversation.value && !conversation.value.warnings.includes(errorMsg)) {
@@ -406,6 +432,7 @@ function handleTurnFailure(turnId?: string, errorType?: string) {
 
 function handleTurnCancellation(turnId?: string, _reason?: string) {
   if (turnId) {
+    terminalTurns.add(turnId)
     const msgs = conversation.value?.messages
     const assistantMsg = msgs?.find((m) => m.role === 'assistant' && m.turnId === turnId)
     if (assistantMsg) {
@@ -416,6 +443,7 @@ function handleTurnCancellation(turnId?: string, _reason?: string) {
   if (activeTurnId.value === turnId) {
     sending.value = false
     activeTurnId.value = null
+    activeGeneration = 0
   }
   const cancelMsg = '当前轮次已取消。'
   if (conversation.value && !conversation.value.warnings.includes(cancelMsg)) {
@@ -441,6 +469,46 @@ onMounted(async () => {
       conversation.value = await assistantApi.createConversation()
     }
     sessionStorage.setItem(STORAGE_KEY, conversation.value.conversationId)
+
+    // 1. 水合 activeTurn（在建立 SSE 订阅前完成水合恢复）
+    if (conversation.value.activeTurn) {
+      const { turnId, userMessage, assistantText } = conversation.value.activeTurn
+      activeTurnId.value = turnId
+      sending.value = true
+      activeGeneration = ++latestTurnGeneration
+
+      const hasUserMsg = conversation.value.messages.some(
+        (m) => m.role === 'user' && m.turnId === turnId,
+      )
+      if (!hasUserMsg && userMessage) {
+        conversation.value.messages.push({
+          role: 'user',
+          content: userMessage,
+          turnId,
+        })
+      }
+
+      let assistantMsg = conversation.value.messages.find(
+        (m) => m.role === 'assistant' && m.turnId === turnId,
+      )
+      if (!assistantMsg) {
+        assistantMsg = {
+          role: 'assistant',
+          content: assistantText || '',
+          turnId,
+          status: 'streaming',
+        }
+        conversation.value.messages.push(assistantMsg)
+      } else {
+        assistantMsg.content = assistantText || assistantMsg.content
+        assistantMsg.status = 'streaming'
+      }
+      conversation.value.reply = assistantMsg.content
+    } else if (conversation.value.activeTurnId) {
+      activeTurnId.value = conversation.value.activeTurnId
+      sending.value = true
+      activeGeneration = ++latestTurnGeneration
+    }
 
     // 抑制历史动作重放：初始化时将快照中已有的 uiActions 标记为历史动作，避免重载时重复导航
     for (const action of conversation.value.uiActions) {
@@ -480,7 +548,10 @@ async function send() {
   message.value = ''
   sending.value = true
   const turnId = `assistant-turn:${crypto.randomUUID()}`
+  const turnGeneration = ++latestTurnGeneration
+  activeGeneration = turnGeneration
   activeTurnId.value = turnId
+  terminalTurns.delete(turnId)
 
   // 1. 立即展示出站用户消息，不等 POST 响应
   conversation.value.messages.push({
@@ -510,20 +581,22 @@ async function send() {
       },
     })
 
-    // 防陈旧覆盖：若该轮次仍是活跃轮次，安全合并服务端结果
-    if (activeTurnId.value === turnId || !activeTurnId.value) {
+    // 防陈旧覆盖：严格校验单调代际一致性与终态归属！
+    // 若在 POST 期间已有较新轮次（activeGeneration !== turnGeneration）或轮次已被取消/完成，严禁覆盖！
+    if (activeGeneration === turnGeneration && activeTurnId.value === turnId && !terminalTurns.has(turnId)) {
       mergeTurnResult(turnId, result)
       await executeUiActions(turnId)
     }
   } catch (error) {
-    if (activeTurnId.value === turnId) {
+    if (activeGeneration === turnGeneration && activeTurnId.value === turnId && !terminalTurns.has(turnId)) {
       handleTurnFailure(turnId, describeError(error))
       toast.error(describeError(error))
     }
   } finally {
-    if (activeTurnId.value === turnId) {
+    if (activeGeneration === turnGeneration && activeTurnId.value === turnId) {
       sending.value = false
       activeTurnId.value = null
+      activeGeneration = 0
     }
   }
 }
@@ -553,6 +626,10 @@ function mergeTurnResult(turnId: string, result: AssistantConversation) {
 async function cancelCurrentTurn() {
   if (!conversation.value || !activeTurnId.value) return
   const turnId = activeTurnId.value
+  terminalTurns.add(turnId)
+  activeGeneration = 0
+  activeTurnId.value = null
+  sending.value = false
   handleTurnCancellation(turnId)
   try {
     await assistantApi.cancelTurn(conversation.value.conversationId, turnId)

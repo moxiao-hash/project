@@ -344,4 +344,184 @@ describe('AssistantView', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="stream-status"]').text()).toBe('connected')
   })
+
+  it('在建立 SSE 订阅前水合 snapshot.activeTurn，恢复出站消息、半成品槽位与发送中状态', async () => {
+    sessionStorage.setItem('studypilot.assistantConversationId', 'active-conv')
+    vi.mocked(assistantApi.getConversation).mockResolvedValue(snapshot({
+      conversationId: 'active-conv',
+      lastEventSequence: 20,
+      activeTurnId: 'turn-running-1',
+      activeTurn: {
+        turnId: 'turn-running-1',
+        userMessage: '正在进行中的复杂问题',
+        assistantText: '已生成的前半部分回答',
+        lastDeltaIndex: 3,
+      },
+    }))
+
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    // 断言用户消息与未完成的助手回复槽位被成功水合
+    expect(wrapper.text()).toContain('正在进行中的复杂问题')
+    expect(wrapper.text()).toContain('已生成的前半部分回答')
+    // 断言恢复为发送中状态
+    expect(wrapper.find('[data-testid="cancel-turn"]').exists()).toBe(true)
+    // 断言订阅从 lastEventSequence 20 起步
+    expect(assistantApi.subscribeEvents).toHaveBeenCalledWith(
+      'active-conv',
+      expect.objectContaining({ lastEventId: 20 }),
+    )
+
+    // 后续 SSE 增量到达，能够继续无缝追加
+    emitStreamEvent({
+      sequence: 21,
+      type: 'ASSISTANT_DELTA',
+      conversationId: 'active-conv',
+      payload: {
+        turnId: 'turn-running-1',
+        index: 4,
+        delta: '以及后半部分继续流式',
+      },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('已生成的前半部分回答以及后半部分继续流式')
+  })
+
+  it('陈旧 POST 竞态防御：滞后的 Turn A 响应在 Turn B 完成后返回，绝不可覆盖 Turn B 的 pendingAction、工具步骤或导航', async () => {
+    let resolveTurnA: (conv: AssistantConversation) => void = () => {}
+    let capturedTurnIdA = ''
+    let callCount = 0
+
+    vi.mocked(assistantApi.sendMessage).mockImplementation((_convId, body) => {
+      callCount++
+      if (callCount === 1) {
+        capturedTurnIdA = body.idempotencyKey
+        return new Promise((resolve) => { resolveTurnA = resolve })
+      } else {
+        return Promise.resolve(snapshot({
+          status: 'WAITING_CONFIRMATION',
+          pendingAction: {
+            actionId: 'action-b',
+            executionId: 'exec-b',
+            toolName: 'learning.goals.update',
+            riskLevel: 'HIGH',
+            status: 'WAITING_CONFIRMATION',
+            summary: 'Turn B 修改目标',
+            arguments: {},
+            expiresAt: '',
+          },
+          toolSteps: [{ toolName: 'goals.update', status: 'SUCCEEDED', summary: 'Turn B 工具步骤' }],
+          uiActions: [{ type: 'NAVIGATE', routeKey: 'LEARNING_GOALS', params: {}, reason: '查看目标' }],
+        }))
+      }
+    })
+
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    // 1. 发起 Turn A
+    await wrapper.get('textarea').setValue('提问 A')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // 2. Turn A 在流中被取消收尾，随后发起 Turn B 并完成
+    emitStreamEvent({
+      sequence: 21,
+      type: 'TURN_CANCELLED',
+      conversationId: 'conversation-1',
+      payload: { turnId: capturedTurnIdA, reason: 'CANCEL_REQUESTED' },
+    })
+    await flushPromises()
+
+    // 发起 Turn B
+    await wrapper.get('textarea').setValue('提问 B')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // 此时 Turn B 的状态已经生效
+    expect(wrapper.text()).toContain('Turn B 修改目标')
+    expect(wrapper.text()).toContain('Turn B 工具步骤')
+    expect(push).toHaveBeenLastCalledWith({ name: 'goals' })
+
+    // 3. 此时早先迟延的 Turn A POST 响应终于返回
+    resolveTurnA(snapshot({
+      pendingAction: {
+        actionId: 'stale-action-a',
+        executionId: 'exec-a',
+        toolName: 'stale.tool',
+        riskLevel: 'HIGH',
+        status: 'WAITING_CONFIRMATION',
+        summary: '陈旧的 Turn A 动作',
+        arguments: {},
+        expiresAt: '',
+      },
+      toolSteps: [{ toolName: 'stale.tool', status: 'SUCCEEDED', summary: '陈旧的步骤 A' }],
+      uiActions: [{ type: 'NAVIGATE', routeKey: 'DASHBOARD', params: {}, reason: '陈旧的导航' }],
+    }))
+    await flushPromises()
+
+    // 断言 Turn A 绝不能覆盖 Turn B 的状态！
+    expect(wrapper.text()).toContain('Turn B 修改目标')
+    expect(wrapper.text()).not.toContain('陈旧的 Turn A 动作')
+    expect(wrapper.text()).not.toContain('陈旧的步骤 A')
+    expect(push).not.toHaveBeenLastCalledWith({ name: 'dashboard' })
+  })
+
+  it('在无预先槽位时收到 TURN_COMPLETED（如刷新恰逢终态），能正确恢复最终回复至消息流', async () => {
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    // 直接收到未知槽位的 TURN_COMPLETED
+    emitStreamEvent({
+      sequence: 25,
+      type: 'TURN_COMPLETED',
+      conversationId: 'conversation-1',
+      payload: {
+        turnId: 'unslotted-turn',
+        reply: '在缺少前序槽位时依然恢复的最终回答。',
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('在缺少前序槽位时依然恢复的最终回答。')
+  })
+
+  it('轮次失败或取消后，迟到的 ASSISTANT_DELTA 绝不能复活或篡改已失败的内容', async () => {
+    let capturedTurnId = ''
+    vi.mocked(assistantApi.sendMessage).mockImplementation((_id, body) => {
+      capturedTurnId = body.idempotencyKey
+      return new Promise(() => {})
+    })
+
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('提问将失败')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // 轮次失败
+    emitStreamEvent({
+      sequence: 30,
+      type: 'TURN_FAILED',
+      conversationId: 'conversation-1',
+      payload: { turnId: capturedTurnId, errorType: 'TimeoutException' },
+    })
+    await flushPromises()
+    expect(wrapper.text()).toContain('回答生成失败，请重试')
+
+    // 迟到的 ASSISTANT_DELTA 到达
+    emitStreamEvent({
+      sequence: 31,
+      type: 'ASSISTANT_DELTA',
+      conversationId: 'conversation-1',
+      payload: { turnId: capturedTurnId, index: 99, delta: '迟到的恶意/僵尸增量' },
+    })
+    await flushPromises()
+
+    // 绝不能复活或包含该迟到增量
+    expect(wrapper.text()).not.toContain('迟到的恶意/僵尸增量')
+    expect(wrapper.text()).toContain('回答生成失败，请重试')
+  })
 })

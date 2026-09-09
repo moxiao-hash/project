@@ -1,26 +1,22 @@
-# Task 29 验证证据：前端持续流式（Vue 侧）接入与 Codex 审查闭环
+# Task 29 验证证据：前端持续流式（Vue 侧）接入与 Codex 二轮审查闭环
 
 - **执行 Agent**：ZCode (Gemini 3.8 Flash)
 - **测试等级**：`[UNIT_TEST]` / `[STATIC_VALIDATION]`
-- **执行时间**：2026-09-09 15:30:00 (Asia/Shanghai)
+- **执行时间**：2026-09-09 15:45:00 (Asia/Shanghai)
 - **关联分支**：`agent/zcode-task-29-sse-frontend`
 - **关联基础提交**：`da4adfd` (origin/main)
-- **交付状态**：**待 Codex 二轮验收**（已针对一轮审查全部 6 项问题完成 TDD 修正与回归测试，未碰触任何后端代码）
+- **交付状态**：**待 Codex 二轮验收**（已严格针对 Codex 二轮审查的 activeTurn 水合、单调请求代际防御、终态回复兜底与僵尸增量阻断完成 TDD 修正与回归测试）
 
 ---
 
-## 1. Codex 一轮审查意见修正清单
-
-依据 Codex 对提交 `19fafa3` 的审查要求，逐项完成 TDD 改造与回归防护：
+## 1. Codex 二轮审查意见修正清单
 
 | 审查条目 | 原始缺陷 | 修正与防护实现 |
 | :--- | :--- | :--- |
-| **1. 初始游标与历史动作** | `startSubscription` 从 0 启动重放导致历史 UI 动作重复触发 | 挂载时优先从 `snapshot.lastEventSequence` 或 `sessionStorage` 游标启动；全量历史中的 `uiActions` 标记为 `historical`，防止重载时误触发自动导航。 |
-| **2. Turn 隔离与即时出站** | `ASSISTANT_DELTA` 未校验 `turnId`，发送时出站用户消息直到 POST 返回才上屏 | 用户点击发送时，出站消息与助手流式占位槽立即上屏；`ASSISTANT_DELTA` 严格校验并隔离匹配 `activeTurnId`，防止异轮或陈旧流式数据串入；防陈旧 POST 响应覆盖较新轮次。 |
-| **3. 半成品回答清理** | 轮次失败或取消时，未完成的残片依然残留充当完成回答 | 接收 `TURN_FAILED` 时抛弃半成品文字并置为明确失败文案；接收 `TURN_CANCELLED` 时置为取消文案；状态分别更新为 `failed` 与 `cancelled`。 |
-| **4. UI Action 去重策略** | 原去重按路由键全局锁定，后续轮次无法再次访问同一路由 | 改为按 `turnId + action.type + routeKey + params` 复合键去重；同轮内重复事件拦截，两个不同独立新轮次均可正常导航至同一路由。 |
-| **5. 连接状态与退避重连** | 连接/心跳在 UI 上完全不可见，缺少退避上限 | 增加 `EventStreamStatus` (`connecting` / `connected` / `reconnecting` / `disconnected`)，在 UI 胶囊呈现；实现上限 10s、最大尝试 10 次的有界指数退避重连。 |
-| **6. 严格帧校验与 401 共享清理** | 未校验畸形 JSON、未知事件类型、类型与会话不符，401 仅清理 Storage | 帧校验严格检查类型白名单、JSON 合法性、`event` 与 `payload.type` 一致性、`conversationId` 匹配以及 `id` 与 `sequence` 一致性，全部通过才推进游标；401 统一调用共享 `handleUnauthorized` 回调；加载会话非 404 错误严禁静默覆盖新建会话。 |
+| **1. activeTurn 水合恢复** | `onMounted` 完全忽略了 `snapshot.activeTurn` 与 `activeTurnId`，刷新后丢失正在进行中的用户消息和部分助手回答 | 在建立 SSE 订阅前优先水合 `snapshot.activeTurn`（恢复用户消息、未完成助手消息槽位与 `status='streaming'`），同步恢复 `activeTurnId` 与 `sending=true`，确保后续增量无缝拼接。 |
+| **2. 单调请求代际防御 (Monotonic Generation)** | `activeTurnId === turnId \|\| !activeTurnId` 导致滞后的 Turn A 在 Turn B 完成后返回时覆盖 Turn B 的状态 | 引入严格单调请求代际计数器 `latestTurnGeneration` 与 `activeGeneration`，并维护终态轮次集合 `terminalTurns`。仅当 `activeGeneration === turnGeneration && activeTurnId === turnId && !terminalTurns.has(turnId)` 时才允许合并 POST 结果，滞后的 Turn A 绝无法篡改 Turn B 的 pendingAction、工具步骤或导航。 |
+| **3. 缺少预先槽位时的终态兜底** | 刷新恰逢 `TURN_COMPLETED` 到达时，若消息流缺少对应槽位则最终回答丢失 | `TURN_COMPLETED` 处理中加入兜底：若未找到已有助手槽位但 payload 携带 reply，立即为该 `eventTurnId` 创建完整的 completed 消息，防止回答丢失。 |
+| **4. 迟到增量（僵尸增量）彻底阻断** | 轮次失败或取消后，网络迟到的 `ASSISTANT_DELTA` 会再次追加并复活已失败内容 | 将失败/取消的轮次记入 `terminalTurns`；在 `ASSISTANT_DELTA` 接收前先检查 `terminalTurns.has(eventTurnId)` 与助手消息自身的 `failed/cancelled` 状态，彻底拦截迟到增量。 |
 
 ---
 
@@ -36,31 +32,41 @@
 
 ---
 
-## 3. 测试与验证事实 (GREEN Phase)
+## 3. TDD RED/GREEN 闭环证据
 
-### 3.1 单元与组件回归测试
-- **执行命令**：`cd web && npm test -- tests/assistant-sse.spec.ts src/modules/assistant/AssistantView.spec.ts`
-- **成功输出**：
+### 3.1 RED 阶段失败测试证据
+执行命令：`cd web && npm test -- src/modules/assistant/AssistantView.spec.ts`
+在未实现 activeTurn 水合与代际防御前，针对 Codex 审查提出的 4 个精确用例全部按预期失败：
 ```text
-✓ tests/assistant-sse.spec.ts (6 tests) 526ms
-✓ src/modules/assistant/AssistantView.spec.ts (11 tests) 65ms
-
-Test Files  2 passed (2)
-     Tests  17 passed (17)
+FAIL src/modules/assistant/AssistantView.spec.ts (15 tests | 4 failed)
+× 在建立 SSE 订阅前水合 snapshot.activeTurn，恢复出站消息、半成品槽位与发送中状态
+  → expected text to contain '正在进行中的复杂问题'
+× 陈旧 POST 竞态防御：滞后的 Turn A 响应在 Turn B 完成后返回，绝不可覆盖 Turn B 的 pendingAction、工具步骤或导航
+  → expected text to contain 'Turn B 修改目标'
+× 在无预先槽位时收到 TURN_COMPLETED（如刷新恰逢终态），能正确恢复最终回复至消息流
+  → expected text to contain '在缺少前序槽位时依然恢复的最终回答。'
+× 轮次失败或取消后，迟到的 ASSISTANT_DELTA 绝不能复活或篡改已失败的内容
+  → expected text not to contain '迟到的恶意/僵尸增量'
 ```
 
-### 3.2 前端全量测试套件
-- **执行命令**：`cd web && npm test -- --run`
-- **成功输出**：
+### 3.2 GREEN 阶段成功测试证据
+执行命令：`cd web && npm test -- src/modules/assistant/AssistantView.spec.ts`
+```text
+✓ src/modules/assistant/AssistantView.spec.ts (15 tests) 71ms
+Test Files  1 passed (1)
+     Tests  15 passed (15)
+```
+
+### 3.3 全量前端测试套件
+执行命令：`cd web && npm test -- --run`
 ```text
 Test Files  23 passed (23)
-     Tests  138 passed (138)
-  Duration  2.38s
+     Tests  142 passed (142)
+  Duration  1.87s
 ```
 
-### 3.3 静态类型检查与生产构建
-- **执行命令**：`cd web && npm run typecheck && npm run build`
-- **成功输出**：
+### 3.4 静态类型检查与生产构建
+执行命令：`cd web && npm run typecheck && npm run build`
 ```text
 > vue-tsc --noEmit
 > vue-tsc --noEmit && vite build
@@ -69,21 +75,18 @@ transforming...
 ✓ 264 modules transformed.
 rendering chunks...
 computing gzip size...
-✓ built in 894ms
+✓ built in 811ms
 ```
 
-### 3.4 代码格式与空白字符校验
-- **执行命令**：`git diff --check`
-- **校验结果**：无任何残余空白字符或格式告警，退出码为 0。
+### 3.5 代码格式与空白字符校验
+执行命令：`git diff --check`
+结果：无任何警告或输出，退出码为 0。
 
 ---
 
 ## 4. 变更文件清单
 
-- `修改`: `web/src/types/assistant.ts`（扩展 `EventStreamStatus`、`AssistantMessage.turnId/status`、`AssistantConversation.lastEventSequence/activeTurnId`）
-- `修改`: `web/src/services/http.ts`（导出共享 `handleUnauthorized()` 清理与认证回调通知）
-- `修改`: `web/src/services/current/assistant.ts`（严格帧校验白名单、有界退避重连、连接状态流转、调用共享 401 清理）
-- `修改`: `web/src/modules/assistant/AssistantView.vue`（即时出站渲染、Turn 作用域增量、半成品清理、复合去重导航、历史重载抑制、连接状态胶囊呈现）
-- `修改`: `web/tests/assistant-sse.spec.ts`（补充畸形 JSON 拒绝、未知事件拒绝、不匹配拒绝、状态转换与共享 401 回调测试）
-- `修改`: `web/src/modules/assistant/AssistantView.spec.ts`（扩充至 11 项用例，覆盖出站即时显示、跨轮次同路由导航、历史抑制、非 404 异常防御及状态指示）
-- `修改`: `docs/verification/task-29-frontend.md`（更新本验证文档）
+- `修改`: `web/src/types/assistant.ts`（新增 `AssistantActiveTurn` 契约定义与字段扩展）
+- `修改`: `web/src/modules/assistant/AssistantView.vue`（实现 activeTurn 水合、单调请求代际防御、终态回复兜底与僵尸增量拦截）
+- `修改`: `web/src/modules/assistant/AssistantView.spec.ts`（补充 4 项精确竞态与恢复边界测试，测试总数增至 15 项）
+- `修改`: `docs/verification/task-29-frontend.md`（更新二轮验证报告）

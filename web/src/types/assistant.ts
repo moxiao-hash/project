@@ -36,6 +36,13 @@ export interface AssistantUiAction {
   reason: string
 }
 
+export interface AssistantActiveTurn {
+  turnId: string
+  userMessage: string
+  assistantText: string
+  lastDeltaIndex: number
+}
+
 export interface AssistantConversation {
   conversationId: string
   status: AssistantStatus
@@ -58,6 +65,7 @@ export interface AssistantConversation {
   modelName: string
   lastEventSequence?: number | null
   activeTurnId?: string | null
+  activeTurn?: AssistantActiveTurn | null
 }
 
 export type EventStreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
