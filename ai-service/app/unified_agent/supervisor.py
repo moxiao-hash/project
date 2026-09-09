@@ -25,6 +25,7 @@ from app.unified_agent.event_stream import (
 )
 from app.unified_agent.models import (
     ALLOWED_UI_ROUTE_KEYS,
+    AssistantActiveTurn,
     AssistantConversationSnapshot,
     AssistantConversationStatus,
     AssistantEvent,
@@ -134,10 +135,56 @@ class UnifiedAgentSupervisor:
             payload=payload,
         )
         conversation.events.append(event)
+        self._advance_active_turn(conversation, event_type, payload)
         self._sync_stream_state(conversation)
         await self._save(conversation)
         self._events.publish(event)
         return event
+
+    @staticmethod
+    def _advance_active_turn(
+        conversation: _Conversation,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """按增量推进 ``activeTurn.assistantText``；必须在持久化之前调用。
+
+        ``lastEventSequence`` 与 ``assistantText`` 因此始终描述同一状态：
+        快照里的文本包含该序号及之前的全部增量，客户端从该序号之后续传即可。
+        """
+
+        if event_type != "ASSISTANT_DELTA":
+            return
+        active = conversation.snapshot.active_turn
+        if active is None:
+            return
+        delta = payload.get("delta")
+        index = payload.get("index")
+        conversation.snapshot.active_turn = active.model_copy(
+            update={
+                "assistant_text": active.assistant_text + (
+                    delta if isinstance(delta, str) else ""
+                ),
+                "last_delta_index": (
+                    index if isinstance(index, int) else active.last_delta_index
+                ),
+            }
+        )
+
+    @staticmethod
+    def _clear_active_turn(conversation: _Conversation) -> None:
+        """终态：清空进行中轮次状态，且必须先于终态事件持久化。"""
+
+        conversation.active_turn_id = None
+        conversation.snapshot.active_turn = None
+
+    @staticmethod
+    def _snapshot_copy(
+        snapshot: AssistantConversationSnapshot,
+    ) -> AssistantConversationSnapshot:
+        """返回深拷贝：调用方改写结果不得污染服务端状态。"""
+
+        return snapshot.model_copy(deep=True)
 
     @staticmethod
     def _sync_stream_state(conversation: _Conversation) -> None:
@@ -281,12 +328,14 @@ class UnifiedAgentSupervisor:
             ],
         )
         await self._save(self._conversations[conversation_id])
-        return snapshot
+        return self._snapshot_copy(snapshot)
 
     async def get_conversation(
         self, conversation_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
-        return (await self._require(conversation_id, owner_id)).snapshot
+        return self._snapshot_copy(
+            (await self._require(conversation_id, owner_id)).snapshot
+        )
 
     async def list_events(
         self,
@@ -295,7 +344,11 @@ class UnifiedAgentSupervisor:
         after_sequence: int = 0,
     ) -> list[AssistantEvent]:
         conversation = await self._require(conversation_id, owner_id)
-        return [event for event in conversation.events if event.sequence > after_sequence]
+        return [
+            event.model_copy(deep=True)
+            for event in conversation.events
+            if event.sequence > after_sequence
+        ]
 
     async def confirm_action(
         self, conversation_id: str, action_id: str, owner_id: str
@@ -305,12 +358,12 @@ class UnifiedAgentSupervisor:
             raise AssistantConversationBusyError("会话正在处理其他操作")
         async with conversation.lock:
             if action_id in conversation.action_results:
-                return conversation.action_results[action_id]
+                return self._snapshot_copy(conversation.action_results[action_id])
             result = await self._confirm_action(conversation_id, action_id, owner_id)
             if result.pending_action is None:
-                conversation.action_results[action_id] = result
+                conversation.action_results[action_id] = self._snapshot_copy(result)
                 await self._save(conversation)
-            return result
+            return self._snapshot_copy(result)
 
     async def _confirm_action(
         self, conversation_id: str, action_id: str, owner_id: str
@@ -371,7 +424,7 @@ class UnifiedAgentSupervisor:
             ),
             {"actionId": action_id, "actionStatus": confirmed.status},
         )
-        return snapshot
+        return self._snapshot_copy(conversation.snapshot)
 
     async def _resume_plan(
         self,
@@ -423,7 +476,7 @@ class UnifiedAgentSupervisor:
                     "resumeStatus": "INVALID",
                 },
             )
-            return snapshot
+            return self._snapshot_copy(conversation.snapshot)
 
         if start_index > 0 and confirmed.result is not None:
             confirmed_step = plan.steps[start_index - 1]
@@ -475,7 +528,7 @@ class UnifiedAgentSupervisor:
             ),
             {"actionId": action_id, "actionStatus": confirmed.status},
         )
-        return snapshot
+        return self._snapshot_copy(conversation.snapshot)
 
     async def reject_action(
         self, conversation_id: str, action_id: str, owner_id: str
@@ -485,11 +538,11 @@ class UnifiedAgentSupervisor:
             raise AssistantConversationBusyError("会话正在处理其他操作")
         async with conversation.lock:
             if action_id in conversation.action_results:
-                return conversation.action_results[action_id]
+                return self._snapshot_copy(conversation.action_results[action_id])
             result = await self._reject_action(conversation_id, action_id, owner_id)
-            conversation.action_results[action_id] = result
+            conversation.action_results[action_id] = self._snapshot_copy(result)
             await self._save(conversation)
-            return result
+            return self._snapshot_copy(result)
 
     async def _reject_action(
         self, conversation_id: str, action_id: str, owner_id: str
@@ -518,14 +571,14 @@ class UnifiedAgentSupervisor:
             "TURN_COMPLETED",
             {"actionId": action_id, "actionStatus": "REJECTED"},
         )
-        return snapshot
+        return self._snapshot_copy(conversation.snapshot)
 
     async def cancel_turn(
         self, conversation_id: str, turn_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
         conversation = await self._require(conversation_id, owner_id)
         if turn_id in conversation.turn_results:
-            return conversation.turn_results[turn_id]
+            return self._snapshot_copy(conversation.turn_results[turn_id])
         if conversation.active_turn_id != turn_id:
             raise AssistantConversationNotFoundError("正在执行的轮次不存在")
         conversation.cancel_requested_turn_id = turn_id
@@ -534,7 +587,7 @@ class UnifiedAgentSupervisor:
             "TURN_CANCELLED",
             {"turnId": turn_id, "reason": "CANCEL_REQUESTED"},
         )
-        return conversation.snapshot.model_copy(
+        return self._snapshot_copy(conversation.snapshot).model_copy(
             update={"reply": "已请求取消当前轮次，正在停止后续工具调用。"}
         )
 
@@ -549,20 +602,24 @@ class UnifiedAgentSupervisor:
         conversation = await self._require(conversation_id, owner_id)
         existing = conversation.turn_results.get(idempotency_key)
         if existing is not None:
-            return existing
+            return self._snapshot_copy(existing)
         if conversation.lock.locked():
             raise AssistantConversationBusyError("统一 Agent 正在处理上一条消息")
         async with conversation.lock:
             # Task 29：轮次开始立即推送，用户不必等整轮结束才看到反馈。
-            # active_turn_id 必须先于 TURN_STARTED 设置，快照才能如实反映"正在跑"。
+            # activeTurn 必须先于 TURN_STARTED 持久化，刷新才能还原用户消息。
             conversation.active_turn_id = idempotency_key
+            conversation.snapshot.active_turn = AssistantActiveTurn(
+                turn_id=idempotency_key,
+                user_message=message,
+            )
             await self._emit(
                 conversation, "TURN_STARTED", {"turnId": idempotency_key}
             )
             # 等待确认时只能走 Java 专用确认接口；“确认”等普通文本不会执行动作。
             reply_streamed = False
             if conversation.snapshot.pending_action is not None:
-                conversation.active_turn_id = None
+                self._clear_active_turn(conversation)
                 result = conversation.snapshot.model_copy(
                     update={
                         "status": AssistantConversationStatus.WAITING_CONFIRMATION,
@@ -607,7 +664,7 @@ class UnifiedAgentSupervisor:
                         intent="UNKNOWN", status="error",
                         duration_seconds=monotonic() - turn_started,
                     )
-                    conversation.active_turn_id = None
+                    self._clear_active_turn(conversation)
                     await self._emit(
                         conversation,
                         "TURN_FAILED",
@@ -635,15 +692,18 @@ class UnifiedAgentSupervisor:
                         }
                     )
                     conversation.snapshot = result
-                    conversation.turn_results[idempotency_key] = result
+                    conversation.turn_results[idempotency_key] = self._snapshot_copy(
+                        result
+                    )
                     # 取消请求先给出即时反馈；此处补发终态，保证流以取消事件收尾。
+                    self._clear_active_turn(conversation)
                     await self._emit(
                         conversation,
                         "TURN_CANCELLED",
                         {"turnId": idempotency_key, "reason": "TURN_ABORTED"},
                     )
                     await self._save(conversation)
-                    return result
+                    return self._snapshot_copy(conversation.snapshot)
                 pending_action = values.get("pending_action")
                 # 知识问答分支可能已实时推送真实模型增量，收尾时不得再切一次。
                 reply_streamed = bool(values.get("reply_streamed"))
@@ -678,14 +738,14 @@ class UnifiedAgentSupervisor:
                     model_name=self._model_name,
                 )
             conversation.snapshot = result
-            conversation.turn_results[idempotency_key] = result
+            conversation.turn_results[idempotency_key] = self._snapshot_copy(result)
             await self._emit_turn_tail(
                 conversation,
                 idempotency_key,
                 result,
                 reply_streamed=reply_streamed,
             )
-            return result
+            return self._snapshot_copy(conversation.snapshot)
 
     async def _emit_turn_tail(
         self,
@@ -698,7 +758,8 @@ class UnifiedAgentSupervisor:
         """轮次收尾事件：动作预览、界面动作、回复增量、终态。
 
         ``reply_streamed=True`` 表示增量已在生成过程中实时推送过（真实模型流），
-        此处不得再次分片，否则客户端会看到重复内容。
+        此处不得再次分片，否则客户端会看到重复内容。终态之前必须清空
+        ``activeTurn``，这样刷新后的客户端不会再看到一个已经结束的"进行中"轮次。
         """
 
         if snapshot.pending_action is not None:
@@ -718,6 +779,7 @@ class UnifiedAgentSupervisor:
             await self._emit(conversation, "UI_ACTION", payload)
         if not reply_streamed:
             await self._emit_reply_deltas(conversation, turn_id, snapshot.reply)
+        self._clear_active_turn(conversation)
         await self._emit(
             conversation,
             "TURN_COMPLETED",
@@ -733,12 +795,15 @@ class UnifiedAgentSupervisor:
                 owner_id=owner_id,
             )
             if payload is not None:
-                # 进程重启后不可能还有轮次在跑，清掉可能残留的 activeTurnId。
-                snapshot = AssistantConversationSnapshot.model_validate(
-                    payload["snapshot"]
-                ).model_copy(update={"active_turn_id": None})
+                snapshot = AssistantConversationSnapshot.model_validate(payload["snapshot"])
+                interrupted = snapshot.active_turn
+                interrupted_turn_id = (
+                    interrupted.turn_id if interrupted is not None else snapshot.active_turn_id
+                )
                 conversation = _Conversation(
-                    snapshot=snapshot,
+                    snapshot=snapshot.model_copy(
+                        update={"active_turn_id": None, "active_turn": None}
+                    ),
                     lock=asyncio.Lock(),
                     turn_results={
                         key: AssistantConversationSnapshot.model_validate(value)
@@ -758,6 +823,20 @@ class UnifiedAgentSupervisor:
                     plan_resume=payload.get("planResume"),
                 )
                 self._conversations[conversation_id] = conversation
+                if interrupted_turn_id is not None:
+                    # 被进程重启打断的轮次必须留下终态事件，不能只清空 ID：
+                    # 客户端需要知道这一轮没有完成，且不会再等它。
+                    await self._emit(
+                        conversation,
+                        "TURN_FAILED",
+                        {
+                            "turnId": interrupted_turn_id,
+                            "reason": "SERVICE_RESTARTED",
+                            "partialAssistantText": (
+                                interrupted.assistant_text if interrupted else ""
+                            ),
+                        },
+                    )
         if conversation is None or conversation.snapshot.owner_id != owner_id:
             raise AssistantConversationNotFoundError("统一 Agent 会话不存在")
         return conversation

@@ -137,6 +137,12 @@ class AssistantFacadeContractTest {
                   "modelName": "deepseek-v4-flash",
                   "lastEventSequence": 9,
                   "activeTurnId": "msg-turn-1",
+                  "activeTurn": {
+                    "turnId": "msg-turn-1",
+                    "userMessage": "帮我把今天的 Spring Boot 任务标记为完成",
+                    "assistantText": "PREFIX_ALREADY_STREAMED",
+                    "lastDeltaIndex": 0
+                  },
                   "pendingAction": {
                     "actionId": "%s",
                     "executionId": "execution-task-finish-1",
@@ -178,7 +184,13 @@ class AssistantFacadeContractTest {
                 .andExpect(jsonPath("$.uiActions[0].routeKey").value("TODAY"))
                 // Task 29：游标与轮次状态必须原样透传给浏览器。
                 .andExpect(jsonPath("$.lastEventSequence").value(9))
-                .andExpect(jsonPath("$.activeTurnId").value("msg-turn-1"));
+                .andExpect(jsonPath("$.activeTurnId").value("msg-turn-1"))
+                // 冻结契约：activeTurn 必须完整透传，前端据此还原前缀并续传后缀。
+                .andExpect(jsonPath("$.activeTurn.turnId").value("msg-turn-1"))
+                .andExpect(jsonPath("$.activeTurn.userMessage").isNotEmpty())
+                .andExpect(jsonPath("$.activeTurn.assistantText")
+                        .value("PREFIX_ALREADY_STREAMED"))
+                .andExpect(jsonPath("$.activeTurn.lastDeltaIndex").value(0));
 
         // 模拟上游不会修改 Java 数据。真实写入、版本和幂等由 GovernedAgentToolWorkflowTest 验证。
         mockMvc.perform(get("/api/learning-tasks")

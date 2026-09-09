@@ -1,9 +1,15 @@
 """Task 29 Supervisor 持续事件流测试：先持久化再发布、可续传、取消可观察。"""
 
 import asyncio
+from contextlib import suppress
 
 from app.knowledge.models import KnowledgeConversationSnapshot, KnowledgeMode
-from app.unified_agent.models import ToolDescriptor, ToolEffect, ToolRiskLevel
+from app.unified_agent.models import (
+    AssistantMessage,
+    ToolDescriptor,
+    ToolEffect,
+    ToolRiskLevel,
+)
 from app.unified_agent.supervisor import UnifiedAgentSupervisor
 
 TURN_END_TYPES = {"TURN_COMPLETED", "TURN_FAILED", "TURN_CANCELLED"}
@@ -167,12 +173,17 @@ def test_active_turn_id_is_visible_while_the_turn_is_running() -> None:
         await asyncio.wait_for(turn, timeout=5)
         after = await service.get_conversation(conversation.conversation_id, "user-1")
         return during, after
-
     during, after = asyncio.run(scenario())
 
     assert during.active_turn_id == "turn-10"
     assert during.last_event_sequence >= 2
+    assert during.active_turn is not None, "TURN_STARTED 起就必须有 activeTurn 状态"
+    assert during.active_turn.turn_id == "turn-10"
+    assert during.active_turn.user_message == "打开错题集"
+    assert during.active_turn.assistant_text == ""
+    assert during.active_turn.last_delta_index == -1
     assert after.active_turn_id is None
+    assert after.active_turn is None
 
 
 def test_restored_conversation_never_reports_a_stale_active_turn(tmp_path) -> None:
@@ -208,7 +219,9 @@ def test_restored_conversation_never_reports_a_stale_active_turn(tmp_path) -> No
     restored = asyncio.run(scenario())
 
     assert restored.active_turn_id is None
-    assert restored.last_event_sequence == 1
+    assert restored.active_turn is None
+    # 恢复时会补写 TURN_FAILED 终态事件（见 restart 测试），游标因此推进到 2。
+    assert restored.last_event_sequence == 2
 
 
 def test_turn_emits_continuous_events_in_contract_order() -> None:
@@ -455,3 +468,170 @@ def test_knowledge_turn_streams_model_deltas_once_with_shared_turn_id() -> None:
         item.payload["delta"] for item in deltas
     )
     assert reply.reply == events[-1].payload["reply"]
+
+
+class PausedStreamingKnowledgeService(StreamingKnowledgeService):
+    """在指定分片后暂停，用于模拟"用户在两段增量之间刷新页面"。"""
+
+    def __init__(self, chunks: list[str], pause_after: int) -> None:
+        super().__init__(chunks)
+        self.pause_after = pause_after
+        self.delta_sent = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def stream_message(
+        self, conversation_id, message, web_search, owner_id, *, on_delta
+    ):
+        self.stream_calls += 1
+        for index, chunk in enumerate(self.chunks):
+            await on_delta(chunk)
+            if index == self.pause_after:
+                self.delta_sent.set()
+                await self.release.wait()
+        return KnowledgeConversationSnapshot(
+            conversationId=conversation_id,
+            ownerId=owner_id,
+            mode=KnowledgeMode.AUTO,
+            answer="".join(self.chunks),
+            retrievalMode="HYBRID",
+            modelProvider="deepseek",
+            modelName="deepseek-v4-flash",
+        )
+
+
+def test_refresh_between_deltas_sees_prefix_and_resumes_suffix() -> None:
+    """冻结契约：activeTurn.assistantText 是前缀，lastEventSequence 之后的增量是后缀。"""
+
+    async def scenario():
+        knowledge = PausedStreamingKnowledgeService(
+            ["PREFIX_ALREADY_STREAMED", "_SUFFIX_FROM_RESUME"], pause_after=0
+        )
+        service = UnifiedAgentSupervisor(
+            StreamingJavaBackend(),
+            model_name="deepseek-v4-flash",
+            knowledge_services=StreamingKnowledgeServices(knowledge),
+        )
+        conversation = await service.create_conversation("user-1")
+        turn = asyncio.create_task(
+            service.send_message(
+                conversation.conversation_id,
+                "解释一下学习顺序",
+                "turn-probe",
+                "user-1",
+                {},
+            )
+        )
+        await asyncio.wait_for(knowledge.delta_sent.wait(), timeout=5)
+        refreshed = await service.get_conversation(
+            conversation.conversation_id, "user-1"
+        )
+        cursor = refreshed.last_event_sequence
+        knowledge.release.set()
+        suffix = await collect_stream(
+            service,
+            conversation.conversation_id,
+            cursor=cursor,
+            stop=TURN_END_TYPES,
+            deadline=5.0,
+        )
+        reply = await asyncio.wait_for(turn, timeout=5)
+        return refreshed, cursor, suffix, reply
+
+    refreshed, cursor, suffix, reply = asyncio.run(scenario())
+
+    assert refreshed.active_turn is not None
+    assert refreshed.active_turn.turn_id == "turn-probe"
+    assert refreshed.active_turn.user_message == "解释一下学习顺序"
+    assert refreshed.active_turn.assistant_text == "PREFIX_ALREADY_STREAMED"
+    assert refreshed.active_turn.last_delta_index == 0
+    assert refreshed.active_turn_id == "turn-probe"
+
+    suffix_deltas = [
+        item.payload["delta"] for item in suffix if item.type == "ASSISTANT_DELTA"
+    ]
+    assert suffix_deltas == ["_SUFFIX_FROM_RESUME"]
+    assert suffix[-1].type == "TURN_COMPLETED"
+
+    final_answer = refreshed.active_turn.assistant_text + "".join(suffix_deltas)
+    assert final_answer == reply.reply == suffix[-1].payload["reply"]
+    assert reply.reply.count("PREFIX_ALREADY_STREAMED") == 1
+    assert reply.reply.count("_SUFFIX_FROM_RESUME") == 1
+
+
+def test_restart_mid_stream_persists_turn_failed_for_interrupted_turn(tmp_path) -> None:
+    """重启恢复：必须为被中断的轮次补写 TURN_FAILED，不能只清空 ID。"""
+
+    async def scenario():
+        import base64
+
+        from app.persistence.agent_state import AgentPersistence
+
+        persistence = await AgentPersistence.open(
+            tmp_path / "agent.sqlite3", base64.b64encode(bytes(range(32))).decode()
+        )
+        knowledge = PausedStreamingKnowledgeService(["PREFIX_", "SUFFIX"], pause_after=0)
+        first = UnifiedAgentSupervisor(
+            StreamingJavaBackend(),
+            model_name="deepseek-v4-flash",
+            persistence=persistence,
+            knowledge_services=StreamingKnowledgeServices(knowledge),
+        )
+        conversation = await first.create_conversation("user-1")
+        turn = asyncio.create_task(
+            first.send_message(
+                conversation.conversation_id,
+                "解释一下学习顺序",
+                "turn-restart",
+                "user-1",
+                {},
+            )
+        )
+        await asyncio.wait_for(knowledge.delta_sent.wait(), timeout=5)
+        interrupted = await first.get_conversation(
+            conversation.conversation_id, "user-1"
+        )
+
+        # 模拟进程重启：同一持久化，新的服务实例。
+        second = UnifiedAgentSupervisor(
+            StreamingJavaBackend(),
+            model_name="deepseek-v4-flash",
+            persistence=persistence,
+        )
+        recovered = await second.get_conversation(conversation.conversation_id, "user-1")
+        events = await second.list_events(conversation.conversation_id, "user-1", 0)
+        turn.cancel()
+        with suppress(asyncio.CancelledError):
+            await turn
+        await persistence.close()
+        return interrupted, recovered, events
+
+    interrupted, recovered, events = asyncio.run(scenario())
+
+    assert interrupted.active_turn is not None
+    assert interrupted.active_turn.assistant_text == "PREFIX_"
+    assert recovered.active_turn is None
+    assert recovered.active_turn_id is None
+    assert events[-1].type == "TURN_FAILED"
+    assert events[-1].payload["turnId"] == "turn-restart"
+    assert events[-1].payload["reason"] == "SERVICE_RESTARTED"
+    assert recovered.last_event_sequence == events[-1].sequence
+
+
+def test_get_conversation_returns_isolated_deep_copy() -> None:
+    """读取必须返回深拷贝，调用方改写不得污染服务端状态。"""
+
+    async def scenario():
+        service, _ = build_service()
+        conversation = await service.create_conversation("user-1")
+        snapshot = await service.get_conversation(conversation.conversation_id, "user-1")
+        snapshot.reply = "tampered"
+        snapshot.messages.append(
+            AssistantMessage(role="assistant", content="tampered")
+        )
+        fresh = await service.get_conversation(conversation.conversation_id, "user-1")
+        return fresh
+
+    fresh = asyncio.run(scenario())
+
+    assert fresh.reply != "tampered"
+    assert all(message.content != "tampered" for message in fresh.messages)
