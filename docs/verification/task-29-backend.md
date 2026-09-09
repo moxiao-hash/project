@@ -2,10 +2,10 @@
 
 - **执行 Agent**：DeepSeek Harness + DeepSeek V4 Flash（后端与 Agent 执行工程师）
 - **测试等级**：`[UNIT_TEST]` + `[MOCK_INTEGRATION]`（MockMvc + 模拟 Python 上游 HTTP）；**不构成 `[REAL_E2E]`**（未启动真实 MySQL/FastAPI/浏览器，未做浏览器证据，未做真实模型调用）
-- **执行时间**：2026-09-09 11:40:00 (Asia/Shanghai)
-- **Git 提交**：本分支提交 `feat: stream live assistant events end to end`（用 `git log -1 --grep='stream live assistant events end to end'` 定位；提交号不写入自身提交，避免 amend 自引用失效）
+- **执行时间**：2026-09-09 15:30:00 (Asia/Shanghai)（含 Codex 验收反馈修正第 2 轮）
+- **Git 提交**：首轮交付 `ebc27fd feat: stream live assistant events end to end`；Codex 评审整改为**追加提交** `fix: harden assistant event stream after review`（不改写已审查提交）。
 - **关联分支**：`agent/deepseek-task-29-sse-backend`（基线 `origin/main` = `da4adfd`）
-- **交付状态**：**待 Codex 验收**。本次只交付 `ai-service/**` 与 `backend/**`；**未改动任何 `web/**` 文件**，Vue 消费与浏览器 E2E 按冻结分工属 ZCode。
+- **交付状态**：**待 Codex 第二轮验收**。本次只交付 `ai-service/**` 与 `backend/**`；**未改动任何 `web/**` 文件**，也未修改共享总计划与交接文档；Vue 消费与浏览器 E2E 按冻结分工属 ZCode。
 
 ---
 
@@ -91,9 +91,9 @@ git diff --check
 ```
 
 ```text
-Python pytest: 395 passed, 1 个上游库弃用警告
+Python pytest: 398 passed, 1 个上游库弃用警告
 Python Ruff: All checks passed!
-Java Maven: 374 passed（含 Task 29 新增 9 项）
+Java Maven: 379 passed（含 Task 29 新增 14 项）
 能力矩阵门禁: 31 页面 / 64 工具覆盖通过
 git diff --check: clean
 ```
@@ -115,7 +115,10 @@ git diff --check: clean
 | 增量不重复（新增） | Supervisor 知识分支实时推送真实分片后，收尾阶段不再切一次；`ASSISTANT_DELTA.payload.turnId` 与 `TURN_COMPLETED.payload.turnId` 相同 |
 | Java 帧解析 | `id/event/data` 解析、注释帧识别、缺字段拒绝、未知字段忽略 |
 | Java 过滤 | 事件类型白名单、序号严格递增、会话归属一致、`event` 与 `payload.type` 一致、非法 JSON 拒绝、`ownerId` 剥离 |
-| Java 端到端 | MockMvc 异步分发得到 `id:3` + `event:TURN_COMPLETED`；上游路径为 `/events/stream?afterSequence=2&ownerId=<真实用户>`，内部令牌正确 |
+| Java 端到端 | MockMvc 异步分发得到 `id:2/3/4` 且 `ACTION_PREVIEW / UI_ACTION / TURN_COMPLETED` 顺序正确；上游路径为 `/events/stream?afterSequence=1&ownerId=<真实用户>`，内部令牌正确 |
+| 快照续传字段（第 2 轮） | `lastEventSequence` 在事件发布时已推进；`activeTurnId` 在轮次进行中可见、终态后为 `null`；进程重启后不残留 `activeTurnId` |
+| CORS 预检（第 2 轮） | `OPTIONS /api/assistant/conversations/{id}/events` 携带 `Access-Control-Request-Headers: authorization,last-event-id` 时，`Access-Control-Allow-Headers` 含 `Last-Event-ID` |
+| 上游健壮性（第 2 轮） | 非 2xx 与正常 EOF 都必须关闭上游响应体；线程池关闭/拒绝新任务时 `open()` 不抛异常 |
 
 ### 2.3 本轮修复的真实缺陷
 
@@ -124,6 +127,21 @@ git diff --check: clean
 3. **取消后流无终态**：取消发生在工具执行中时，原实现只发出一次 `TURN_CANCELLED`，随后在途工具仍会补发 `TOOL_SUCCEEDED`，导致流以工具事件收尾、客户端无法判断轮次已结束。现补发终态 `TURN_CANCELLED(reason=TURN_ABORTED)`。
 4. **慢消费者会拖垮业务**：改为有界队列 + 溢出断开重连，业务轮次永不因浏览器卡顿而阻塞。
 5. **知识问答无法边生成边显示**：原来只有 `ainvoke`，必须等完整回答才返回。新增 `astream` 与 `stream_message`，真实模型分片直接进入 `ASSISTANT_DELTA`；同时保留"最终落库答案 = 分片拼接"的一致性约束。
+
+### 2.4 Codex 首轮验收反馈与后端整改（2026-09-09）
+
+Codex 首轮验收结论为**暂不通过**，检查对象 `agent/deepseek-task-29-sse-backend@ebc27fd`，并留下 `docs/verification/task-29-codex-review.md`（7 项阻断项）。按分工，DeepSeek Harness 只负责其中 3 项：**CORS 放行、Java 连接资源生命周期、Python 一致快照恢复契约**，且**仅修改后端与后端验证报告**。
+
+| 评审项 | 问题 | 后端整改 | 回归断言 |
+| --- | --- | --- | --- |
+| 1 | `SecurityConfig.allowedHeaders` 缺少 `Last-Event-ID`，5173→8080 重连预检被拒 | `allowedHeaders` 加入 `Last-Event-ID` | `StudyPilotApplicationTests#allowsLastEventIdHeaderOnSsePreflight` 断言 OPTIONS 预检返回该头 |
+| 2（后端部分） | 刷新重放旧动作：前端缺少一致快照游标与进行中轮次状态 | `AssistantConversationSnapshot` 新增 `lastEventSequence`、`activeTurnId`；`_emit` 每次发布都同步；重启后强制清空 `activeTurnId` | `test_snapshot_exposes_resume_cursor_and_active_turn_id`、`test_active_turn_id_is_visible_while_the_turn_is_running`、`test_restored_conversation_never_reports_a_stale_active_turn`；Java 门面断言两字段透传 |
+| 7（后端部分） | 非 2xx 响应体未关闭；无界 cached workers 缺少销毁 | 只接受 2xx；任何路径都关闭上游响应体；有界线程池（16 线程 + 64 队列）+ `@PreDestroy`；并发满时以错误结束连接而不抛异常 | `nonSuccessUpstreamStatusClosesBodyInsteadOfLeaking`、`successfulUpstreamStreamClosesBodyAfterEof`、`rejectedConnectionDoesNotThrowAndEndsTheStream`、`shutdownWorkersIsIdempotentAndStopsAcceptingNewStreams` |
+| 7（协议部分） | 前端解析失败仍可能推进游标 | 后端帧格式不变；`UI_ACTION` 等白名单事件补端到端透传断言 | `AssistantFacadeContractTest` 断言 `ACTION_PREVIEW / UI_ACTION / TURN_COMPLETED` 顺序与 `id` 单调 |
+
+**提交与 RED 口径**：按 Codex 要求，本轮为**追加提交**（不改写已审查提交 `ebc27fd`，不修改共享总计划与交接文档）。这 3 项属于评审后修正，回归断言与修正同轮落地，因此本轮**没有单独保存"修正前失败"的 RED 输出**，也不把它写成 RED/GREEN 闭环；前 3 步（事件总线、SSE 端点、模型增量）的 RED→GREEN 证据见 2.1～2.2。
+
+**不在本次范围（属 ZCode）**：评审项 2/3/4/5/6 的前端部分——轮次状态、消息恢复、导航去重、连接状态与认证回调、SSE 解析校验。
 
 ---
 
@@ -150,7 +168,8 @@ git diff --check: clean
 **Python**
 
 - 新增：`ai-service/app/unified_agent/event_stream.py`（有界队列事件总线、SSE 帧编码、心跳常量、确定性增量分片）
-- 修改：`ai-service/app/unified_agent/supervisor.py`（`_emit` 先持久化后发布、`stream_events` 回放+在线+去重、`_emit_turn_tail`、取消终态、知识分支真实模型增量 + `reply_streamed`）
+- 修改：`ai-service/app/unified_agent/models.py`（`AssistantConversationSnapshot` 新增 `lastEventSequence` / `activeTurnId`）
+- 修改：`ai-service/app/unified_agent/supervisor.py`（`_emit` 先持久化后发布、`stream_events` 回放+在线+去重、`_emit_turn_tail`、取消终态、知识分支真实模型增量 + `reply_streamed`、`_sync_stream_state` 同步续传字段）
 - 修改：`ai-service/app/unified_agent/tool_gateway.py`（`on_tool_event` 回调 → `TOOL_STARTED/TOOL_SUCCEEDED/TOOL_FAILED`）
 - 修改：`ai-service/app/knowledge/answering.py`（抽出 `_messages`；新增 `astream` 与增量文本提取）
 - 修改：`ai-service/app/knowledge/service.py`（`send_message` → `_run_message`；新增 `stream_message` 与 `_answer` 回落逻辑）
@@ -158,7 +177,7 @@ git diff --check: clean
 - 修改：`ai-service/app/core/settings.py`（`agent_event_stream_queue_size`、`agent_event_stream_heartbeat_seconds`）
 - 修改：`ai-service/app/main.py`（按配置装配事件总线参数）
 - 新增：`ai-service/tests/unified_agent/test_event_stream.py`（6 项）
-- 新增：`ai-service/tests/unified_agent/test_supervisor_stream.py`（6 项）
+- 新增：`ai-service/tests/unified_agent/test_supervisor_stream.py`（9 项）
 - 新增：`ai-service/tests/api/test_unified_assistant_stream.py`（5 项）
 - 修改：`ai-service/tests/knowledge/test_answering.py`（+2 项）
 - 修改：`ai-service/tests/knowledge/test_service.py`（+2 项）
@@ -166,12 +185,13 @@ git diff --check: clean
 **Java**
 
 - 修改：`backend/src/main/java/com/moxiao/studypilot/agent/api/UnifiedAssistantFacadeController.java`（`SseEmitter` 流式代理，替换有限字符串响应）
-- 新增：`backend/src/main/java/com/moxiao/studypilot/agent/application/AssistantEventStreamService.java`（上游 SSE 解析、白名单过滤、`ownerId` 剥离、断开只取消订阅）
+- 新增：`backend/src/main/java/com/moxiao/studypilot/agent/application/AssistantEventStreamService.java`（上游 SSE 解析、白名单过滤、`ownerId` 剥离、断开只取消订阅；仅接受 2xx、必关响应体、有界线程池 + `@PreDestroy`）
 - 修改：`backend/src/main/java/com/moxiao/studypilot/agent/application/AgentGatewayService.java`（`openEventStream` 无总超时流式上游请求）
-- 修改：`backend/src/main/java/com/moxiao/studypilot/auth/config/SecurityConfig.java`（放行 `DispatcherType.ASYNC`）
-- 修改：`backend/src/test/java/com/moxiao/studypilot/agent/api/AssistantFacadeContractTest.java`（SSE 异步分发与续传断言）
+- 修改：`backend/src/main/java/com/moxiao/studypilot/auth/config/SecurityConfig.java`（放行 `DispatcherType.ASYNC`；CORS `allowedHeaders` 增加 `Last-Event-ID`）
+- 修改：`backend/src/test/java/com/moxiao/studypilot/agent/api/AssistantFacadeContractTest.java`（SSE 异步分发、续传、`UI_ACTION` 帧与 `lastEventSequence`/`activeTurnId` 透传断言）
 - 修改：`backend/src/test/java/com/moxiao/studypilot/agent/api/AgentFacadeControllerTest.java`（流式端点断言与上游路径）
-- 新增：`backend/src/test/java/com/moxiao/studypilot/agent/application/AssistantEventStreamServiceTest.java`（9 项）
+- 修改：`backend/src/test/java/com/moxiao/studypilot/StudyPilotApplicationTests.java`（`Last-Event-ID` CORS 预检）
+- 新增：`backend/src/test/java/com/moxiao/studypilot/agent/application/AssistantEventStreamServiceTest.java`（13 项）
 
 **文档**
 
@@ -192,12 +212,15 @@ git diff --check: clean
 7. **Java 侧"客户端断开只取消订阅"未做自动化断言**：代码结构保证 `onCompletion/onTimeout/onError` 只关闭上游输入流，不触发任何业务取消接口；但 MockMvc 无法真实模拟浏览器断开，故仅由代码审查与 Python 侧慢消费者测试间接覆盖。
 8. **无服务端主动超时**：`SseEmitter` 使用 `0L`（不超时），依赖 Python 每 30 秒心跳保活与客户端断开；若 Python 侧心跳配置被关闭，连接可能被中间设备静默回收。
 9. **Java 上游连接无总超时**：`openEventStream` 不设 `HttpRequest.timeout`，长时间挂起的上游只由客户端断开或上游关闭结束。
+10. **并发上限**：事件流工作线程池固定 16 线程 + 64 队列，超出时该连接立即以错误结束（客户端按 `Last-Event-ID` 重连），不是无限排队；如需更高并发应改为异步非阻塞读取或提高上限。
 
 ---
 
 ## 7. 下一步交接建议
 
 1. **ZCode（前端）**：消费 `GET /api/assistant/conversations/{id}/events`（`text/event-stream`），必须用带 `Authorization: Bearer` 的 `fetch` + `ReadableStream`（原生 `EventSource` 无法携带 Bearer）。需要忽略 `:` 开头的注释帧，保存最后一个 `id:` 并在重连请求中回传 `Last-Event-ID`；重连只补事件，不重新 `POST /messages`；`TURN_FAILED` 到达时丢弃该 `turnId` 下未完成的增量。
+   - **快照新增字段（第 2 轮）**：`AssistantConversationSnapshot` 现在带 `lastEventSequence`（可直接作为重连游标，无需额外请求）与 `activeTurnId`（非空表示有轮次在跑，刷新后据此决定是否重建事件流）。Java 门面原样透传，浏览器侧无需额外接口。
+   - **CORS**：`Access-Control-Allow-Headers` 已包含 `Last-Event-ID`，`http://localhost:5173` 到 `8080` 的预检已通过测试；自定义 Origin 需通过 `CORS_ALLOWED_ORIGINS` 配置。
 2. **冻结的线上帧格式**（Python 与 Java 一致）：
    ```text
    id: 7
@@ -210,3 +233,4 @@ git diff --check: clean
 3. **Codex 验收顺序建议**：契约一致性（事件类型/字段对齐 `docs/agent-native-contract.md` 2.4）→ 安全边界（`SecurityConfig` ASYNC 放行是否可接受、`ownerId` 剥离、白名单过滤）→ diff 审查 → Python 局部/全量测试 → Java 局部/全量测试 → 能力矩阵门禁 → 文档口径。
 4. 合并前请重点确认四处**有意变更**：`SecurityConfig` 新增 `DispatcherType.ASYNC` 放行；浏览器事件端点由有限响应改为长连接；取消轮次补发终态 `TURN_CANCELLED`；知识问答由 `ainvoke` 改为 `astream`（落库答案仍等于分片拼接）。
 5. 若要把真实增量扩展到其他模型生成场景（例如教学讲解），复用同一 `stream_message`/`on_delta` 模式即可，无需改动事件契约。
+6. **评审项归属复核**：Codex 首轮 7 项阻断中，1、2（后端契约）、7（后端资源）已由本分支整改；2/3/4/5/6 的前端部分（轮次状态与消息恢复、按事件/轮次去重导航、连接状态与认证回调、SSE 解析校验）属 ZCode 的 `web/**` 范围，后端不再改动。Codex 需在两端口径一致后再做跨端验证与合并。

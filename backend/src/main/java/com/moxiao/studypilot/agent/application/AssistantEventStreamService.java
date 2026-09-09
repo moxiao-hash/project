@@ -1,7 +1,9 @@
 package com.moxiao.studypilot.agent.application;
 
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -19,8 +21,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Task 29：把 Python 的内部 SSE 事件流持续代理给浏览器。
@@ -58,20 +63,56 @@ public class AssistantEventStreamService {
     /** 0 表示不设服务端超时；连接由客户端断开或上游关闭决定。 */
     private static final long STREAM_TIMEOUT_MILLIS = 0L;
 
+    /**
+     * 长连接是有成本的：每条连接占用一个工作线程，因此使用有界线程池而不是
+     * 无界 cached pool。超出上限时直接让该连接以错误结束（浏览器会重连），
+     * 而不是无限堆积线程。
+     */
+    private static final int MAX_CONCURRENT_STREAMS = 16;
+    private static final int WORK_QUEUE_CAPACITY = 64;
+
     private final AgentGatewayService gateway;
     private final ObjectMapper objectMapper;
-    private final ExecutorService workers = Executors.newCachedThreadPool(runnable -> {
-        Thread thread = new Thread(runnable, "assistant-event-stream");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final ExecutorService workers;
 
+    @Autowired
     public AssistantEventStreamService(
             AgentGatewayService gateway,
             ObjectMapper objectMapper
     ) {
+        this(gateway, objectMapper, defaultWorkers());
+    }
+
+    /** 供测试注入受控执行器（例如已关闭或直接拒绝任务的执行器）。 */
+    AssistantEventStreamService(
+            AgentGatewayService gateway,
+            ObjectMapper objectMapper,
+            ExecutorService workers
+    ) {
         this.gateway = gateway;
         this.objectMapper = objectMapper;
+        this.workers = workers;
+    }
+
+    private static ExecutorService defaultWorkers() {
+        return new ThreadPoolExecutor(
+                MAX_CONCURRENT_STREAMS,
+                MAX_CONCURRENT_STREAMS,
+                60L,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(WORK_QUEUE_CAPACITY),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "assistant-event-stream");
+                    thread.setDaemon(true);
+                    return thread;
+                }
+        );
+    }
+
+    /** 应用关闭时释放工作线程，避免线程池泄漏。 */
+    @PreDestroy
+    void shutdownWorkers() {
+        workers.shutdownNow();
     }
 
     /**
@@ -87,7 +128,13 @@ public class AssistantEventStreamService {
         emitter.onCompletion(session::cancel);
         emitter.onTimeout(session::cancel);
         emitter.onError(error -> session.cancel());
-        workers.execute(() -> pump(ownerId, afterSequence, session));
+        try {
+            workers.execute(() -> pump(ownerId, afterSequence, session));
+        } catch (RejectedExecutionException exception) {
+            // 并发上限已满：让该连接以错误结束，客户端按 Last-Event-ID 重连。
+            LOGGER.warn("统一助手事件流并发已达上限，拒绝新连接");
+            session.completeWithError(exception);
+        }
         return emitter;
     }
 
@@ -96,14 +143,17 @@ public class AssistantEventStreamService {
             String path = "/internal/assistant/conversations/" + session.conversationId()
                     + "/events/stream?afterSequence=" + afterSequence;
             HttpResponse<InputStream> response = gateway.openEventStream(path, ownerId);
-            if (response.statusCode() >= 400) {
+            InputStream body = response.body();
+            if (response.statusCode() / 100 != 2) {
+                // 非 2xx 也必须关闭上游流，否则连接与缓冲会泄漏。
+                closeQuietly(body);
                 session.completeWithError(new IllegalStateException(
                         "AI 事件流返回状态 " + response.statusCode()));
                 return;
             }
-            session.attach(response.body());
+            session.attach(body);
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(
-                    response.body(), StandardCharsets.UTF_8))) {
+                    body, StandardCharsets.UTF_8))) {
                 List<String> frameLines = new ArrayList<>();
                 String line;
                 while (!session.cancelled() && (line = reader.readLine()) != null) {
@@ -330,16 +380,16 @@ public class AssistantEventStreamService {
                 LOGGER.debug("结束事件流时连接已关闭", exception);
             }
         }
+    }
 
-        private static void closeQuietly(InputStream stream) {
-            if (stream == null) {
-                return;
-            }
-            try {
-                stream.close();
-            } catch (IOException exception) {
-                LOGGER.debug("关闭上游事件流失败", exception);
-            }
+    private static void closeQuietly(InputStream stream) {
+        if (stream == null) {
+            return;
+        }
+        try {
+            stream.close();
+        } catch (IOException exception) {
+            LOGGER.debug("关闭上游事件流失败", exception);
         }
     }
 }

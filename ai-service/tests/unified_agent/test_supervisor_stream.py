@@ -109,6 +109,108 @@ async def collect_stream(
     return events
 
 
+def test_snapshot_exposes_resume_cursor_and_active_turn_id() -> None:
+    async def scenario():
+        service, _ = build_service()
+        conversation = await service.create_conversation("user-1")
+        created = await service.get_conversation(conversation.conversation_id, "user-1")
+        created_cursor = created.last_event_sequence
+        created_active_turn = created.active_turn_id
+        observations: list[tuple[int, int]] = []
+
+        async def consume():
+            async for item in service.stream_events(
+                conversation.conversation_id, "user-1", 1, heartbeat_seconds=0.02
+            ):
+                if item is None:
+                    continue
+                snapshot = await service.get_conversation(
+                    conversation.conversation_id, "user-1"
+                )
+                observations.append((item.sequence, snapshot.last_event_sequence))
+                if item.type in TURN_END_TYPES:
+                    break
+
+        stream = asyncio.create_task(consume())
+        await asyncio.sleep(0.02)
+        final = await service.send_message(
+            conversation.conversation_id, "打开错题集", "turn-9", "user-1", {}
+        )
+        await asyncio.wait_for(stream, timeout=5)
+        return created_cursor, created_active_turn, observations, final
+
+    created_cursor, created_active_turn, observations, final = asyncio.run(scenario())
+
+    assert created_cursor == 1
+    assert created_active_turn is None
+    # 事件被消费时，其序号必然已写进快照（先持久化、再发布）；快照游标只能更大。
+    assert all(cursor >= sequence for sequence, cursor in observations)
+    assert observations[-1][0] == final.last_event_sequence
+    assert final.active_turn_id is None
+
+
+def test_active_turn_id_is_visible_while_the_turn_is_running() -> None:
+    async def scenario():
+        backend = BlockingJavaBackend()
+        service = UnifiedAgentSupervisor(backend, model_name="deepseek-v4-flash")
+        conversation = await service.create_conversation("user-1")
+        turn = asyncio.create_task(
+            service.send_message(
+                conversation.conversation_id, "打开错题集", "turn-10", "user-1", {}
+            )
+        )
+        await asyncio.wait_for(backend.started.wait(), timeout=5)
+        during = await service.get_conversation(
+            conversation.conversation_id, "user-1"
+        )
+        backend.release.set()
+        await asyncio.wait_for(turn, timeout=5)
+        after = await service.get_conversation(conversation.conversation_id, "user-1")
+        return during, after
+
+    during, after = asyncio.run(scenario())
+
+    assert during.active_turn_id == "turn-10"
+    assert during.last_event_sequence >= 2
+    assert after.active_turn_id is None
+
+
+def test_restored_conversation_never_reports_a_stale_active_turn(tmp_path) -> None:
+    async def scenario():
+        import base64
+
+        from app.persistence.agent_state import AgentPersistence
+
+        persistence = await AgentPersistence.open(
+            tmp_path / "agent.sqlite3", base64.b64encode(bytes(range(32))).decode()
+        )
+        first = UnifiedAgentSupervisor(
+            StreamingJavaBackend(),
+            model_name="deepseek-v4-flash",
+            persistence=persistence,
+        )
+        created = await first.create_conversation("user-1")
+        # 模拟"服务在轮次中被杀死"：持久化快照里残留 activeTurnId。
+        conversation = first._conversations[created.conversation_id]  # noqa: SLF001
+        conversation.snapshot = conversation.snapshot.model_copy(
+            update={"active_turn_id": "turn-crashed"}
+        )
+        await first._save(conversation)  # noqa: SLF001
+        second = UnifiedAgentSupervisor(
+            StreamingJavaBackend(),
+            model_name="deepseek-v4-flash",
+            persistence=persistence,
+        )
+        restored = await second.get_conversation(created.conversation_id, "user-1")
+        await persistence.close()
+        return restored
+
+    restored = asyncio.run(scenario())
+
+    assert restored.active_turn_id is None
+    assert restored.last_event_sequence == 1
+
+
 def test_turn_emits_continuous_events_in_contract_order() -> None:
     async def scenario():
         service, backend = build_service()

@@ -134,9 +134,23 @@ class UnifiedAgentSupervisor:
             payload=payload,
         )
         conversation.events.append(event)
+        self._sync_stream_state(conversation)
         await self._save(conversation)
         self._events.publish(event)
         return event
+
+    @staticmethod
+    def _sync_stream_state(conversation: _Conversation) -> None:
+        """把事件游标与轮次状态同步进快照，供前端刷新后直接续传。
+
+        原地更新而不是 ``model_copy``：调用方可能已经持有同一快照对象
+        （例如 ``send_message`` 的返回值），换成新对象会让返回结果落后一个游标。
+        """
+
+        conversation.snapshot.last_event_sequence = (
+            conversation.events[-1].sequence if conversation.events else 0
+        )
+        conversation.snapshot.active_turn_id = conversation.active_turn_id
 
     def _emit_callback(
         self, conversation: _Conversation
@@ -250,6 +264,8 @@ class UnifiedAgentSupervisor:
             status=AssistantConversationStatus.READY,
             reply="我已经准备好，可以帮你操作 StudyPilot 或继续学习。",
             model_name=self._model_name,
+            # 创建即产生序号 1 的 TURN_COMPLETED(CONVERSATION_CREATED)。
+            last_event_sequence=1,
         )
         self._conversations[conversation_id] = _Conversation(
             snapshot=snapshot,
@@ -538,12 +554,15 @@ class UnifiedAgentSupervisor:
             raise AssistantConversationBusyError("统一 Agent 正在处理上一条消息")
         async with conversation.lock:
             # Task 29：轮次开始立即推送，用户不必等整轮结束才看到反馈。
+            # active_turn_id 必须先于 TURN_STARTED 设置，快照才能如实反映"正在跑"。
+            conversation.active_turn_id = idempotency_key
             await self._emit(
                 conversation, "TURN_STARTED", {"turnId": idempotency_key}
             )
             # 等待确认时只能走 Java 专用确认接口；“确认”等普通文本不会执行动作。
             reply_streamed = False
             if conversation.snapshot.pending_action is not None:
+                conversation.active_turn_id = None
                 result = conversation.snapshot.model_copy(
                     update={
                         "status": AssistantConversationStatus.WAITING_CONFIRMATION,
@@ -564,7 +583,6 @@ class UnifiedAgentSupervisor:
                     is_cancelled=lambda: conversation.cancel_requested_turn_id == idempotency_key,
                     on_tool_event=self._emit_callback(conversation),
                 )
-                conversation.active_turn_id = idempotency_key
                 turn_started = monotonic()
                 try:
                     values = await self._graph.ainvoke(
@@ -715,7 +733,10 @@ class UnifiedAgentSupervisor:
                 owner_id=owner_id,
             )
             if payload is not None:
-                snapshot = AssistantConversationSnapshot.model_validate(payload["snapshot"])
+                # 进程重启后不可能还有轮次在跑，清掉可能残留的 activeTurnId。
+                snapshot = AssistantConversationSnapshot.model_validate(
+                    payload["snapshot"]
+                ).model_copy(update={"active_turn_id": None})
                 conversation = _Conversation(
                     snapshot=snapshot,
                     lock=asyncio.Lock(),

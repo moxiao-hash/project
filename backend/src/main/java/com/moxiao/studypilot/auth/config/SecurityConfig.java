@@ -98,7 +98,13 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        // Task 29：浏览器用 fetch 消费 SSE 时必须显式携带 Last-Event-ID 续传，
+        // 预检（OPTIONS）会校验该请求头，缺失会被浏览器直接拦掉。
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Last-Event-ID"
+        ));
         configuration.setExposedHeaders(List.of("Location", "Retry-After", "X-Request-ID"));
         configuration.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

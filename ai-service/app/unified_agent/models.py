@@ -176,6 +176,10 @@ class AssistantConversationSnapshot(JavaContractModel):
     warnings: list[str] = Field(default_factory=list)
     citations: list[KnowledgeCitation] = Field(default_factory=list)
     model_name: str
+    #: Task 29：客户端刷新后据此续传事件流，不必猜测游标。
+    last_event_sequence: int = Field(default=0, ge=0)
+    #: Task 29：当前是否有轮次在跑；前端据此决定是否保持/重建事件流连接。
+    active_turn_id: str | None = None
 
 
 class CreateAssistantConversationRequest(JavaContractModel):

@@ -99,7 +99,9 @@ class AssistantFacadeContractTest {
                   "ownerId": "%s",
                   "status": "READY",
                   "reply": "你好！我是你的 StudyPilot 专属导师，已准备好协助你学习。",
-                  "modelName": "deepseek-v4-flash"
+                  "modelName": "deepseek-v4-flash",
+                  "lastEventSequence": 1,
+                  "activeTurnId": null
                 }
                 """.formatted(CONVERSATION_ID, user.userId());
 
@@ -114,6 +116,8 @@ class AssistantFacadeContractTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.conversationId").value(CONVERSATION_ID))
                 .andExpect(jsonPath("$.status").value("READY"))
+                // Task 29：刷新后据此续传事件流，不需要额外请求。
+                .andExpect(jsonPath("$.lastEventSequence").value(1))
                 .andExpect(jsonPath("$.reply").isNotEmpty());
 
         CapturedRequest createReq = LAST_REQUEST.get();
@@ -131,6 +135,8 @@ class AssistantFacadeContractTest {
                   "status": "WAITING_CONFIRMATION",
                   "reply": "我已经为你准备好了完成该任务的申请，请在下方确认卡片中核对并点击确认。",
                   "modelName": "deepseek-v4-flash",
+                  "lastEventSequence": 9,
+                  "activeTurnId": "msg-turn-1",
                   "pendingAction": {
                     "actionId": "%s",
                     "executionId": "execution-task-finish-1",
@@ -169,7 +175,10 @@ class AssistantFacadeContractTest {
                 .andExpect(jsonPath("$.pendingAction.actionId").value(ACTION_ID))
                 .andExpect(jsonPath("$.pendingAction.riskLevel").value("HIGH"))
                 .andExpect(jsonPath("$.uiActions[0].type").value("NAVIGATE"))
-                .andExpect(jsonPath("$.uiActions[0].routeKey").value("TODAY"));
+                .andExpect(jsonPath("$.uiActions[0].routeKey").value("TODAY"))
+                // Task 29：游标与轮次状态必须原样透传给浏览器。
+                .andExpect(jsonPath("$.lastEventSequence").value(9))
+                .andExpect(jsonPath("$.activeTurnId").value("msg-turn-1"));
 
         // 模拟上游不会修改 Java 数据。真实写入、版本和幂等由 GovernedAgentToolWorkflowTest 验证。
         mockMvc.perform(get("/api/learning-tasks")
@@ -186,10 +195,14 @@ class AssistantFacadeContractTest {
                 data: {"sequence":2,"type":"ACTION_PREVIEW","conversationId":"%s","payload":{"actionId":"%s"}}
 
                 id: 3
-                event: TURN_COMPLETED
-                data: {"sequence":3,"type":"TURN_COMPLETED","conversationId":"%s","payload":{"reply":"操作等待确认"}}
+                event: UI_ACTION
+                data: {"sequence":3,"type":"UI_ACTION","conversationId":"%s","payload":{"routeKey":"TODAY"}}
 
-                """.formatted(CONVERSATION_ID, ACTION_ID, CONVERSATION_ID);
+                id: 4
+                event: TURN_COMPLETED
+                data: {"sequence":4,"type":"TURN_COMPLETED","conversationId":"%s","payload":{"reply":"操作等待确认"}}
+
+                """.formatted(CONVERSATION_ID, ACTION_ID, CONVERSATION_ID, CONVERSATION_ID);
 
         MvcResult replay = mockMvc.perform(get("/api/assistant/conversations/{id}/events", CONVERSATION_ID)
                         .header("Authorization", authHeader)
@@ -203,11 +216,13 @@ class AssistantFacadeContractTest {
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
                 .andExpect(content().string(containsString("id:2")))
                 .andExpect(content().string(containsString("event:ACTION_PREVIEW")))
+                .andExpect(content().string(containsString("event:UI_ACTION")))
                 .andExpect(content().string(containsString("event:TURN_COMPLETED")))
                 .andExpect(content().string(containsString("heartbeat")));
         String stream = replay.getResponse().getContentAsString();
         assertFalse(stream.contains("id:1\n"), "已消费事件不得重放");
         assertTrue(stream.indexOf("id:2") < stream.indexOf("id:3"));
+        assertTrue(stream.indexOf("id:3") < stream.indexOf("id:4"));
         assertTrue(LAST_REQUEST.get().path().contains("afterSequence=1"));
         assertTrue(LAST_REQUEST.get().path().contains("ownerId=" + user.userId()));
         assertEquals(INTERNAL_TOKEN, LAST_REQUEST.get().token());

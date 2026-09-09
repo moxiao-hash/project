@@ -1,10 +1,26 @@
 package com.moxiao.studypilot.agent.application;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpHeaders;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import javax.net.ssl.SSLSession;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -128,6 +144,142 @@ class AssistantEventStreamServiceTest {
         );
 
         assertNull(service.validate(frame, CONVERSATION_ID, 1));
+    }
+
+    @Test
+    void nonSuccessUpstreamStatusClosesBodyInsteadOfLeaking() throws Exception {
+        TrackingInputStream body = new TrackingInputStream("upstream down");
+        AssistantEventStreamService streamService = new AssistantEventStreamService(
+                gatewayReturning(503, body), MAPPER, Executors.newSingleThreadExecutor());
+
+        SseEmitter emitter = streamService.open(CONVERSATION_ID, "user-1", 0);
+
+        assertNotNull(emitter);
+        awaitClosed(body);
+        assertTrue(body.isClosed(), "非 2xx 上游响应体必须被关闭");
+    }
+
+    @Test
+    void successfulUpstreamStreamClosesBodyAfterEof() throws Exception {
+        TrackingInputStream body = new TrackingInputStream("""
+                id: 2
+                event: TURN_STARTED
+                data: {"sequence":2,"type":"TURN_STARTED","conversationId":"%s","payload":{}}
+
+                """.formatted(CONVERSATION_ID));
+        AssistantEventStreamService streamService = new AssistantEventStreamService(
+                gatewayReturning(200, body), MAPPER, Executors.newSingleThreadExecutor());
+
+        SseEmitter emitter = streamService.open(CONVERSATION_ID, "user-1", 1);
+
+        assertNotNull(emitter);
+        awaitClosed(body);
+        assertTrue(body.isClosed(), "上游流读取结束后必须关闭");
+    }
+
+    @Test
+    void rejectedConnectionDoesNotThrowAndEndsTheStream() {
+        ExecutorService closedPool = Executors.newSingleThreadExecutor();
+        closedPool.shutdown();
+        AssistantEventStreamService streamService = new AssistantEventStreamService(
+                gatewayReturning(200, new TrackingInputStream("")), MAPPER, closedPool);
+
+        SseEmitter emitter = streamService.open(CONVERSATION_ID, "user-1", 0);
+
+        assertNotNull(emitter, "并发上限/线程池关闭时不得向调用方抛异常");
+    }
+
+    @Test
+    void shutdownWorkersIsIdempotentAndStopsAcceptingNewStreams() {
+        AssistantEventStreamService streamService = new AssistantEventStreamService(
+                gatewayReturning(200, new TrackingInputStream("")),
+                MAPPER,
+                Executors.newSingleThreadExecutor());
+
+        streamService.shutdownWorkers();
+        streamService.shutdownWorkers();
+
+        assertNotNull(streamService.open(CONVERSATION_ID, "user-1", 0));
+    }
+
+    private static AgentGatewayService gatewayReturning(int status, InputStream body) {
+        return new AgentGatewayService("http://127.0.0.1:1", "test-token", MAPPER) {
+            @Override
+            public HttpResponse<InputStream> openEventStream(String path, String ownerId) {
+                return response(status, body);
+            }
+        };
+    }
+
+    private static HttpResponse<InputStream> response(int status, InputStream body) {
+        return new HttpResponse<>() {
+            @Override
+            public int statusCode() {
+                return status;
+            }
+
+            @Override
+            public HttpRequest request() {
+                return null;
+            }
+
+            @Override
+            public Optional<HttpResponse<InputStream>> previousResponse() {
+                return Optional.empty();
+            }
+
+            @Override
+            public HttpHeaders headers() {
+                return HttpHeaders.of(Map.of(), (name, value) -> true);
+            }
+
+            @Override
+            public InputStream body() {
+                return body;
+            }
+
+            @Override
+            public Optional<SSLSession> sslSession() {
+                return Optional.empty();
+            }
+
+            @Override
+            public URI uri() {
+                return URI.create("http://127.0.0.1:1/internal/assistant/events/stream");
+            }
+
+            @Override
+            public HttpClient.Version version() {
+                return HttpClient.Version.HTTP_1_1;
+            }
+        };
+    }
+
+    private static void awaitClosed(TrackingInputStream body) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 3_000;
+        while (!body.isClosed() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(10);
+        }
+    }
+
+    /** 记录是否被关闭，用于验证上游响应体没有泄漏。 */
+    private static final class TrackingInputStream extends ByteArrayInputStream {
+
+        private volatile boolean closed;
+
+        private TrackingInputStream(String content) {
+            super(content.getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public void close() throws IOException {
+            closed = true;
+            super.close();
+        }
+
+        private boolean isClosed() {
+            return closed;
+        }
     }
 
     private static AssistantEventStreamService.ParsedFrame frame(
