@@ -263,13 +263,42 @@ class UnifiedAgentSupervisor:
             start_index = int(resume["nextIndex"])
         except (KeyError, TypeError, ValueError):
             conversation.plan_resume = None
-            return conversation.snapshot.model_copy(
+            reply = "操作已确认并执行；剩余计划状态已失效，请重新描述目标。"
+            snapshot = conversation.snapshot.model_copy(
                 update={
                     "status": AssistantConversationStatus.COMPLETED,
-                    "reply": "操作已确认并执行；剩余计划状态已失效，请重新描述目标。",
+                    "reply": reply,
                     "pending_action": None,
+                    "messages": [
+                        *conversation.snapshot.messages,
+                        AssistantMessage(role="assistant", content=reply),
+                    ],
                 }
             )
+            conversation.snapshot = snapshot
+            conversation.events.append(
+                AssistantEvent(
+                    sequence=len(conversation.events) + 1,
+                    type="TURN_COMPLETED",
+                    conversation_id=conversation_id,
+                    payload={
+                        "actionId": action_id,
+                        "actionStatus": confirmed.status,
+                        "resumeStatus": "INVALID",
+                    },
+                )
+            )
+            await self._save(conversation)
+            return snapshot
+
+        if start_index > 0 and confirmed.result is not None:
+            confirmed_step = plan.steps[start_index - 1]
+            outputs[confirmed_step.step_id] = confirmed.result
+        for public_index in range(len(public_steps) - 1, -1, -1):
+            item = public_steps[public_index]
+            if item.tool_name == confirmed.tool_name:
+                public_steps[public_index] = item.model_copy(update={"status": "SUCCEEDED"})
+                break
 
         gateway = UnifiedToolGateway(self._java, owner_id, ToolBudget())
         fields, next_resume = await self._run_plan(
@@ -377,7 +406,7 @@ class UnifiedAgentSupervisor:
         conversation.events.append(
             AssistantEvent(
                 sequence=len(conversation.events) + 1,
-                type="TURN_FAILED",
+                type="TURN_CANCELLED",
                 conversation_id=conversation_id,
                 payload={"turnId": turn_id, "reason": "CANCEL_REQUESTED"},
             )

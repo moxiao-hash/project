@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from app.unified_agent.models import ToolDescriptor, ToolEffect, ToolRiskLevel
+from app.unified_agent.models import ToolDescriptor, ToolEffect, ToolRiskLevel, UiAction
 from app.unified_agent.planner import (
     UNTRUSTED_DATA_CLOSE,
     UNTRUSTED_DATA_OPEN,
@@ -225,6 +225,19 @@ def test_clarify_intent_is_passed_through_as_clarification() -> None:
     assert "请说明具体节点" in outcome.reason
 
 
+def test_general_chat_without_tools_falls_back_to_grounded_conversation_flow() -> None:
+    model = FakeStructuredModel(
+        plan=plan([], intent=PlanIntent.GENERAL_CHAT, summary="我直接凭常识回答")
+    )
+
+    outcome = asyncio.run(
+        planner(model).propose(message="什么是依赖注入？", context={}, client_context={})
+    )
+
+    assert outcome.status == PlannerStatus.UNAVAILABLE
+    assert outcome.plan is None
+
+
 def test_low_confidence_plan_becomes_clarify() -> None:
     model = FakeStructuredModel(
         plan=plan([step("s1", "assessment.mastery.list")], confidence=0.3)
@@ -293,6 +306,64 @@ def test_planner_trims_oversized_context_before_calling_the_model() -> None:
     user_prompt = model.messages[1]["content"]
     assert len(user_prompt) < 5_000
     assert "已裁剪" in user_prompt
+
+
+def test_planner_trims_oversized_client_context_and_message() -> None:
+    model = FakeStructuredModel(plan=plan([step("s1", "assessment.mastery.list")]))
+
+    asyncio.run(
+        planner(model, max_context_chars=2_000).propose(
+            message="m" * 20_000,
+            context={},
+            client_context={"untrusted": "x" * 50_000},
+        )
+    )
+
+    user_prompt = model.messages[1]["content"]
+    assert len(user_prompt) < 8_000
+    assert user_prompt.count("已裁剪") >= 2
+
+
+def test_python_contract_accepts_every_frozen_local_effect_and_route_key() -> None:
+    local_tool = ToolDescriptor.model_validate(
+        {
+            "name": "developer.file.read",
+            "version": 1,
+            "category": "DEVELOPER",
+            "effect": "LOCAL",
+            "riskLevel": "NONE",
+            "requiredScope": None,
+            "idempotencyRequired": False,
+            "inputSchema": {"type": "object", "properties": {}},
+            "outputSchema": {"type": "object"},
+        }
+    )
+
+    assert local_tool.effect == ToolEffect.LOCAL
+    for route_key in ("ASSISTANT", "COURSES", "COURSE_DETAIL", "LESSON"):
+        assert UiAction(route_key=route_key, reason="契约对齐").route_key == route_key
+
+
+def test_python_contract_rejects_unpublished_medium_risk_level() -> None:
+    with pytest.raises(ValueError):
+        ToolDescriptor.model_validate(
+            {
+                "name": "unexpected.tool",
+                "version": 1,
+                "category": "TEST",
+                "effect": "READ",
+                "riskLevel": "MEDIUM",
+                "requiredScope": None,
+                "idempotencyRequired": False,
+                "inputSchema": {"type": "object"},
+                "outputSchema": {"type": "object"},
+            }
+        )
+
+
+def test_plan_id_is_always_a_uuid_even_when_the_model_supplies_it() -> None:
+    with pytest.raises(ValueError):
+        plan([step("s1", "assessment.mastery.list")], plan_id="model-invented-id")
 
 
 class FakeFactoryJavaBackend:

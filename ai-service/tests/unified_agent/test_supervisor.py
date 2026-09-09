@@ -826,6 +826,8 @@ def test_cancel_during_context_fetch_prevents_subsequent_write_tool():
         assert result.status == AssistantConversationStatus.FAILED
         assert result.pending_action is None
         assert "取消" in result.reply
+        events = await service.list_events(convo.conversation_id, "user-1")
+        assert events[-1].type == "TURN_CANCELLED"
 
     asyncio.run(run())
 
@@ -1116,6 +1118,112 @@ def test_confirmed_plan_step_resumes_remaining_steps():
         assert [step.tool_name for step in result.tool_steps][-1] == (
             "assessment.mastery.list"
         )
+
+    asyncio.run(run())
+
+
+def test_confirmed_write_result_can_feed_a_remaining_plan_step():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step(
+                            "s1",
+                            "settings.learning.update",
+                            {"dailyStudyLimitMinutes": 30},
+                        ),
+                        planned_step(
+                            "s2",
+                            "assessment.node_quiz_status.get",
+                            {"nodeId": "$s1.nextNodeId"},
+                            depends_on=["s1"],
+                        ),
+                    ],
+                    intent=PlanIntent.PLAN_ADJUSTMENT,
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+        preview = await service.send_message(
+            convo.conversation_id,
+            "调整时长后查看下一节测验",
+            "assistant-turn:resume-output-1",
+            "user-1",
+            {},
+        )
+        assert preview.pending_action is not None
+
+        async def confirm(action_id, owner_id):
+            return preview.pending_action.model_copy(
+                update={"status": "SUCCEEDED", "result": {"nextNodeId": "node-next"}}
+            ).model_dump(mode="json", by_alias=True)
+
+        java.confirm_agent_tool_action = confirm
+        result = await service.confirm_action(
+            convo.conversation_id, "action-settings-1", "user-1"
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        assert java.calls[-1][0] == "assessment.node_quiz_status.get"
+        assert java.calls[-1][2] == {"nodeId": "node-next"}
+        assert result.tool_steps[1].status == "SUCCEEDED"
+
+    asyncio.run(run())
+
+
+def test_invalid_resume_state_is_removed_from_the_conversation_snapshot():
+    async def run():
+        java = FakeJavaBackend()
+        planner = FakePlanner(
+            PlannerOutcome(
+                status=PlannerStatus.PLAN,
+                plan=model_plan(
+                    [
+                        planned_step(
+                            "s1",
+                            "settings.learning.update",
+                            {"dailyStudyLimitMinutes": 30},
+                        ),
+                        planned_step("s2", "assessment.mastery.list", depends_on=["s1"]),
+                    ],
+                    intent=PlanIntent.PLAN_ADJUSTMENT,
+                ),
+            )
+        )
+        service = UnifiedAgentSupervisor(
+            java, model_name="deepseek-v4-flash", planner=planner
+        )
+        convo = await service.create_conversation("user-1")
+        preview = await service.send_message(
+            convo.conversation_id,
+            "把每日时长改成 30 分钟并告诉我薄弱点",
+            "assistant-turn:invalid-resume-1",
+            "user-1",
+            {},
+        )
+        assert preview.pending_action is not None
+        service._conversations[convo.conversation_id].plan_resume = {"invalid": True}
+
+        async def confirm(action_id, owner_id):
+            return preview.pending_action.model_copy(
+                update={"status": "SUCCEEDED", "result": {"dailyStudyLimitMinutes": 30}}
+            ).model_dump(mode="json", by_alias=True)
+
+        java.confirm_agent_tool_action = confirm
+        result = await service.confirm_action(
+            convo.conversation_id, "action-settings-1", "user-1"
+        )
+        reloaded = await service.get_conversation(convo.conversation_id, "user-1")
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        assert result.pending_action is None
+        assert reloaded == result
 
     asyncio.run(run())
 

@@ -1,5 +1,40 @@
 # Task 28 验证证据：模型驱动的多步 Planner 与确定性策略验证
 
+> **Codex 最终验收（2026-09-09）：通过。** 本文后续的 DeepSeek Harness
+> 记录保留为原始交付证据；其中 `364 passed`、23 routeKey 和“待验收”是当时状态。
+> 最终口径以本节及下方“Codex 复核”为准，不将历史冒烟冒充本次新鲜实跑。
+
+## Codex 最终复核
+
+### 审查中发现并修复
+
+1. 原分支从 Task 27 修正前基线分出，Python 遗漏了 `ASSISTANT / COURSES / COURSE_DETAIL / LESSON`
+   routeKey、`LOCAL` effect，并接受未发布的 `MEDIUM` 风险值。
+2. 只裁剪学习上下文，未限制用户消息和客户端上下文，不可信输入可挤占整个模型窗口。
+3. `$sN.field` 把 `N` 当作数组下标，而不是匹配声明的 `stepId`；乱序 ID 会通过静态校验后在运行时降级。
+4. Planner 允许 8 个计划步骤，但未计入 Supervisor 预先执行的 `learning.context.get`，实际可产生第 9 次调用。
+5. 写步骤确认成功后，真实 `result` 没有回填到步骤输出，后续 `$sN.field` 引用必然失败；公开步骤状态也仍显示待确认。
+6. 恢复状态损坏时只返回临时快照，未写回会话；用户刷新后会回到旧的待确认状态。
+7. 取消发出 `TURN_FAILED`，与冻结的 `TURN_CANCELLED` 事件不一致。
+8. `GENERAL_CHAT` 空计划会把模型的未检索 summary 当作结果，绕开现有 RAG/教学回答链；现已强制降级到专用回答流程。
+9. 模型显式提供的任意字符串 `planId` 原本可通过；现在服务端生成或模型提供的值都必须满足 UUID 契约。
+
+### 新鲜验证
+
+```text
+Python pytest: 374 passed, 1 个上游库弃用警告
+Python Ruff: passed
+Java Maven: 365 passed
+Vue Vitest: 124 passed
+Vue TypeScript + production build: passed
+能力矩阵门禁: 4 passed，31 页面 / 64 工具覆盖通过
+git diff --check: passed
+```
+
+本次 Codex 没有重新消耗 DeepSeek Token，也没有声称 `[REAL_E2E]`。原交付中的
+DeepSeek V4 Flash + 64 工具最小冒烟作为历史证据保留；真实业务执行、MySQL 回查、
+SSE 和浏览器链路分别属于 Task 29/34。
+
 - **执行 Agent**：DeepSeek Harness + DeepSeek V4 Flash（后端与 Agent 执行工程师）
 - **测试等级**：`[UNIT_TEST]` + `[MOCK_INTEGRATION]`（假模型），**另附一次真实 DeepSeek 最小冒烟**；本轮**不构成 `[REAL_E2E]`**（未串联 Java 门面、MySQL 数据回查与前端）
 - **执行时间**：2026-09-08 23:51:36 (Asia/Shanghai)

@@ -154,17 +154,19 @@ Task 28 与 29 可在契约冻结后分支并行；Task 30 与 31 可并行；Ta
 }
 ```
 
-- [ ] **Step 1: 写失败测试。** 覆盖多意图、低置信度澄清、未知工具、模型伪造 ownerId、循环依赖、超过 8 步、两个写步骤、两个联网步骤、资料中的 Prompt Injection 和相同参数重复调用。
-- [ ] **Step 2: 运行 `cd ai-service && .venv/bin/python -m pytest -q tests/unified_agent/test_planner.py tests/unified_agent/test_policy_validator.py`。** 预期因 Planner 不存在失败。
-- [ ] **Step 3: 实现 Planner。** 向 DeepSeek 只发送裁剪后的动态上下文和 Java catalog；使用 Pydantic 验证结构化输出；模型不能直接执行工具。
-- [ ] **Step 4: 实现确定性策略验证器。** 校验工具存在、参数 schema、依赖无环、预算、风险、owner 隔离和真实性限制；验证失败转 `CLARIFY`，不尝试“修复后直接执行”。
-- [ ] **Step 5: 将现有关键词分支保留为降级层。** 模型不可用时只允许已证明安全的导航/查询和明确的单写操作，不声称完成复杂计划。
-- [ ] **Step 6: 执行计划。** 每一步使用现有 `UnifiedToolGateway`；工具结果只能通过声明的输出字段传给后续步骤，禁止字符串模板注入任意路径。
-- [ ] **Step 7: 增加取消和恢复测试。** 取消后不再调用下一工具；确认动作恢复后继续剩余步骤；服务重启可从持久状态恢复。
-- [ ] **Step 8: 运行 Python 全量 pytest 和 Ruff。** 预期全部通过。
-- [ ] **Step 9: 提交。** `feat: plan multi-step studypilot agent actions`
+- [x] **Step 1: 写失败测试。** 覆盖多意图、低置信度澄清、未知工具、模型伪造 ownerId、循环依赖、超过 8 步、两个写步骤、两个联网步骤、资料中的 Prompt Injection 和相同参数重复调用。
+- [x] **Step 2: 运行 `cd ai-service && .venv/bin/python -m pytest -q tests/unified_agent/test_planner.py tests/unified_agent/test_policy_validator.py`。** 已保留 RED 证据。
+- [x] **Step 3: 实现 Planner。** 向 DeepSeek 只发送裁剪后的动态上下文和 Java catalog；使用 Pydantic 验证结构化输出；模型不能直接执行工具。
+- [x] **Step 4: 实现确定性策略验证器。** 校验工具存在、参数 schema、依赖无环、预算、风险、owner 隔离和真实性限制；验证失败转 `CLARIFY`，不尝试“修复后直接执行”。
+- [x] **Step 5: 将现有关键词分支保留为降级层。** 模型不可用时只允许已证明安全的导航/查询和明确的单写操作，不声称完成复杂计划。
+- [x] **Step 6: 执行计划。** 每一步使用现有 `UnifiedToolGateway`；工具结果只能通过声明的输出字段传给后续步骤，禁止字符串模板注入任意路径。
+- [x] **Step 7: 增加取消和恢复测试。** 取消后不再调用下一工具；确认动作恢复后继续剩余步骤；服务重启可从持久状态恢复。
+- [x] **Step 8: 运行 Python 全量 pytest 和 Ruff。** Codex 验收时 374 项通过，Ruff 通过。
+- [x] **Step 9: 提交。** `feat: plan multi-step studypilot agent actions`
 
 **完成标准:** “继续昨天的章节，学完后准备测验，并告诉我薄弱点”能够产生公开多步计划；Agent 仍不能代替用户学习、打卡或答题。
+
+**Codex 验收（2026-09-09）：已通过。** 原分支基于 Task 27 修正前契约；验收时已合并最新 `main`，并修复 route/effect/risk 枚举漂移、不可信输入无界裁剪、步骤引用错位、预加载上下文绕过调用预算、确认后结果无法传给剩余步骤、失效恢复快照未落盘、取消事件名不一致、空计划用未检索 summary 冒充知识回答及非 UUID `planId` 等问题。详细证据见 `docs/verification/task-28.md`。
 
 ---
 

@@ -257,6 +257,24 @@ def test_reference_to_later_step_is_rejected() -> None:
     assert PlanIssueCode.INVALID_REFERENCE in result.codes
 
 
+def test_reference_uses_declared_step_id_instead_of_array_position() -> None:
+    result = validator().validate(
+        plan(
+            [
+                step("s2", "learning.context.get"),
+                step(
+                    "s1",
+                    "assessment.node_quiz_status.get",
+                    {"nodeId": "$s1.nextNodeId"},
+                ),
+            ]
+        )
+    )
+
+    assert result.ok is False
+    assert PlanIssueCode.INVALID_REFERENCE in result.codes
+
+
 def test_more_steps_than_configured_limit_is_rejected() -> None:
     result = validator(max_steps=2).validate(
         plan(
@@ -270,6 +288,32 @@ def test_more_steps_than_configured_limit_is_rejected() -> None:
 
     assert result.ok is False
     assert PlanIssueCode.TOO_MANY_STEPS in result.codes
+
+
+def test_preloaded_learning_context_counts_toward_total_tool_budget() -> None:
+    tools = {
+        item.name: item
+        for item in (
+            descriptor("learning.goals.list"),
+            descriptor("learning.plans.list"),
+            descriptor("assessment.mastery.list"),
+        )
+    }
+    result = PlanPolicyValidator(
+        tools,
+        budget=ToolBudget(max_calls=3),
+    ).validate(
+        plan(
+            [
+                step("s1", "learning.goals.list"),
+                step("s2", "learning.plans.list"),
+                step("s3", "assessment.mastery.list"),
+            ]
+        )
+    )
+
+    assert result.ok is False
+    assert PlanIssueCode.TOOL_CALL_BUDGET_EXCEEDED in result.codes
 
 
 def test_second_write_step_is_rejected_by_write_budget() -> None:
@@ -341,6 +385,13 @@ def test_clarify_intent_must_not_carry_steps() -> None:
 
     assert result.ok is False
     assert PlanIssueCode.CLARIFY_WITH_STEPS in result.codes
+
+
+def test_non_conversational_action_plan_must_contain_a_tool_step() -> None:
+    result = validator().validate(plan([]))
+
+    assert result.ok is False
+    assert PlanIssueCode.EMPTY_PLAN in result.codes
 
 
 def test_custom_budget_is_respected() -> None:

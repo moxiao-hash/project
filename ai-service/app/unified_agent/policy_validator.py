@@ -74,6 +74,7 @@ class PlanIssueCode(StrEnum):
     """稳定的机器可读问题码，供日志、测试与前端降级提示使用。"""
 
     TOO_MANY_STEPS = "TOO_MANY_STEPS"
+    EMPTY_PLAN = "EMPTY_PLAN"
     DUPLICATE_STEP_ID = "DUPLICATE_STEP_ID"
     UNKNOWN_TOOL = "UNKNOWN_TOOL"
     FORBIDDEN_ARGUMENT = "FORBIDDEN_ARGUMENT"
@@ -85,6 +86,7 @@ class PlanIssueCode(StrEnum):
     INVALID_REFERENCE = "INVALID_REFERENCE"
     INVALID_ROUTE_KEY = "INVALID_ROUTE_KEY"
     DUPLICATE_TOOL_CALL = "DUPLICATE_TOOL_CALL"
+    TOOL_CALL_BUDGET_EXCEEDED = "TOOL_CALL_BUDGET_EXCEEDED"
     WRITE_BUDGET_EXCEEDED = "WRITE_BUDGET_EXCEEDED"
     WEB_BUDGET_EXCEEDED = "WEB_BUDGET_EXCEEDED"
     HIGH_RISK_BUDGET_EXCEEDED = "HIGH_RISK_BUDGET_EXCEEDED"
@@ -136,6 +138,13 @@ class PlanPolicyValidator:
                     f"计划步骤数超过上限 {self._max_steps}",
                 )
             )
+        if not steps and plan.intent not in {PlanIntent.CLARIFY, PlanIntent.GENERAL_CHAT}:
+            issues.append(
+                PlanIssue(
+                    PlanIssueCode.EMPTY_PLAN,
+                    "可执行计划至少需要一个工具步骤",
+                )
+            )
         if plan.confidence < self._min_confidence:
             issues.append(
                 PlanIssue(
@@ -158,6 +167,13 @@ class PlanPolicyValidator:
         write_count = 0
         web_count = 0
         high_risk_count = 0
+        # Supervisor 在调用 Planner 前固定读取一次学习上下文。模型若再次声明同一
+        # 无参工具会复用已有结果，不产生第二次真实调用；其余步骤均占用总调用预算。
+        planned_call_count = sum(
+            1
+            for step in steps
+            if not (step.tool_name == "learning.context.get" and not step.arguments)
+        )
         signatures: set[str] = set()
 
         for index, step in enumerate(steps):
@@ -199,6 +215,13 @@ class PlanPolicyValidator:
             if descriptor.risk_level == ToolRiskLevel.HIGH:
                 high_risk_count += 1
 
+        if 1 + planned_call_count > self._budget.max_calls:
+            issues.append(
+                PlanIssue(
+                    PlanIssueCode.TOOL_CALL_BUDGET_EXCEEDED,
+                    "计划与预加载上下文合计超过本轮工具调用上限",
+                )
+            )
         if write_count > self._budget.max_writes:
             issues.append(
                 PlanIssue(PlanIssueCode.WRITE_BUDGET_EXCEEDED, "计划包含多个写操作步骤")
@@ -308,8 +331,16 @@ class PlanPolicyValidator:
                     )
                 )
                 continue
-            source_index = int(match.group("step")) - 1
-            if source_index >= index:
+            source_id = f"s{int(match.group('step'))}"
+            source_index = next(
+                (
+                    candidate_index
+                    for candidate_index, candidate in enumerate(steps)
+                    if candidate.step_id == source_id
+                ),
+                None,
+            )
+            if source_index is None or source_index >= index:
                 issues.append(
                     PlanIssue(
                         PlanIssueCode.INVALID_REFERENCE,

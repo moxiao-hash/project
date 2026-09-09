@@ -13,7 +13,7 @@
 
 from enum import StrEnum
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
@@ -53,7 +53,7 @@ class AssistantPlanStep(PlanContractModel):
 class AssistantPlan(PlanContractModel):
     """模型输出的公开计划；``summary`` 是唯一直接面向用户的模型文本。"""
 
-    plan_id: str = Field(default_factory=lambda: str(uuid4()), min_length=1, max_length=64)
+    plan_id: UUID = Field(default_factory=uuid4)
     intent: PlanIntent
     confidence: float = Field(ge=0.0, le=1.0)
     summary: str = Field(min_length=1, max_length=200)

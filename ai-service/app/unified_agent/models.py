@@ -13,6 +13,7 @@ from app.schemas.learning import JavaContractModel
 ALLOWED_UI_ROUTE_KEYS = frozenset(
     {
         "DASHBOARD",
+        "ASSISTANT",
         "ASSISTANT_HEALTH",
         "ROADMAP",
         "ROADMAP_STAGE",
@@ -36,6 +37,9 @@ ALLOWED_UI_ROUTE_KEYS = frozenset(
         "LEARNING_SETTINGS",
         "AI_SETTINGS",
         "WORKSPACE_ARTIFACTS",
+        "COURSES",
+        "COURSE_DETAIL",
+        "LESSON",
     }
 )
 
@@ -47,12 +51,12 @@ class ToolEffect(StrEnum):
     READ = "READ"
     NAVIGATE = "NAVIGATE"
     WRITE = "WRITE"
+    LOCAL = "LOCAL"
 
 
 class ToolRiskLevel(StrEnum):
     NONE = "NONE"
     LOW = "LOW"
-    MEDIUM = "MEDIUM"
     HIGH = "HIGH"
 
 
