@@ -27,10 +27,12 @@ import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(webEnvironment = WebEnvironment.MOCK)
@@ -42,6 +44,7 @@ class AssistantFacadeContractTest {
     private static final AtomicReference<CapturedRequest> LAST_REQUEST = new AtomicReference<>();
     private static volatile int upstreamStatus = 200;
     private static volatile String upstreamBody;
+    private static volatile String upstreamSse;
     private static final String CONVERSATION_ID = "11111111-2222-3333-4444-555555555555";
     private static final String ACTION_ID = "action-task-finish-1";
 
@@ -174,41 +177,37 @@ class AssistantFacadeContractTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].status").value("TODO"));
 
-        // 6. SSE 事件流与断线恢复续传验证：通过 Last-Event-ID 重放未消费事件
-        upstreamBody = """
-                [
-                  {
-                    "sequence": 1,
-                    "type": "TURN_STARTED",
-                    "conversationId": "%s",
-                    "payload": {}
-                  },
-                  {
-                    "sequence": 2,
-                    "type": "ACTION_PREVIEW",
-                    "conversationId": "%s",
-                    "payload": {"actionId": "%s"}
-                  },
-                  {
-                    "sequence": 3,
-                    "type": "TURN_COMPLETED",
-                    "conversationId": "%s",
-                    "payload": {"reply": "操作等待确认"}
-                  }
-                ]
-                """.formatted(CONVERSATION_ID, CONVERSATION_ID, ACTION_ID, CONVERSATION_ID);
+        // 6. Task 29 持续 SSE：MockMvc 异步分发验证真实流式代理与 Last-Event-ID 续传
+        upstreamSse = """
+                : heartbeat
+
+                id: 2
+                event: ACTION_PREVIEW
+                data: {"sequence":2,"type":"ACTION_PREVIEW","conversationId":"%s","payload":{"actionId":"%s"}}
+
+                id: 3
+                event: TURN_COMPLETED
+                data: {"sequence":3,"type":"TURN_COMPLETED","conversationId":"%s","payload":{"reply":"操作等待确认"}}
+
+                """.formatted(CONVERSATION_ID, ACTION_ID, CONVERSATION_ID);
 
         MvcResult replay = mockMvc.perform(get("/api/assistant/conversations/{id}/events", CONVERSATION_ID)
                         .header("Authorization", authHeader)
                         .header("Last-Event-ID", "1"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        // 上游写完后关闭流，Java 侧 emitter 随即完成；等待异步结果再分发。
+        replay.getAsyncResult(10_000L);
+        mockMvc.perform(asyncDispatch(replay))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                .andExpect(content().string(containsString("id: 2")))
-                .andExpect(content().string(containsString("id: 3")))
-                .andReturn();
+                .andExpect(content().string(containsString("id:2")))
+                .andExpect(content().string(containsString("event:ACTION_PREVIEW")))
+                .andExpect(content().string(containsString("event:TURN_COMPLETED")))
+                .andExpect(content().string(containsString("heartbeat")));
         String stream = replay.getResponse().getContentAsString();
-        assertFalse(stream.contains("id: 1\n"), "已消费事件不得重放");
-        assertTrue(stream.indexOf("id: 2\n") < stream.indexOf("id: 3\n"));
+        assertFalse(stream.contains("id:1\n"), "已消费事件不得重放");
+        assertTrue(stream.indexOf("id:2") < stream.indexOf("id:3"));
         assertTrue(LAST_REQUEST.get().path().contains("afterSequence=1"));
         assertTrue(LAST_REQUEST.get().path().contains("ownerId=" + user.userId()));
         assertEquals(INTERNAL_TOKEN, LAST_REQUEST.get().token());
@@ -372,6 +371,16 @@ class AssistantFacadeContractTest {
                 exchange.getRequestHeaders().getFirst("X-Internal-Service-Token")
         ));
         String response = upstreamBody != null ? upstreamBody : "{}";
+        if (path.contains("/events/stream")) {
+            byte[] frames = (upstreamSse == null ? ": heartbeat\n\n" : upstreamSse)
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
+            // 长度 0 = chunked，模拟真实持续流；写完后关闭，让 Java 侧 emitter 正常完成。
+            exchange.sendResponseHeaders(200, 0);
+            exchange.getResponseBody().write(frames);
+            exchange.close();
+            return;
+        }
         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(upstreamStatus, bytes.length);

@@ -1,10 +1,13 @@
 """Java Agent Facade 调用的统一 Supervisor 内部接口。"""
 
+from collections.abc import AsyncIterator
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from app.core.security import require_internal_token
+from app.unified_agent.event_stream import SSE_HEARTBEAT_FRAME, encode_sse_event
 from app.unified_agent.models import (
     AssistantConversationSnapshot,
     AssistantEvent,
@@ -37,6 +40,17 @@ def _translate(exc: Exception) -> HTTPException:
     if isinstance(exc, AssistantConversationBusyError):
         return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=503, detail="统一 Agent 暂时不可用")
+
+
+def _cursor_from_header(last_event_id: str | None) -> int:
+    """``Last-Event-ID`` 是断线续传的权威游标；非法值按从头重放处理。"""
+
+    if last_event_id is None or not last_event_id.strip():
+        return 0
+    try:
+        return max(0, int(last_event_id.strip()))
+    except ValueError:
+        return 0
 
 
 @router.post("", response_model=AssistantConversationSnapshot, status_code=201)
@@ -88,6 +102,42 @@ async def list_events(
         return await service.list_events(conversation_id, owner_id, after_sequence)
     except Exception as exc:
         raise _translate(exc) from exc
+
+
+@router.get("/{conversation_id}/events/stream")
+async def stream_events(
+    conversation_id: str,
+    owner_id: Annotated[str, Query(alias="ownerId", min_length=1)],
+    service: Annotated[UnifiedAgentSupervisor, Depends(get_unified_agent_service)],
+    after_sequence: Annotated[int, Query(alias="afterSequence", ge=0)] = 0,
+    last_event_id: Annotated[str | None, Header(alias="Last-Event-ID")] = None,
+) -> StreamingResponse:
+    """Task 29：持续推送已持久化事件；``Last-Event-ID`` 优先于查询参数。
+
+    先做一次鉴权/存在性检查，让 404、409 等错误以普通 HTTP 状态返回，
+    而不是在已经开始的流里才发现会话不存在。
+    """
+
+    try:
+        await service.get_conversation(conversation_id, owner_id)
+    except Exception as exc:
+        raise _translate(exc) from exc
+    cursor = max(after_sequence, _cursor_from_header(last_event_id))
+
+    async def frames() -> AsyncIterator[str]:
+        async for event in service.stream_events(conversation_id, owner_id, cursor):
+            yield SSE_HEARTBEAT_FRAME if event is None else encode_sse_event(event)
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # 反向代理不得缓冲，否则事件会攒到最后一起发出。
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post(

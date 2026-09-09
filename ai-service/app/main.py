@@ -296,6 +296,9 @@ async def lifespan(application: FastAPI):
             planner_provider=OwnerScopedAssistantPlannerFactory(
                 settings, unified_java
             ).for_owner,
+            # Task 29：持续 SSE 的连接队列上限与心跳间隔。
+            event_queue_size=settings.agent_event_stream_queue_size,
+            event_heartbeat_seconds=settings.agent_event_stream_heartbeat_seconds,
         )
         scheduler = AsyncIOScheduler(timezone="UTC")
         scheduler.add_job(

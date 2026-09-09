@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from time import monotonic
@@ -15,6 +16,13 @@ from app.clients.java_backend import JavaBackendClient
 from app.knowledge.models import KnowledgeMode, WebSearchPolicy
 from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
 from app.persistence.agent_state import AgentPersistence
+from app.unified_agent.event_stream import (
+    DEFAULT_HEARTBEAT_SECONDS,
+    DEFAULT_QUEUE_SIZE,
+    AssistantEventBus,
+    EventStreamOverflow,
+    chunk_reply_deltas,
+)
 from app.unified_agent.models import (
     ALLOWED_UI_ROUTE_KEYS,
     AssistantConversationSnapshot,
@@ -51,6 +59,8 @@ class SupervisorState(TypedDict, total=False):
     idempotency_key: str
     client_context: dict[str, Any]
     gateway: UnifiedToolGateway
+    # Task 29：实时事件回调，由 send_message 注入；测试可省略。
+    emit_event: Any
     intent: str
     reply: str
     tool_steps: list[dict[str, str]]
@@ -89,6 +99,9 @@ class UnifiedAgentSupervisor:
         metrics: AgentRuntimeMetrics = AGENT_RUNTIME_METRICS,
         planner: Any | None = None,
         planner_provider: Any | None = None,
+        event_queue_size: int = DEFAULT_QUEUE_SIZE,
+        event_heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
+        reply_delta_source: Callable[[str], AsyncIterator[str]] | None = None,
     ) -> None:
         self._java = java_backend
         self._model_name = model_name
@@ -98,7 +111,118 @@ class UnifiedAgentSupervisor:
         self._planner = planner
         self._planner_provider = planner_provider
         self._conversations: dict[str, _Conversation] = {}
+        # Task 29：每会话在线事件总线。事件先落库再发布，慢消费者只丢连接。
+        self._events = AssistantEventBus(queue_size=event_queue_size)
+        self._event_heartbeat_seconds = event_heartbeat_seconds
+        self._reply_delta_source = reply_delta_source
         self._graph = self._build_graph()
+
+    async def _emit(
+        self,
+        conversation: _Conversation,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> AssistantEvent:
+        """先持久化、再发布；顺序保证断线重连不会丢事件。"""
+
+        event = AssistantEvent(
+            sequence=len(conversation.events) + 1,
+            type=event_type,
+            conversation_id=conversation.snapshot.conversation_id,
+            payload=payload,
+        )
+        conversation.events.append(event)
+        await self._save(conversation)
+        self._events.publish(event)
+        return event
+
+    def _emit_callback(
+        self, conversation: _Conversation
+    ) -> Callable[[str, dict[str, Any]], Awaitable[None]]:
+        """给工具网关/图节点使用的事件回调（闭包捕获当前会话）。"""
+
+        async def emit(event_type: str, payload: dict[str, Any]) -> None:
+            await self._emit(conversation, event_type, payload)
+
+        return emit
+
+    async def _emit_reply_deltas(
+        self,
+        conversation: _Conversation,
+        turn_id: str,
+        reply: str,
+    ) -> None:
+        """把本轮回复作为 ``ASSISTANT_DELTA`` 增量推送。
+
+        默认来源是确定性分片；注入 ``reply_delta_source`` 后由真实模型增量替换。
+        无论哪种来源，最终完整消息与增量共享同一 ``turnId``，且刷新只重放事件。
+        """
+
+        index = 0
+        if self._reply_delta_source is not None:
+            async for chunk in self._reply_delta_source(reply):
+                if not chunk:
+                    continue
+                await self._emit(
+                    conversation,
+                    "ASSISTANT_DELTA",
+                    {"turnId": turn_id, "index": index, "delta": chunk},
+                )
+                index += 1
+            return
+        for chunk in chunk_reply_deltas(reply):
+            await self._emit(
+                conversation,
+                "ASSISTANT_DELTA",
+                {"turnId": turn_id, "index": index, "delta": chunk},
+            )
+            index += 1
+
+    async def stream_events(
+        self,
+        conversation_id: str,
+        owner_id: str,
+        after_sequence: int = 0,
+        *,
+        heartbeat_seconds: float | None = None,
+    ) -> AsyncIterator[AssistantEvent | None]:
+        """回放持久事件后持续推送在线事件。
+
+        - 产出 ``AssistantEvent``：真实事件。
+        - 产出 ``None``：心跳到期，调用方发送 SSE 注释帧。
+        - 慢消费者队列溢出时结束流，客户端用 ``Last-Event-ID`` 重连续传。
+        """
+
+        conversation = await self._require(conversation_id, owner_id)
+        heartbeat = (
+            self._event_heartbeat_seconds
+            if heartbeat_seconds is None
+            else heartbeat_seconds
+        )
+        # 先订阅再读历史：两者之间发布的事件会同时出现在队列和持久列表中，
+        # 用 sequence 去重即可，既不会丢事件也不会重复。
+        subscription = self._events.subscribe(conversation_id)
+        last_sequence = after_sequence
+        try:
+            for event in tuple(conversation.events):
+                if event.sequence <= last_sequence:
+                    continue
+                last_sequence = event.sequence
+                yield event
+            while True:
+                try:
+                    event = await subscription.receive(heartbeat)
+                except EventStreamOverflow:
+                    return
+                if event is None:
+                    yield None
+                    continue
+                if event.sequence <= last_sequence:
+                    continue
+                last_sequence = event.sequence
+                yield event
+        finally:
+            self._events.unsubscribe(subscription)
 
     async def _planner_for_turn(self, owner_id: str) -> Any | None:
         """优先使用固定 Planner（测试）；生产按 owner 解析凭据。
@@ -222,17 +346,13 @@ class UnifiedAgentSupervisor:
             }
         )
         conversation.snapshot = snapshot
-        conversation.events.append(
-            AssistantEvent(
-                sequence=len(conversation.events) + 1,
-                type=(
-                    "TURN_COMPLETED" if succeeded else "TURN_FAILED" if failed else "ACTION_PREVIEW"
-                ),
-                conversation_id=conversation_id,
-                payload={"actionId": action_id, "actionStatus": confirmed.status},
-            )
+        await self._emit(
+            conversation,
+            (
+                "TURN_COMPLETED" if succeeded else "TURN_FAILED" if failed else "ACTION_PREVIEW"
+            ),
+            {"actionId": action_id, "actionStatus": confirmed.status},
         )
-        await self._save(conversation)
         return snapshot
 
     async def _resume_plan(
@@ -276,19 +396,15 @@ class UnifiedAgentSupervisor:
                 }
             )
             conversation.snapshot = snapshot
-            conversation.events.append(
-                AssistantEvent(
-                    sequence=len(conversation.events) + 1,
-                    type="TURN_COMPLETED",
-                    conversation_id=conversation_id,
-                    payload={
-                        "actionId": action_id,
-                        "actionStatus": confirmed.status,
-                        "resumeStatus": "INVALID",
-                    },
-                )
+            await self._emit(
+                conversation,
+                "TURN_COMPLETED",
+                {
+                    "actionId": action_id,
+                    "actionStatus": confirmed.status,
+                    "resumeStatus": "INVALID",
+                },
             )
-            await self._save(conversation)
             return snapshot
 
         if start_index > 0 and confirmed.result is not None:
@@ -332,19 +448,15 @@ class UnifiedAgentSupervisor:
             }
         )
         conversation.snapshot = snapshot
-        conversation.events.append(
-            AssistantEvent(
-                sequence=len(conversation.events) + 1,
-                type=(
-                    "TURN_COMPLETED"
-                    if status == AssistantConversationStatus.COMPLETED
-                    else "ACTION_PREVIEW"
-                ),
-                conversation_id=conversation_id,
-                payload={"actionId": action_id, "actionStatus": confirmed.status},
-            )
+        await self._emit(
+            conversation,
+            (
+                "TURN_COMPLETED"
+                if status == AssistantConversationStatus.COMPLETED
+                else "ACTION_PREVIEW"
+            ),
+            {"actionId": action_id, "actionStatus": confirmed.status},
         )
-        await self._save(conversation)
         return snapshot
 
     async def reject_action(
@@ -383,15 +495,11 @@ class UnifiedAgentSupervisor:
             }
         )
         conversation.snapshot = snapshot
-        conversation.events.append(
-            AssistantEvent(
-                sequence=len(conversation.events) + 1,
-                type="TURN_COMPLETED",
-                conversation_id=conversation_id,
-                payload={"actionId": action_id, "actionStatus": "REJECTED"},
-            )
+        await self._emit(
+            conversation,
+            "TURN_COMPLETED",
+            {"actionId": action_id, "actionStatus": "REJECTED"},
         )
-        await self._save(conversation)
         return snapshot
 
     async def cancel_turn(
@@ -403,15 +511,11 @@ class UnifiedAgentSupervisor:
         if conversation.active_turn_id != turn_id:
             raise AssistantConversationNotFoundError("正在执行的轮次不存在")
         conversation.cancel_requested_turn_id = turn_id
-        conversation.events.append(
-            AssistantEvent(
-                sequence=len(conversation.events) + 1,
-                type="TURN_CANCELLED",
-                conversation_id=conversation_id,
-                payload={"turnId": turn_id, "reason": "CANCEL_REQUESTED"},
-            )
+        await self._emit(
+            conversation,
+            "TURN_CANCELLED",
+            {"turnId": turn_id, "reason": "CANCEL_REQUESTED"},
         )
-        await self._save(conversation)
         return conversation.snapshot.model_copy(
             update={"reply": "已请求取消当前轮次，正在停止后续工具调用。"}
         )
@@ -431,6 +535,10 @@ class UnifiedAgentSupervisor:
         if conversation.lock.locked():
             raise AssistantConversationBusyError("统一 Agent 正在处理上一条消息")
         async with conversation.lock:
+            # Task 29：轮次开始立即推送，用户不必等整轮结束才看到反馈。
+            await self._emit(
+                conversation, "TURN_STARTED", {"turnId": idempotency_key}
+            )
             # 等待确认时只能走 Java 专用确认接口；“确认”等普通文本不会执行动作。
             if conversation.snapshot.pending_action is not None:
                 result = conversation.snapshot.model_copy(
@@ -451,6 +559,7 @@ class UnifiedAgentSupervisor:
                 gateway = UnifiedToolGateway(
                     self._java, owner_id, ToolBudget(),
                     is_cancelled=lambda: conversation.cancel_requested_turn_id == idempotency_key,
+                    on_tool_event=self._emit_callback(conversation),
                 )
                 conversation.active_turn_id = idempotency_key
                 turn_started = monotonic()
@@ -464,6 +573,7 @@ class UnifiedAgentSupervisor:
                             # 后续使用实体 ID 时仍必须由 Java 工具重新校验归属。
                             "client_context": client_context,
                             "gateway": gateway,
+                            "emit_event": self._emit_callback(conversation),
                             "knowledge_conversation_id": (
                                 conversation.knowledge_conversation_id
                             ),
@@ -477,18 +587,14 @@ class UnifiedAgentSupervisor:
                         duration_seconds=monotonic() - turn_started,
                     )
                     conversation.active_turn_id = None
-                    conversation.events.append(
-                        AssistantEvent(
-                            sequence=len(conversation.events) + 1,
-                            type="TURN_FAILED",
-                            conversation_id=conversation_id,
-                            payload={
-                                "turnId": idempotency_key,
-                                "errorType": type(exc).__name__,
-                            },
-                        )
+                    await self._emit(
+                        conversation,
+                        "TURN_FAILED",
+                        {
+                            "turnId": idempotency_key,
+                            "errorType": type(exc).__name__,
+                        },
                     )
-                    await self._save(conversation)
                     raise
                 conversation.active_turn_id = None
                 self._metrics.observe_turn(
@@ -509,6 +615,12 @@ class UnifiedAgentSupervisor:
                     )
                     conversation.snapshot = result
                     conversation.turn_results[idempotency_key] = result
+                    # 取消请求先给出即时反馈；此处补发终态，保证流以取消事件收尾。
+                    await self._emit(
+                        conversation,
+                        "TURN_CANCELLED",
+                        {"turnId": idempotency_key, "reason": "TURN_ABORTED"},
+                    )
                     await self._save(conversation)
                     return result
                 pending_action = values.get("pending_action")
@@ -544,9 +656,38 @@ class UnifiedAgentSupervisor:
                 )
             conversation.snapshot = result
             conversation.turn_results[idempotency_key] = result
-            self._append_turn_events(conversation, result)
-            await self._save(conversation)
+            await self._emit_turn_tail(conversation, idempotency_key, result)
             return result
+
+    async def _emit_turn_tail(
+        self,
+        conversation: _Conversation,
+        turn_id: str,
+        snapshot: AssistantConversationSnapshot,
+    ) -> None:
+        """轮次收尾事件：动作预览、界面动作、回复增量、终态。"""
+
+        if snapshot.pending_action is not None:
+            await self._emit(
+                conversation,
+                "ACTION_PREVIEW",
+                {
+                    "turnId": turn_id,
+                    "actionId": snapshot.pending_action.action_id,
+                    "summary": snapshot.pending_action.summary,
+                    "riskLevel": snapshot.pending_action.risk_level.value,
+                },
+            )
+        for action in snapshot.ui_actions:
+            payload = action.model_dump(mode="json", by_alias=True)
+            payload["turnId"] = turn_id
+            await self._emit(conversation, "UI_ACTION", payload)
+        await self._emit_reply_deltas(conversation, turn_id, snapshot.reply)
+        await self._emit(
+            conversation,
+            "TURN_COMPLETED",
+            {"turnId": turn_id, "reply": snapshot.reply},
+        )
 
     async def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
         conversation = self._conversations.get(conversation_id)
@@ -609,49 +750,15 @@ class UnifiedAgentSupervisor:
             },
         )
 
-    @staticmethod
-    def _append_turn_events(
-        conversation: _Conversation,
-        snapshot: AssistantConversationSnapshot,
-    ) -> None:
-        event_types: list[tuple[str, dict[str, Any]]] = [
-            ("TURN_STARTED", {}),
-            ("CONTEXT_LOADED", {}),
-        ]
-        event_types.extend(
-            ("TOOL_SUCCEEDED", {"toolName": step.tool_name, "summary": step.summary})
-            for step in snapshot.tool_steps
-        )
-        if snapshot.pending_action is not None:
-            event_types.append(
-                (
-                    "ACTION_PREVIEW",
-                    {
-                        "actionId": snapshot.pending_action.action_id,
-                        "summary": snapshot.pending_action.summary,
-                    },
-                )
-            )
-        event_types.extend(
-            ("UI_ACTION", action.model_dump(mode="json", by_alias=True))
-            for action in snapshot.ui_actions
-        )
-        event_types.append(("TURN_COMPLETED", {"reply": snapshot.reply}))
-        for event_type, payload in event_types:
-            conversation.events.append(
-                AssistantEvent(
-                    sequence=len(conversation.events) + 1,
-                    type=event_type,
-                    conversation_id=snapshot.conversation_id,
-                    payload=payload,
-                )
-            )
-
     def _build_graph(self):
         async def dispatch(state: SupervisorState) -> dict[str, Any]:
             gateway = state["gateway"]
+            emit = state.get("emit_event")
             steps: list[PublicToolStep] = []
             context_result = await gateway.invoke("learning.context.get", {})
+            if emit is not None:
+                # 上下文读取完成即可推送，后续规划/工具步骤继续增量输出。
+                await emit("CONTEXT_LOADED", {"toolName": "learning.context.get"})
             steps.append(
                 PublicToolStep(
                     tool_name="learning.context.get",
@@ -674,6 +781,21 @@ class UnifiedAgentSupervisor:
                     planner_outcome.status == PlannerStatus.PLAN
                     and planner_outcome.plan is not None
                 ):
+                    if emit is not None:
+                        # 只公开计划意图、摘要与工具名，不泄露模型思维链。
+                        await emit(
+                            "PLAN_GENERATED",
+                            {
+                                "planId": str(planner_outcome.plan.plan_id),
+                                "intent": planner_outcome.plan.intent.value,
+                                "confidence": planner_outcome.plan.confidence,
+                                "summary": planner_outcome.plan.summary,
+                                "steps": [
+                                    step.tool_name
+                                    for step in planner_outcome.plan.steps
+                                ],
+                            },
+                        )
                     return await self._execute_plan(
                         state,
                         planner_outcome.plan,
