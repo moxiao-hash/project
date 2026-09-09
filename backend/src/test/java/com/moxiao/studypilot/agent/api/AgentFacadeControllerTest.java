@@ -26,10 +26,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(webEnvironment = WebEnvironment.MOCK)
@@ -42,6 +44,7 @@ class AgentFacadeControllerTest {
     private static volatile int upstreamStatus = 200;
     private static volatile String retryAfterResponse;
     private static volatile String upstreamBody;
+    private static volatile String upstreamSse;
     private static final String PLAN_CONVERSATION_ID =
             "11111111-1111-1111-1111-111111111111";
     private static final String TASK_CONVERSATION_ID =
@@ -256,28 +259,35 @@ class AgentFacadeControllerTest {
     }
 
     @Test
-    void unifiedEventEndpointReplaysSseAfterLastEventId() throws Exception {
+    void unifiedEventEndpointStreamsSseAfterLastEventId() throws Exception {
         Registration registration = registerUser();
         upstreamStatus = 200;
-        upstreamBody = """
-                [{"sequence":3,"type":"TURN_COMPLETED","conversationId":"%s",\
-                "payload":{"reply":"done"}}]
+        upstreamSse = """
+                id: 3
+                event: TURN_COMPLETED
+                data: {"sequence":3,"type":"TURN_COMPLETED","conversationId":"%s","payload":{"reply":"done"}}
+
                 """.formatted(PLAN_CONVERSATION_ID);
         try {
-            mockMvc.perform(get("/api/assistant/conversations/{id}/events", PLAN_CONVERSATION_ID)
-                            .header("Authorization", "Bearer " + registration.token())
-                            .header("Last-Event-ID", "2"))
+            MvcResult result = mockMvc.perform(
+                            get("/api/assistant/conversations/{id}/events", PLAN_CONVERSATION_ID)
+                                    .header("Authorization", "Bearer " + registration.token())
+                                    .header("Last-Event-ID", "2"))
+                    .andExpect(request().asyncStarted())
+                    .andReturn();
+            result.getAsyncResult(10_000L);
+            mockMvc.perform(asyncDispatch(result))
                     .andExpect(status().isOk())
                     .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM))
-                    .andExpect(content().string(org.hamcrest.Matchers.containsString("id: 3")))
+                    .andExpect(content().string(org.hamcrest.Matchers.containsString("id:3")))
                     .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                            "event: TURN_COMPLETED")));
+                            "event:TURN_COMPLETED")));
             org.junit.jupiter.api.Assertions.assertEquals(
                     "/internal/assistant/conversations/" + PLAN_CONVERSATION_ID
-                            + "/events?afterSequence=2&ownerId=" + registration.userId(),
+                            + "/events/stream?afterSequence=2&ownerId=" + registration.userId(),
                     LAST_REQUEST.get().path());
         } finally {
-            upstreamBody = null;
+            upstreamSse = null;
         }
     }
 
@@ -511,6 +521,15 @@ class AgentFacadeControllerTest {
                 : """
                   {"conversationId":"conversation-1","ownerId":"internal-owner","status":"COLLECTING"}
                   """;
+        if (path.contains("/events/stream")) {
+            byte[] frames = (upstreamSse == null ? ": heartbeat\n\n" : upstreamSse)
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0);
+            exchange.getResponseBody().write(frames);
+            exchange.close();
+            return;
+        }
         byte[] bytes = response.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
         if (retryAfterResponse != null) {

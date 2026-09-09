@@ -1,13 +1,16 @@
 """带调用次数、联网和写操作预算的 Java 工具网关。"""
 
 import json
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from app.clients.java_backend import JavaBackendClient
 from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
 from app.unified_agent.models import ToolDescriptor, ToolEffect, ToolInvocationResult
+
+#: Task 29：工具级事件回调（TOOL_STARTED / TOOL_SUCCEEDED / TOOL_FAILED）。
+ToolEventCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 
 
 class UnknownToolError(LookupError):
@@ -52,15 +55,22 @@ class UnifiedToolGateway:
         budget: ToolBudget,
         metrics: AgentRuntimeMetrics = AGENT_RUNTIME_METRICS,
         is_cancelled: Callable[[], bool] = lambda: False,
+        on_tool_event: ToolEventCallback | None = None,
     ) -> None:
         self._java = java_backend
         self._owner_id = owner_id
         self._budget = budget
         self._metrics = metrics
         self._is_cancelled = is_cancelled
+        self._on_tool_event = on_tool_event
         self._catalog: dict[str, ToolDescriptor] | None = None
         self._signatures: set[str] = set()
         self.usage = ToolUsage()
+
+    async def _emit_tool_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        if self._on_tool_event is None:
+            return
+        await self._on_tool_event(event_type, payload)
 
     async def invoke(
         self,
@@ -104,13 +114,19 @@ class UnifiedToolGateway:
             self.usage.write_calls += 1
         if descriptor.risk_level.value == "HIGH":
             self.usage.high_risk_actions += 1
+        # Task 29：预算与重复检查通过后才推送 TOOL_STARTED，被拒绝的调用不算开始。
+        await self._emit_tool_event("TOOL_STARTED", {"toolName": tool_name})
         try:
             payload = await self._java.invoke_agent_tool(
                 tool_name, self._owner_id, arguments, idempotency_key,
             )
             result = ToolInvocationResult.model_validate(payload)
-        except BaseException:
+        except BaseException as exc:
             self._metrics.observe_tool(category=descriptor.category, status="error")
+            await self._emit_tool_event(
+                "TOOL_FAILED",
+                {"toolName": tool_name, "errorType": type(exc).__name__},
+            )
             raise
         status = "success"
         if result.action is not None:
@@ -119,6 +135,9 @@ class UnifiedToolGateway:
                 else "error" if result.action.status == "FAILED" else "pending"
             )
         self._metrics.observe_tool(category=descriptor.category, status=status)
+        await self._emit_tool_event(
+            "TOOL_SUCCEEDED", {"toolName": tool_name, "status": status}
+        )
         # 只读请求结束时也检查，避免随后继续调用知识模型等非工具能力。
         if descriptor.effect != ToolEffect.WRITE:
             self._check_cancelled()

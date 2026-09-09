@@ -77,6 +77,28 @@ class FakeAnswerer:
         return "基于资料与官网，当前建议至少使用 Java 17。"
 
 
+class StreamingAnswerer(FakeAnswerer):
+    """Task 29：暴露 astream 的假回答器，用于验证真实增量路径。"""
+
+    def __init__(self, chunks: list[str]) -> None:
+        super().__init__()
+        self.chunks = chunks
+        self.stream_calls = 0
+
+    async def astream(self, *, question, history, materials, web_results):
+        self.stream_calls += 1
+        self.calls.append(
+            {
+                "question": question,
+                "history": history,
+                "materials": materials,
+                "web_results": web_results,
+            }
+        )
+        for chunk in self.chunks:
+            yield chunk
+
+
 def evidence(*, privacy_level: str = "NORMAL") -> RetrievedEvidence:
     return RetrievedEvidence(
         material_id="material-1",
@@ -565,3 +587,54 @@ async def test_each_conversation_keeps_at_most_one_pending_mutation(tmp_path) ->
     assert sum(key[0] == first.conversation_id for key in service._pending_mutations) == 1
     assert sum(key[0] == second.conversation_id for key in service._pending_mutations) == 1
     await persistence.close()
+
+
+async def test_stream_message_forwards_model_deltas_and_commits_same_answer() -> None:
+    retriever = FakeRetriever([])
+    web = FakeWebSearcher()
+    answerer = StreamingAnswerer(["先学 Java 基础，", "再学 Spring Boot。"])
+    service = KnowledgeConversationService(retriever, web, answerer)
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    deltas: list[str] = []
+
+    async def on_delta(chunk: str) -> None:
+        deltas.append(chunk)
+
+    snapshot = await service.stream_message(
+        created.conversation_id,
+        "解释一下学习顺序",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+        on_delta=on_delta,
+    )
+
+    assert deltas == ["先学 Java 基础，", "再学 Spring Boot。"]
+    assert snapshot.answer == "先学 Java 基础，再学 Spring Boot。"
+    assert answerer.stream_calls == 1
+    assert answerer.calls[0]["question"] == "解释一下学习顺序"
+    committed = await service.get_conversation(created.conversation_id, "user-1")
+    assert committed.answer == snapshot.answer
+    assert committed.answer == "".join(deltas)
+
+
+async def test_stream_message_falls_back_to_non_streaming_answerer() -> None:
+    retriever = FakeRetriever([])
+    web = FakeWebSearcher()
+    answerer = FakeAnswerer()
+    service = KnowledgeConversationService(retriever, web, answerer)
+    created = await service.create_conversation("user-1", KnowledgeMode.AUTO)
+    deltas: list[str] = []
+
+    async def on_delta(chunk: str) -> None:
+        deltas.append(chunk)
+
+    snapshot = await service.stream_message(
+        created.conversation_id,
+        "解释一下学习顺序",
+        WebSearchPolicy.DISABLED,
+        "user-1",
+        on_delta=on_delta,
+    )
+
+    assert deltas == [], "不支持 astream 的回答器不得伪造增量"
+    assert snapshot.answer == "基于资料与官网，当前建议至少使用 Java 17。"
