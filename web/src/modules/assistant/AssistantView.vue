@@ -7,7 +7,10 @@
         <p>一句话打开章节、开始测验、整理错题，或查询你的学习状态。</p>
       </div>
       <div v-if="conversation" class="model-pill">
-        <span class="model-dot" />{{ conversation.modelName }}
+        <span class="model-dot" :class="streamStatus" />
+        <span class="stream-status-text" data-testid="stream-status">{{ streamStatus }}</span>
+        <span class="pill-divider">·</span>
+        <span>{{ conversation.modelName }}</span>
       </div>
     </section>
 
@@ -34,29 +37,45 @@
             </div>
           </div>
           <div
-            v-for="(message, index) in conversation.messages"
+            v-for="(msg, index) in conversation.messages"
             :key="index"
             class="assistant-message"
-            :class="message.role"
+            :class="[msg.role, msg.status ? `status-${msg.status}` : '']"
           >
-            <div class="message-label">{{ message.role === 'user' ? '你' : 'StudyPilot' }}</div>
+            <div class="message-label">{{ msg.role === 'user' ? '你' : 'StudyPilot' }}</div>
             <div class="message-content">
-              <AiMarkdownMessage v-if="message.role === 'assistant'" :content="message.content" />
-              <span v-else>{{ message.content }}</span>
+              <AiMarkdownMessage v-if="msg.role === 'assistant'" :content="msg.content" />
+              <span v-else>{{ msg.content }}</span>
             </div>
           </div>
 
           <div v-if="sending" class="working-row">
             <span class="spinner" /> 正在理解目标并调用应用工具…
+            <button
+              v-if="activeTurnId"
+              type="button"
+              class="btn-cancel-turn"
+              data-testid="cancel-turn"
+              @click="cancelCurrentTurn"
+            >
+              取消
+            </button>
           </div>
         </div>
 
         <div v-if="conversation.toolSteps.length" class="process-panel">
           <div class="process-title">本轮执行过程</div>
           <div v-for="step in conversation.toolSteps" :key="step.toolName" class="process-step">
-            <span class="step-check">✓</span>
+            <span class="step-check" :class="{ 'is-running': step.status === 'RUNNING', 'is-failed': step.status === 'FAILED' }">
+              {{ step.status === 'SUCCEEDED' ? '✓' : step.status === 'RUNNING' ? '⋯' : '✗' }}
+            </span>
             <div><strong>{{ step.summary }}</strong><small>{{ step.toolName }}</small></div>
-            <span class="badge badge-success">{{ step.status }}</span>
+            <span
+              class="badge"
+              :class="step.status === 'SUCCEEDED' ? 'badge-success' : step.status === 'RUNNING' ? 'badge-warning' : 'badge-danger'"
+            >
+              {{ step.status }}
+            </span>
           </div>
         </div>
 
@@ -105,24 +124,40 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { AxiosError } from 'axios'
 import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
-import { assistantApi } from '@/services/current/assistant'
+import {
+  assistantApi,
+  type AssistantEvent,
+  type AssistantEventStreamController,
+  type EventStreamStatus,
+} from '@/services/current/assistant'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
-import type { AssistantConversation } from '@/types/assistant'
+import type { AssistantConversation, AssistantUiAction } from '@/types/assistant'
 import { dispatchUiAction } from './uiActionDispatcher'
 
 const STORAGE_KEY = 'studypilot.assistantConversationId'
 const router = useRouter()
 const route = useRoute()
 const toast = useToastStore()
+
 const conversation = ref<AssistantConversation | null>(null)
 const message = ref('')
 const loading = ref(true)
 const sending = ref(false)
 const actionBusy = ref(false)
+const activeTurnId = ref<string | null>(null)
+const streamStatus = ref<EventStreamStatus>('disconnected')
+
+let latestTurnGeneration = 0
+let activeGeneration = 0
+const terminalTurns = new Set<string>()
+
+let streamController: AssistantEventStreamController | null = null
+const dispatchedActions = new Set<string>()
 
 const prompts = [
   { icon: '↗', title: '继续学习', text: '继续昨天没学完的章节' },
@@ -141,18 +176,365 @@ function safeCitationUrl(value?: string | null): string | null {
   }
 }
 
+function startSubscription(convId: string, initialLastEventId = 0) {
+  streamController?.close()
+  streamController = assistantApi.subscribeEvents(convId, {
+    lastEventId: initialLastEventId,
+    onEvent: handleStreamEvent,
+    onStatusChange: (status) => {
+      streamStatus.value = status
+    },
+    onError: (err) => {
+      console.warn('SSE stream error:', err)
+    },
+    onHeartbeat: () => {
+      // 心跳响应
+    },
+  })
+}
+
+async function handleStreamEvent(event: AssistantEvent) {
+  if (!conversation.value || conversation.value.conversationId !== event.conversationId) {
+    return
+  }
+
+  // 记录最新的服务端 sequence
+  if (event.sequence > 0) {
+    conversation.value.lastEventSequence = event.sequence
+    try {
+      sessionStorage.setItem(`studypilot.lastSeq.${event.conversationId}`, String(event.sequence))
+    } catch {
+      // 忽略存储受限异常
+    }
+  }
+
+  const payload = (event.payload || {}) as Record<string, any>
+  const eventTurnId = payload.turnId as string | undefined
+
+  switch (event.type) {
+    case 'TURN_STARTED': {
+      if (eventTurnId) {
+        activeTurnId.value = eventTurnId
+        sending.value = true
+      }
+      break
+    }
+    case 'CONTEXT_LOADED': {
+      const toolName = payload.toolName || 'learning.context.get'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'SUCCEEDED'
+        existing.summary = '已加载学习上下文'
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'SUCCEEDED',
+          summary: '已加载学习上下文',
+        })
+      }
+      break
+    }
+    case 'PLAN_GENERATED': {
+      if (payload.intent) {
+        conversation.value.intent = payload.intent
+      }
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === 'planner.plan')
+      const summary = payload.summary || '已规划执行步骤'
+      if (existing) {
+        existing.status = 'SUCCEEDED'
+        existing.summary = summary
+      } else {
+        conversation.value.toolSteps.push({
+          toolName: 'planner.plan',
+          status: 'SUCCEEDED',
+          summary,
+        })
+      }
+      break
+    }
+    case 'TOOL_STARTED': {
+      const toolName = payload.toolName || 'unknown.tool'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'RUNNING'
+        existing.summary = `正在调用 ${toolName}…`
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'RUNNING',
+          summary: `正在调用 ${toolName}…`,
+        })
+      }
+      break
+    }
+    case 'TOOL_SUCCEEDED': {
+      const toolName = payload.toolName || 'unknown.tool'
+      const summary = payload.summary || '已完成调用'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'SUCCEEDED'
+        existing.summary = summary
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'SUCCEEDED',
+          summary,
+        })
+      }
+      break
+    }
+    case 'TOOL_FAILED': {
+      const toolName = payload.toolName || 'unknown.tool'
+      const summary = payload.error || '调用失败'
+      const existing = conversation.value.toolSteps.find((s) => s.toolName === toolName)
+      if (existing) {
+        existing.status = 'FAILED'
+        existing.summary = summary
+      } else {
+        conversation.value.toolSteps.push({
+          toolName,
+          status: 'FAILED',
+          summary,
+        })
+      }
+      break
+    }
+    case 'ACTION_PREVIEW': {
+      if (payload.actionStatus === 'REJECTED' || payload.actionStatus === 'SUCCEEDED') {
+        conversation.value.pendingAction = null
+      } else if (payload.actionId) {
+        conversation.value.pendingAction = {
+          actionId: payload.actionId,
+          executionId: payload.executionId || payload.actionId,
+          toolName: payload.toolName || 'agent.action',
+          riskLevel: payload.riskLevel || 'HIGH',
+          status: payload.actionStatus || 'WAITING_CONFIRMATION',
+          summary: payload.summary || '需要操作确认',
+          arguments: payload.arguments || {},
+          expiresAt: payload.expiresAt || '',
+        }
+        conversation.value.status = 'WAITING_CONFIRMATION'
+      }
+      break
+    }
+    case 'UI_ACTION': {
+      const uiAction: AssistantUiAction = {
+        type: payload.type || 'NAVIGATE',
+        routeKey: payload.routeKey,
+        params: payload.params || {},
+        reason: payload.reason || '',
+      }
+      const exists = conversation.value.uiActions.some(
+        (a) => a.type === uiAction.type && a.routeKey === uiAction.routeKey && JSON.stringify(a.params) === JSON.stringify(uiAction.params),
+      )
+      if (!exists) {
+        conversation.value.uiActions.push(uiAction)
+      }
+      await safeDispatchUiAction(uiAction, eventTurnId)
+      break
+    }
+    case 'ASSISTANT_DELTA': {
+      const delta = payload.delta || ''
+      if (!eventTurnId || !delta) break
+      // 终态隔离：已失败或取消的轮次绝不允许迟到的增量复活
+      if (terminalTurns.has(eventTurnId)) {
+        break
+      }
+      // 轮次隔离：若存在当前活跃轮次且非本轮增量，直接丢弃
+      if (activeTurnId.value && eventTurnId !== activeTurnId.value) {
+        break
+      }
+
+      const msgs = conversation.value.messages
+      let assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
+      if (assistantMsg) {
+        if (assistantMsg.status === 'failed' || assistantMsg.status === 'cancelled') {
+          break
+        }
+        assistantMsg.content += delta
+      } else {
+        assistantMsg = {
+          role: 'assistant',
+          content: delta,
+          turnId: eventTurnId,
+          status: 'streaming',
+        }
+        msgs.push(assistantMsg)
+      }
+      conversation.value.reply = assistantMsg.content
+      break
+    }
+    case 'TURN_COMPLETED': {
+      if (eventTurnId) {
+        terminalTurns.add(eventTurnId)
+        const msgs = conversation.value.messages
+        let assistantMsg = msgs.find((m) => m.role === 'assistant' && m.turnId === eventTurnId)
+        if (assistantMsg) {
+          if (payload.reply) {
+            assistantMsg.content = payload.reply
+          }
+          assistantMsg.status = 'completed'
+          conversation.value.reply = assistantMsg.content
+        } else if (payload.reply) {
+          // 终态兜底：无预先槽位时（如刷新恰逢终态），恢复最终回复至消息流
+          assistantMsg = {
+            role: 'assistant',
+            content: payload.reply,
+            turnId: eventTurnId,
+            status: 'completed',
+          }
+          msgs.push(assistantMsg)
+          conversation.value.reply = payload.reply
+        }
+      }
+      if (payload.actionStatus === 'REJECTED' || payload.actionStatus === 'SUCCEEDED') {
+        conversation.value.pendingAction = null
+      }
+      if (activeTurnId.value === eventTurnId) {
+        sending.value = false
+        activeTurnId.value = null
+        activeGeneration = 0
+      }
+      break
+    }
+    case 'TURN_FAILED': {
+      handleTurnFailure(eventTurnId, payload.errorType)
+      break
+    }
+    case 'TURN_CANCELLED': {
+      handleTurnCancellation(eventTurnId, payload.reason)
+      break
+    }
+  }
+}
+
+function handleTurnFailure(turnId?: string, errorType?: string) {
+  if (turnId) {
+    terminalTurns.add(turnId)
+    const msgs = conversation.value?.messages
+    const assistantMsg = msgs?.find((m) => m.role === 'assistant' && m.turnId === turnId)
+    if (assistantMsg) {
+      // 严禁将失败的半成品增量视为已完成回答，替换为明确失败提示
+      assistantMsg.status = 'failed'
+      assistantMsg.content = '（回答生成失败，请重试）'
+    }
+  }
+  if (activeTurnId.value === turnId) {
+    sending.value = false
+    activeTurnId.value = null
+    activeGeneration = 0
+  }
+  const errorMsg = errorType ? `轮次执行异常 (${errorType})` : '轮次执行失败'
+  if (conversation.value && !conversation.value.warnings.includes(errorMsg)) {
+    conversation.value.warnings.push(errorMsg)
+  }
+}
+
+function handleTurnCancellation(turnId?: string, _reason?: string) {
+  if (turnId) {
+    terminalTurns.add(turnId)
+    const msgs = conversation.value?.messages
+    const assistantMsg = msgs?.find((m) => m.role === 'assistant' && m.turnId === turnId)
+    if (assistantMsg) {
+      assistantMsg.status = 'cancelled'
+      assistantMsg.content = '当前轮次已取消。'
+    }
+  }
+  if (activeTurnId.value === turnId) {
+    sending.value = false
+    activeTurnId.value = null
+    activeGeneration = 0
+  }
+  const cancelMsg = '当前轮次已取消。'
+  if (conversation.value && !conversation.value.warnings.includes(cancelMsg)) {
+    conversation.value.warnings.push(cancelMsg)
+  }
+}
+
 onMounted(async () => {
   try {
     const saved = sessionStorage.getItem(STORAGE_KEY)
-    conversation.value = saved
-      ? await assistantApi.getConversation(saved).catch(() => assistantApi.createConversation())
-      : await assistantApi.createConversation()
+    if (saved) {
+      try {
+        conversation.value = await assistantApi.getConversation(saved)
+      } catch (err: unknown) {
+        // 仅在 404（会话不存在/已过期）时创建新会话，其他网络/服务端错误严禁静默覆盖
+        if (err instanceof AxiosError && err.response?.status === 404) {
+          conversation.value = await assistantApi.createConversation()
+        } else {
+          throw err
+        }
+      }
+    } else {
+      conversation.value = await assistantApi.createConversation()
+    }
     sessionStorage.setItem(STORAGE_KEY, conversation.value.conversationId)
+
+    // 1. 水合 activeTurn（在建立 SSE 订阅前完成水合恢复）
+    if (conversation.value.activeTurn) {
+      const { turnId, userMessage, assistantText } = conversation.value.activeTurn
+      activeTurnId.value = turnId
+      sending.value = true
+      activeGeneration = ++latestTurnGeneration
+
+      const hasUserMsg = conversation.value.messages.some(
+        (m) => m.role === 'user' && m.turnId === turnId,
+      )
+      if (!hasUserMsg && userMessage) {
+        conversation.value.messages.push({
+          role: 'user',
+          content: userMessage,
+          turnId,
+        })
+      }
+
+      let assistantMsg = conversation.value.messages.find(
+        (m) => m.role === 'assistant' && m.turnId === turnId,
+      )
+      if (!assistantMsg) {
+        assistantMsg = {
+          role: 'assistant',
+          content: assistantText || '',
+          turnId,
+          status: 'streaming',
+        }
+        conversation.value.messages.push(assistantMsg)
+      } else {
+        assistantMsg.content = assistantText || assistantMsg.content
+        assistantMsg.status = 'streaming'
+      }
+      conversation.value.reply = assistantMsg.content
+    } else if (conversation.value.activeTurnId) {
+      activeTurnId.value = conversation.value.activeTurnId
+      sending.value = true
+      activeGeneration = ++latestTurnGeneration
+    }
+
+    // 抑制历史动作重放：初始化时将快照中已有的 uiActions 标记为历史动作，避免重载时重复导航
+    for (const action of conversation.value.uiActions) {
+      dispatchedActions.add(`historical:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`)
+    }
+
+    // 协调起点游标：优先使用快照中的 lastEventSequence，防止从 0 重放历史事件
+    let startCursor = conversation.value.lastEventSequence ?? 0
+    if (!startCursor) {
+      const stored = sessionStorage.getItem(`studypilot.lastSeq.${conversation.value.conversationId}`)
+      if (stored) {
+        startCursor = parseInt(stored, 10) || 0
+      }
+    }
+
+    startSubscription(conversation.value.conversationId, startCursor)
   } catch (error) {
     toast.error(describeError(error))
   } finally {
     loading.value = false
   }
+})
+
+onBeforeUnmount(() => {
+  streamController?.close()
+  streamController = null
 })
 
 function usePrompt(value: string) {
@@ -165,10 +547,31 @@ async function send() {
   const outgoing = message.value
   message.value = ''
   sending.value = true
+  const turnId = `assistant-turn:${crypto.randomUUID()}`
+  const turnGeneration = ++latestTurnGeneration
+  activeGeneration = turnGeneration
+  activeTurnId.value = turnId
+  terminalTurns.delete(turnId)
+
+  // 1. 立即展示出站用户消息，不等 POST 响应
+  conversation.value.messages.push({
+    role: 'user',
+    content: outgoing,
+    turnId,
+  })
+
+  // 2. 准备该 turnId 的助手回复槽位
+  conversation.value.messages.push({
+    role: 'assistant',
+    content: '',
+    turnId,
+    status: 'streaming',
+  })
+
   try {
-    conversation.value = await assistantApi.sendMessage(conversation.value.conversationId, {
+    const result = await assistantApi.sendMessage(conversation.value.conversationId, {
       message: outgoing,
-      idempotencyKey: `assistant-turn:${crypto.randomUUID()}`,
+      idempotencyKey: turnId,
       clientContext: {
         routeName: String(route.name ?? 'assistant'),
         routeParams: Object.fromEntries(
@@ -177,22 +580,80 @@ async function send() {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Shanghai',
       },
     })
-    await executeUiActions()
+
+    // 防陈旧覆盖：严格校验单调代际一致性与终态归属！
+    // 若在 POST 期间已有较新轮次（activeGeneration !== turnGeneration）或轮次已被取消/完成，严禁覆盖！
+    if (activeGeneration === turnGeneration && activeTurnId.value === turnId && !terminalTurns.has(turnId)) {
+      mergeTurnResult(turnId, result)
+      await executeUiActions(turnId)
+    }
   } catch (error) {
-    toast.error(describeError(error))
+    if (activeGeneration === turnGeneration && activeTurnId.value === turnId && !terminalTurns.has(turnId)) {
+      handleTurnFailure(turnId, describeError(error))
+      toast.error(describeError(error))
+    }
   } finally {
-    sending.value = false
+    if (activeGeneration === turnGeneration && activeTurnId.value === turnId) {
+      sending.value = false
+      activeTurnId.value = null
+      activeGeneration = 0
+    }
   }
 }
 
-async function executeUiActions() {
+function mergeTurnResult(turnId: string, result: AssistantConversation) {
+  if (!conversation.value) return
+  conversation.value.status = result.status
+  conversation.value.pendingAction = result.pendingAction
+  conversation.value.uiActions = result.uiActions
+  conversation.value.warnings = result.warnings
+  conversation.value.citations = result.citations
+  conversation.value.modelName = result.modelName
+  conversation.value.toolSteps = result.toolSteps
+  conversation.value.lastEventSequence = result.lastEventSequence ?? conversation.value.lastEventSequence
+
+  const assistantMsg = conversation.value.messages.find(
+    (m) => m.role === 'assistant' && m.turnId === turnId,
+  )
+  if (assistantMsg) {
+    if (assistantMsg.status !== 'failed' && assistantMsg.status !== 'cancelled') {
+      assistantMsg.content = result.reply || assistantMsg.content
+      assistantMsg.status = 'completed'
+    }
+  }
+}
+
+async function cancelCurrentTurn() {
+  if (!conversation.value || !activeTurnId.value) return
+  const turnId = activeTurnId.value
+  terminalTurns.add(turnId)
+  activeGeneration = 0
+  activeTurnId.value = null
+  sending.value = false
+  handleTurnCancellation(turnId)
+  try {
+    await assistantApi.cancelTurn(conversation.value.conversationId, turnId)
+  } catch (error) {
+    toast.error(describeError(error))
+  }
+}
+
+async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) {
+  // 基于 turnId + routeKey + params 联合去重，既防止同轮内重复触发，又支持不同新轮次访问同一路由
+  const key = `${turnId || 'global'}:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
+  if (dispatchedActions.has(key)) return
+  dispatchedActions.add(key)
+  try {
+    await dispatchUiAction(action, router)
+  } catch {
+    toast.warning('自动打开页面失败，你仍可通过左侧菜单继续操作')
+  }
+}
+
+async function executeUiActions(turnId?: string) {
   if (!conversation.value) return
   for (const action of conversation.value.uiActions) {
-    try {
-      await dispatchUiAction(action, router)
-    } catch {
-      toast.warning('自动打开页面失败，你仍可通过左侧菜单继续操作')
-    }
+    await safeDispatchUiAction(action, turnId)
   }
 }
 
@@ -230,8 +691,13 @@ async function rejectAction() {
 .eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 800; letter-spacing: .16em; }
 .assistant-hero h1 { margin-top: 8px; font-size: clamp(30px, 4vw, 48px); letter-spacing: -.04em; }
 .assistant-hero p { margin: 8px 0 0; color: var(--color-text-secondary); font-size: 15px; }
-.model-pill { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 12px; }
-.model-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-success); box-shadow: 0 0 0 4px var(--color-success-soft); }
+.model-pill { display: flex; align-items: center; gap: 8px; padding: 8px 14px; background: #fff; border: 1px solid var(--color-border); border-radius: 999px; color: var(--color-text-secondary); font-size: 12px; }
+.model-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-text-secondary); }
+.model-dot.connected { background: var(--color-success); box-shadow: 0 0 0 4px var(--color-success-soft); }
+.model-dot.connecting, .model-dot.reconnecting { background: #f59e0b; box-shadow: 0 0 0 4px rgba(245, 158, 11, .15); }
+.model-dot.disconnected { background: #ef4444; }
+.stream-status-text { text-transform: lowercase; font-family: 'SF Mono', monospace; font-size: 11px; }
+.pill-divider { color: var(--color-border); }
 .citation-panel { margin: 0 20px 16px; padding: 16px; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-bg); }
 .citation-card + .citation-card { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-border); }
 .citation-card small { display: block; margin-top: 3px; color: var(--color-text-secondary); }
@@ -256,14 +722,33 @@ async function rejectAction() {
 .assistant-message.user .message-label { text-align: right; }
 .message-content { padding: 13px 16px; border-radius: 14px; background: #f1f3f8; }
 .assistant-message.user .message-content { background: var(--color-primary); color: #fff; }
+.assistant-message.status-failed .message-content { background: #fee2e2; color: #991b1b; }
+.assistant-message.status-cancelled .message-content { background: #f3f4f6; color: #6b7280; font-style: italic; }
 .working-row { display: flex; align-items: center; gap: 9px; color: var(--color-text-secondary); }
+.btn-cancel-turn {
+  margin-left: 10px;
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all .16s;
+}
+.btn-cancel-turn:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
 .process-panel { margin: 0 28px 18px; padding: 15px; background: #f8f9fc; border: 1px solid var(--color-border); border-radius: 12px; }
 .process-title { margin-bottom: 10px; font-size: 12px; color: var(--color-text-secondary); font-weight: 700; }
 .process-step { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
 .process-step div { min-width: 0; flex: 1; }
 .process-step strong, .process-step small { display: block; }
 .process-step small { color: var(--color-text-secondary); font-family: 'SF Mono', monospace; }
-.step-check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; }
+.step-check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; font-size: 12px; }
+.step-check.is-running { background: #fef3c7; color: #d97706; }
+.step-check.is-failed { background: #fee2e2; color: #ef4444; }
 .action-preview { margin: 0 28px 18px; padding: 18px; border: 1px solid #f2d299; border-radius: 12px; background: #fffbf3; }
 .action-heading { display: flex; justify-content: space-between; gap: 12px; font-weight: 750; }
 .action-preview p { color: #74521b; }

@@ -25,13 +25,17 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler
 }
 
+export function handleUnauthorized() {
+  sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+  sessionStorage.removeItem(TOKEN_EXPIRES_KEY)
+  onUnauthorized?.()
+}
+
 http.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      sessionStorage.removeItem(TOKEN_STORAGE_KEY)
-      sessionStorage.removeItem(TOKEN_EXPIRES_KEY)
-      onUnauthorized?.()
+      handleUnauthorized()
     }
     return Promise.reject(error)
   },
