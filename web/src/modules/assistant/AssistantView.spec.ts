@@ -61,6 +61,23 @@ function emitStreamEvent(event: AssistantEvent) {
 }
 
 describe('AssistantView', () => {
+  it('retains final citations and warnings when terminal SSE precedes the POST response', async () => {
+    let finish!: (value: AssistantConversation) => void
+    vi.mocked(assistantApi.sendMessage).mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+    await wrapper.get('textarea').setValue('解释 Java')
+    await wrapper.get('form').trigger('submit')
+    const turnId = vi.mocked(assistantApi.sendMessage).mock.calls[0][1].idempotencyKey
+    emitStreamEvent({ sequence: 11, type: 'TURN_COMPLETED', conversationId: 'conversation-1', payload: { turnId, reply: 'Java 回答' } })
+    await flushPromises()
+    finish(snapshot({ reply: 'Java 回答', uiActions: [], warnings: ['联网服务暂不可用'], citations: [{ sourceType: 'WEB', title: 'Java 官方来源', snippet: '类型说明', url: 'https://dev.java/' }] }))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Java 官方来源')
+    expect(wrapper.text()).toContain('联网服务暂不可用')
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     sessionStorage.clear()

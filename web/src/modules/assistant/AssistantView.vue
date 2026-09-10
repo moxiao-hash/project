@@ -581,9 +581,10 @@ async function send() {
       },
     })
 
-    // 防陈旧覆盖：严格校验单调代际一致性与终态归属！
-    // 若在 POST 期间已有较新轮次（activeGeneration !== turnGeneration）或轮次已被取消/完成，严禁覆盖！
-    if (activeGeneration === turnGeneration && activeTurnId.value === turnId && !terminalTurns.has(turnId)) {
+    // 正常终态可能先于 HTTP 完整快照到达；仍需接收当前最新轮次的引用和警告。
+    // 用单调代际排除旧请求，并保留失败/取消结果，不能用“已终态”一概丢弃快照。
+    const ownMessage = conversation.value.messages.find(m => m.role === 'assistant' && m.turnId === turnId)
+    if (latestTurnGeneration === turnGeneration && ownMessage?.status !== 'failed' && ownMessage?.status !== 'cancelled') {
       mergeTurnResult(turnId, result)
       await executeUiActions(turnId)
     }
