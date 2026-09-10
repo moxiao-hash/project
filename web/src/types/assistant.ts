@@ -29,8 +29,20 @@ export interface AssistantPendingAction {
   expiresAt: string
 }
 
+export type UiActionType = 'NAVIGATE' | 'OPEN_MODAL' | 'PREFILL_FORM' | 'REFRESH_RESOURCE' | 'FOCUS_ELEMENT'
+
+export type UiActionReceiptStatus = 'SUCCEEDED' | 'FAILED' | 'REJECTED'
+
+export interface UiActionReceipt {
+  actionId: string
+  status: UiActionReceiptStatus
+  currentRoute: string
+  error?: string | null
+}
+
 export interface AssistantUiAction {
-  type: 'NAVIGATE' | 'OPEN_MODAL' | 'PREFILL_FORM' | 'REFRESH_RESOURCE' | 'FOCUS_ELEMENT'
+  actionId?: string
+  type: UiActionType
   routeKey: string
   params: Record<string, string>
   reason: string
