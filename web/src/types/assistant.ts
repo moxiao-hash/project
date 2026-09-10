@@ -8,6 +8,8 @@ export type AssistantStatus =
 export interface AssistantMessage {
   role: 'user' | 'assistant'
   content: string
+  turnId?: string
+  status?: 'streaming' | 'completed' | 'failed' | 'cancelled'
 }
 
 export interface AssistantToolStep {
@@ -34,6 +36,13 @@ export interface AssistantUiAction {
   reason: string
 }
 
+export interface AssistantActiveTurn {
+  turnId: string
+  userMessage: string
+  assistantText: string
+  lastDeltaIndex: number
+}
+
 export interface AssistantConversation {
   conversationId: string
   status: AssistantStatus
@@ -54,7 +63,12 @@ export interface AssistantConversation {
     url?: string | null
   }>
   modelName: string
+  lastEventSequence?: number | null
+  activeTurnId?: string | null
+  activeTurn?: AssistantActiveTurn | null
 }
+
+export type EventStreamStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected'
 
 export interface SendAssistantMessage {
   message: string
@@ -103,4 +117,46 @@ export interface AssistantHealth {
   estimatedCost: number
   averageLatencyMs: number
   pendingConfirmations: number
+}
+
+export type AssistantEventType =
+  | 'HEARTBEAT'
+  | 'TURN_STARTED'
+  | 'CONTEXT_LOADED'
+  | 'PLAN_GENERATED'
+  | 'TOOL_STARTED'
+  | 'TOOL_SUCCEEDED'
+  | 'TOOL_FAILED'
+  | 'ACTION_PREVIEW'
+  | 'ASSISTANT_DELTA'
+  | 'UI_ACTION'
+  | 'TURN_COMPLETED'
+  | 'TURN_FAILED'
+  | 'TURN_CANCELLED'
+
+export interface AssistantEvent<T = Record<string, unknown>> {
+  sequence: number
+  type: AssistantEventType
+  conversationId: string
+  payload: T
+}
+
+export interface AssistantEventStreamOptions {
+  lastEventId?: string | number | null
+  signal?: AbortSignal
+  onEvent?: (event: AssistantEvent) => void
+  onHeartbeat?: () => void
+  onError?: (error: unknown) => void
+  onClose?: () => void
+  onStatusChange?: (status: EventStreamStatus) => void
+  autoReconnect?: boolean
+  reconnectIntervalMs?: number
+  maxReconnectIntervalMs?: number
+  maxReconnectAttempts?: number
+}
+
+export interface AssistantEventStreamController {
+  close: () => void
+  getLastEventId: () => number
+  getStatus: () => EventStreamStatus
 }

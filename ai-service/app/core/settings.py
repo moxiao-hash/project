@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     agent_planner_max_steps: int = 8
     agent_planner_max_context_chars: int = 6_000
 
+    # Task 29 持续 SSE：事件先持久化再发布；每个连接的待发送队列有上限，
+    # 慢消费者只丢连接，重连后按 Last-Event-ID 续传。
+    agent_event_stream_queue_size: int = 256
+    agent_event_stream_heartbeat_seconds: float = 30.0
+
     @property
     def model_is_configured(self) -> bool:
         """只暴露是否配置 Key，不暴露 Key 的实际内容。"""

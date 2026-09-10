@@ -48,6 +48,10 @@ public class SecurityConfig {
                         // 允许容器把未匹配路由转发给 /error，保留原始 404。
                         // 否则 ERROR 分发会再次被认证链拦截，前端会把“接口不存在”误判为登录过期。
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        // Task 29：SSE 在 ASYNC 分发阶段重新进入过滤链。此时初始 REQUEST
+                        // 已经通过 Bearer 鉴权，无状态会话不会携带 SecurityContext，
+                        // 若不放开会让事件流在第一次分发后被 403 中断。
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .requestMatchers("/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/internal/**").permitAll()
@@ -94,7 +98,13 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(allowedOrigins);
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        // Task 29：浏览器用 fetch 消费 SSE 时必须显式携带 Last-Event-ID 续传，
+        // 预检（OPTIONS）会校验该请求头，缺失会被浏览器直接拦掉。
+        configuration.setAllowedHeaders(List.of(
+                "Authorization",
+                "Content-Type",
+                "Last-Event-ID"
+        ));
         configuration.setExposedHeaders(List.of("Location", "Retry-After", "X-Request-ID"));
         configuration.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

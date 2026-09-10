@@ -33,9 +33,9 @@
 
 Task 20、25、26 的缺口不再零散修补，统一纳入 [Agent 产品化与三 Agent 协作实施计划](2026-09-08-agent-productization-and-multi-agent-collaboration.md)。以下任务均为“已规划、未开发”，不得提前标记完成：
 
-- [ ] Task 27：能力矩阵、契约冻结与协作门禁。
-- [ ] Task 28：模型驱动的多步 Planner 与确定性策略验证。
-- [ ] Task 29：真正的持续 SSE 与断线恢复。
+- [x] Task 27：能力矩阵、契约冻结与协作门禁。
+- [x] Task 28：模型驱动的多步 Planner 与确定性策略验证。
+- [x] Task 29：真正的持续 SSE 与断线恢复。
 - [ ] Task 30：全部 StudyPilot 能力工具化与完整 UI Action。
 - [ ] Task 31：真实 Token、价格、预算与可观测性，并关闭 Task 20。
 - [ ] Task 32：Developer Agent 安全加固与临时 Git 全链路。

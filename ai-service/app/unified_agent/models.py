@@ -154,6 +154,10 @@ class PublicToolStep(JavaContractModel):
 class AssistantMessage(JavaContractModel):
     role: str
     content: str
+    # Task 29：终态消息也保留轮次身份与展示状态，刷新后才能准确恢复
+    # 已完成/失败/取消的气泡，而不是只依赖浏览器内存。
+    turn_id: str | None = None
+    status: str | None = None
 
 
 class AssistantEvent(JavaContractModel):
@@ -161,6 +165,21 @@ class AssistantEvent(JavaContractModel):
     type: str
     conversation_id: str
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssistantActiveTurn(JavaContractModel):
+    """Task 29 冻结契约：进行中轮次的可恢复状态。
+
+    ``assistantText`` 是**已经推送给客户端的前缀**，``lastDeltaIndex`` 是最后一条
+    ``ASSISTANT_DELTA`` 的下标（尚未产生任何增量时为 ``-1``）。客户端刷新后用
+    ``assistantText`` 还原已显示内容，再从 ``lastEventSequence`` 续传后缀，
+    因此最终答案只会出现一次。
+    """
+
+    turn_id: str
+    user_message: str
+    assistant_text: str = ""
+    last_delta_index: int = -1
 
 
 class AssistantConversationSnapshot(JavaContractModel):
@@ -176,6 +195,12 @@ class AssistantConversationSnapshot(JavaContractModel):
     warnings: list[str] = Field(default_factory=list)
     citations: list[KnowledgeCitation] = Field(default_factory=list)
     model_name: str
+    #: Task 29：客户端刷新后据此续传事件流，不必猜测游标。
+    last_event_sequence: int = Field(default=0, ge=0)
+    #: Task 29：保留的轮次 ID 快捷字段；等价于 ``active_turn.turnId``。
+    active_turn_id: str | None = None
+    #: Task 29 冻结契约：进行中轮次的完整可恢复状态；无进行中轮次时为 ``None``。
+    active_turn: AssistantActiveTurn | None = None
 
 
 class CreateAssistantConversationRequest(JavaContractModel):

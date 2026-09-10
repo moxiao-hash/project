@@ -2,8 +2,9 @@
 
 import asyncio
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import uuid4
 
 from app.knowledge.models import (
@@ -140,6 +141,38 @@ class KnowledgeConversationService:
         web_search: WebSearchPolicy,
         owner_id: str,
     ) -> KnowledgeConversationSnapshot:
+        return await self._run_message(
+            conversation_id, message, web_search, owner_id, on_delta=None
+        )
+
+    async def stream_message(
+        self,
+        conversation_id: str,
+        message: str,
+        web_search: WebSearchPolicy,
+        owner_id: str,
+        *,
+        on_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> KnowledgeConversationSnapshot:
+        """Task 29：边生成边回调模型增量，最终提交与非流式完全一致。
+
+        回答器没有 ``astream`` 时自动回落为非流式调用，且**不伪造**增量；
+        无论哪条路径，落库答案都与增量拼接结果一致，保证刷新只重放事件。
+        """
+
+        return await self._run_message(
+            conversation_id, message, web_search, owner_id, on_delta=on_delta
+        )
+
+    async def _run_message(
+        self,
+        conversation_id: str,
+        message: str,
+        web_search: WebSearchPolicy,
+        owner_id: str,
+        *,
+        on_delta: Callable[[str], Awaitable[None]] | None,
+    ) -> KnowledgeConversationSnapshot:
         retriever = self._retriever
         web_searcher = self._web_searcher
         answerer = self._answerer
@@ -186,11 +219,13 @@ class KnowledgeConversationService:
                         conversation.owner_id,
                         web_query,
                     )
-                answer = await answerer.answer(
+                answer = await self._answer(
+                    answerer,
                     question=message,
-                    history=list(conversation.history),
+                    conversation=conversation,
                     materials=materials,
-                    web_results=list(outcome.results),
+                    outcome=outcome,
+                    on_delta=on_delta,
                 )
                 snapshot = self._grounded_snapshot(
                     conversation,
@@ -204,6 +239,36 @@ class KnowledgeConversationService:
                 web_search,
                 snapshot,
             )
+
+    @staticmethod
+    async def _answer(
+        answerer: Any,
+        *,
+        question: str,
+        conversation: _Conversation,
+        materials: list[Any],
+        outcome: WebSearchOutcome,
+        on_delta: Callable[[str], Awaitable[None]] | None,
+    ) -> str:
+        """优先使用模型真实增量；不可用则回落为非流式且不伪造增量。"""
+
+        if on_delta is not None and hasattr(answerer, "astream"):
+            parts: list[str] = []
+            async for chunk in answerer.astream(
+                question=question,
+                history=list(conversation.history),
+                materials=materials,
+                web_results=list(outcome.results),
+            ):
+                parts.append(chunk)
+                await on_delta(chunk)
+            return "".join(parts)
+        return await answerer.answer(
+            question=question,
+            history=list(conversation.history),
+            materials=materials,
+            web_results=list(outcome.results),
+        )
 
     async def _commit_mutation(
         self,

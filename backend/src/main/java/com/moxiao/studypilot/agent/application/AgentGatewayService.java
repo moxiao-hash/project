@@ -3,6 +3,7 @@ package com.moxiao.studypilot.agent.application;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.slf4j.MDC;
 import com.moxiao.studypilot.shared.web.RequestCorrelationFilter;
@@ -11,6 +12,7 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -98,9 +100,48 @@ public class AgentGatewayService {
     }
 
     HttpRequest.Builder baseRequest(String path) {
+        return requestBuilder(path, "application/json").timeout(REQUEST_TIMEOUT);
+    }
+
+    /**
+     * Task 29：持续 SSE 上游请求。
+     *
+     * <p>不设置总超时——事件流由客户端断开或 Python 关闭决定生命周期；
+     * 心跳由 Python 每 30 秒发送，避免中间设备回收空闲连接。</p>
+     */
+    HttpRequest.Builder streamingRequest(String path) {
+        return requestBuilder(path, MediaType.TEXT_EVENT_STREAM_VALUE);
+    }
+
+    /**
+     * 以流式方式打开 Python 内部事件流；调用方负责关闭返回的输入流。
+     */
+    public HttpResponse<InputStream> openEventStream(String path, String ownerId) {
+        String separator = path.contains("?") ? "&" : "?";
+        String scopedPath = path + separator + "ownerId="
+                + URLEncoder.encode(ownerId, StandardCharsets.UTF_8);
+        try {
+            return httpClient.send(
+                    streamingRequest(scopedPath).GET().build(),
+                    HttpResponse.BodyHandlers.ofInputStream()
+            );
+        } catch (IOException exception) {
+            throw new AgentGatewayException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "AI 服务事件流暂时不可用"
+            );
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new AgentGatewayException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "AI 服务事件流调用被中断"
+            );
+        }
+    }
+
+    private HttpRequest.Builder requestBuilder(String path, String accept) {
         HttpRequest.Builder builder = HttpRequest.newBuilder(baseUri.resolve(path))
-                .timeout(REQUEST_TIMEOUT)
-                .header("Accept", "application/json")
+                .header("Accept", accept)
                 .header("X-Internal-Service-Token", internalToken);
         String requestId = MDC.get(RequestCorrelationFilter.MDC_KEY);
         if (requestId != null && !requestId.isBlank()) {

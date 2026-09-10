@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.agent.api;
 
 import com.moxiao.studypilot.agent.application.AgentGatewayService;
+import com.moxiao.studypilot.agent.application.AssistantEventStreamService;
 import com.moxiao.studypilot.auth.security.AuthenticatedUser;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -12,8 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.ObjectMapper;
 
 import java.util.UUID;
 
@@ -27,14 +28,14 @@ import java.util.UUID;
 public class UnifiedAssistantFacadeController {
 
     private final AgentGatewayService gateway;
-    private final ObjectMapper objectMapper;
+    private final AssistantEventStreamService eventStream;
 
     public UnifiedAssistantFacadeController(
             AgentGatewayService gateway,
-            ObjectMapper objectMapper
+            AssistantEventStreamService eventStream
     ) {
         this.gateway = gateway;
-        this.objectMapper = objectMapper;
+        this.eventStream = eventStream;
     }
 
     @PostMapping
@@ -109,34 +110,13 @@ public class UnifiedAssistantFacadeController {
     }
 
     @GetMapping(value = "/{id}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public ResponseEntity<String> events(
+    public SseEmitter events(
             @AuthenticationPrincipal AuthenticatedUser user,
             @PathVariable UUID id,
             @RequestHeader(name = "Last-Event-ID", required = false) String lastEventId
     ) {
-        long afterSequence = parseSequence(lastEventId);
-        AgentGatewayService.GatewayResponse response = gateway.get(
-                "/internal/assistant/conversations/" + id
-                        + "/events?afterSequence=" + afterSequence,
-                user.id()
-        );
-        StringBuilder stream = new StringBuilder(": heartbeat\n\n");
-        if (response.body().isArray()) {
-            for (JsonNode event : response.body()) {
-                long sequence = event.path("sequence").asLong(-1);
-                String type = event.path("type").asText("TURN_FAILED");
-                if (sequence <= afterSequence || !type.matches("[A-Z_]{1,40}")) {
-                    continue;
-                }
-                stream.append("id: ").append(sequence).append('\n')
-                        .append("event: ").append(type).append('\n')
-                        .append("data: ").append(objectMapper.writeValueAsString(event))
-                        .append("\n\n");
-            }
-        }
-        return ResponseEntity.status(response.status())
-                .contentType(MediaType.TEXT_EVENT_STREAM)
-                .body(stream.toString());
+        // Task 29：持续代理 Python 事件流；客户端断开只取消本连接，不取消业务动作。
+        return eventStream.open(id, user.id(), parseSequence(lastEventId));
     }
 
     private ResponseEntity<JsonNode> json(AgentGatewayService.GatewayResponse response) {
