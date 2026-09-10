@@ -558,6 +558,55 @@ def test_refresh_between_deltas_sees_prefix_and_resumes_suffix() -> None:
     assert reply.reply.count("_SUFFIX_FROM_RESUME") == 1
 
 
+def test_cancel_stops_a_streaming_knowledge_answer_before_later_deltas() -> None:
+    """取消必须能中止模型流，不能只阻止后续 Java 工具调用。"""
+
+    async def scenario():
+        knowledge = PausedStreamingKnowledgeService(
+            ["FIRST_DELTA", "_MUST_NOT_BE_EMITTED"], pause_after=0
+        )
+        service = UnifiedAgentSupervisor(
+            StreamingJavaBackend(),
+            model_name="deepseek-v4-flash",
+            knowledge_services=StreamingKnowledgeServices(knowledge),
+        )
+        conversation = await service.create_conversation("user-1")
+        turn = asyncio.create_task(
+            service.send_message(
+                conversation.conversation_id,
+                "解释一下学习顺序",
+                "turn-cancel-stream",
+                "user-1",
+                {},
+            )
+        )
+        await asyncio.wait_for(knowledge.delta_sent.wait(), timeout=5)
+        await service.cancel_turn(
+            conversation.conversation_id, "turn-cancel-stream", "user-1"
+        )
+        knowledge.release.set()
+        result = await asyncio.wait_for(turn, timeout=5)
+        events = await service.list_events(
+            conversation.conversation_id, "user-1", 0
+        )
+        return result, events
+
+    result, events = asyncio.run(scenario())
+    deltas = [event.payload["delta"] for event in events if event.type == "ASSISTANT_DELTA"]
+
+    assert deltas == ["FIRST_DELTA"]
+    assert events[-1].type == "TURN_CANCELLED"
+    assert all(
+        event.type != "TURN_COMPLETED"
+        or event.payload.get("turnId") != "turn-cancel-stream"
+        for event in events
+    )
+    assert result.active_turn is None
+    assert result.messages[-2].turn_id == "turn-cancel-stream"
+    assert result.messages[-1].turn_id == "turn-cancel-stream"
+    assert result.messages[-1].status == "cancelled"
+
+
 def test_restart_mid_stream_persists_turn_failed_for_interrupted_turn(tmp_path) -> None:
     """重启恢复：必须为被中断的轮次补写 TURN_FAILED，不能只清空 ID。"""
 

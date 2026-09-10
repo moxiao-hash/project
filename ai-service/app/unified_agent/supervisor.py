@@ -62,6 +62,7 @@ class SupervisorState(TypedDict, total=False):
     gateway: UnifiedToolGateway
     # Task 29：实时事件回调，由 send_message 注入；测试可省略。
     emit_event: Any
+    is_cancelled: Any
     intent: str
     reply: str
     tool_steps: list[dict[str, str]]
@@ -626,10 +627,15 @@ class UnifiedAgentSupervisor:
                         "reply": "该操作仍在等待专用确认。请使用操作卡片确认或取消。",
                         "messages": [
                             *conversation.snapshot.messages,
-                            AssistantMessage(role="user", content=message),
+                            AssistantMessage(
+                                role="user", content=message,
+                                turn_id=idempotency_key,
+                            ),
                             AssistantMessage(
                                 role="assistant",
                                 content="该操作仍在等待专用确认。请使用操作卡片确认或取消。",
+                                turn_id=idempotency_key,
+                                status="completed",
                             ),
                         ],
                     }
@@ -652,6 +658,10 @@ class UnifiedAgentSupervisor:
                             "client_context": client_context,
                             "gateway": gateway,
                             "emit_event": self._emit_callback(conversation),
+                            "is_cancelled": lambda: (
+                                conversation.cancel_requested_turn_id
+                                == idempotency_key
+                            ),
                             "knowledge_conversation_id": (
                                 conversation.knowledge_conversation_id
                             ),
@@ -689,6 +699,24 @@ class UnifiedAgentSupervisor:
                         update={
                             "status": AssistantConversationStatus.FAILED,
                             "reply": "已取消本轮后续操作；已发送的请求请以执行记录为准。",
+                            "messages": [
+                                *conversation.snapshot.messages,
+                                AssistantMessage(
+                                    role="user",
+                                    content=message,
+                                    turn_id=idempotency_key,
+                                ),
+                                AssistantMessage(
+                                    role="assistant",
+                                    content=(
+                                        conversation.snapshot.active_turn.assistant_text
+                                        if conversation.snapshot.active_turn is not None
+                                        else ""
+                                    ) or "当前轮次已取消。",
+                                    turn_id=idempotency_key,
+                                    status="cancelled",
+                                ),
+                            ],
                         }
                     )
                     conversation.snapshot = result
@@ -726,8 +754,15 @@ class UnifiedAgentSupervisor:
                     reply=values["reply"],
                     messages=[
                         *conversation.snapshot.messages,
-                        AssistantMessage(role="user", content=message),
-                        AssistantMessage(role="assistant", content=values["reply"]),
+                        AssistantMessage(
+                            role="user", content=message, turn_id=idempotency_key
+                        ),
+                        AssistantMessage(
+                            role="assistant",
+                            content=values["reply"],
+                            turn_id=idempotency_key,
+                            status="completed",
+                        ),
                     ],
                     intent=values.get("intent"),
                     tool_steps=values.get("tool_steps", []),
@@ -1424,6 +1459,11 @@ class UnifiedAgentSupervisor:
 
                 async def on_delta(chunk: str) -> None:
                     nonlocal delta_index
+                    # 模型流不会经过 UnifiedToolGateway，因此也必须在每个真实
+                    # 增量前检查取消标记；否则取消只能阻止后续工具，却阻止不了
+                    # 已开始的 DeepSeek 回答继续输出并被提交为完成。
+                    if state.get("is_cancelled", lambda: False)():
+                        raise ToolTurnCancelledError("统一 Agent 轮次已取消")
                     if emit is not None:
                         await emit(
                             "ASSISTANT_DELTA",

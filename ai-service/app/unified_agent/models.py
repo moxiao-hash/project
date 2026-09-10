@@ -154,6 +154,10 @@ class PublicToolStep(JavaContractModel):
 class AssistantMessage(JavaContractModel):
     role: str
     content: str
+    # Task 29：终态消息也保留轮次身份与展示状态，刷新后才能准确恢复
+    # 已完成/失败/取消的气泡，而不是只依赖浏览器内存。
+    turn_id: str | None = None
+    status: str | None = None
 
 
 class AssistantEvent(JavaContractModel):
