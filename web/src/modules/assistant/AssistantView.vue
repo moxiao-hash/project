@@ -136,8 +136,8 @@ import {
 } from '@/services/current/assistant'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
-import type { AssistantConversation, AssistantUiAction } from '@/types/assistant'
-import { dispatchUiAction } from './uiActionDispatcher'
+import type { AssistantConversation, AssistantUiAction, UiActionReceipt } from '@/types/assistant'
+import { dispatchUiAction, getActionReceipt } from './uiActionDispatcher'
 
 const STORAGE_KEY = 'studypilot.assistantConversationId'
 const router = useRouter()
@@ -319,13 +319,14 @@ async function handleStreamEvent(event: AssistantEvent) {
     }
     case 'UI_ACTION': {
       const uiAction: AssistantUiAction = {
+        actionId: payload.actionId,
         type: payload.type || 'NAVIGATE',
         routeKey: payload.routeKey,
         params: payload.params || {},
         reason: payload.reason || '',
       }
       const exists = conversation.value.uiActions.some(
-        (a) => a.type === uiAction.type && a.routeKey === uiAction.routeKey && JSON.stringify(a.params) === JSON.stringify(uiAction.params),
+        (a) => (a.actionId && a.actionId === uiAction.actionId) || (a.type === uiAction.type && a.routeKey === uiAction.routeKey && JSON.stringify(a.params) === JSON.stringify(uiAction.params)),
       )
       if (!exists) {
         conversation.value.uiActions.push(uiAction)
@@ -640,14 +641,31 @@ async function cancelCurrentTurn() {
 }
 
 async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) {
-  // 基于 turnId + routeKey + params 联合去重，既防止同轮内重复触发，又支持不同新轮次访问同一路由
-  const key = `${turnId || 'global'}:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
-  if (dispatchedActions.has(key)) return
-  dispatchedActions.add(key)
+  // 基于 actionId 或 turnId + routeKey + params 联合去重，既防止同轮内重复触发，又支持不同新轮次访问同一路由
+  const actionKey = action.actionId || `${turnId || 'global'}:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
+  if (dispatchedActions.has(actionKey)) return
+  dispatchedActions.add(actionKey)
+
+  let receipt: UiActionReceipt | undefined
   try {
-    await dispatchUiAction(action, router)
+    receipt = await dispatchUiAction(action, { router })
   } catch {
     toast.warning('自动打开页面失败，你仍可通过左侧菜单继续操作')
+    receipt = getActionReceipt(action.actionId || actionKey) || {
+      actionId: action.actionId || actionKey,
+      status: 'FAILED',
+      currentRoute: (router.currentRoute.value?.name as string) || 'assistant',
+      error: '自动打开页面失败',
+    }
+  }
+
+  // 异步上报动作回执给 Java 门面（若后端尚在开发，静默捕获不影响页面流程）
+  if (conversation.value?.conversationId && receipt) {
+    try {
+      await assistantApi.reportActionReceipt(conversation.value.conversationId, receipt)
+    } catch {
+      // 容错降级
+    }
   }
 }
 

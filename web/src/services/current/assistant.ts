@@ -349,6 +349,12 @@ export const assistantApi = {
       `/api/assistant/conversations/${conversationId}/actions/${actionId}/reject`,
       {}, assistantRequest,
     ).then((response) => response.data),
+  reportActionReceipt: (conversationId: string, receipt: import('@/types/assistant').UiActionReceipt) =>
+    http.post<import('@/types/assistant').UiActionReceipt>(
+      `/api/assistant/conversations/${conversationId}/actions/receipt`,
+      receipt,
+      assistantRequest,
+    ).then((response) => response.data),
   cancelTurn: (conversationId: string, turnId: string) =>
     http.post<AssistantConversation>(
       `/api/assistant/conversations/${conversationId}/turns/${turnId}/cancel`,

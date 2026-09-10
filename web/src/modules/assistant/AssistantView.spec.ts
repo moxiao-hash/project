@@ -25,6 +25,12 @@ vi.mock('@/services/current/assistant', () => ({
     confirmAction: vi.fn(),
     rejectAction: vi.fn(),
     cancelTurn: vi.fn(),
+    reportActionReceipt: vi.fn().mockResolvedValue({
+      actionId: 'mock-act',
+      status: 'SUCCEEDED',
+      currentRoute: 'assistant',
+      error: null,
+    }),
     subscribeEvents: vi.fn((_conversationId: string, options?: AssistantEventStreamOptions) => {
       mockEventOptions = options || null
       return {
@@ -318,6 +324,67 @@ describe('AssistantView', () => {
     })
     await flushPromises()
     expect(push).toHaveBeenCalledTimes(2)
+  })
+
+  it('UI Action 执行后向 Java 门面回传动作终态回执 (actionId/status/error/currentRoute)', async () => {
+    mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    mockEventOptions?.onEvent?.({
+      sequence: 1,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        actionId: 'act-receipt-1',
+        turnId: 'turn-receipt',
+        type: 'NAVIGATE',
+        routeKey: 'ROADMAP_NODE',
+        params: { nodeId: 'node-1' },
+        reason: '查看节点并回执',
+      },
+    })
+    await flushPromises()
+
+    expect(push).toHaveBeenCalledWith({ name: 'roadmap-node', params: { id: 'node-1' } })
+    expect(assistantApi.reportActionReceipt).toHaveBeenCalledWith(
+      'conversation-1',
+      expect.objectContaining({
+        actionId: 'act-receipt-1',
+        status: 'SUCCEEDED',
+        currentRoute: 'roadmap-node',
+      }),
+    )
+  })
+
+  it('相同 actionId 重复收到时保持幂等，不重复执行 push 与二次回执', async () => {
+    mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    const eventPayload: import('@/types/assistant').AssistantEvent = {
+      sequence: 2,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        actionId: 'act-receipt-dup',
+        turnId: 'turn-receipt-dup',
+        type: 'NAVIGATE',
+        routeKey: 'ROADMAP',
+        params: {},
+        reason: '路线导航',
+      },
+    }
+
+    mockEventOptions?.onEvent?.(eventPayload)
+    await flushPromises()
+    const callCountPush = push.mock.calls.length
+    const callCountReceipt = vi.mocked(assistantApi.reportActionReceipt).mock.calls.length
+
+    // 重复发送同一 actionId
+    mockEventOptions?.onEvent?.(eventPayload)
+    await flushPromises()
+
+    expect(push.mock.calls.length).toBe(callCountPush)
+    expect(vi.mocked(assistantApi.reportActionReceipt).mock.calls.length).toBe(callCountReceipt)
   })
 
   it('页面重载时抑制历史 UI Action，不自动触发历史导航', async () => {
