@@ -211,6 +211,8 @@ class AgentToolCoverageTest {
                 "输出 schema 必须封闭: " + tool);
         assertTrue(object.path("properties").isObject() && !object.path("properties").isEmpty(),
                 "输出 schema 必须声明真实字段: " + tool);
+        assertTrue(object.path("required").isArray() && !object.path("required").isEmpty(),
+                "输出 schema 必须声明 always-present 必填键: " + tool);
     }
 
     private Set<String> names() {

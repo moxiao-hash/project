@@ -7,6 +7,7 @@
 import asyncio
 import base64
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -267,10 +268,136 @@ def test_concurrent_terminal_receipts_commit_exactly_one_state() -> None:
     asyncio.run(scenario())
 
 
+class ReceiptStore:
+    """可阻塞/可失败的会话存储，用于验证“先持久化、再发布”。"""
+
+    def __init__(self) -> None:
+        self.saved: dict[tuple[str, str], dict] = {}
+        self.block_next = False
+        self.fail_next = False
+        self.save_entered = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def save(self, *, kind, conversation_id, owner_id, payload):
+        if self.fail_next:
+            self.fail_next = False
+            raise RuntimeError("persistence unavailable")
+        if self.block_next:
+            self.block_next = False
+            self.save_entered.set()
+            await self.release.wait()
+        self.saved[(conversation_id, kind)] = payload
+
+    async def load(self, *, kind, conversation_id, owner_id):
+        return self.saved.get((conversation_id, kind))
+
+
+async def _service_with_store(store: ReceiptStore):
+    service = UnifiedAgentSupervisor(
+        FakeJavaBackend(),
+        model_name="test-model",
+        persistence=SimpleNamespace(store=store),
+    )
+    conversation = await service.create_conversation("user-1")
+    await service.send_message(
+        conversation.conversation_id,
+        "打开我的错题集",
+        "assistant-turn:persist-1",
+        "user-1",
+        {},
+    )
+    events = await service.list_events(conversation.conversation_id, "user-1", 0)
+    action_id = next(
+        event.payload["actionId"] for event in events if event.type == "UI_ACTION"
+    )
+    return service, conversation.conversation_id, action_id
+
+
+def test_retry_action_is_durably_persisted_before_it_is_published() -> None:
+    async def scenario() -> None:
+        store = ReceiptStore()
+        service, conversation_id, action_id = await _service_with_store(store)
+        subscription = service._events.subscribe(conversation_id)
+        store.block_next = True
+
+        task = asyncio.create_task(
+            service.record_action_receipt(
+                conversation_id, "user-1", _receipt(action_id, UiActionReceiptStatus.FAILED)
+            )
+        )
+        await asyncio.wait_for(store.save_entered.wait(), 1)
+        early = await subscription.receive(0.1)
+        assert early is None, "重试事件在持久化完成之前绝不能被发布"
+
+        store.release.set()
+        result = await task
+        assert result.decision == ActionReceiptDecision.RETRY_SCHEDULED
+
+        published = await subscription.receive(1)
+        assert published is not None
+        assert published.type == "UI_ACTION"
+        saved = store.saved[(conversation_id, "unified-assistant")]
+        assert published.sequence in [event["sequence"] for event in saved["events"]]
+        assert published.payload["actionId"] in saved["uiActionsById"]
+        service._events.unsubscribe(subscription)
+
+    asyncio.run(scenario())
+
+
+def test_retry_is_not_published_when_durable_save_fails() -> None:
+    async def scenario() -> None:
+        store = ReceiptStore()
+        service, conversation_id, action_id = await _service_with_store(store)
+        subscription = service._events.subscribe(conversation_id)
+        store.fail_next = True
+
+        with pytest.raises(RuntimeError):
+            await service.record_action_receipt(
+                conversation_id, "user-1", _receipt(action_id, UiActionReceiptStatus.FAILED)
+            )
+        assert await subscription.receive(0.2) is None, (
+            "持久化失败时不得把未落库的重试事件暴露给订阅者"
+        )
+        service._events.unsubscribe(subscription)
+
+    asyncio.run(scenario())
+
+
+def test_concurrent_receipt_cannot_observe_action_before_durable_registration() -> None:
+    async def scenario() -> None:
+        store = ReceiptStore()
+        service, conversation_id, action_id = await _service_with_store(store)
+        subscription = service._events.subscribe(conversation_id)
+        store.block_next = True
+
+        first = asyncio.create_task(
+            service.record_action_receipt(
+                conversation_id, "user-1", _receipt(action_id, UiActionReceiptStatus.FAILED)
+            )
+        )
+        await asyncio.wait_for(store.save_entered.wait(), 1)
+        second = asyncio.create_task(
+            service.record_action_receipt(
+                conversation_id,
+                "user-1",
+                _receipt(action_id, UiActionReceiptStatus.SUCCEEDED),
+            )
+        )
+        await asyncio.sleep(0.1)
+        assert not second.done(), "并发回执必须等待首个回执完成持久化"
+        assert await subscription.receive(0.05) is None
+
+        store.release.set()
+        assert (await first).decision == ActionReceiptDecision.RETRY_SCHEDULED
+        with pytest.raises(AssistantActionReceiptConflictError):
+            await second
+        service._events.unsubscribe(subscription)
+
+    asyncio.run(scenario())
+
+
 def test_receipts_and_issued_actions_survive_service_restart(tmp_path: Path) -> None:
     asyncio.run(_receipts_survive_service_restart(tmp_path))
-
-
 async def _receipts_survive_service_restart(tmp_path: Path) -> None:
     persistence = await AgentPersistence.open(tmp_path / "receipt.sqlite3", TEST_KEY)
     first = UnifiedAgentSupervisor(

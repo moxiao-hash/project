@@ -20,28 +20,18 @@ public class AgentToolRegistry {
     private final Map<String, AgentToolHandler> handlers;
     private final ObjectMapper objectMapper;
     private final AgentToolActionService actionService;
+    private final AgentToolTimeoutGuard timeoutGuard;
 
     @Autowired
     public AgentToolRegistry(
             List<AgentToolHandler> handlers,
             ObjectMapper objectMapper,
-            AgentToolActionService actionService
-    ) {
-        this(handlers, objectMapper, actionService, true);
-    }
-
-    AgentToolRegistry(List<AgentToolHandler> handlers, ObjectMapper objectMapper) {
-        this(handlers, objectMapper, null, true);
-    }
-
-    private AgentToolRegistry(
-            List<AgentToolHandler> handlers,
-            ObjectMapper objectMapper,
             AgentToolActionService actionService,
-            boolean ignored
+            AgentToolTimeoutGuard timeoutGuard
     ) {
         this.objectMapper = objectMapper;
         this.actionService = actionService;
+        this.timeoutGuard = timeoutGuard;
         Map<String, AgentToolHandler> byName = new TreeMap<>();
         for (AgentToolHandler handler : handlers) {
             AgentToolDescriptor descriptor = handler.descriptor();
@@ -50,6 +40,10 @@ public class AgentToolRegistry {
             }
         }
         this.handlers = Collections.unmodifiableMap(new LinkedHashMap<>(byName));
+    }
+
+    AgentToolRegistry(List<AgentToolHandler> handlers, ObjectMapper objectMapper) {
+        this(handlers, objectMapper, null, new AgentToolTimeoutGuard());
     }
 
     public List<AgentToolDescriptor> catalog() {
@@ -82,8 +76,9 @@ public class AgentToolRegistry {
             return new AgentToolInvocationResponse(
                     toolName, handler.descriptor().version(), action.result(), false, action);
         }
-        JsonNode data = objectMapper.valueToTree(
-                handler.invoke(new AgentToolContext(request.ownerId()), arguments));
+        JsonNode data = objectMapper.valueToTree(timeoutGuard.call(
+                handler.descriptor().timeoutMillis(),
+                () -> handler.invoke(new AgentToolContext(request.ownerId()), arguments)));
         AgentToolOutputValidator.validate(toolName, handler.descriptor().outputSchema(), data);
         int bytes = objectMapper.writeValueAsBytes(data).length;
         if (bytes <= MAX_OUTPUT_BYTES) {
@@ -92,7 +87,11 @@ public class AgentToolRegistry {
         }
         JsonNode clipped = objectMapper.createObjectNode()
                 .put("warning", "工具输出超过安全上限，已裁剪；请使用更具体的查询参数")
-                .put("originalBytes", bytes);
+                .put("originalBytes", bytes)
+                .put("truncated", true);
+        // Task 30：最终返回给调用方的载荷（含裁剪路径）也必须符合显式登记的契约。
+        AgentToolOutputValidator.validate(
+                toolName, AgentToolOutputSchemas.truncatedOutput(objectMapper), clipped);
         return new AgentToolInvocationResponse(
                 toolName, handler.descriptor().version(), clipped, true, null);
     }

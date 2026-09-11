@@ -626,23 +626,29 @@ class UnifiedAgentSupervisor:
                 return AssistantActionReceiptResult.model_validate(previous)
 
             safe_error = sanitize_action_error(receipt.error)
-            result = self._decide_action_receipt(conversation, receipt, action, safe_error)
+            result, retry = self._decide_action_receipt(receipt, action, safe_error)
             conversation.action_receipts[receipt.action_id] = result.model_dump(
                 mode="json", by_alias=True
             )
-            # 只使用契约内已登记的事件类型：回执通过同步响应返回，
-            # 需要重试时复用已登记的 UI_ACTION 事件，不新增跨端事件类型。
-            await self._save(conversation)
+            if retry is None:
+                await self._save(conversation)
+            else:
+                # Task 30 复审：先登记并在同一事务内持久化，再由 _emit 发布；
+                # 绝不出现“已发布但未落库”的重试事件。
+                conversation.ui_actions_by_id[retry["actionId"]] = retry["metadata"]
+                await self._emit(conversation, "UI_ACTION", retry["payload"])
             return result
 
     def _decide_action_receipt(
         self,
-        conversation: _Conversation,
         receipt: AssistantActionReceipt,
         action: dict[str, Any],
         safe_error: str | None,
-    ) -> AssistantActionReceiptResult:
-        """按终态派生决定：成功结束、受限重试或人工入口。"""
+    ) -> tuple[AssistantActionReceiptResult, dict[str, Any] | None]:
+        """按终态派生决定：成功结束、受限重试或人工入口。
+
+        纯函数：不修改会话状态；需要重试时返回待登记的重试动作，由调用方在锁内持久化。
+        """
 
         if receipt.status == UiActionReceiptStatus.SUCCEEDED:
             return AssistantActionReceiptResult(
@@ -651,7 +657,7 @@ class UnifiedAgentSupervisor:
                 decision=ActionReceiptDecision.FINISHED,
                 retry_count=int(action.get("attempts", 0)),
                 message="界面动作已完成",
-            )
+            ), None
         if receipt.status == UiActionReceiptStatus.REJECTED:
             return AssistantActionReceiptResult(
                 action_id=receipt.action_id,
@@ -660,21 +666,20 @@ class UnifiedAgentSupervisor:
                 retry_count=int(action.get("attempts", 0)),
                 manual_route_key=str(action.get("routeKey")),
                 message="动作被拒绝，请由你本人前往对应页面操作",
-            )
+            ), None
 
         attempts = int(action.get("attempts", 0))
         retriable = action.get("type") in RETRIABLE_UI_ACTION_TYPES
         if retriable and attempts < MAX_UI_ACTION_RETRIES:
-            # 有界重试：只重发无副作用的导航/刷新，且每次都换新 actionId。
             action["attempts"] = attempts + 1
-            self._schedule_ui_action_retry(conversation, action)
+            retry = self._build_retry_action(action, attempts + 1)
             return AssistantActionReceiptResult(
                 action_id=receipt.action_id,
                 status=receipt.status,
                 decision=ActionReceiptDecision.RETRY_SCHEDULED,
                 retry_count=attempts + 1,
                 message="界面动作失败，已安排一次自动重试",
-            )
+            ), retry
         return AssistantActionReceiptResult(
             action_id=receipt.action_id,
             status=receipt.status,
@@ -685,21 +690,14 @@ class UnifiedAgentSupervisor:
                 safe_error
                 or "界面动作失败，请使用左侧菜单手动继续"
             ),
-        )
+        ), None
 
-    def _schedule_ui_action_retry(
-        self, conversation: _Conversation, action: dict[str, Any]
-    ) -> None:
-        """为导航/刷新类动作生成新的受登记动作；不修改原动作历史。"""
+    def _build_retry_action(
+        self, action: dict[str, Any], attempts: int
+    ) -> dict[str, Any]:
+        """构造一个新的受登记导航/刷新动作；不修改原动作历史。"""
 
         new_action_id = str(uuid4())
-        conversation.ui_actions_by_id[new_action_id] = {
-            "type": action.get("type"),
-            "routeKey": action.get("routeKey"),
-            "params": dict(action.get("params") or {}),
-            "reason": action.get("reason"),
-            "attempts": int(action.get("attempts", 1)),
-        }
         retry_action = UiAction(
             type=action.get("type"),
             route_key=action.get("routeKey"),
@@ -713,16 +711,14 @@ class UnifiedAgentSupervisor:
         payload = retry_action.model_dump(mode="json", by_alias=True)
         payload["actionId"] = new_action_id
         payload["retry"] = True
-        # 直接登记并发布；调用方 record_action_receipt 会随后统一持久化。
-        event = AssistantEvent(
-            sequence=len(conversation.events) + 1,
-            type="UI_ACTION",
-            conversation_id=conversation.snapshot.conversation_id,
-            payload=payload,
-        )
-        conversation.events.append(event)
-        self._sync_stream_state(conversation)
-        self._events.publish(event)
+        metadata = {
+            "type": action.get("type"),
+            "routeKey": action.get("routeKey"),
+            "params": dict(action.get("params") or {}),
+            "reason": action.get("reason"),
+            "attempts": attempts,
+        }
+        return {"actionId": new_action_id, "payload": payload, "metadata": metadata}
 
     async def cancel_turn(
         self, conversation_id: str, turn_id: str, owner_id: str

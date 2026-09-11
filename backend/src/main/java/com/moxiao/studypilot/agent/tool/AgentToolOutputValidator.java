@@ -98,6 +98,13 @@ public final class AgentToolOutputValidator {
                 }
             });
         }
+        JsonNode mapValues = schema.path("additionalProperties");
+        if (mapValues.isObject() && !mapValues.isEmpty()) {
+            // 受控映射：键不固定，但每个值都必须满足声明的值类型。
+            value.properties().forEach(entry -> validateNode(
+                    mapValues, entry.getValue(),
+                    path + "." + sanitizeFieldName(entry.getKey())));
+        }
     }
 
     private static String expectedType(JsonNode schema) {
