@@ -32,6 +32,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class AgentToolActionService {
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(AgentToolActionService.class);
     private static final Duration CONFIRMATION_TTL = Duration.ofMinutes(15);
 
     private final AgentToolActionJpaRepository repository;
@@ -188,21 +190,55 @@ public class AgentToolActionService {
         AgentToolActionEntity snapshot = requiresNew.execute(status -> repository.findById(actionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Agent 工具操作不存在")));
         if (snapshot == null) throw new IllegalStateException("Agent 工具执行记录不存在");
+        String ownerId = snapshot.getOwnerId();
+        GovernedAgentToolHandler handler = handlers.get(snapshot.getToolName());
+        if (handler == null || handler.descriptor().version() != snapshot.getToolVersion()) {
+            return finalizeFailure(ownerId, actionId,
+                    new IllegalStateException("Agent 工具版本不可用: " + snapshot.getToolName()));
+        }
+        AgentToolTimeoutGuard.FencedResult<Object> outcome;
         try {
-            GovernedAgentToolHandler handler = handlers.get(snapshot.getToolName());
-            if (handler == null || handler.descriptor().version() != snapshot.getToolVersion()) {
-                throw new IllegalStateException("Agent 工具版本不可用: " + snapshot.getToolName());
-            }
-            Object result = timeoutGuard.call(
+            outcome = timeoutGuard.callFenced(
                     handler.descriptor().timeoutMillis(),
                     () -> businessExecutor.execute(
                             handler,
                             new AgentToolContext(
                                     snapshot.getOwnerId(), snapshot.getIdempotencyKey()),
-                            objectMapper.readTree(snapshot.getArgumentsJson())));
-            return finalizeSuccess(snapshot.getOwnerId(), actionId, result);
+                            objectMapper.readTree(snapshot.getArgumentsJson())),
+                    late -> completeLate(ownerId, actionId, late));
         } catch (RuntimeException exception) {
-            return finalizeFailure(snapshot.getOwnerId(), actionId, exception);
+            return finalizeFailure(ownerId, actionId, exception);
+        }
+        if (outcome.running()) {
+            // 事务仍在执行且可能提交：绝不发布终态失败，保持 RUNNING；
+            // claimConfirmation 对 RUNNING 不会再次执行，杜绝重复副作用。
+            AgentToolActionResponse running = requiresNew.execute(
+                    status -> response(requireOwnedForUpdate(ownerId, actionId)));
+            if (running == null) throw new IllegalStateException("Agent 工具运行态查询失败");
+            return running;
+        }
+        if (outcome.error() != null) {
+            return finalizeFailure(ownerId, actionId, outcome.error());
+        }
+        return finalizeSuccess(ownerId, actionId, outcome.value());
+    }
+
+    /**
+     * 事务在宽限期后仍未结束时，由工作线程在结果真正确定后延迟定稿。
+     */
+    private void completeLate(
+            String ownerId, String actionId, AgentToolTimeoutGuard.FencedResult<Object> late
+    ) {
+        try {
+            if (late.running()) return;
+            if (late.error() != null) {
+                finalizeFailure(ownerId, actionId, late.error());
+            } else {
+                finalizeSuccess(ownerId, actionId, late.value());
+            }
+        } catch (RuntimeException exception) {
+            // 延迟定稿失败不能回滚已经提交的业务事务；记录后由执行记录与审计保留真相。
+            LOG.warn("Agent 工具延迟定稿失败: {}", actionId, exception);
         }
     }
 
