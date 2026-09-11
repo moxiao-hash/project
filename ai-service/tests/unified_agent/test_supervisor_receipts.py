@@ -363,6 +363,52 @@ def test_retry_is_not_published_when_durable_save_fails() -> None:
     asyncio.run(scenario())
 
 
+def test_failed_save_rolls_back_every_in_memory_receipt_mutation() -> None:
+    async def scenario() -> None:
+        store = ReceiptStore()
+        service, conversation_id, action_id = await _service_with_store(store)
+        conversation = service._conversations[conversation_id]
+        before_receipts = dict(conversation.action_receipts)
+        before_actions = {
+            key: dict(value) for key, value in conversation.ui_actions_by_id.items()
+        }
+        before_sequences = [event.sequence for event in conversation.events]
+        before_last_sequence = conversation.snapshot.last_event_sequence
+        before_active_turn = conversation.snapshot.active_turn_id
+        assert before_actions[action_id]["attempts"] == 0
+
+        store.fail_next = True
+        with pytest.raises(RuntimeError):
+            await service.record_action_receipt(
+                conversation_id, "user-1", _receipt(action_id, UiActionReceiptStatus.FAILED)
+            )
+
+        # 保存失败后，内存状态必须与保存前完全一致，不能留下“未落库却生效”的幽灵回执。
+        assert conversation.action_receipts == before_receipts
+        assert conversation.ui_actions_by_id == before_actions
+        assert before_actions[action_id]["attempts"] == 0
+        assert [event.sequence for event in conversation.events] == before_sequences
+        assert conversation.snapshot.last_event_sequence == before_last_sequence
+        assert conversation.snapshot.active_turn_id == before_active_turn
+
+        # 之后的同一回执可以正常持久化并恰好发布一次重试。
+        result = await service.record_action_receipt(
+            conversation_id, "user-1", _receipt(action_id, UiActionReceiptStatus.FAILED)
+        )
+        assert result.decision == ActionReceiptDecision.RETRY_SCHEDULED
+        saved = store.saved[(conversation_id, "unified-assistant")]
+        assert action_id in saved["actionReceipts"]
+        retries = [
+            event
+            for event in conversation.events
+            if event.type == "UI_ACTION" and event.payload.get("retry") is True
+        ]
+        assert len(retries) == 1, "重试事件必须恰好发布一次"
+        assert retries[0].payload["actionId"] in saved["uiActionsById"]
+
+    asyncio.run(scenario())
+
+
 def test_concurrent_receipt_cannot_observe_action_before_durable_registration() -> None:
     async def scenario() -> None:
         store = ReceiptStore()

@@ -626,18 +626,59 @@ class UnifiedAgentSupervisor:
                 return AssistantActionReceiptResult.model_validate(previous)
 
             safe_error = sanitize_action_error(receipt.error)
-            result, retry = self._decide_action_receipt(receipt, action, safe_error)
-            conversation.action_receipts[receipt.action_id] = result.model_dump(
-                mode="json", by_alias=True
+            # Task 30 第二次复审：保存失败时内存状态必须回滚，绝不留下“未落库却生效”的幽灵回执。
+            receipts_snapshot = dict(conversation.action_receipts)
+            actions_snapshot = {
+                key: dict(value)
+                for key, value in conversation.ui_actions_by_id.items()
+            }
+            events_length = len(conversation.events)
+            stream_snapshot = (
+                conversation.snapshot.last_event_sequence,
+                conversation.snapshot.active_turn_id,
             )
-            if retry is None:
-                await self._save(conversation)
-            else:
-                # Task 30 复审：先登记并在同一事务内持久化，再由 _emit 发布；
-                # 绝不出现“已发布但未落库”的重试事件。
-                conversation.ui_actions_by_id[retry["actionId"]] = retry["metadata"]
-                await self._emit(conversation, "UI_ACTION", retry["payload"])
+            try:
+                result, retry = self._decide_action_receipt(receipt, action, safe_error)
+                conversation.action_receipts[receipt.action_id] = result.model_dump(
+                    mode="json", by_alias=True
+                )
+                if retry is None:
+                    await self._save(conversation)
+                else:
+                    # 先登记并在同一事务内持久化，再由 _emit 发布；
+                    # 绝不出现“已发布但未落库”的重试事件。
+                    conversation.ui_actions_by_id[retry["actionId"]] = retry["metadata"]
+                    await self._emit(conversation, "UI_ACTION", retry["payload"])
+            except Exception:
+                self._restore_receipt_state(
+                    conversation,
+                    receipts_snapshot,
+                    actions_snapshot,
+                    events_length,
+                    stream_snapshot,
+                )
+                raise
             return result
+
+    @staticmethod
+    def _restore_receipt_state(
+        conversation: _Conversation,
+        receipts: dict[str, dict[str, Any]],
+        actions: dict[str, dict[str, Any]],
+        events_length: int,
+        stream_snapshot: tuple[int, str | None],
+    ) -> None:
+        """把回执相关内存状态恢复到持久化之前的快照。"""
+
+        conversation.action_receipts.clear()
+        conversation.action_receipts.update(receipts)
+        conversation.ui_actions_by_id.clear()
+        conversation.ui_actions_by_id.update(actions)
+        del conversation.events[events_length:]
+        (
+            conversation.snapshot.last_event_sequence,
+            conversation.snapshot.active_turn_id,
+        ) = stream_snapshot
 
     def _decide_action_receipt(
         self,
