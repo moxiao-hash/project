@@ -40,6 +40,12 @@ public class AgentToolActionEntity {
     private String errorMessage;
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
+    @Column(name = "lease_token", length = 64)
+    private String leaseToken;
+    @Column(name = "lease_expires_at")
+    private Instant leaseExpiresAt;
+    @Column(name = "attempt_count", nullable = false)
+    private int attemptCount;
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
     @Column(name = "updated_at", nullable = false)
@@ -79,21 +85,44 @@ public class AgentToolActionEntity {
         updatedAt = now;
     }
 
+    /**
+     * Task 30：进入 RUNNING 时登记一次带租约的执行尝试。
+     *
+     * <p>租约是恢复流程的 fencing token：只有持有当前 token 的执行才能写入终态，
+     * 过期后恢复流程可以安全接管。</p>
+     */
+    public void startAttempt(String leaseToken, Instant leaseExpiresAt, Instant now) {
+        status = AgentToolActionStatus.RUNNING;
+        this.leaseToken = leaseToken;
+        this.leaseExpiresAt = leaseExpiresAt;
+        this.attemptCount = this.attemptCount + 1;
+        this.updatedAt = now;
+    }
+
     public void succeed(String resultJson, Instant now) {
         status = AgentToolActionStatus.SUCCEEDED;
         this.resultJson = resultJson;
+        this.errorMessage = null;
+        clearLease();
         updatedAt = now;
     }
 
     public void fail(String error, Instant now) {
         status = AgentToolActionStatus.FAILED;
         errorMessage = error;
+        clearLease();
         updatedAt = now;
     }
 
     public void reject(Instant now) {
         status = AgentToolActionStatus.REJECTED;
+        clearLease();
         updatedAt = now;
+    }
+
+    private void clearLease() {
+        leaseToken = null;
+        leaseExpiresAt = null;
     }
 
     public String getId() { return id; }
@@ -109,4 +138,7 @@ public class AgentToolActionEntity {
     public String getResultJson() { return resultJson; }
     public String getErrorMessage() { return errorMessage; }
     public Instant getExpiresAt() { return expiresAt; }
+    public String getLeaseToken() { return leaseToken; }
+    public Instant getLeaseExpiresAt() { return leaseExpiresAt; }
+    public int getAttemptCount() { return attemptCount; }
 }

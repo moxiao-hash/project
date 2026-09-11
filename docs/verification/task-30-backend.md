@@ -2,27 +2,34 @@
 
 - **执行 Agent**：DeepSeek Harness（后端与 Agent 工具/治理工程师）
 - **测试等级**：`[UNIT_TEST]` + `[MOCK_INTEGRATION]`（MockMvc + Mockito 网关 + H2）+ `[STATIC_VALIDATION]`；**不构成 `[REAL_E2E]`**（未启动真实 MySQL/FastAPI/浏览器，未做真实模型调用）
-- **执行时间**：2026-09-11（首轮交付 11:06；第一次复审整改 11:40；第二次复审整改 12:20，Asia/Shanghai）
+- **执行时间**：2026-09-11（首轮交付 11:06；第一次复审整改 11:40；第二次复审整改 12:20；第三次复审整改 13:10，Asia/Shanghai）
 - **关联分支**：`agent/deepseek-task-30-tools`
 - **关联基础提交**：`59a3578`（`origin/main`，含 Task 29 验收成果）
 - **提交**：
   - 首轮交付：`9f747f2 feat: expose strict tool schemas and governed action receipts`
   - 第一次复审整改：`49a9d88 fix: enforce strict tool output contracts and runtime timeouts`
-  - 第二次复审整改：`fix: fence governed write timeouts and roll back failed receipt saves`（见 `git log -1`，未改写前两个提交）
+  - 第二次复审整改：`2540f70 fix: fence governed write timeouts and roll back failed receipt saves`
+  - 第三次复审整改：`fix: recover orphan running tool actions with durable leases`（见 `git log -1`，未改写前三个提交）
 - **交付状态**：**待 Codex 复验**。只交付 `backend/**`、必要的 `ai-service/app/unified_agent/**`、`ai-service/app/api/unified_assistant.py`、对应测试与本文档；**未改动任何 `web/**`**，未修改共享矩阵、总计划、交接文档、凭据或 `.env`。
 
 ---
 
 ## 1. Codex 复审阻塞项与整改对照
 
-### 1.1 第二次复审阻塞项（本轮）
+### 1.1 第三次复审阻塞项（本轮）
+
+| # | 复审阻塞项 | 整改 |
+| :--- | :--- | :--- |
+| C1 | RUNNING 的完成/终态只存在于当前 JVM 的 `whenComplete` 回调；JVM 退出或延迟定稿持久化失败后动作永久 RUNNING，去重变成死锁 | 新增持久化租约（`lease_token`/`lease_expires_at`/`attempt_count`）+ 启动与定时恢复服务；业务成功与 `SUCCEEDED` 在**同一事务**提交（`executeAndFinalize`），租约失效即整事务回滚；过期租约由条件更新抢占并收敛为 FAILED。新增重启/孤儿恢复、双恢复实例竞争、瞬时持久化失败后恰好成功一次三组测试 |
+
+### 1.2 第二次复审阻塞项（已整改并保留）
 
 | # | 复审阻塞项 | 整改 |
 | :--- | :--- | :--- |
 | A | 写超时不安全：`AgentToolActionService` 在 `Future.cancel(true)` 后立即把动作标记 FAILED，而忽略中断的 JDBC/阻塞事务可能稍后提交 | 新增 `AgentToolTimeoutGuard.callFenced`：超时后先在宽限期内等待事务真正结束；结果已知按真实结果定稿；结果未知则返回 `RUNNING`（非终态）并由工作线程延迟定稿。**终态 FAILED 只在事务已结束（回滚）后发布**；`RUNNING` 期间重复确认不会再次执行。线程池改为有界（最多 64 个守护线程）。新增 `GovernedWriteTimeoutSafetyTest` 生产级回归 |
 | B | Python 保存失败回滚：`record_action_receipt` 先改内存（attempts、action_receipts、ui_actions_by_id、events/stream 状态）再 `_save`；失败后幽灵回执仍在内存中权威 | 在锁内对四类状态做快照，`_save`/`_emit` 抛出时 `_restore_receipt_state` 全量回滚（回执、动作表含 attempts、events、`lastEventSequence`/`activeTurnId`）；新增“失败后内存与保存前完全一致 + 之后可恰好持久化/发布一次”的回归测试 |
 
-### 1.2 第一次复审阻塞项（已整改并保留）
+### 1.3 第一次复审阻塞项（已整改并保留）
 
 | # | 复审阻塞项 | 整改 |
 | :--- | :--- | :--- |
@@ -34,7 +41,7 @@
 
 **保持不变的已接受设计**：`UI_ACTION` 事件载荷的加法式 `actionId`；java 负责认证/请求体/route name/错误裁剪/会话归属、Python 原子校验动作归属的职责划分；用户隔离行为。
 
-### 1.3 `required` 与 `non_null` 的建模口径
+### 1.4 `required` 与 `non_null` 的建模口径
 
 `backend/src/main/resources/application.properties` 配置了
 `spring.jackson.default-property-inclusion=non_null`，因此**值为 null 的字段不会出现在工具输出 JSON 中**
@@ -153,6 +160,22 @@ FAILED test_failed_save_rolls_back_every_in_memory_receipt_mutation
 1 failed
 ```
 
+**(7) 孤儿 RUNNING 动作无恢复机制**（第三次复审，新增测试在生产改动之前）
+
+```bash
+cd backend
+./mvnw -o -q -Dtest='AgentToolActionRecoveryTest,AgentToolActionRecoveryRollbackTest' test
+```
+
+```text
+[ERROR] COMPILATION ERROR :
+[ERROR] .../AgentToolActionRecoveryTest.java:[62,13] 找不到符号（AgentToolActionRecoveryService）
+[ERROR] .../AgentToolActionRecoveryRollbackTest.java:[51,13] 找不到符号（AgentToolActionRecoveryService）
+```
+
+> 说明：本轮为“新增恢复能力”，缺失类导致的可复现编译失败即为 RED；
+> 实现后三组测试全部 GREEN（见 §3.2）。
+
 ### 3.2 复审整改后的 GREEN（关键断言）
 
 - `AgentToolOutputSchemasTest`（4）：空对象/缺必填/嵌套陌生字段/嵌套类型错误/任意数组元素/数组元素类型错误全部拒绝；
@@ -162,6 +185,10 @@ FAILED test_failed_save_rolls_back_every_in_memory_receipt_mutation
 - `AgentToolTimeoutGuardTest`（3）：慢任务确定性超时（错误含上限）、快任务返回值、业务异常原样透传。
 - `GovernedWriteTimeoutSafetyTest`（2）：**宽限期内提交 → SUCCEEDED 而非 FAILED**；
   **结果未知 → 保持 RUNNING、拒绝重复执行、事务结束后按真实结果定稿为 SUCCEEDED**。
+- `AgentToolActionRecoveryTest`（2）：**崩溃遗留的过期租约 RUNNING 动作在启动恢复后收敛为 FAILED（恰好一次通知+审计）**，
+  且旧租约无法再写入 SUCCEEDED；**两个恢复实例并发只有一个能接管**。
+- `AgentToolActionRecoveryRollbackTest`（1）：**恢复定稿瞬时持久化失败 → 事务整体回滚、动作保持 RUNNING、无通知**；
+  重试后**恰好一次**收敛为 FAILED。
 - `AgentToolCoverageTest`（6）：64 工具 exactly-once、effect/风险与矩阵一致、写工具治理、输入/输出封闭且必填。
 - Python `test_supervisor_receipts.py`（14）：动作归属/幂等/409/失败不成功/有界重试/人工入口、
   **并发只提交一个终态**、**重启恢复**、**重试先持久化再发布**、**保存失败不发布**、**并发不可提前观察**、
@@ -176,7 +203,7 @@ PYTHONPATH=$PWD .venv/bin/python -m pytest -q                        # 420 passe
 PYTHONPATH=$PWD .venv/bin/python -m ruff check app tests             # All checks passed!
 
 cd ../backend
-./mvnw -o test                                                       # 407 passed, 0 failures, 0 errors
+./mvnw -o test                                                       # 410 passed, 0 failures, 0 errors
                                                                      # BUILD SUCCESS（Task 30 首轮基线 374）
 
 cd ..
@@ -234,13 +261,44 @@ git diff --check                                                     # 退出码
 - 读/导航自动；`WRITE/LOCAL` 继续经 `AgentExecution`、授权、幂等、通知与审计；HIGH 风险继续专用确认。
 - 未新增答题、打卡总结、成果接受代办能力。聊天文本不构成确认。
 
+### 4.5 孤儿 RUNNING 动作的持久化恢复/对账（第三次复审）
+
+- **持久化租约**：`agent_tool_actions` 新增 `lease_token`/`lease_expires_at`/`attempt_count`
+  （迁移 `V44__add_agent_tool_action_recovery.sql`）。进入 RUNNING 时写入一次性 fencing token，
+  租约 5 分钟；`attempt_count` 记录持久化尝试次数。
+- **事务内耦合成功**：`AgentToolBusinessExecutor.executeAndFinalize` 在同一 `REQUIRES_NEW` 事务内执行
+  业务变更 + `completeIfLeaseHeld`（仅当仍持有租约时写 SUCCEEDED）+ 治理/通知。若租约已被恢复流程接管，
+  `completeIfLeaseHeld` 返回 0 → 抛 `AgentToolActionLeaseLostException` → **整个业务事务回滚**，
+  因此“业务副作用提交 ⇒ 一定有 SUCCEEDED 一致记录”，不存在提交后丢失成功真相的窗口。
+- **恢复流程**：`AgentToolActionRecoveryService` 在 `ApplicationReadyEvent` 与 `@Scheduled`
+  （默认启动 15s、间隔 30s）扫描租约过期的 RUNNING 动作，按动作 id 逐条在 `REQUIRES_NEW` 事务内：
+  1) `claimRecoveryLease` 条件更新抢占租约（`status=RUNNING AND lease_expires_at < now`）——
+  两个实例并发时只有一个更新成功；
+  2) 把动作与治理执行收敛为 FAILED、清除租约、写入 owner 作用域通知与审计
+  （`EXECUTION_STATUS_CHANGED`）。
+- **有界与安全**：每轮最多 `BATCH_SIZE = 50` 条；单条恢复瞬时失败整体回滚并记录日志，留待下一轮；
+  ownerId 取自动作本身，通知/审计均按 owner 隔离。
+- **LOCAL/非事务副作用**：不会被自动重跑。恢复以“执行进程中断或结果未定，已停止自动执行以避免重复副作用；
+  请人工核对后重新发起”收敛为 FAILED，保留幂等键，重复调用返回该 FAILED 动作（不盲目重放）。
+- **可恢复性**：即使 JVM 在 RUNNING 期间退出，遗留动作也会在租约过期后的启动/定时恢复中收敛，
+  不再永久 RUNNING，也不产生重复副作用。
+
 ---
 
 ## 5. 变更文件
 
-**第二次复审整改提交**
-- `agent/tool/AgentToolTimeoutGuard.java`（新增 `callFenced`/`FencedResult`、有界线程池、宽限期与延迟定稿）
-- `agent/tool/AgentToolActionService.java`（写路径围栏：`RUNNING` 非终态 + 延迟定稿 + 日志）
+**第三次复审整改提交（本轮）**
+- `agent/tool/AgentToolActionEntity.java`（新增 `lease_token`/`lease_expires_at`/`attempt_count` 与 `startAttempt`）
+- `agent/tool/AgentToolActionJpaRepository.java`（`findRecoverable`/`claimRecoveryLease`/`completeIfLeaseHeld`）
+- `agent/tool/AgentToolBusinessExecutor.java`（新增同一事务的成功定稿 `executeAndFinalize`）
+- `agent/tool/AgentToolActionService.java`（租约登记、事务内耦合成功、按租约条件失败）
+- 新增 `agent/tool/AgentToolActionRecoveryService.java`、`agent/tool/AgentToolActionLeaseLostException.java`
+- `resources/db/migration/V44__add_agent_tool_action_recovery.sql`（新增）
+- 新增 `AgentToolActionRecoveryTest`、`AgentToolActionRecoveryRollbackTest`
+
+**第二次复审整改提交（已保留）**
+- `agent/tool/AgentToolTimeoutGuard.java`（`callFenced`/`FencedResult`、有界线程池、宽限期）
+- `agent/tool/AgentToolActionService.java`（写路径围栏）
 - 新增 `GovernedWriteTimeoutSafetyTest`
 - `app/unified_agent/supervisor.py`（保存失败全量内存回滚）
 - `tests/unified_agent/test_supervisor_receipts.py`（+1 回滚测试）
@@ -257,8 +315,12 @@ git diff --check                                                     # 退出码
 **文档**
 - `docs/verification/task-30-backend.md`（本文件）
 
-**未修改**：`web/**`、`docs/agent-capability-matrix-v2.md`、`docs/协同开发交接说明.md`、总计划、`.env`、
-数据库迁移。首轮 `9f747f2` 的回执/隔离实现保持不变。
+**未修改**：`web/**`、`docs/agent-capability-matrix-v2.md`、`docs/协同开发交接说明.md`、总计划、`.env`。
+首轮 `9f747f2` 的回执/隔离实现保持不变。
+
+> 迁移编号说明：本轮占用当前下一个空闲版本 `V44`。总计划里 Task 31 原先设想使用 `V44`
+> 创建用量预算表；Task 31 尚未开始，需顺延到 `V45`。若 Codex 希望保留 `V44` 给 Task 31，
+> 请在验收时指定，我再调整（不擅自改动共享计划）。
 
 ---
 
@@ -276,14 +338,17 @@ git diff --check                                                     # 退出码
    route name、错误裁剪与会话归属。若需 Java 侧镜像动作表，请先冻结新契约。
 2. **额外字段**：Java 拒绝 `ownerId/DOM/URL/HTML/JS/selector/模型字段`；Python 内部模型 `extra="forbid"`。
 3. **超时中断语义**：见 §4.2；安全完成/围栏语义已消除“先报失败、后提交”的窗口，不再作为限制接受。
-4. **契约加法**：`timeoutMillis` 与 `UI_ACTION.actionId` 为加法式扩展；Codex 已接受 `actionId`，
+4. **孤儿 RUNNING 可恢复性**：见 §4.5；JVM 退出或定稿瞬时失败后由持久化租约 + 启动/定时恢复收敛，
+   不再接受“永久 RUNNING/去重死锁”。仅剩的非事务副作用边界是：LOCAL/外部容器副作用不会被自动重跑，
+   恢复以 FAILED + 人工核对提示收敛（有意的安全选择，而非缺陷）。
+5. **契约加法**：`timeoutMillis` 与 `UI_ACTION.actionId` 为加法式扩展；Codex 已接受 `actionId`，
    `timeoutMillis` 现已真实强制。
-5. **Schema 真实数据覆盖**：H2 全量套件覆盖优先能力工具；`developer.*`、`runner.*`、`artifacts.*`
+6. **Schema 真实数据覆盖**：H2 全量套件覆盖优先能力工具；`developer.*`、`runner.*`、`artifacts.*`
    的 Schema 通过结构校验与静态建模保证，未在真实 MySQL/浏览器链路上验证。
-6. **矩阵风险矛盾（未擅自改动）**：矩阵 §2 页面表与生产代码一致地把
+7. **矩阵风险矛盾（未擅自改动）**：矩阵 §2 页面表与生产代码一致地把
    `learning.goal.create`/`learning.plan.create` 记为 `LOW`，§3.2 目录写为 `HIGH`；请 Codex 裁定。
 
 ## 8. Git 与交付
 
-- 第二次复审整改为**新提交**（未 amend `9f747f2`/`49a9d88`），只提交自有文件，只推送 `agent/deepseek-task-30-tools`。
+- 第三次复审整改为**新提交**（未 amend 前三个提交），只提交自有文件，只推送 `agent/deepseek-task-30-tools`。
 - 不合并 `main`，不领取 Task 30 整体验收，不启动 Task 31。
