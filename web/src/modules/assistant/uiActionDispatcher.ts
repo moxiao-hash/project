@@ -66,17 +66,17 @@ const routes: Record<string, RouteDefinition> = {
   WORKSPACE_ARTIFACTS: { name: 'workspace-artifacts', params: {} },
 }
 
-/** 白名单弹窗注册表 */
-const ALLOWED_MODALS = new Set([
-  'CONFIRM_ACTION',
-  'CREATE_PLAN',
-  'CREATE_GOAL',
-  'IMPORT_MATERIAL',
-  'REGISTER_WORKSPACE',
-  'NODE_QUIZ_PREVIEW',
-  'REVIEW_WRONG_QUESTION',
-  'TASK_CONFIRMATION',
-])
+/** 白名单弹窗及其允许透传的业务标识字段。 */
+const ALLOWED_MODAL_SCHEMAS: Record<string, string[]> = {
+  CONFIRM_ACTION: ['targetId'],
+  CREATE_PLAN: [],
+  CREATE_GOAL: [],
+  IMPORT_MATERIAL: [],
+  REGISTER_WORKSPACE: [],
+  NODE_QUIZ_PREVIEW: ['nodeId'],
+  REVIEW_WRONG_QUESTION: ['wrongQuestionId'],
+  TASK_CONFIRMATION: ['taskId'],
+}
 
 /** 白名单表单及其受控草稿字段 schema */
 const ALLOWED_FORM_SCHEMAS: Record<string, string[]> = {
@@ -182,6 +182,16 @@ function normalizeContext(routerOrContext: RouterLike | UiActionContext): UiActi
   }
   return {
     router: routerOrContext,
+  }
+}
+
+function assertAllowedParameterKeys(
+  params: Record<string, string>,
+  allowedKeys: readonly string[],
+): void {
+  const unknown = Object.keys(params).filter((key) => !allowedKeys.includes(key))
+  if (unknown.length > 0) {
+    throw new Error(`动作参数包含未授权字段: ${unknown.join(',')}`)
   }
 }
 
@@ -306,16 +316,19 @@ export async function dispatchUiAction(
 
       case 'OPEN_MODAL': {
         const modalKey = action.params?.modalKey
-        if (!modalKey || !ALLOWED_MODALS.has(modalKey)) {
+        const allowedFields = modalKey ? ALLOWED_MODAL_SCHEMAS[modalKey] : undefined
+        if (!modalKey || !allowedFields) {
           throw new Error('不受支持的弹窗动作')
         }
+        assertAllowedParameterKeys(action.params, ['modalKey', ...allowedFields])
         const payload: Record<string, unknown> = {}
         for (const [k, v] of Object.entries(action.params)) {
           if (k !== 'modalKey') payload[k] = v
         }
-        if (context.modalManager?.open) {
-          await context.modalManager.open(modalKey, payload)
+        if (!context.modalManager?.open) {
+          throw new Error('弹窗执行器不可用')
         }
+        await context.modalManager.open(modalKey, payload)
         finalReceipt = {
           actionId,
           status: 'SUCCEEDED',
@@ -345,9 +358,10 @@ export async function dispatchUiAction(
           draft[k] = v
         }
 
-        if (context.formDraftStore?.setDraft) {
-          context.formDraftStore.setDraft(formKey, draft)
+        if (!context.formDraftStore?.setDraft) {
+          throw new Error('表单草稿执行器不可用')
         }
+        context.formDraftStore.setDraft(formKey, draft)
 
         finalReceipt = {
           actionId,
@@ -359,13 +373,15 @@ export async function dispatchUiAction(
       }
 
       case 'REFRESH_RESOURCE': {
+        assertAllowedParameterKeys(action.params, ['resourceKey'])
         const resourceKey = action.params?.resourceKey
         if (!resourceKey || !ALLOWED_RESOURCES.has(resourceKey)) {
           throw new Error('不受支持的资源刷新')
         }
-        if (context.resourceManager?.refresh) {
-          await context.resourceManager.refresh(resourceKey)
+        if (!context.resourceManager?.refresh) {
+          throw new Error('资源刷新执行器不可用')
         }
+        await context.resourceManager.refresh(resourceKey)
         finalReceipt = {
           actionId,
           status: 'SUCCEEDED',
@@ -376,6 +392,7 @@ export async function dispatchUiAction(
       }
 
       case 'FOCUS_ELEMENT': {
+        assertAllowedParameterKeys(action.params, ['elementKey'])
         const elementKey = action.params?.elementKey
         if (
           !elementKey ||
@@ -384,9 +401,10 @@ export async function dispatchUiAction(
         ) {
           throw new Error('不受支持的元素聚焦，严禁传递 CSS 选择器')
         }
-        if (context.focusManager?.focus) {
-          context.focusManager.focus(elementKey)
+        if (!context.focusManager?.focus) {
+          throw new Error('元素聚焦执行器不可用')
         }
+        context.focusManager.focus(elementKey)
         finalReceipt = {
           actionId,
           status: 'SUCCEEDED',

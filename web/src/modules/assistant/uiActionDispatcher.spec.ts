@@ -184,6 +184,22 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的弹窗动作')
       expect(modalManager.open).not.toHaveBeenCalled()
     })
+
+    it('does not report success when the registered modal executor is unavailable', async () => {
+      const action: AssistantUiAction = {
+        actionId: 'act-modal-missing-executor',
+        type: 'OPEN_MODAL',
+        routeKey: 'ROADMAP',
+        params: { modalKey: 'CONFIRM_ACTION', targetId: 'task-100' },
+        reason: '确认操作',
+      }
+
+      await expect(dispatchUiAction(action, { router })).rejects.toThrow('弹窗执行器不可用')
+      expect(getActionReceipt(action.actionId!)).toMatchObject({
+        actionId: action.actionId,
+        status: 'FAILED',
+      })
+    })
   })
 
   describe('3. PREFILL_FORM action (draft only, strictly no auto-submit)', () => {
@@ -244,6 +260,19 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       await expect(dispatchUiAction(action, context)).rejects.toThrow('表单草稿包含未授权字段')
       expect(formDraftStore.setDraft).not.toHaveBeenCalled()
     })
+
+    it('does not report success when the registered draft executor is unavailable', async () => {
+      const action: AssistantUiAction = {
+        actionId: 'act-form-missing-executor',
+        type: 'PREFILL_FORM',
+        routeKey: 'LEARNING_PLANS',
+        params: { formKey: 'PLAN_FORM', title: '计划草稿' },
+        reason: '预填计划草稿',
+      }
+
+      await expect(dispatchUiAction(action, { router })).rejects.toThrow('表单草稿执行器不可用')
+      expect(getActionReceipt(action.actionId!)).toMatchObject({ status: 'FAILED' })
+    })
   })
 
   describe('4. REFRESH_RESOURCE action', () => {
@@ -273,6 +302,19 @@ describe('assistant UI action dispatcher (Task 30)', () => {
 
       await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的资源刷新')
       expect(resourceManager.refresh).not.toHaveBeenCalled()
+    })
+
+    it('does not report success when the registered refresh executor is unavailable', async () => {
+      const action: AssistantUiAction = {
+        actionId: 'act-refresh-missing-executor',
+        type: 'REFRESH_RESOURCE',
+        routeKey: 'ROADMAP',
+        params: { resourceKey: 'ROADMAP' },
+        reason: '刷新路线',
+      }
+
+      await expect(dispatchUiAction(action, { router })).rejects.toThrow('资源刷新执行器不可用')
+      expect(getActionReceipt(action.actionId!)).toMatchObject({ status: 'FAILED' })
     })
   })
 
@@ -314,9 +356,62 @@ describe('assistant UI action dispatcher (Task 30)', () => {
         expect(focusManager.focus).not.toHaveBeenCalled()
       }
     })
+
+    it('does not report success when the registered focus executor is unavailable', async () => {
+      const action: AssistantUiAction = {
+        actionId: 'act-focus-missing-executor',
+        type: 'FOCUS_ELEMENT',
+        routeKey: 'TODAY',
+        params: { elementKey: 'CHECKIN_SUMMARY_INPUT' },
+        reason: '聚焦总结输入框',
+      }
+
+      await expect(dispatchUiAction(action, { router })).rejects.toThrow('元素聚焦执行器不可用')
+      expect(getActionReceipt(action.actionId!)).toMatchObject({ status: 'FAILED' })
+    })
   })
 
   describe('6. Parameter Security and Defense in Depth', () => {
+    it('rejects action-specific extra fields before invoking an executor', async () => {
+      const cases: Array<{ action: AssistantUiAction; executor: ReturnType<typeof vi.fn> }> = [
+        {
+          action: {
+            actionId: 'act-modal-extra-field',
+            type: 'OPEN_MODAL',
+            routeKey: 'ROADMAP',
+            params: { modalKey: 'CONFIRM_ACTION', targetId: 'task-1', arbitraryText: 'hidden' },
+            reason: '弹窗',
+          },
+          executor: modalManager.open,
+        },
+        {
+          action: {
+            actionId: 'act-refresh-extra-field',
+            type: 'REFRESH_RESOURCE',
+            routeKey: 'ROADMAP',
+            params: { resourceKey: 'ROADMAP', arbitraryText: 'hidden' },
+            reason: '刷新',
+          },
+          executor: resourceManager.refresh,
+        },
+        {
+          action: {
+            actionId: 'act-focus-extra-field',
+            type: 'FOCUS_ELEMENT',
+            routeKey: 'TODAY',
+            params: { elementKey: 'CHECKIN_SUMMARY_INPUT', arbitraryText: 'hidden' },
+            reason: '聚焦',
+          },
+          executor: focusManager.focus,
+        },
+      ]
+
+      for (const { action, executor } of cases) {
+        await expect(dispatchUiAction(action, context)).rejects.toThrow('包含未授权字段')
+        expect(executor).not.toHaveBeenCalled()
+      }
+    })
+
     it('strictly rejects any parameter containing ownerId', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-sec-ownerId',

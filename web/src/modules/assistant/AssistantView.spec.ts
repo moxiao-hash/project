@@ -93,7 +93,7 @@ describe('AssistantView', () => {
     vi.mocked(assistantApi.cancelTurn).mockResolvedValue(snapshot({ reply: '已请求取消当前轮次。' }))
   })
 
-  it('creates one conversation, shows public tool steps and dispatches navigation', async () => {
+  it('creates one conversation, shows public tool steps and dispatches SSE navigation', async () => {
     const wrapper = mount(AssistantView, {
       global: { plugins: [createPinia()], stubs: { Teleport: true } },
     })
@@ -108,6 +108,20 @@ describe('AssistantView', () => {
     )
     expect(wrapper.text()).toContain('已解析页面')
     expect(wrapper.text()).toContain('deepseek-v4-flash')
+    emitStreamEvent({
+      sequence: 11,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        actionId: 'act-wrong-questions',
+        turnId: 'turn-wrong-questions',
+        type: 'NAVIGATE',
+        routeKey: 'WRONG_QUESTIONS',
+        params: {},
+        reason: '查看错题',
+      },
+    })
+    await flushPromises()
     expect(push).toHaveBeenCalledWith({ name: 'wrong-questions' })
   })
 
@@ -356,6 +370,40 @@ describe('AssistantView', () => {
     )
   })
 
+  it('不执行消息响应快照中缺少服务端 actionId 的动作副本', async () => {
+    const wrapper = mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('打开错题集')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(push).not.toHaveBeenCalled()
+    expect(assistantApi.reportActionReceipt).not.toHaveBeenCalled()
+
+    mockEventOptions?.onEvent?.({
+      sequence: 11,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        actionId: 'act-stable-from-sse',
+        turnId: 'turn-stable-from-sse',
+        type: 'NAVIGATE',
+        routeKey: 'WRONG_QUESTIONS',
+        params: {},
+        reason: '查看错题',
+      },
+    })
+    await flushPromises()
+
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(assistantApi.reportActionReceipt).toHaveBeenCalledTimes(1)
+    expect(assistantApi.reportActionReceipt).toHaveBeenCalledWith(
+      'conversation-1',
+      expect.objectContaining({ actionId: 'act-stable-from-sse' }),
+    )
+  })
+
   it('相同 actionId 重复收到时保持幂等，不重复执行 push 与二次回执', async () => {
     mount(AssistantView, { global: { plugins: [createPinia()] } })
     await flushPromises()
@@ -385,6 +433,45 @@ describe('AssistantView', () => {
 
     expect(push.mock.calls.length).toBe(callCountPush)
     expect(vi.mocked(assistantApi.reportActionReceipt).mock.calls.length).toBe(callCountReceipt)
+  })
+
+  it('回执上报暂时失败后重放同一 actionId 时只重试回执、不重复执行动作', async () => {
+    vi.mocked(assistantApi.reportActionReceipt)
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockResolvedValueOnce({
+        actionId: 'act-receipt-retry',
+        status: 'SUCCEEDED',
+        currentRoute: 'roadmap',
+        error: null,
+      })
+    mount(AssistantView, { global: { plugins: [createPinia()] } })
+    await flushPromises()
+
+    const eventPayload: import('@/types/assistant').AssistantEvent = {
+      sequence: 3,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        actionId: 'act-receipt-retry',
+        turnId: 'turn-receipt-retry',
+        type: 'NAVIGATE',
+        routeKey: 'ROADMAP',
+        params: {},
+        reason: '路线导航',
+      },
+    }
+
+    mockEventOptions?.onEvent?.(eventPayload)
+    await flushPromises()
+    mockEventOptions?.onEvent?.(eventPayload)
+    await flushPromises()
+
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(assistantApi.reportActionReceipt).toHaveBeenCalledTimes(2)
+    expect(assistantApi.reportActionReceipt).toHaveBeenLastCalledWith(
+      'conversation-1',
+      expect.objectContaining({ actionId: 'act-receipt-retry', status: 'SUCCEEDED' }),
+    )
   })
 
   it('页面重载时抑制历史 UI Action，不自动触发历史导航', async () => {
@@ -521,6 +608,20 @@ describe('AssistantView', () => {
     // 发起 Turn B
     await wrapper.get('textarea').setValue('提问 B')
     await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    emitStreamEvent({
+      sequence: 22,
+      type: 'UI_ACTION',
+      conversationId: 'conversation-1',
+      payload: {
+        actionId: 'action-ui-b',
+        turnId: 'turn-b',
+        type: 'NAVIGATE',
+        routeKey: 'LEARNING_GOALS',
+        params: {},
+        reason: '查看目标',
+      },
+    })
     await flushPromises()
 
     // 此时 Turn B 的状态已经生效

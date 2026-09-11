@@ -158,6 +158,7 @@ const terminalTurns = new Set<string>()
 
 let streamController: AssistantEventStreamController | null = null
 const dispatchedActions = new Set<string>()
+const pendingActionReceipts = new Map<string, UiActionReceipt>()
 
 const prompts = [
   { icon: '↗', title: '继续学习', text: '继续昨天没学完的章节' },
@@ -643,7 +644,18 @@ async function cancelCurrentTurn() {
 async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) {
   // 基于 actionId 或 turnId + routeKey + params 联合去重，既防止同轮内重复触发，又支持不同新轮次访问同一路由
   const actionKey = action.actionId || `${turnId || 'global'}:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
-  if (dispatchedActions.has(actionKey)) return
+  if (dispatchedActions.has(actionKey)) {
+    const pendingReceipt = pendingActionReceipts.get(actionKey)
+    if (conversation.value?.conversationId && pendingReceipt) {
+      try {
+        await assistantApi.reportActionReceipt(conversation.value.conversationId, pendingReceipt)
+        pendingActionReceipts.delete(actionKey)
+      } catch {
+        // 保留待上报回执，等待同一持久化事件重放时继续重试。
+      }
+    }
+    return
+  }
   dispatchedActions.add(actionKey)
 
   let receipt: UiActionReceipt | undefined
@@ -661,10 +673,12 @@ async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) 
 
   // 异步上报动作回执给 Java 门面（若后端尚在开发，静默捕获不影响页面流程）
   if (conversation.value?.conversationId && receipt) {
+    pendingActionReceipts.set(actionKey, receipt)
     try {
       await assistantApi.reportActionReceipt(conversation.value.conversationId, receipt)
+      pendingActionReceipts.delete(actionKey)
     } catch {
-      // 容错降级
+      // 保留待上报回执，等待同一持久化事件重放时继续重试。
     }
   }
 }
@@ -672,6 +686,9 @@ async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) 
 async function executeUiActions(turnId?: string) {
   if (!conversation.value) return
   for (const action of conversation.value.uiActions) {
+    // REST 快照不携带 Python 为 SSE 事件登记的稳定 actionId。
+    // 执行这类副本会产生重复界面副作用，并上报一个服务端不认识的动作 ID。
+    if (!action.actionId) continue
     await safeDispatchUiAction(action, turnId)
   }
 }
