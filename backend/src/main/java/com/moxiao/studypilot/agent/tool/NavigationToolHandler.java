@@ -49,10 +49,10 @@ public class NavigationToolHandler implements AgentToolHandler {
         input.putObject("properties").putObject("routeKey").put("type", "string");
         input.withObject("properties").putObject("params").put("type", "object");
         input.putArray("required").add("routeKey");
-        var output = objectMapper.createObjectNode().put("type", "object");
+        var output = AgentToolOutputSchemas.schemaFor("navigation.resolve", objectMapper);
         descriptor = new AgentToolDescriptor(
                 "navigation.resolve", 1, "NAVIGATION", AgentToolEffect.NAVIGATE,
-                AgentToolRiskLevel.NONE, null, false, input, output);
+                AgentToolRiskLevel.NONE, null, false, input, output, 15_000);
     }
 
     @Override

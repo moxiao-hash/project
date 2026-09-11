@@ -111,7 +111,8 @@ class AgentToolRegistryTest {
                 schema.putArray("required").add(property);
             }
         }
+        var output = objectMapper.createObjectNode().put("type", "object");
         return new AgentToolDescriptor(name, 1, "TEST", AgentToolEffect.READ,
-                AgentToolRiskLevel.NONE, null, false, schema, schema);
+                AgentToolRiskLevel.NONE, null, false, schema, output, 15_000);
     }
 }
