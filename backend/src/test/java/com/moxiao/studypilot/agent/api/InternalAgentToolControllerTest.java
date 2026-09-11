@@ -63,7 +63,18 @@ class InternalAgentToolControllerTest {
                 .andExpect(jsonPath("$[?(@.name == 'assessment.wrong_questions.summary')].effect")
                         .value("READ"))
                 .andExpect(jsonPath("$[?(@.name == 'workspaces.list')].effect")
-                        .value("READ"));
+                        .value("READ"))
+                // Task 30：目录必须向 Python 暴露封闭输出 Schema 与超时，而不是空的 type:object。
+                .andExpect(jsonPath("$[?(@.name == 'learning.context.get')]"
+                        + ".outputSchema.additionalProperties").value(false))
+                .andExpect(jsonPath("$[?(@.name == 'learning.context.get')]"
+                        + ".outputSchema.properties").isNotEmpty())
+                .andExpect(jsonPath("$[?(@.name == 'learning.context.get')].timeoutMillis")
+                        .value(15000))
+                .andExpect(jsonPath("$[?(@.name == 'artifacts.submit')].outputSchema.type")
+                        .value("object"))
+                .andExpect(jsonPath("$[?(@.name == 'assessment.wrong_questions.list')]"
+                        + ".outputSchema.type").value("array"));
         mockMvc.perform(post("/internal/agent-tools/navigation.resolve/invoke")
                         .header("X-Internal-Service-Token", "test-internal-token")
                         .contentType(MediaType.APPLICATION_JSON)

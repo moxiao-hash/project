@@ -4,7 +4,7 @@ import re
 from enum import StrEnum
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from app.knowledge.models import KnowledgeCitation
 from app.schemas.learning import JavaContractModel
@@ -45,6 +45,96 @@ ALLOWED_UI_ROUTE_KEYS = frozenset(
 
 #: 界面动作参数只允许安全业务标识符，拒绝任意路径、选择器和脚本。
 UI_PARAM_VALUE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+#: Task 30 冻结回执契约：``currentRoute`` 是前端注册的 route name（不是 URL）。
+#: 与 ``web/src/app/router.ts`` 的 31 个具名路由逐一对应；Java 与 Python 各持一份。
+ALLOWED_FRONTEND_ROUTE_NAMES = frozenset(
+    {
+        "login",
+        "register",
+        "assistant",
+        "dashboard",
+        "roadmap",
+        "roadmap-stage",
+        "roadmap-module",
+        "roadmap-node",
+        "goals",
+        "courses",
+        "course-detail",
+        "lesson",
+        "plans",
+        "plan-detail",
+        "today",
+        "materials",
+        "material-detail",
+        "quiz",
+        "attempt",
+        "wrong-questions",
+        "mastery",
+        "knowledge",
+        "agent-plan",
+        "agent-tasks",
+        "activity",
+        "assistant-health",
+        "notifications",
+        "settings",
+        "settings-ai",
+        "workspace-artifacts",
+        "not-found",
+    }
+)
+
+#: 用户可见错误的最大长度；与 Java 侧裁剪上限保持一致。
+MAX_ACTION_ERROR_LENGTH = 500
+
+#: 错误信息中一旦出现这些片段，说明泄漏了堆栈、请求头或凭据，必须整体丢弃。
+_FORBIDDEN_ERROR_FRAGMENTS = (
+    "authorization",
+    "bearer ",
+    "x-internal-service-token",
+    "internal-service-token",
+    "api_key",
+    "apikey",
+    "secret",
+    "password",
+    "stacktrace",
+    "stack trace",
+    "traceback",
+    "\nat ",
+    "\tat ",
+    "org.springframework.",
+    "java.lang.",
+    "com.moxiao.studypilot.",
+)
+
+#: URL / 路径 / 伪协议片段：错误信息只能是用户可见的短句，不得回传可执行目标。
+_FORBIDDEN_ERROR_PATTERN = re.compile(
+    r"(https?://|javascript:|data:text/html|<[^>]*>|\bsrc=|\bhref=)",
+    re.IGNORECASE,
+)
+
+
+def sanitize_action_error(value: str | None) -> str | None:
+    """裁剪用户可见错误：拒绝堆栈、请求头、凭据、URL、HTML 与脚本。
+
+    返回 ``None`` 表示错误信息为空或包含禁止内容；调用方不得把它当作成功。
+    """
+
+    if value is None:
+        return None
+    normalized = " ".join(value.split())
+    if not normalized:
+        return None
+    lowered = normalized.lower()
+    if any(fragment in lowered for fragment in _FORBIDDEN_ERROR_FRAGMENTS):
+        return None
+    if _FORBIDDEN_ERROR_PATTERN.search(normalized):
+        return None
+    if len(normalized) > MAX_ACTION_ERROR_LENGTH:
+        normalized = normalized[:MAX_ACTION_ERROR_LENGTH]
+    # 去掉不可见控制字符，避免把不可信内容原样回灌到 UI 或日志。
+    printable = "".join(ch for ch in normalized if ch.isprintable())
+    return printable or None
 
 
 class ToolEffect(StrEnum):
@@ -212,3 +302,64 @@ class SendAssistantMessageRequest(JavaContractModel):
     message: str = Field(min_length=1, max_length=8000)
     idempotency_key: str = Field(min_length=1, max_length=180)
     client_context: dict[str, Any] = Field(default_factory=dict)
+
+
+class UiActionReceiptStatus(StrEnum):
+    """Task 30 冻结枚举：只允许三种终态。"""
+
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    REJECTED = "REJECTED"
+
+
+class ActionReceiptDecision(StrEnum):
+    """Supervisor 根据已校验回执做出的确定性决定。"""
+
+    FINISHED = "FINISHED"
+    RETRY_SCHEDULED = "RETRY_SCHEDULED"
+    MANUAL_ENTRY = "MANUAL_ENTRY"
+
+
+class AssistantActionReceipt(JavaContractModel):
+    """Java 校验并转发的动作回执；Python 不再信任浏览器原始输入。"""
+
+    action_id: str = Field(min_length=1, max_length=128)
+    status: UiActionReceiptStatus
+    current_route: str
+    error: str | None = Field(default=None, max_length=MAX_ACTION_ERROR_LENGTH)
+
+    @field_validator("action_id")
+    @classmethod
+    def _validate_action_id(cls, value: str) -> str:
+        if not UI_PARAM_VALUE_PATTERN.match(value):
+            raise ValueError("动作回执标识不合法")
+        return value
+
+    @field_validator("current_route")
+    @classmethod
+    def _validate_current_route(cls, value: str) -> str:
+        if value not in ALLOWED_FRONTEND_ROUTE_NAMES:
+            raise ValueError(f"未注册的前端路由名: {value}")
+        return value
+
+
+class AssistantActionReceiptRequest(AssistantActionReceipt):
+    """内部端点请求体：额外携带经 Java Bearer 会话解析出的 ownerId。
+
+    ``extra="forbid"``：即便内部调用方被绕过，也不得注入 DOM、URL、脚本等额外字段。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    owner_id: str = Field(min_length=1)
+
+
+class AssistantActionReceiptResult(JavaContractModel):
+    """回执处理结果；只暴露公开状态与人工入口，不泄漏内部动作表。"""
+
+    action_id: str
+    status: UiActionReceiptStatus
+    decision: ActionReceiptDecision
+    retry_count: int = Field(default=0, ge=0)
+    manual_route_key: str | None = None
+    message: str

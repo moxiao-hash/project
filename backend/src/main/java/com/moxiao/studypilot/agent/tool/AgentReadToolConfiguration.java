@@ -474,10 +474,10 @@ public class AgentReadToolConfiguration {
                 .putObject(property).put("type", type));
         var requiredArray = input.putArray("required");
         required.forEach(requiredArray::add);
-        ObjectNode output = mapper.createObjectNode().put("type", "object");
+        JsonNode output = AgentToolOutputSchemas.schemaFor(name, mapper);
         return new FunctionalAgentToolHandler(new AgentToolDescriptor(
                 name, 1, category, AgentToolEffect.READ, AgentToolRiskLevel.NONE,
-                null, false, input, output), function);
+                null, false, input, output, 15_000), function);
     }
 
     private static String text(JsonNode arguments, String name) {

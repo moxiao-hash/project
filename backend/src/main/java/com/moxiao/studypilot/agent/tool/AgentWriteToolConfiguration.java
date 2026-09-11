@@ -461,9 +461,9 @@ public class AgentWriteToolConfiguration {
                 .putObject(property).put("type", type));
         var requiredArray = input.putArray("required");
         required.forEach(requiredArray::add);
-        ObjectNode output = mapper.createObjectNode().put("type", "object");
+        JsonNode output = AgentToolOutputSchemas.schemaFor(name, mapper);
         return new GovernedFunctionalAgentToolHandler(new AgentToolDescriptor(
-                name, 1, category, AgentToolEffect.WRITE, risk, scope, true, input, output),
+                name, 1, category, AgentToolEffect.WRITE, risk, scope, true, input, output, 120_000),
                 executionType, summary, function);
     }
 
@@ -487,9 +487,9 @@ public class AgentWriteToolConfiguration {
                 .putObject(property).put("type", type));
         var requiredArray = input.putArray("required");
         required.forEach(requiredArray::add);
-        ObjectNode output = mapper.createObjectNode().put("type", "object");
+        JsonNode output = AgentToolOutputSchemas.schemaFor(name, mapper);
         return new GovernedFunctionalAgentToolHandler(new AgentToolDescriptor(
-                name, 1, category, AgentToolEffect.WRITE, risk, scope, true, input, output),
+                name, 1, category, AgentToolEffect.WRITE, risk, scope, true, input, output, 120_000),
                 executionType, summary, preflight, function);
     }
 

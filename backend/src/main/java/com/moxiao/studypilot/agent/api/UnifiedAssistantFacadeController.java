@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.agent.api;
 
 import com.moxiao.studypilot.agent.application.AgentGatewayService;
+import com.moxiao.studypilot.agent.application.AssistantActionReceiptService;
 import com.moxiao.studypilot.agent.application.AssistantEventStreamService;
 import com.moxiao.studypilot.auth.security.AuthenticatedUser;
 import org.springframework.http.MediaType;
@@ -29,13 +30,16 @@ public class UnifiedAssistantFacadeController {
 
     private final AgentGatewayService gateway;
     private final AssistantEventStreamService eventStream;
+    private final AssistantActionReceiptService actionReceipts;
 
     public UnifiedAssistantFacadeController(
             AgentGatewayService gateway,
-            AssistantEventStreamService eventStream
+            AssistantEventStreamService eventStream,
+            AssistantActionReceiptService actionReceipts
     ) {
         this.gateway = gateway;
         this.eventStream = eventStream;
+        this.actionReceipts = actionReceipts;
     }
 
     @PostMapping
@@ -93,6 +97,16 @@ public class UnifiedAssistantFacadeController {
                 null,
                 user.id()
         ));
+    }
+
+    @PostMapping("/{id}/actions/receipt")
+    public ResponseEntity<JsonNode> receipt(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID id,
+            @RequestBody JsonNode body
+    ) {
+        // Task 30：动作回执入口必须晚于会话归属确认，且只接受冻结的四个字段。
+        return ResponseEntity.ok(actionReceipts.record(id, user.id(), body));
     }
 
     @PostMapping("/{id}/turns/{turnId}/cancel")

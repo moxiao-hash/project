@@ -74,11 +74,17 @@ public class AgentToolRegistry {
             }
             AgentToolActionResponse action = actionService.prepare(
                     governed, request.ownerId(), request.idempotencyKey().trim(), arguments);
+            if (action.result() != null) {
+                // Task 30：写工具已执行的真实结果同样必须满足声明输出契约。
+                AgentToolOutputValidator.validate(
+                        toolName, handler.descriptor().outputSchema(), action.result());
+            }
             return new AgentToolInvocationResponse(
                     toolName, handler.descriptor().version(), action.result(), false, action);
         }
         JsonNode data = objectMapper.valueToTree(
                 handler.invoke(new AgentToolContext(request.ownerId()), arguments));
+        AgentToolOutputValidator.validate(toolName, handler.descriptor().outputSchema(), data);
         int bytes = objectMapper.writeValueAsBytes(data).length;
         if (bytes <= MAX_OUTPUT_BYTES) {
             return new AgentToolInvocationResponse(

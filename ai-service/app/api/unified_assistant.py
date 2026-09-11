@@ -9,12 +9,16 @@ from fastapi.responses import StreamingResponse
 from app.core.security import require_internal_token
 from app.unified_agent.event_stream import SSE_HEARTBEAT_FRAME, encode_sse_event
 from app.unified_agent.models import (
+    AssistantActionReceiptRequest,
+    AssistantActionReceiptResult,
     AssistantConversationSnapshot,
     AssistantEvent,
     CreateAssistantConversationRequest,
     SendAssistantMessageRequest,
 )
 from app.unified_agent.supervisor import (
+    AssistantActionNotFoundError,
+    AssistantActionReceiptConflictError,
     AssistantConversationBusyError,
     AssistantConversationNotFoundError,
     UnifiedAgentSupervisor,
@@ -37,6 +41,10 @@ def get_unified_agent_service(request: Request) -> Any:
 def _translate(exc: Exception) -> HTTPException:
     if isinstance(exc, AssistantConversationNotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, AssistantActionNotFoundError):
+        return HTTPException(status_code=404, detail=str(exc))
+    if isinstance(exc, AssistantActionReceiptConflictError):
+        return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, AssistantConversationBusyError):
         return HTTPException(status_code=409, detail=str(exc))
     return HTTPException(status_code=503, detail="统一 Agent 暂时不可用")
@@ -168,6 +176,26 @@ async def reject_action(
 ) -> AssistantConversationSnapshot:
     try:
         return await service.reject_action(conversation_id, action_id, body.owner_id)
+    except Exception as exc:
+        raise _translate(exc) from exc
+
+
+@router.post(
+    "/{conversation_id}/actions/receipt",
+    response_model=AssistantActionReceiptResult,
+)
+async def record_action_receipt(
+    conversation_id: str,
+    body: AssistantActionReceiptRequest,
+    service: Annotated[UnifiedAgentSupervisor, Depends(get_unified_agent_service)],
+) -> AssistantActionReceiptResult:
+    """Task 30：接收 Java 校验后的终态回执，幂等落库并决定结束/重试/人工。"""
+
+    receipt = AssistantActionReceiptRequest.model_validate(body)
+    try:
+        return await service.record_action_receipt(
+            conversation_id, body.owner_id, receipt
+        )
     except Exception as exc:
         raise _translate(exc) from exc
 

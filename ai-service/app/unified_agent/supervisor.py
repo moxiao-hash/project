@@ -25,6 +25,9 @@ from app.unified_agent.event_stream import (
 )
 from app.unified_agent.models import (
     ALLOWED_UI_ROUTE_KEYS,
+    ActionReceiptDecision,
+    AssistantActionReceipt,
+    AssistantActionReceiptResult,
     AssistantActiveTurn,
     AssistantConversationSnapshot,
     AssistantConversationStatus,
@@ -33,6 +36,8 @@ from app.unified_agent.models import (
     AssistantMessage,
     PublicToolStep,
     UiAction,
+    UiActionReceiptStatus,
+    sanitize_action_error,
 )
 from app.unified_agent.planner import PlannerStatus
 from app.unified_agent.planning_models import AssistantPlan, PlanIntent
@@ -52,6 +57,21 @@ class AssistantConversationNotFoundError(LookupError):
 
 class AssistantConversationBusyError(RuntimeError):
     pass
+
+
+class AssistantActionNotFoundError(LookupError):
+    """回执引用了本会话未下发的动作 ID。"""
+
+
+class AssistantActionReceiptConflictError(RuntimeError):
+    """同一 actionId 已存在不同的终态回执；必须保留历史，不得覆盖。"""
+
+
+#: 单个白名单界面动作允许的自动重试次数上限（超出即降级为人工入口）。
+MAX_UI_ACTION_RETRIES = 1
+
+#: 只有无副作用的导航/刷新允许自动重试；表单与聚焦必须交回用户。
+RETRIABLE_UI_ACTION_TYPES = frozenset({"NAVIGATE", "REFRESH_RESOURCE"})
 
 
 class SupervisorState(TypedDict, total=False):
@@ -88,6 +108,10 @@ class _Conversation:
     cancel_requested_turn_id: str | None = None
     # Task 28：写步骤需要确认时保存剩余计划，确认成功后继续执行。
     plan_resume: dict[str, Any] | None = None
+    # Task 30：本会话下发过的白名单界面动作（actionId -> 元数据）。
+    ui_actions_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # Task 30：已校验的终态回执（actionId -> 结果），用于幂等与冲突检测。
+    action_receipts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 class UnifiedAgentSupervisor:
@@ -574,6 +598,132 @@ class UnifiedAgentSupervisor:
         )
         return self._snapshot_copy(conversation.snapshot)
 
+    async def record_action_receipt(
+        self,
+        conversation_id: str,
+        owner_id: str,
+        receipt: AssistantActionReceipt,
+    ) -> AssistantActionReceiptResult:
+        """记录经 Java 校验并转发的终态回执，并给出确定性决定。
+
+        - 会话归属与动作归属都在权威存储内校验，模型/浏览器不能伪造。
+        - 相同终态重复回执幂等；冲突终态抛 ``AssistantActionReceiptConflictError``。
+        - 失败绝不视为成功；重试有上限，超出后提供人工入口。
+        """
+
+        conversation = await self._require(conversation_id, owner_id)
+        async with conversation.lock:
+            action = conversation.ui_actions_by_id.get(receipt.action_id)
+            if action is None:
+                raise AssistantActionNotFoundError("该动作不属于当前会话")
+            previous = conversation.action_receipts.get(receipt.action_id)
+            if previous is not None:
+                stored_status = previous["status"]
+                if stored_status != receipt.status.value:
+                    raise AssistantActionReceiptConflictError(
+                        "该动作已存在不同的终态回执，保留历史结果"
+                    )
+                return AssistantActionReceiptResult.model_validate(previous)
+
+            safe_error = sanitize_action_error(receipt.error)
+            result = self._decide_action_receipt(conversation, receipt, action, safe_error)
+            conversation.action_receipts[receipt.action_id] = result.model_dump(
+                mode="json", by_alias=True
+            )
+            # 只使用契约内已登记的事件类型：回执通过同步响应返回，
+            # 需要重试时复用已登记的 UI_ACTION 事件，不新增跨端事件类型。
+            await self._save(conversation)
+            return result
+
+    def _decide_action_receipt(
+        self,
+        conversation: _Conversation,
+        receipt: AssistantActionReceipt,
+        action: dict[str, Any],
+        safe_error: str | None,
+    ) -> AssistantActionReceiptResult:
+        """按终态派生决定：成功结束、受限重试或人工入口。"""
+
+        if receipt.status == UiActionReceiptStatus.SUCCEEDED:
+            return AssistantActionReceiptResult(
+                action_id=receipt.action_id,
+                status=receipt.status,
+                decision=ActionReceiptDecision.FINISHED,
+                retry_count=int(action.get("attempts", 0)),
+                message="界面动作已完成",
+            )
+        if receipt.status == UiActionReceiptStatus.REJECTED:
+            return AssistantActionReceiptResult(
+                action_id=receipt.action_id,
+                status=receipt.status,
+                decision=ActionReceiptDecision.MANUAL_ENTRY,
+                retry_count=int(action.get("attempts", 0)),
+                manual_route_key=str(action.get("routeKey")),
+                message="动作被拒绝，请由你本人前往对应页面操作",
+            )
+
+        attempts = int(action.get("attempts", 0))
+        retriable = action.get("type") in RETRIABLE_UI_ACTION_TYPES
+        if retriable and attempts < MAX_UI_ACTION_RETRIES:
+            # 有界重试：只重发无副作用的导航/刷新，且每次都换新 actionId。
+            action["attempts"] = attempts + 1
+            self._schedule_ui_action_retry(conversation, action)
+            return AssistantActionReceiptResult(
+                action_id=receipt.action_id,
+                status=receipt.status,
+                decision=ActionReceiptDecision.RETRY_SCHEDULED,
+                retry_count=attempts + 1,
+                message="界面动作失败，已安排一次自动重试",
+            )
+        return AssistantActionReceiptResult(
+            action_id=receipt.action_id,
+            status=receipt.status,
+            decision=ActionReceiptDecision.MANUAL_ENTRY,
+            retry_count=attempts,
+            manual_route_key=str(action.get("routeKey")),
+            message=(
+                safe_error
+                or "界面动作失败，请使用左侧菜单手动继续"
+            ),
+        )
+
+    def _schedule_ui_action_retry(
+        self, conversation: _Conversation, action: dict[str, Any]
+    ) -> None:
+        """为导航/刷新类动作生成新的受登记动作；不修改原动作历史。"""
+
+        new_action_id = str(uuid4())
+        conversation.ui_actions_by_id[new_action_id] = {
+            "type": action.get("type"),
+            "routeKey": action.get("routeKey"),
+            "params": dict(action.get("params") or {}),
+            "reason": action.get("reason"),
+            "attempts": int(action.get("attempts", 1)),
+        }
+        retry_action = UiAction(
+            type=action.get("type"),
+            route_key=action.get("routeKey"),
+            params={
+                key: value
+                for key, value in (action.get("params") or {}).items()
+                if isinstance(value, str)
+            },
+            reason=str(action.get("reason") or "重试界面动作")[:200] or "重试界面动作",
+        )
+        payload = retry_action.model_dump(mode="json", by_alias=True)
+        payload["actionId"] = new_action_id
+        payload["retry"] = True
+        # 直接登记并发布；调用方 record_action_receipt 会随后统一持久化。
+        event = AssistantEvent(
+            sequence=len(conversation.events) + 1,
+            type="UI_ACTION",
+            conversation_id=conversation.snapshot.conversation_id,
+            payload=payload,
+        )
+        conversation.events.append(event)
+        self._sync_stream_state(conversation)
+        self._events.publish(event)
+
     async def cancel_turn(
         self, conversation_id: str, turn_id: str, owner_id: str
     ) -> AssistantConversationSnapshot:
@@ -811,6 +961,16 @@ class UnifiedAgentSupervisor:
         for action in snapshot.ui_actions:
             payload = action.model_dump(mode="json", by_alias=True)
             payload["turnId"] = turn_id
+            # Task 30：每次下发都绑定服务端生成的稳定 actionId，回执必须引用它。
+            action_id = str(uuid4())
+            payload["actionId"] = action_id
+            conversation.ui_actions_by_id[action_id] = {
+                "type": action.type,
+                "routeKey": action.route_key,
+                "params": dict(action.params),
+                "reason": action.reason,
+                "attempts": 0,
+            }
             await self._emit(conversation, "UI_ACTION", payload)
         if not reply_streamed:
             await self._emit_reply_deltas(conversation, turn_id, snapshot.reply)
@@ -856,6 +1016,8 @@ class UnifiedAgentSupervisor:
                     active_turn_id=None,
                     cancel_requested_turn_id=None,
                     plan_resume=payload.get("planResume"),
+                    ui_actions_by_id=dict(payload.get("uiActionsById") or {}),
+                    action_receipts=dict(payload.get("actionReceipts") or {}),
                 )
                 self._conversations[conversation_id] = conversation
                 if interrupted_turn_id is not None:
@@ -899,6 +1061,8 @@ class UnifiedAgentSupervisor:
                 ],
                 "knowledgeConversationId": conversation.knowledge_conversation_id,
                 "planResume": conversation.plan_resume,
+                "uiActionsById": conversation.ui_actions_by_id,
+                "actionReceipts": conversation.action_receipts,
             },
         )
 
