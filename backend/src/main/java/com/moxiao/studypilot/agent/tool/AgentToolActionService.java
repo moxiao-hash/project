@@ -35,6 +35,8 @@ public class AgentToolActionService {
     private static final org.slf4j.Logger LOG =
             org.slf4j.LoggerFactory.getLogger(AgentToolActionService.class);
     private static final Duration CONFIRMATION_TTL = Duration.ofMinutes(15);
+    /** Task 30：执行租约时长；超过该时间仍未定稿的 RUNNING 动作可被恢复流程接管。 */
+    private static final Duration LEASE_DURATION = Duration.ofMinutes(5);
 
     private final AgentToolActionJpaRepository repository;
     private final UserAccountJpaRepository userRepository;
@@ -150,7 +152,8 @@ public class AgentToolActionService {
                 handler.summary(arguments), objectMapper.writeValueAsString(arguments),
                 now.plus(CONFIRMATION_TTL), now);
         if (initialStatus == AgentToolActionStatus.READY) {
-            action.running(now);
+            action.startAttempt(
+                    UUID.randomUUID().toString(), now.plus(LEASE_DURATION), now);
             repository.save(action);
             governanceService.update(action.getExecutionId(), new UpdateAgentExecutionRequest(
                     ExecutionStatus.RUNNING, null, null, null, null, null, null, null));
@@ -179,7 +182,7 @@ public class AgentToolActionService {
         }
         governanceService.confirm(ownerId, action.getExecutionId());
         Instant now = Instant.now();
-        action.running(now);
+        action.startAttempt(UUID.randomUUID().toString(), now.plus(LEASE_DURATION), now);
         repository.save(action);
         governanceService.update(action.getExecutionId(), new UpdateAgentExecutionRequest(
                 ExecutionStatus.RUNNING, null, null, null, null, null, null, null));
@@ -191,81 +194,87 @@ public class AgentToolActionService {
                 .orElseThrow(() -> new ResourceNotFoundException("Agent 工具操作不存在")));
         if (snapshot == null) throw new IllegalStateException("Agent 工具执行记录不存在");
         String ownerId = snapshot.getOwnerId();
+        String leaseToken = snapshot.getLeaseToken();
+        String executionId = snapshot.getExecutionId();
+        String summary = snapshot.getSummary();
         GovernedAgentToolHandler handler = handlers.get(snapshot.getToolName());
         if (handler == null || handler.descriptor().version() != snapshot.getToolVersion()) {
-            return finalizeFailure(ownerId, actionId,
+            return finalizeFailure(ownerId, actionId, leaseToken,
                     new IllegalStateException("Agent 工具版本不可用: " + snapshot.getToolName()));
         }
         AgentToolTimeoutGuard.FencedResult<Object> outcome;
         try {
             outcome = timeoutGuard.callFenced(
                     handler.descriptor().timeoutMillis(),
-                    () -> businessExecutor.execute(
+                    () -> businessExecutor.executeAndFinalize(
                             handler,
-                            new AgentToolContext(
-                                    snapshot.getOwnerId(), snapshot.getIdempotencyKey()),
-                            objectMapper.readTree(snapshot.getArgumentsJson())),
-                    late -> completeLate(ownerId, actionId, late));
+                            new AgentToolContext(ownerId, snapshot.getIdempotencyKey()),
+                            objectMapper.readTree(snapshot.getArgumentsJson()),
+                            result -> completeWithinTransaction(
+                                    ownerId, actionId, leaseToken, executionId, summary, result)),
+                    late -> {
+                        if (late.error() != null) {
+                            finalizeFailure(ownerId, actionId, leaseToken, late.error());
+                        }
+                    });
         } catch (RuntimeException exception) {
-            return finalizeFailure(ownerId, actionId, exception);
+            return finalizeFailure(ownerId, actionId, leaseToken, exception);
         }
         if (outcome.running()) {
             // 事务仍在执行且可能提交：绝不发布终态失败，保持 RUNNING；
-            // claimConfirmation 对 RUNNING 不会再次执行，杜绝重复副作用。
-            AgentToolActionResponse running = requiresNew.execute(
-                    status -> response(requireOwnedForUpdate(ownerId, actionId)));
-            if (running == null) throw new IllegalStateException("Agent 工具运行态查询失败");
-            return running;
+            // 租约过期后由恢复流程接管，期间 claimConfirmation 不会再次执行。
+            return readResponse(ownerId, actionId);
         }
         if (outcome.error() != null) {
-            return finalizeFailure(ownerId, actionId, outcome.error());
+            return finalizeFailure(ownerId, actionId, leaseToken, outcome.error());
         }
-        return finalizeSuccess(ownerId, actionId, outcome.value());
+        // 成功状态已在业务事务内与副作用一起提交，这里只回读一致结果。
+        return readResponse(ownerId, actionId);
     }
 
-    /**
-     * 事务在宽限期后仍未结束时，由工作线程在结果真正确定后延迟定稿。
-     */
-    private void completeLate(
-            String ownerId, String actionId, AgentToolTimeoutGuard.FencedResult<Object> late
-    ) {
-        try {
-            if (late.running()) return;
-            if (late.error() != null) {
-                finalizeFailure(ownerId, actionId, late.error());
-            } else {
-                finalizeSuccess(ownerId, actionId, late.value());
-            }
-        } catch (RuntimeException exception) {
-            // 延迟定稿失败不能回滚已经提交的业务事务；记录后由执行记录与审计保留真相。
-            LOG.warn("Agent 工具延迟定稿失败: {}", actionId, exception);
-        }
-    }
-
-    private AgentToolActionResponse finalizeSuccess(String ownerId, String actionId, Object result) {
-        AgentToolActionResponse response = requiresNew.execute(status -> {
-            AgentToolActionEntity action = requireOwnedForUpdate(ownerId, actionId);
-            if (action.getStatus() != AgentToolActionStatus.RUNNING) return response(action);
-            action.succeed(objectMapper.writeValueAsString(result), Instant.now());
-            governanceService.update(action.getExecutionId(), new UpdateAgentExecutionRequest(
-                    ExecutionStatus.SUCCEEDED, "工具操作执行成功", null,
-                    null, null, null, null, null));
-            notificationService.create(new CreateNotificationRequest(
-                    ownerId, NotificationType.AGENT_ACTION_COMPLETED,
-                    "Agent 操作已完成", action.getSummary()));
-            return response(repository.save(action));
-        });
-        if (response == null) throw new IllegalStateException("Agent 工具完成事务未返回结果");
+    private AgentToolActionResponse readResponse(String ownerId, String actionId) {
+        AgentToolActionResponse response = requiresNew.execute(
+                status -> response(requireOwnedForUpdate(ownerId, actionId)));
+        if (response == null) throw new IllegalStateException("Agent 工具状态查询失败");
         return response;
     }
 
-    private AgentToolActionResponse finalizeFailure(
-            String ownerId, String actionId, RuntimeException exception
+    /**
+     * Task 30：与业务变更处于同一事务的成功定稿。
+     *
+     * <p>仅当仍持有本次执行租约时才写入 SUCCEEDED；否则抛出并让整个业务事务回滚，
+     * 保证“已提交的业务副作用一定有 SUCCEEDED 一致记录”。</p>
+     */
+    private void completeWithinTransaction(
+            String ownerId, String actionId, String leaseToken, String executionId,
+            String summary, Object result
     ) {
+        int updated = repository.completeIfLeaseHeld(
+                actionId, leaseToken, objectMapper.writeValueAsString(result), Instant.now(),
+                AgentToolActionStatus.SUCCEEDED, AgentToolActionStatus.RUNNING);
+        if (updated == 0) {
+            throw new AgentToolActionLeaseLostException(
+                    "动作已被恢复流程接管，业务事务回滚以避免重复副作用");
+        }
+        governanceService.update(executionId, new UpdateAgentExecutionRequest(
+                ExecutionStatus.SUCCEEDED, "工具操作执行成功", null,
+                null, null, null, null, null));
+        notificationService.create(new CreateNotificationRequest(
+                ownerId, NotificationType.AGENT_ACTION_COMPLETED,
+                "Agent 操作已完成", summary));
+    }
+
+    private AgentToolActionResponse finalizeFailure(
+            String ownerId, String actionId, String leaseToken, RuntimeException exception
+    ) {
+        String error = safeError(exception);
         AgentToolActionResponse response = requiresNew.execute(status -> {
             AgentToolActionEntity action = requireOwnedForUpdate(ownerId, actionId);
             if (action.getStatus() != AgentToolActionStatus.RUNNING) return response(action);
-            String error = safeError(exception);
+            if (action.getLeaseToken() != null && !action.getLeaseToken().equals(leaseToken)) {
+                // 恢复流程已接管：不再写入终态，避免与恢复结果冲突。
+                return response(action);
+            }
             action.fail(error, Instant.now());
             governanceService.update(action.getExecutionId(), new UpdateAgentExecutionRequest(
                     ExecutionStatus.FAILED, null, error,
