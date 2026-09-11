@@ -1,6 +1,7 @@
 package com.moxiao.studypilot.shared.api;
 
 import com.moxiao.studypilot.agent.application.AgentGatewayException;
+import com.moxiao.studypilot.agent.tool.AgentToolTimeoutException;
 import com.moxiao.studypilot.aicredential.application.AiCredentialSecurityException;
 import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.InvalidCredentialsException;
@@ -63,12 +64,20 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.NOT_FOUND, exception.getMessage(), request, null);
     }
 
+    @ExceptionHandler(AgentToolTimeoutException.class)
+    public ResponseEntity<ApiError> handleAgentToolTimeout(
+            AgentToolTimeoutException exception,
+            HttpServletRequest request
+    ) {
+        // Task 30：工具超时是确定性失败，映射为 504，绝不返回半成品数据。
+        return build(HttpStatus.GATEWAY_TIMEOUT, exception.getMessage(), request, null);
+    }
+
     @ExceptionHandler(AgentGatewayException.class)
     public ResponseEntity<ApiError> handleAgentGateway(
             AgentGatewayException exception,
             HttpServletRequest request
-    ) {
-        ResponseEntity<ApiError> response = build(
+    ) {        ResponseEntity<ApiError> response = build(
                 exception.status(),
                 exception.getMessage(),
                 request,

@@ -41,6 +41,7 @@ public class AgentToolActionService {
     private final Map<String, GovernedAgentToolHandler> handlers;
     private final AgentToolBusinessExecutor businessExecutor;
     private final NotificationService notificationService;
+    private final AgentToolTimeoutGuard timeoutGuard;
     private final TransactionTemplate requiresNew;
 
     public AgentToolActionService(
@@ -51,6 +52,7 @@ public class AgentToolActionService {
             List<AgentToolHandler> handlers,
             AgentToolBusinessExecutor businessExecutor,
             NotificationService notificationService,
+            AgentToolTimeoutGuard timeoutGuard,
             PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
@@ -59,6 +61,7 @@ public class AgentToolActionService {
         this.objectMapper = objectMapper;
         this.businessExecutor = businessExecutor;
         this.notificationService = notificationService;
+        this.timeoutGuard = timeoutGuard;
         this.handlers = handlers.stream()
                 .filter(GovernedAgentToolHandler.class::isInstance)
                 .map(GovernedAgentToolHandler.class::cast)
@@ -190,9 +193,13 @@ public class AgentToolActionService {
             if (handler == null || handler.descriptor().version() != snapshot.getToolVersion()) {
                 throw new IllegalStateException("Agent 工具版本不可用: " + snapshot.getToolName());
             }
-            Object result = businessExecutor.execute(handler,
-                    new AgentToolContext(snapshot.getOwnerId(), snapshot.getIdempotencyKey()),
-                    objectMapper.readTree(snapshot.getArgumentsJson()));
+            Object result = timeoutGuard.call(
+                    handler.descriptor().timeoutMillis(),
+                    () -> businessExecutor.execute(
+                            handler,
+                            new AgentToolContext(
+                                    snapshot.getOwnerId(), snapshot.getIdempotencyKey()),
+                            objectMapper.readTree(snapshot.getArgumentsJson())));
             return finalizeSuccess(snapshot.getOwnerId(), actionId, result);
         } catch (RuntimeException exception) {
             return finalizeFailure(snapshot.getOwnerId(), actionId, exception);
