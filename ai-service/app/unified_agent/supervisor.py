@@ -24,7 +24,6 @@ from app.unified_agent.event_stream import (
     chunk_reply_deltas,
 )
 from app.unified_agent.models import (
-    ALLOWED_UI_ROUTE_KEYS,
     ActionReceiptDecision,
     AssistantActionReceipt,
     AssistantActionReceiptResult,
@@ -48,6 +47,10 @@ from app.unified_agent.tool_gateway import (
     ToolBudgetExceededError,
     ToolTurnCancelledError,
     UnifiedToolGateway,
+)
+from app.unified_agent.ui_action_schema import (
+    ALLOWED_UI_ROUTE_KEYS,
+    resolve_ui_action_request,
 )
 
 
@@ -535,7 +538,9 @@ class UnifiedAgentSupervisor:
                 "status": status,
                 "reply": reply,
                 "pending_action": pending_action,
-                "ui_actions": fields["ui_actions"],
+                "ui_actions": self._register_ui_actions(
+                    conversation, fields["ui_actions"]
+                ),
                 "tool_steps": fields["tool_steps"],
                 "messages": [
                     *conversation.snapshot.messages,
@@ -995,19 +1000,11 @@ class UnifiedAgentSupervisor:
                     "riskLevel": snapshot.pending_action.risk_level.value,
                 },
             )
+        snapshot.ui_actions = self._register_ui_actions(conversation, snapshot.ui_actions)
+        conversation.turn_results[turn_id] = self._snapshot_copy(snapshot)
         for action in snapshot.ui_actions:
             payload = action.model_dump(mode="json", by_alias=True)
             payload["turnId"] = turn_id
-            # Task 30：每次下发都绑定服务端生成的稳定 actionId，回执必须引用它。
-            action_id = str(uuid4())
-            payload["actionId"] = action_id
-            conversation.ui_actions_by_id[action_id] = {
-                "type": action.type,
-                "routeKey": action.route_key,
-                "params": dict(action.params),
-                "reason": action.reason,
-                "attempts": 0,
-            }
             await self._emit(conversation, "UI_ACTION", payload)
         if not reply_streamed:
             await self._emit_reply_deltas(conversation, turn_id, snapshot.reply)
@@ -1017,6 +1014,32 @@ class UnifiedAgentSupervisor:
             "TURN_COMPLETED",
             {"turnId": turn_id, "reply": snapshot.reply},
         )
+
+    def _register_ui_actions(
+        self,
+        conversation: _Conversation,
+        actions: list[UiAction],
+    ) -> list[UiAction]:
+        """为每个新动作分配并登记服务端稳定 actionId。
+
+        已注册动作复用原标识（SSE 重放、REST 快照与回执必须一致）；
+        新动作在发布前登记，非法动作由 ``UiAction`` 的逐动作 Schema 拒绝。
+        """
+
+        registered: list[UiAction] = []
+        for action in actions:
+            action_id = action.action_id or str(uuid4())
+            conversation.ui_actions_by_id[action_id] = {
+                "type": action.type.value,
+                "routeKey": action.route_key,
+                "params": dict(action.params),
+                "reason": action.reason,
+                "attempts": 0,
+            }
+            registered.append(
+                action.model_copy(update={"action_id": action_id})
+            )
+        return registered
 
     async def _require(self, conversation_id: str, owner_id: str) -> _Conversation:
         conversation = self._conversations.get(conversation_id)
@@ -1120,6 +1143,25 @@ class UnifiedAgentSupervisor:
                 )
             )
             message = state["message"].strip()
+
+            # Task 30 整改：冻结的受控界面请求先于模型规划解析，且只匹配明确措辞。
+            # 普通“新建/保存”请求不会被改写成弹窗或草稿请求。
+            ui_request = resolve_ui_action_request(message)
+            if ui_request is not None:
+                return {
+                    "intent": ui_request.intent,
+                    "reply": ui_request.reply,
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [
+                        UiAction(
+                            type=ui_request.type,
+                            route_key=ui_request.route_key,
+                            params=dict(ui_request.params),
+                            reason=ui_request.reason,
+                        )
+                    ],
+                }
 
             # Task 28：先尝试模型多步规划。计划必须已通过确定性策略校验；
             # 模型不可用时保持原有已验证的关键词降级层。

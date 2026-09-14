@@ -22,7 +22,6 @@ from enum import StrEnum
 from typing import Any
 
 from app.unified_agent.models import (
-    ALLOWED_UI_ROUTE_KEYS,
     ToolDescriptor,
     ToolEffect,
     ToolRiskLevel,
@@ -33,6 +32,7 @@ from app.unified_agent.planning_models import (
     PlanIntent,
 )
 from app.unified_agent.tool_gateway import ToolBudget
+from app.unified_agent.ui_action_schema import ALLOWED_UI_ROUTE_KEYS
 
 #: 模型与客户端都不得生成的身份、链接、数据库、Shell、选择器和反射字段。
 FORBIDDEN_ARGUMENT_KEYS = frozenset(
