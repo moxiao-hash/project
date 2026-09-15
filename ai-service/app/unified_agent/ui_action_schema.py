@@ -276,13 +276,14 @@ class UiActionRequest:
     reply: str
 
 
+#: 弹窗规则：reason 是动作描述，reply 只说明请求已下发，绝不宣称弹窗已打开。
 _MODAL_REQUEST_RULES = (
     (("目标",), ("新建", "创建", "添加"), ("弹窗", "对话框", "窗口"),
-     "LEARNING_GOALS", "CREATE_GOAL", "已为你打开新建学习目标弹窗。"),
+     "LEARNING_GOALS", "CREATE_GOAL", "打开新建学习目标弹窗"),
     (("计划",), ("新建", "创建", "添加"), ("弹窗", "对话框", "窗口"),
-     "LEARNING_PLANS", "CREATE_PLAN", "已为你打开新建学习计划弹窗。"),
+     "LEARNING_PLANS", "CREATE_PLAN", "打开新建学习计划弹窗"),
     (("资料",), ("导入", "上传"), ("面板", "弹窗", "对话框"),
-     "MATERIALS", "IMPORT_MATERIAL", "已为你打开资料导入面板。"),
+     "MATERIALS", "IMPORT_MATERIAL", "打开资料导入面板"),
 )
 
 _PREFILL_REQUEST_RULES = (
@@ -317,6 +318,9 @@ def resolve_ui_action_request(message: str) -> UiActionRequest | None:
 
     解析只依赖明确措辞（弹窗/面板、预填、刷新、聚焦），因此不会把
     “新建目标”“保存计划”等真实写入请求悄悄改写成草稿请求。
+
+    所有回复都发生在浏览器终态回执之前，只能陈述“正在请求/将会执行”，
+    不得宣称弹窗已打开、表单已预填、资源已刷新或元素已聚焦。
     """
 
     if not isinstance(message, str):
@@ -325,7 +329,7 @@ def resolve_ui_action_request(message: str) -> UiActionRequest | None:
     if not normalized:
         return None
 
-    for targets, prefixes, containers, route_key, modal_key, reply in _MODAL_REQUEST_RULES:
+    for targets, prefixes, containers, route_key, modal_key, reason in _MODAL_REQUEST_RULES:
         if (
             any(target in normalized for target in targets)
             and any(prefix in normalized for prefix in prefixes)
@@ -335,9 +339,9 @@ def resolve_ui_action_request(message: str) -> UiActionRequest | None:
                 type=UiActionType.OPEN_MODAL,
                 route_key=route_key,
                 params={"modalKey": modal_key},
-                reason=reply,
+                reason=reason,
                 intent="NAVIGATION",
-                reply=reply,
+                reply=f"正在请求{reason}。",
             )
 
     if "预填" in normalized:
@@ -352,7 +356,7 @@ def resolve_ui_action_request(message: str) -> UiActionRequest | None:
                     params={"formKey": form_key, "title": title},
                     reason=reason,
                     intent="NAVIGATION",
-                    reply=f"{reason}：“{title}”，请确认后自行保存。",
+                    reply=f"将为你{reason}：“{title}”，请确认后自行保存。",
                 )
 
     if "刷新" in normalized:
@@ -375,7 +379,7 @@ def resolve_ui_action_request(message: str) -> UiActionRequest | None:
                 params={"elementKey": "MESSAGE_INPUT"},
                 reason="聚焦消息输入框",
                 intent="NAVIGATION",
-                reply="已为你聚焦消息输入框。",
+                reply="正在请求聚焦消息输入框。",
             )
         if "计划标题" in normalized:
             return UiActionRequest(
@@ -384,7 +388,7 @@ def resolve_ui_action_request(message: str) -> UiActionRequest | None:
                 params={"elementKey": "PLAN_TITLE_INPUT"},
                 reason="聚焦计划标题",
                 intent="NAVIGATION",
-                reply="已为你打开新建计划弹窗并聚焦计划标题。",
+                reply="正在请求打开新建计划弹窗并聚焦计划标题。",
             )
 
     return None
