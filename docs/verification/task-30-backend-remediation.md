@@ -223,7 +223,9 @@ git diff --check
 ### 5.5 提交与推送
 
 - 分支：`agent/deepseek-task-30-remediation`
-- 提交与核对见紧随其后的记录（本地 HEAD 与 `origin/agent/deepseek-task-30-remediation` 一致）。
+- 修复提交：`934af4d9e9cc76e155cca8431c0f2ef20d0a6455`
+  （`fix(ai-service): expose frozen ui action route matrix to planner`）
+- 已推送；`git ls-remote` 核对 `origin/agent/deepseek-task-30-remediation` 与本地 HEAD 一致。
 
 ### 5.6 未完成 / 边界
 
