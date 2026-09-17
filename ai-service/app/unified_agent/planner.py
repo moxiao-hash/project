@@ -2,8 +2,8 @@
 
 职责边界：
 
-- Planner 只把**裁剪后的动态上下文 + Java 已发布工具目录**发给模型，并把模型返回的
-  结构化 JSON 变成 `AssistantPlan`。
+- Planner 只把**裁剪后的动态上下文 + Java 已发布工具目录 + 冻结界面动作注册表**发给模型，
+  并把模型返回的结构化 JSON 变成 `AssistantPlan`。
 - Planner **不执行任何工具**。计划必须通过 `PlanPolicyValidator` 确定性校验后，才交给
   Supervisor 逐工具执行。
 - 模型不可用、超时、返回非法结构时返回 ``UNAVAILABLE``，由 Supervisor 回落到已验证的
@@ -36,6 +36,7 @@ from app.unified_agent.policy_validator import (
     PlanIssue,
     PlanPolicyValidator,
 )
+from app.unified_agent.ui_action_schema import render_ui_action_contract
 
 UNTRUSTED_DATA_OPEN = "<untrusted-data>"
 UNTRUSTED_DATA_CLOSE = "</untrusted-data>"
@@ -76,8 +77,6 @@ intent 枚举：LEARNING_QUERY、ROADMAP_NAVIGATE、PLAN_ADJUSTMENT、QUIZ_PRACT
 CODE_DEVELOPMENT、CLARIFY、GENERAL_CHAT。
 无法安全规划时，请输出 intent=CLARIFY、confidence 低于 0.7、steps 为空数组，
 并在 summary 中写出一个具体的中文澄清问题。
-
-可用工具目录（JSON）：
 """
 
 
@@ -199,7 +198,13 @@ class AssistantPlanner:
             }
             for descriptor in sorted(self._catalog.values(), key=lambda item: item.name)
         ]
-        return _SYSTEM_PROMPT + json.dumps(catalog, ensure_ascii=False, default=str)
+        return (
+            _SYSTEM_PROMPT
+            + "\n界面动作与路由注册表（导航与动作参数只能取这里的精确值）：\n"
+            + render_ui_action_contract()
+            + "\n\n可用工具目录（JSON）：\n"
+            + json.dumps(catalog, ensure_ascii=False, default=str)
+        )
 
     def _user_message(
         self,

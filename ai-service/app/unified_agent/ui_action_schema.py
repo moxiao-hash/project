@@ -123,6 +123,62 @@ FORM_ACTION_SPECS: dict[str, dict[str, object]] = {
     },
 }
 
+#: 告诉 Planner 只能逐字使用枚举，别名与翻译会被服务端直接拒绝。
+UI_ACTION_ALIAS_RULE = (
+    "routeKey 只能逐字使用上面的枚举值；任何别名、翻译或未列出的名称"
+    "（例如 LEARNING_GOAL、learning-goals、学习目标）都会被服务端直接拒绝。"
+)
+
+
+def render_ui_action_contract() -> str:
+    """渲染 Planner 可见的冻结界面动作契约。
+
+    契约完全由本模块的注册表派生，因此 Planner 提示与 ``validate_ui_action``
+    始终使用同一份白名单；调整注册表时两边同时生效，不会出现第二份副本。
+    """
+
+    lines = [
+        "界面动作契约（冻结，routeKey 必须逐字匹配）：",
+        (
+            f"- 允许的 routeKey（{len(ALLOWED_UI_ROUTE_KEYS)} 个）："
+            + "、".join(sorted(ALLOWED_UI_ROUTE_KEYS))
+        ),
+        UI_ACTION_ALIAS_RULE,
+        (
+            "- NAVIGATE（工具 navigation.resolve）：params 必须与 routeKey 精确对齐，"
+            "缺少或多出参数都会被服务端拒绝。"
+        ),
+    ]
+    for route_key, required_keys in sorted(NAVIGATION_PARAM_KEYS.items()):
+        lines.append(
+            f"  * {route_key}：必须且只能携带 " + "、".join(sorted(required_keys))
+        )
+    plain_routes = sorted(ALLOWED_UI_ROUTE_KEYS - set(NAVIGATION_PARAM_KEYS))
+    lines.append("  * 无路径参数：" + "、".join(plain_routes) + "（不得携带 params）")
+
+    lines.append("- OPEN_MODAL：params 只能包含 modalKey，且必须与 routeKey 配对：")
+    for route_key, modal_key in sorted(MODAL_ACTION_KEYS.items()):
+        lines.append(f"  * {route_key} → modalKey={modal_key}")
+
+    lines.append("- PREFILL_FORM：params 只能包含 formKey、title 与列出的可选字段：")
+    for route_key, spec in sorted(FORM_ACTION_SPECS.items()):
+        required = "、".join(str(item) for item in spec["required"])  # type: ignore[arg-type]
+        optional = "、".join(str(item) for item in spec["optional"])  # type: ignore[arg-type]
+        lines.append(
+            f"  * {route_key} → formKey={spec['formKey']}；必填 {required}；"
+            f"可选 {optional}；title 最长 {spec['titleMax']} 字符"
+        )
+
+    lines.append("- REFRESH_RESOURCE：params 只能包含 resourceKey，且必须与 routeKey 配对：")
+    for route_key, resource_key in sorted(RESOURCE_ACTION_KEYS.items()):
+        lines.append(f"  * {route_key} → resourceKey={resource_key}")
+
+    lines.append("- FOCUS_ELEMENT：params 只能包含 elementKey，且必须与 routeKey 配对：")
+    for route_key, element_key in sorted(FOCUS_ACTION_KEYS.items()):
+        lines.append(f"  * {route_key} → elementKey={element_key}")
+
+    return "\n".join(lines)
+
 
 class UiActionType(StrEnum):
     """Task 30 冻结的界面动作闭集；不存在的第六类必须被拒绝。"""
