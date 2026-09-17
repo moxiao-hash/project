@@ -149,3 +149,88 @@ cd /tmp/t30
 - 遗留快照中历史动作不带 `actionId`，需与 ZCode 确认其“抑制历史副作用”逻辑一致。
 - 由于无法运行目标 worktree 的 pytest，上表证据来自目标 worktree 源文件的隔离副本；
   补丁应用到真实分支后应重跑同一组命令。
+
+---
+
+## 5. 真实模型 route-enum 跟进（2026-09-17，TDD）
+
+### 5.1 现象与根因
+
+真实浏览器验收中，「Navigate to the learning goals page.」「打开学习目标页面」以及目标表单类请求
+都以 `PLANNER_INVALID_ROUTE_KEY` 结束。确定性白名单 `ui_action_schema.ALLOWED_UI_ROUTE_KEYS`
+本身正确；根因是 `planner.py` 的系统提示只带 Java 工具目录，没有把冻结的 `routeKey` 枚举与
+逐动作参数矩阵告诉真实模型。模型因此猜测别名（如 `LEARNING_GOAL`、`learning-goals`），
+再被 `PlanPolicyValidator` 正确拒绝。
+
+### 5.2 TDD 闭环
+
+失败测试（RED）：`ai-service/tests/unified_agent/test_planner_route_contract.py`。
+在只新增 `render_ui_action_contract()`、尚未接入 Planner 时执行，3 项针对 Planner 系统消息的
+断言失败、2 项注册表派生断言通过，直接证明缺口在 Planner 系统消息：
+
+```bash
+cd ai-service
+PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/python \
+  -m pytest -q tests/unified_agent/test_planner_route_contract.py
+# FAILED test_planner_system_message_registers_every_frozen_navigation_route_key
+# FAILED test_planner_system_message_exposes_all_five_action_matrices
+# FAILED test_planner_system_message_states_guessed_aliases_are_rejected
+# 3 failed, 2 passed in 0.54s
+```
+
+接入 Planner 后（GREEN）：
+
+```bash
+cd ai-service
+PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/python \
+  -m pytest -q tests/unified_agent/test_planner_route_contract.py
+# 6 passed
+```
+
+### 5.3 实现
+
+- `ai-service/app/unified_agent/ui_action_schema.py`：新增 `UI_ACTION_ALIAS_RULE` 与
+  `render_ui_action_contract()`。契约完全由既有冻结注册表（`ALLOWED_UI_ROUTE_KEYS`、
+  `NAVIGATION_PARAM_KEYS`、`MODAL_ACTION_KEYS`、`FORM_ACTION_SPECS`、
+  `RESOURCE_ACTION_KEYS`、`FOCUS_ACTION_KEYS`）派生，白名单保持单一来源。
+- `ai-service/app/unified_agent/planner.py`：`_system_message()` 在系统提示中插入该契约，再附
+  Java 工具目录 JSON。未改动 `PlanPolicyValidator`、`UiAction` 校验或 supervisor 治理逻辑；
+  非法别名仍由原校验器拒绝，不做自动纠正，也不放开任意 URL/选择器。
+- `ai-service/tests/unified_agent/test_planner_route_contract.py`：6 项回归，覆盖 28 个 routeKey、
+  四类逐动作矩阵、NAVIGATE 标识参数、别名拒绝说明、工具目录保留，以及猜测别名仍被校验器拒绝。
+
+### 5.4 验证命令与结果
+
+```bash
+cd ai-service
+PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/python \
+  -m pytest -q tests/unified_agent/test_planner_route_contract.py
+# 6 passed in 0.48s
+
+PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/python -m pytest -q
+# 492 passed, 1 warning in 4.32s
+
+/Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/ruff check app tests
+# All checks passed!
+
+git diff --check
+# 通过（无输出）
+```
+
+环境说明：本会话 DSH 文件沙箱为 `workspace-write`，不能直接写入目标 worktree，且升权
+`danger-full-access` 无审批通道；本轮在隔离克隆中完成同样的 TDD 与全量验证，并推送回目标分支。
+
+### 5.5 提交与推送
+
+- 分支：`agent/deepseek-task-30-remediation`
+- 提交与核对见紧随其后的记录（本地 HEAD 与 `origin/agent/deepseek-task-30-remediation` 一致）。
+
+### 5.6 未完成 / 边界
+
+- 证据等级 `[UNIT_TEST]`：本轮没有真实模型调用，也没有真实 MySQL/FastAPI/Java/浏览器三端串联；
+  真实模型是否按新契约选择精确 `routeKey` 仍需 Codex 在真实环境复验。
+- 未改动 `web/**`、`backend/**` 与 `main`，未开发 Task 31。
+- 调度任务书写的目标分支是 `agent/deepseek-task-30-tools`；该分支是已验收的旧后端分支
+  （`93322a9`），不含本次整改所需的 `ui_action_schema.py`，向其提交会重写已验收历史。
+  按 `docs/verification/task-30-remediation-contract.md` 对 DeepSeek 的授权，本次提交落在
+  `agent/deepseek-task-30-remediation`。
