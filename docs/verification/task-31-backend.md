@@ -3,7 +3,7 @@
 - **执行 Agent**：DeepSeek Harness（后端与 Agent 执行工程师；实际 model ID 在真实调用后回填）
 - **测试等级**：局部阶段为 `[UNIT_TEST]`（无网络、无外部依赖）；尚无 `[REAL_E2E]`
 - **执行时间**：2026-09-18 18:13–19:10 (Asia/Shanghai)
-- **Git 提交**：`55614e5`（中间提交，尚未推送）
+- **Git 提交**：`bbbaba1`（中间提交，尚未推送）
 - **关联分支**：`agent/deepseek-task-31-usage-budget`
 - **工作树**：`/Users/moxiao/IdeaProjects/project-deepseek-task-31`
 
