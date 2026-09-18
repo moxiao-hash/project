@@ -13,7 +13,7 @@ import java.util.Optional;
  * 历史记录继续保留原估算，因此金额永远可追溯到当时的价格版本。</p>
  *
  * <p>未知模型返回 {@link Optional#empty()}，调用方必须落库为"不可估算"（NULL），
- * 绝不允许写 0 冒充已计量。</p>
+ * 绝不允许写 0 冒充已计量。目录为空时整个系统都按"不可估算"运行，这是刻意的保守取值。</p>
  */
 public final class ModelPricingCatalog {
 
@@ -42,15 +42,12 @@ public final class ModelPricingCatalog {
         return new ModelPricingCatalog(prices);
     }
 
-    /**
-     * 官方价格目录。
-     *
-     * <p>数值必须来自 DeepSeek 官方定价页的当前版本，并同步更新 {@code version} 与
-     * {@code effectiveFrom}；在填入官方价格之前保持空目录，所有调用按"不可估算"处理，
-     * 这是刻意的保守取值，不用零成本冒充已计量。</p>
-     */
-    public static ModelPricingCatalog official() {
+    public static ModelPricingCatalog empty() {
         return of(Map.of());
+    }
+
+    public boolean isEmpty() {
+        return prices.isEmpty();
     }
 
     public Optional<PriceSpec> find(String modelName) {

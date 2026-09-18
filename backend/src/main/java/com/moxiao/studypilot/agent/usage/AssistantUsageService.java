@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 /** 模型用量的幂等落库、计价与用户预算判定。 */
 @Service
@@ -31,7 +30,7 @@ public class AssistantUsageService {
 
     @Transactional
     public AssistantUsageRecord record(RecordUsageCommand command) {
-        var existing = usageRepository.findByExecutionIdAndTurnId(command.executionId(), command.turnId());
+        var existing = usageRepository.findById(command.usageId());
         if (existing.isPresent()) {
             var stored = existing.get();
             return new AssistantUsageRecord(stored.getId(), stored.getEstimatedCost(),
@@ -40,10 +39,11 @@ public class AssistantUsageService {
         ModelUsage usage = command.usage();
         var estimate = pricingCatalog.estimate(usage.modelName(), usage);
         var entity = new AssistantModelUsageEntity(
-                UUID.randomUUID().toString(),
+                command.usageId(),
                 command.ownerId(),
-                command.executionId(),
+                command.conversationId(),
                 command.turnId(),
+                command.executionId(),
                 command.provider(),
                 usage.modelName(),
                 (int) usage.promptTokens(),

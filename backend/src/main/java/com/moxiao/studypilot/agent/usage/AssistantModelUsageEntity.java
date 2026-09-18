@@ -8,7 +8,12 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.Instant;
 
-/** 每次模型调用的原始用量明细；{@code (execution_id, turn_id)} 唯一，保证重复回调只计费一次。 */
+/**
+ * 每次模型调用的用量明细。
+ *
+ * <p>主键是 AI 侧生成的 {@code usageId}，同一模型调用重复回调不会重复计费；
+ * {@code executionId} 可空，只有进入 Java 治理层的轮次才有值。</p>
+ */
 @Entity
 @Table(name = "assistant_model_usage")
 public class AssistantModelUsageEntity {
@@ -20,11 +25,14 @@ public class AssistantModelUsageEntity {
     @Column(name = "owner_id", nullable = false, length = 36)
     private String ownerId;
 
-    @Column(name = "execution_id", nullable = false, length = 36)
-    private String executionId;
+    @Column(name = "conversation_id", nullable = false, length = 36)
+    private String conversationId;
 
     @Column(name = "turn_id", nullable = false, length = 120)
     private String turnId;
+
+    @Column(name = "execution_id", length = 36)
+    private String executionId;
 
     @Column(name = "provider", nullable = false, length = 40)
     private String provider;
@@ -65,8 +73,9 @@ public class AssistantModelUsageEntity {
     public AssistantModelUsageEntity(
             String id,
             String ownerId,
-            String executionId,
+            String conversationId,
             String turnId,
+            String executionId,
             String provider,
             String modelName,
             Integer promptTokens,
@@ -81,8 +90,9 @@ public class AssistantModelUsageEntity {
     ) {
         this.id = id;
         this.ownerId = ownerId;
-        this.executionId = executionId;
+        this.conversationId = conversationId;
         this.turnId = turnId;
+        this.executionId = executionId;
         this.provider = provider;
         this.modelName = modelName;
         this.promptTokens = promptTokens;
@@ -104,12 +114,16 @@ public class AssistantModelUsageEntity {
         return ownerId;
     }
 
-    public String getExecutionId() {
-        return executionId;
+    public String getConversationId() {
+        return conversationId;
     }
 
     public String getTurnId() {
         return turnId;
+    }
+
+    public String getExecutionId() {
+        return executionId;
     }
 
     public String getProvider() {

@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 class AssistantUsageServiceTest {
 
     private static final String MODEL = "test-model";
+    private static final String USAGE_ID = "usage-1";
 
     private final AssistantModelUsageJpaRepository usageRepository =
             mock(AssistantModelUsageJpaRepository.class);
@@ -32,23 +33,17 @@ class AssistantUsageServiceTest {
             new AssistantUsageService(usageRepository, budgetRepository, catalog);
 
     @Test
-    void duplicateCallbackForSameTurnIsNotChargedTwice() {
-        when(usageRepository.findByExecutionIdAndTurnId("e1", "t1"))
-                .thenReturn(Optional.of(existing()));
-        var result = service.record(new RecordUsageCommand(
-                "owner", "e1", "t1", "deepseek",
-                new ModelUsage(MODEL, 100, 0, 10, null, 20L), Instant.now()));
+    void duplicateCallbackForSameUsageIdIsNotChargedTwice() {
+        when(usageRepository.findById(USAGE_ID)).thenReturn(Optional.of(existing()));
+        var result = service.record(command(USAGE_ID, MODEL));
         assertThat(result.duplicate()).isTrue();
         verify(usageRepository, never()).save(any());
     }
 
     @Test
     void unknownPriceRecordsUsageWithoutCost() {
-        when(usageRepository.findByExecutionIdAndTurnId(anyString(), anyString()))
-                .thenReturn(Optional.empty());
-        var result = service.record(new RecordUsageCommand(
-                "owner", "e1", "t2", "deepseek",
-                new ModelUsage("unknown-model", 100, 0, 10, null, 20L), Instant.now()));
+        when(usageRepository.findById(anyString())).thenReturn(Optional.empty());
+        var result = service.record(command(USAGE_ID, "unknown-model"));
         assertThat(result.estimatedCost()).isNull();
         assertThat(result.priceVersion()).isNull();
         verify(usageRepository).save(any());
@@ -56,32 +51,36 @@ class AssistantUsageServiceTest {
 
     @Test
     void knownPricePersistsDecimalCostAndPriceVersion() {
-        when(usageRepository.findByExecutionIdAndTurnId(anyString(), anyString()))
-                .thenReturn(Optional.empty());
-        var result = service.record(new RecordUsageCommand(
-                "owner", "e1", "t3", "deepseek",
-                new ModelUsage(MODEL, 1_000, 0, 1_000, null, 20L), Instant.now()));
+        when(usageRepository.findById(anyString())).thenReturn(Optional.empty());
+        var result = service.record(command(USAGE_ID, MODEL));
         assertThat(result.estimatedCost()).isNotNull();
         assertThat(result.priceVersion()).isEqualTo("test-2026-09-18");
     }
 
     @Test
     void budgetExhaustedRejectsNewModelCalls() {
-        when(budgetRepository.findById("owner")).thenReturn(Optional.of(
-                new AssistantUsageBudgetEntity("owner", 3, new BigDecimal("1.00"), 4096, "CNY", Instant.now())));
+        when(budgetRepository.findById("owner")).thenReturn(Optional.of(budget(3, "1.00")));
         when(usageRepository.findAllByOwnerIdAndOccurredAtBetween(anyString(), any(), any()))
-                .thenReturn(List.of(usage(), usage(), usage()));
+                .thenReturn(List.of(usage("u1"), usage("u2"), usage("u3")));
         var decision = service.checkBudget("owner", Instant.now());
         assertThat(decision.allowed()).isFalse();
         assertThat(decision.reason()).isNotBlank();
     }
 
     @Test
-    void budgetWithinLimitsAllowsModelCalls() {
-        when(budgetRepository.findById("owner")).thenReturn(Optional.of(
-                new AssistantUsageBudgetEntity("owner", 3, new BigDecimal("1.00"), 4096, "CNY", Instant.now())));
+    void dailyCostCeilingAlsoBlocksModelCalls() {
+        when(budgetRepository.findById("owner")).thenReturn(Optional.of(budget(100, "1.00")));
         when(usageRepository.findAllByOwnerIdAndOccurredAtBetween(anyString(), any(), any()))
-                .thenReturn(List.of(usage()));
+                .thenReturn(List.of(usage("u1"), usage("u2")));
+        var decision = service.checkBudget("owner", Instant.now());
+        assertThat(decision.allowed()).isFalse();
+    }
+
+    @Test
+    void budgetWithinLimitsAllowsModelCalls() {
+        when(budgetRepository.findById("owner")).thenReturn(Optional.of(budget(3, "1.00")));
+        when(usageRepository.findAllByOwnerIdAndOccurredAtBetween(anyString(), any(), any()))
+                .thenReturn(List.of(usage("u1")));
         assertThat(service.checkBudget("owner", Instant.now()).allowed()).isTrue();
     }
 
@@ -98,13 +97,25 @@ class AssistantUsageServiceTest {
         verify(usageRepository, never()).findAllByOwnerIdAndOccurredAtBetween(anyString(), any(), any());
     }
 
-    private AssistantModelUsageEntity existing() {
-        return new AssistantModelUsageEntity("u1", "owner", "e1", "t1", "deepseek", MODEL,
-                100, 0, 10, null, 20L, new BigDecimal("0.001"), "CNY", "test-2026-09-18", Instant.now());
+    private RecordUsageCommand command(String usageId, String modelName) {
+        return new RecordUsageCommand(usageId, "owner", "conversation-1", "turn-1", null, "deepseek",
+                new ModelUsage(modelName, 1_000, 0, 1_000, null, 20L), Instant.now());
     }
 
-    private AssistantModelUsageEntity usage() {
-        return new AssistantModelUsageEntity("u2", "owner", "e2", "t2", "deepseek", MODEL,
-                100, 0, 10, null, 20L, new BigDecimal("0.5"), "CNY", "test-2026-09-18", Instant.now());
+    private AssistantUsageBudgetEntity budget(int dailyCalls, String dailyCost) {
+        return new AssistantUsageBudgetEntity("owner", dailyCalls, new BigDecimal(dailyCost),
+                4096, "CNY", Instant.now());
+    }
+
+    private AssistantModelUsageEntity existing() {
+        return new AssistantModelUsageEntity(USAGE_ID, "owner", "conversation-1", "turn-1", null,
+                "deepseek", MODEL, 100, 0, 10, null, 20L,
+                new BigDecimal("0.001"), "CNY", "test-2026-09-18", Instant.now());
+    }
+
+    private AssistantModelUsageEntity usage(String id) {
+        return new AssistantModelUsageEntity(id, "owner", "conversation-1", "turn-1", null,
+                "deepseek", MODEL, 100, 0, 10, null, 20L,
+                new BigDecimal("0.5"), "CNY", "test-2026-09-18", Instant.now());
     }
 }

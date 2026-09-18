@@ -121,3 +121,40 @@ reasoning token 缺失不影响估算、reasoning 不重复计费、同 `(execut
 2. 再扩展 `AssistantHealthResponse` 并同步 `AssistantHealthServiceTest`，冻结给 ZCode 消费的字段。
 3. 取得官方价格数值后填入 `ModelPricingCatalog.official()`，并在本文件回填价格版本与来源。
 4. 最后执行三端全量测试、Flyway/MySQL 集成与一次真实最小模型调用，再由 Codex 验收。
+
+---
+
+## 8. 第二批：内部用量接口与价格配置化
+
+### 8.1 设计决策
+
+- **幂等键改为每次模型调用唯一的 `usageId`**（原设计为 `(executionId, turnId)`）。原因：
+  统一会话入口是 `send_message(conversationId, message, idempotencyKey, ownerId)`，**不携带
+  `executionId`**；且一轮可能多次调用模型（计划 + 回答），只用 turn 无法区分。因此
+  `(conversation_id, turn_id)` 降级为聚合索引，`execution_id` 可空且刻意不加外键，
+  避免 AI 侧持有过期执行号时整条用量写入失败。
+- **官方价格改为配置注入**：`studypilot.assistant.pricing.*` →
+  `AssistantPricingProperties` → `ModelPricingCatalog`。按用户决定暂留空：未配置或配置
+  不完整的模型一律按"不可估算"处理（金额 NULL），不写零。
+- **新增内部接口**：`POST /internal/assistant-usage`、`GET /internal/assistant-usage/budget`，
+  与其它 `/internal/**` 共用 `InternalServiceTokenFilter` 校验；请求体只接受用量字段，
+  不接受提示词、正文、Key 或 DOM 信息。
+
+### 8.2 GREEN 证据
+
+```text
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0 -- ModelPricingCatalogTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0 -- AssistantUsageServiceTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+新增覆盖：日费用上限同样拦截模型调用。
+
+### 8.3 仍未覆盖
+
+- Python 侧 `usage_context`、用量上报器、`model_factory` callback 注入、`supervisor` 轮次
+  接入及对应测试（下一步）。
+- `AssistantHealthResponse` 字段扩展（ZCode 健康页依赖）。
+- 官方价格数值（按用户决定由 Codex/运维注入）。
+- 三端全量测试、Flyway/MySQL 集成与真实最小模型调用。
