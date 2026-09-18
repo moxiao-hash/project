@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from threading import Lock
 from time import monotonic
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -91,3 +92,83 @@ class ModelMetricsCallback(BaseCallbackHandler):
             self._model,
             status,
         )
+
+
+@dataclass(frozen=True)
+class ModelUsageSample:
+    """一次模型调用的原始用量；不包含提示词、用户数据或密钥。"""
+
+    prompt_tokens: int
+    cached_prompt_tokens: int
+    completion_tokens: int
+    reasoning_tokens: int | None
+
+    @property
+    def uncached_prompt_tokens(self) -> int:
+        return max(0, self.prompt_tokens - self.cached_prompt_tokens)
+
+
+def _as_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return int(value)
+
+
+def _as_optional_int(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
+
+
+def _llm_output_token_usage(response: Any) -> dict[str, Any]:
+    llm_output = getattr(response, "llm_output", None) or {}
+    if not isinstance(llm_output, dict):
+        return {}
+    for key in ("token_usage", "usage"):
+        candidate = llm_output.get(key)
+        if isinstance(candidate, dict) and candidate:
+            return candidate
+    return {}
+
+
+def _usage_metadata(response: Any) -> dict[str, Any]:
+    generations = getattr(response, "generations", None) or []
+    for batch in generations:
+        for generation in batch or []:
+            metadata = getattr(getattr(generation, "message", None), "usage_metadata", None)
+            if isinstance(metadata, dict) and metadata:
+                return metadata
+    return {}
+
+
+def extract_model_usage(response: Any) -> ModelUsageSample | None:
+    """从 LangChain 响应中提取缓存/非缓存输入、输出与可缺失的 reasoning token。
+
+    优先使用 OpenAI 兼容的 ``token_usage``（DeepSeek 在此返回
+    ``prompt_cache_hit_tokens`` / ``prompt_cache_miss_tokens``），其次使用新版
+    ``usage_metadata``。两者都没有时返回 ``None``，由调用方按"不可估算"处理。
+    """
+
+    token_usage = _llm_output_token_usage(response)
+    if token_usage:
+        prompt_tokens = _as_int(token_usage.get("prompt_tokens"))
+        cached = _as_int(token_usage.get("prompt_cache_hit_tokens"))
+        if cached == 0 and token_usage.get("prompt_cache_miss_tokens") is not None:
+            cached = max(0, prompt_tokens - _as_int(token_usage.get("prompt_cache_miss_tokens")))
+        return ModelUsageSample(
+            prompt_tokens=prompt_tokens,
+            cached_prompt_tokens=cached,
+            completion_tokens=_as_int(token_usage.get("completion_tokens")),
+            reasoning_tokens=None,
+        )
+    metadata = _usage_metadata(response)
+    if not metadata:
+        return None
+    input_details = metadata.get("input_token_details") or {}
+    output_details = metadata.get("output_token_details") or {}
+    return ModelUsageSample(
+        prompt_tokens=_as_int(metadata.get("input_tokens")),
+        cached_prompt_tokens=_as_int(input_details.get("cache_read")),
+        completion_tokens=_as_int(metadata.get("output_tokens")),
+        reasoning_tokens=_as_optional_int(output_details.get("reasoning")),
+    )
