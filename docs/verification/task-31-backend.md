@@ -158,3 +158,5 @@ reasoning token 缺失不影响估算、reasoning 不重复计费、同 `(execut
 - `AssistantHealthResponse` 字段扩展（ZCode 健康页依赖）。
 - 官方价格数值（按用户决定由 Codex/运维注入）。
 - 三端全量测试、Flyway/MySQL 集成与真实最小模型调用。
+
+- **本批提交**：`7fae89d`（内部用量接口与价格配置化）
