@@ -7,11 +7,11 @@ import org.springframework.context.annotation.Configuration;
 public class AssistantUsageConfiguration {
 
     /**
-     * 官方价格目录 bean。价格数值与版本日期必须来自官方定价页当前版本；
-     * 未填入前目录为空，所有调用按"不可估算"处理。
+     * 官方价格目录 bean：由 {@code studypilot.assistant.pricing.*} 注入。
+     * 配置缺失时目录为空，全部按"不可估算"处理，绝不按零成本计费。
      */
     @Bean
-    public ModelPricingCatalog modelPricingCatalog() {
-        return ModelPricingCatalog.official();
+    public ModelPricingCatalog modelPricingCatalog(AssistantPricingProperties properties) {
+        return properties.toCatalog();
     }
 }
