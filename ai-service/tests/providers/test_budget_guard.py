@@ -42,13 +42,14 @@ async def test_explicit_denial_returns_denied_permit_with_reason_and_output_cap(
     })
     permit = await guard.reserve(
         owner_id="owner-1", provider="deepseek", model_name="deepseek-flash",
-        purpose="KNOWLEDGE_QA",
+        purpose="KNOWLEDGE_QA", input_tokens_upper_bound=1_000,
     )
     assert permit.allowed is False
     assert permit.reason == "DAILY_MODEL_CALLS_EXHAUSTED"
     assert permit.max_output_tokens_per_turn == 2048
     assert java.reserved[0]["ownerId"] == "owner-1"
     assert java.reserved[0]["usageId"]
+    assert java.reserved[0]["inputTokensUpperBound"] == 1_000
 
 
 @pytest.mark.anyio
@@ -62,7 +63,7 @@ async def test_allowed_permit_carries_reservation_output_cap_and_timezone():
     })
     permit = await guard.reserve(
         owner_id="owner-1", provider="deepseek", model_name="deepseek-flash",
-        purpose="KNOWLEDGE_QA",
+        purpose="KNOWLEDGE_QA", input_tokens_upper_bound=2_048,
     )
     assert permit == BudgetPermit("reservation-1", True, "WITHIN_BUDGET", 4096, "UTC")
 
@@ -72,7 +73,7 @@ async def test_budget_endpoint_failure_fails_closed():
     guard, _ = _guard(error=RuntimeError("connection refused"))
     permit = await guard.reserve(
         owner_id="owner-1", provider="deepseek", model_name="deepseek-flash",
-        purpose="KNOWLEDGE_QA",
+        purpose="KNOWLEDGE_QA", input_tokens_upper_bound=1_000,
     )
     assert permit.allowed is False
     assert permit.reservation_id is None
@@ -97,7 +98,7 @@ async def test_malformed_budget_response_fails_closed(payload):
     guard, _ = _guard(payload=payload)
     permit = await guard.reserve(
         owner_id="owner-1", provider="deepseek", model_name="deepseek-flash",
-        purpose="KNOWLEDGE_QA",
+        purpose="KNOWLEDGE_QA", input_tokens_upper_bound=1_000,
     )
     assert permit.allowed is False
     assert permit.reason == BUDGET_UNAVAILABLE_REASON
@@ -120,3 +121,32 @@ async def test_release_forwards_reservation_and_swallows_failures():
     failing_java.release_assistant_usage_reservation = broken
     # 释放失败必须被吞掉：TTL 会兜底，不影响调用结果。
     await ModelBudgetGuard(failing_java).release("reservation-2")
+
+
+@pytest.mark.anyio
+async def test_reservation_payload_carries_the_request_input_bound():
+    guard, java = _guard({
+        "reservationId": "reservation-9",
+        "allowed": True,
+        "reason": "WITHIN_BUDGET",
+        "maxOutputTokensPerTurn": 1024,
+    })
+    await guard.reserve(
+        owner_id="owner-1", provider="deepseek", model_name="deepseek-flash",
+        purpose="KNOWLEDGE_QA", input_tokens_upper_bound=12_345,
+    )
+    assert java.reserved[0]["inputTokensUpperBound"] == 12_345
+
+
+@pytest.mark.anyio
+async def test_malformed_input_bound_is_sent_as_zero_instead_of_being_dropped():
+    guard, java = _guard({
+        "reservationId": "reservation-9",
+        "allowed": True,
+        "reason": "WITHIN_BUDGET",
+    })
+    await guard.reserve(
+        owner_id="owner-1", provider="deepseek", model_name="deepseek-flash",
+        purpose="KNOWLEDGE_QA", input_tokens_upper_bound=None,
+    )
+    assert java.reserved[0]["inputTokensUpperBound"] == 0

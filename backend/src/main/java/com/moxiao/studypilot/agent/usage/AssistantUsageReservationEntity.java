@@ -47,6 +47,12 @@ public class AssistantUsageReservationEntity {
     @Column(name = "state", nullable = false, length = 20)
     private String state;
 
+    /**
+     * 预占时由 AI 侧给出的当前请求输入 token 上界；费用上限生效时不允许为空。
+     */
+    @Column(name = "input_tokens_upper_bound")
+    private Integer inputTokensUpperBound;
+
     @Column(name = "max_output_tokens")
     private Integer maxOutputTokens;
 
@@ -76,6 +82,7 @@ public class AssistantUsageReservationEntity {
             String purpose,
             String provider,
             String modelName,
+            Integer inputTokensUpperBound,
             Integer maxOutputTokens,
             BigDecimal reservedCost,
             Instant reservedAt,
@@ -89,6 +96,7 @@ public class AssistantUsageReservationEntity {
         this.provider = provider;
         this.modelName = modelName;
         this.state = STATE_RESERVED;
+        this.inputTokensUpperBound = inputTokensUpperBound;
         this.maxOutputTokens = maxOutputTokens;
         this.reservedCost = reservedCost;
         this.reservedAt = reservedAt;
@@ -125,6 +133,10 @@ public class AssistantUsageReservationEntity {
 
     public String getState() {
         return state;
+    }
+
+    public Integer getInputTokensUpperBound() {
+        return inputTokensUpperBound;
     }
 
     public Integer getMaxOutputTokens() {

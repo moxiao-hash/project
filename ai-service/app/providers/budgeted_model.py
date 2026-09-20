@@ -6,7 +6,8 @@
 
 每次真实调用都：
 
-1. 用当前 owner 向 Java 原子预占一个许可（失败关闭，见 :mod:`app.providers.budget`）；
+1. 用当前 owner 与本次请求的输入上界向 Java 原子预占一个许可（失败关闭，
+   见 :mod:`app.providers.budget` 与 :mod:`app.providers.input_bound`）；
 2. 用这次许可下发的 ``maxOutputTokensPerTurn`` 绑定 ``max_tokens``；
 3. 把预占 id 写进用量回调上下文，让用量记录与预占共享同一幂等键；
 4. provider 抛错时释放许可，成功时由用量回调按实际用量终结许可。
@@ -20,6 +21,7 @@ from typing import Any
 
 from app.observability.usage import ModelPurpose, current_usage_scope, reservation_scope
 from app.providers.budget import BudgetPermit, ModelBudgetExceededError, ModelBudgetGuard
+from app.providers.input_bound import input_token_upper_bound
 
 
 class BudgetedChatModel:
@@ -66,15 +68,17 @@ class BudgetedChatModel:
             purpose=self._purpose,
         )
 
-    async def _permit(self) -> BudgetPermit:
+    async def _permit(self, input: Any) -> BudgetPermit:
         owner_id = self._resolve_owner()
         if not owner_id:
             raise ModelBudgetExceededError("MODEL_OWNER_UNKNOWN")
+        # 预占必须带上本次请求的输入上界，否则日费用上限无法保守执行。
         permit = await self._guard.reserve(
             owner_id=owner_id,
             provider=self._provider,
             model_name=self._model_name,
             purpose=self._purpose,
+            input_tokens_upper_bound=input_token_upper_bound(input),
         )
         if not permit.allowed:
             raise ModelBudgetExceededError(
@@ -89,7 +93,7 @@ class BudgetedChatModel:
         return self._runnable
 
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
-        permit = await self._permit()
+        permit = await self._permit(input)
         try:
             with reservation_scope(permit.reservation_id):
                 return await self._bound(permit).ainvoke(input, config, **kwargs)
@@ -101,7 +105,7 @@ class BudgetedChatModel:
         return _run_sync(self.ainvoke(input, config, **kwargs))
 
     async def astream(self, input: Any, config: Any = None, **kwargs: Any):
-        permit = await self._permit()
+        permit = await self._permit(input)
         try:
             with reservation_scope(permit.reservation_id):
                 async for chunk in self._bound(permit).astream(input, config, **kwargs):

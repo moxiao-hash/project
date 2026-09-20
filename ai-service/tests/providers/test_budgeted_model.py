@@ -441,3 +441,18 @@ async def test_every_model_boundary_binds_the_current_permit_output_cap():
         assert len(guard.reserves) == len(runnable.calls), name
         expected = [1000 + index for index in range(1, len(runnable.calls) + 1)]
         assert [entry["max_tokens"] for entry in runnable.bound] == expected, name
+
+
+@pytest.mark.anyio
+async def test_every_reservation_carries_a_conservative_input_bound():
+    """预占必须带输入上界，否则日费用上限无法把输入成本算进去。"""
+
+    guard = SequencedGuard()
+    model, _ = _model(guard)
+    text = "继续昨天的章节" * 20
+
+    await model.ainvoke([{"role": "user", "content": text}])
+
+    # 上界必须覆盖正文的 UTF-8 字节数（结构化字段只会让它更大）。
+    assert guard.reserves[0]["input_tokens_upper_bound"] >= len(text.encode("utf-8"))
+    assert guard.reserves[0]["input_tokens_upper_bound"] > 0

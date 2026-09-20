@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.SimpleTransactionStatus;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,7 +49,13 @@ class AssistantUsageServiceTest {
             reservationRepository,
             catalog,
             budgetProperties,
-            mock(PlatformTransactionManager.class));
+            transactionManager());
+
+    private static PlatformTransactionManager transactionManager() {
+        PlatformTransactionManager manager = mock(PlatformTransactionManager.class);
+        when(manager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
+        return manager;
+    }
 
     @Test
     void duplicateCallbackForSameUsageIdIsNotChargedTwice() {

@@ -194,6 +194,41 @@ public final class ModelPricingCatalog {
      * 写入真实金额并释放差额。未知模型或未配置输出上限时返回 {@link Optional#empty()}，
      * 只有调用次数上限生效。</p>
      */
+    /**
+     * 预占许可的保守成本上界：当前请求输入上界 + 配置的单轮输出上限。
+     *
+     * <p>输入按最贵的 cache-miss 单价、输出按最贵的输出单价，均取高峰/非高峰中较大者，
+     * 所以它是这次调用真实成本的上界，绝不会低估；终结时再按实际用量写真实金额。
+     * 未知模型、价格尚未生效、缺少输出上限或缺少输入上界时返回 {@link Optional#empty()}，
+     * 由调用方按"无法保守执行"失败关闭，而不是按 0 预占。</p>
+     */
+    public Optional<BigDecimal> holdCost(
+            String modelName,
+            Integer inputTokensUpperBound,
+            Integer maxOutputTokens,
+            Instant at
+    ) {
+        PriceSpec spec = find(modelName).orElse(null);
+        if (spec == null || !spec.isComplete() || !spec.appliesAt(at)
+                || inputTokensUpperBound == null || inputTokensUpperBound < 0
+                || maxOutputTokens == null || maxOutputTokens <= 0) {
+            return Optional.empty();
+        }
+        BigDecimal worstInput = spec.cacheMissPeakPerMillion()
+                .max(spec.cacheMissOffPeakPerMillion());
+        BigDecimal worstOutput = spec.outputPeakPerMillion()
+                .max(spec.outputOffPeakPerMillion());
+        return Optional.of(worstInput.multiply(BigDecimal.valueOf(inputTokensUpperBound))
+                .add(worstOutput.multiply(BigDecimal.valueOf(maxOutputTokens)))
+                .divide(MILLION, 8, RoundingMode.HALF_UP));
+    }
+
+    /**
+     * 仅输出侧的预占成本，供"只有调用次数预算"时留作诊断信息。
+     *
+     * <p>它不覆盖输入成本，因此不能用于日费用上限的强制；费用上限一律使用
+     * {@link #holdCost(String, Integer, Integer, Instant)}。</p>
+     */
     public Optional<BigDecimal> outputHoldCost(String modelName, Integer maxOutputTokens, Instant at) {
         PriceSpec spec = find(modelName).orElse(null);
         if (spec == null || maxOutputTokens == null || maxOutputTokens <= 0
