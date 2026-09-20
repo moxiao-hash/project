@@ -181,7 +181,8 @@ class InternalAssistantUsageContractTest {
                   "turnId": "turn-1",
                   "purpose": "KNOWLEDGE_QA",
                   "provider": "deepseek",
-                  "modelName": "deepseek-flash"
+                  "modelName": "deepseek-flash",
+                  "inputTokensUpperBound": 2000
                 }
                 """.formatted(usageId, ownerId);
     }

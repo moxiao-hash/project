@@ -21,6 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>该用例必须跑真实数据库而不是 Mockito；"先查计数再调用"的竞态只有在真实事务与
  * 行锁下才能被观测和阻止。</p>
+ *
+ * <p>所有 {@code usageId} 都带 owner 后缀：测试用 H2 库在整个测试套件间共享，
+ * 固定 id 会跨测试类撞键，从而掩盖真实的并发语义。</p>
  */
 @SpringBootTest
 class AssistantUsageReservationConcurrencyTest {
@@ -36,7 +39,7 @@ class AssistantUsageReservationConcurrencyTest {
 
     @Test
     void twoConcurrentReservationsAgainstOneRemainingCallYieldExactlyOnePermit() throws Exception {
-        String owner = "owner-race-" + System.nanoTime();
+        String owner = unique("owner-race");
         budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
                 owner, 1, null, 512, "USD", Instant.now()));
 
@@ -79,7 +82,7 @@ class AssistantUsageReservationConcurrencyTest {
     @Test
     void retriedReservationWithSameUsageIdIsIdempotentAndDoesNotConsumeASecondPermit()
             throws Exception {
-        String owner = "owner-idem-" + System.nanoTime();
+        String owner = unique("owner-idem");
         budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
                 owner, 2, null, 512, "USD", Instant.now()));
         Instant at = Instant.now();
@@ -101,19 +104,20 @@ class AssistantUsageReservationConcurrencyTest {
 
     @Test
     void recordingUsageFinalizesTheReservationAndFreesNoSecondCall() {
-        String owner = "owner-finalize-" + System.nanoTime();
+        String owner = unique("owner-finalize");
         budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
                 owner, 3, null, 512, "USD", Instant.now()));
         Instant at = Instant.now();
+        String usageId = scoped(owner, "final-1");
         BudgetPermit permit = service.reserve(command(owner, "final-1"), at);
         assertThat(permit.allowed()).isTrue();
 
         service.record(new RecordUsageCommand(
-                "final-1", owner, "conversation-1", "turn-1", null,
+                usageId, owner, "conversation-1", "turn-1", null,
                 "deepseek", "KNOWLEDGE_QA", "SUCCEEDED",
                 new ModelUsage("deepseek-flash", 1000, 0, 200, 50, 20L), at));
 
-        var stored = reservationRepository.findById("final-1").orElseThrow();
+        var stored = reservationRepository.findById(usageId).orElseThrow();
         assertThat(stored.getState()).isEqualTo(AssistantUsageReservationEntity.STATE_FINALIZED);
         assertThat(stored.getActualCost()).isNotNull();
 
@@ -124,7 +128,7 @@ class AssistantUsageReservationConcurrencyTest {
 
     @Test
     void releasedReservationStopsConsumingQuota() {
-        String owner = "owner-release-" + System.nanoTime();
+        String owner = unique("owner-release");
         budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
                 owner, 1, null, 512, "USD", Instant.now()));
         Instant at = Instant.now();
@@ -140,16 +144,25 @@ class AssistantUsageReservationConcurrencyTest {
 
     @Test
     void inFlightCostHoldDeniesTheNextReservationAtTheCostCeiling() {
-        String owner = "owner-cost-" + System.nanoTime();
-        // 输出上界 1024 × Flash 高峰价 1.20/M = 0.0012288，已经超过 0.001 的费用上限。
+        String owner = unique("owner-cost");
+        // 单次保守预占 = (2000 × 0.30 + 512 × 1.20)/1e6 = 0.0012144；上限 0.0015 只够一次在途调用。
         budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
-                owner, null, new BigDecimal("0.001"), 1024, "USD", Instant.now()));
+                owner, null, new BigDecimal("0.0015"), 512, "USD", Instant.now()));
         Instant at = Instant.now();
 
         assertThat(service.reserve(command(owner, "cost-1"), at).allowed()).isTrue();
         BudgetPermit second = service.reserve(command(owner, "cost-2"), at);
         assertThat(second.allowed()).isFalse();
         assertThat(second.reason()).isEqualTo("DAILY_ESTIMATED_COST_EXHAUSTED");
+    }
+
+    private static String unique(String prefix) {
+        return prefix + "-" + System.nanoTime();
+    }
+
+    /** 幂等键按 owner 加后缀，避免共享测试库里的跨类撞键。 */
+    private static String scoped(String owner, String usageId) {
+        return usageId + "-" + owner.substring(owner.length() - 12);
     }
 
     private static <T> Callable<T> named(String name, Callable<T> delegate) {
@@ -161,7 +174,7 @@ class AssistantUsageReservationConcurrencyTest {
 
     private static ReserveUsageCommand command(String owner, String usageId) {
         return new ReserveUsageCommand(
-                usageId, owner, "conversation-1", "turn-1", "KNOWLEDGE_QA",
-                "deepseek", "deepseek-flash");
+                scoped(owner, usageId), owner, "conversation-1", "turn-1", "KNOWLEDGE_QA",
+                "deepseek", "deepseek-flash", 2000);
     }
 }

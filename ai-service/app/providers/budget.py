@@ -58,10 +58,14 @@ class ModelBudgetGuard:
         provider: str,
         model_name: str,
         purpose: str,
+        input_tokens_upper_bound: int,
         conversation_id: str | None = None,
         turn_id: str | None = None,
     ) -> BudgetPermit:
         """为一次 provider 调用预占许可。
+
+        ``inputTokensUpperBound`` 是本次请求输入的保守 token 上界，用于把输入成本计入
+        预占；缺了它，日费用上限就无法保守执行，Java 侧会失败关闭。
 
         ``usageId`` 在预占时生成；HTTP 重试复用同一 payload 保证 Java 侧幂等。回执必须
         明确给出 ``allowed``、``reason``，放行时还必须给出 ``reservationId``；任何缺字段、
@@ -87,6 +91,7 @@ class ModelBudgetGuard:
             "purpose": purpose,
             "provider": provider,
             "modelName": model_name,
+            "inputTokensUpperBound": _non_negative_int(input_tokens_upper_bound),
         }
         try:
             response = await self._java.reserve_assistant_usage(payload)
@@ -135,6 +140,12 @@ class ModelBudgetGuard:
                 reservation_id,
                 type(exc).__name__,
             )
+
+
+def _non_negative_int(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return 0
+    return value
 
 
 def _optional_int(value: Any) -> int | None:
