@@ -11,7 +11,6 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.assessment.evaluation_models import CodingEvaluationBatch
-from app.observability.usage import bind_max_output_tokens
 
 
 class DeepSeekCodingEvaluator:
@@ -47,7 +46,7 @@ class DeepSeekCodingEvaluator:
         ]
         for attempt in range(2):
             try:
-                result = await bind_max_output_tokens(self._model).ainvoke(messages)
+                result = await self._model.ainvoke(messages)
                 return CodingEvaluationBatch.model_validate(result)
             except Exception:
                 if attempt == 1:

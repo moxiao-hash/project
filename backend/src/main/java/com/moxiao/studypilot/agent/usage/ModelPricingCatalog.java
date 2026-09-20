@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -42,7 +41,8 @@ public final class ModelPricingCatalog {
             String modelName,
             String modelVersion,
             String version,
-            LocalDate effectiveFrom,
+            Instant effectiveAt,
+            Instant verifiedAt,
             String currency,
             String sourceUrl,
             BigDecimal cacheHitPeakPerMillion,
@@ -60,6 +60,11 @@ public final class ModelPricingCatalog {
                     && cacheMissOffPeakPerMillion != null
                     && outputPeakPerMillion != null
                     && outputOffPeakPerMillion != null;
+        }
+
+        /** 该单价是否已经生效；生效瞬间之前发生的调用必须保持"不可估算"。 */
+        public boolean appliesAt(Instant occurredAt) {
+            return occurredAt != null && !occurredAt.isBefore(effectiveAt);
         }
     }
 
@@ -87,8 +92,11 @@ public final class ModelPricingCatalog {
     }
 
     /**
-     * 官方价格目录（来源 {@code https://api-docs.deepseek.com/quick_start/pricing/}，
-     * 核对日期 2026-09-20）。
+     * 官方价格目录（来源 {@code https://api-docs.deepseek.com/quick_start/pricing/}）。
+     *
+     * <p>目录版本 {@code deepseek-pricing-2026-09-20} 表示核对时间
+     * {@code 2026-09-20T00:00:00Z}；DeepSeek-V4 系列单价自
+     * {@code 2026-08-16T16:00:00Z} 起生效，早于该瞬间的调用保持"不可估算"。</p>
      *
      * <p>{@code deepseek-flash} 与旧名 {@code deepseek-v4-flash}、
      * {@code deepseek-v4-flash-vision-exp} 都由 DeepSeek-V4.1-Flash 提供服务，
@@ -98,14 +106,17 @@ public final class ModelPricingCatalog {
     public static ModelPricingCatalog official() {
         String source = "https://api-docs.deepseek.com/quick_start/pricing/";
         String version = "deepseek-pricing-2026-09-20";
-        LocalDate effectiveFrom = LocalDate.of(2026, 9, 20);
+        Instant effectiveAt = Instant.parse("2026-08-16T16:00:00Z");
+        Instant verifiedAt = Instant.parse("2026-09-20T00:00:00Z");
         PriceSpec flash = new PriceSpec(
-                "deepseek-flash", "DeepSeek-V4.1-Flash", version, effectiveFrom, "USD", source,
+                "deepseek-flash", "DeepSeek-V4.1-Flash", version, effectiveAt, verifiedAt,
+                "USD", source,
                 new BigDecimal("0.006"), new BigDecimal("0.003"),
                 new BigDecimal("0.30"), new BigDecimal("0.15"),
                 new BigDecimal("1.20"), new BigDecimal("0.60"));
         PriceSpec pro = new PriceSpec(
-                "deepseek-v4-pro", "DeepSeek-V4-Pro-0813", version, effectiveFrom, "USD", source,
+                "deepseek-v4-pro", "DeepSeek-V4-Pro-0813", version, effectiveAt, verifiedAt,
+                "USD", source,
                 new BigDecimal("0.044"), new BigDecimal("0.022"),
                 new BigDecimal("1.32"), new BigDecimal("0.66"),
                 new BigDecimal("3.96"), new BigDecimal("1.98"));
@@ -153,11 +164,12 @@ public final class ModelPricingCatalog {
     /**
      * 按调用发生时刻选择高峰/非高峰单价并估算金额。
      *
-     * <p>reasoning token 已包含在 completion token 内，只作为明细保存，此处不重复计费。</p>
+     * <p>reasoning token 已包含在 completion token 内，只作为明细保存，此处不重复计费。
+     * {@code occurredAt} 早于价格生效瞬间时返回 {@link Optional#empty()}，保持"不可估算"。</p>
      */
     public Optional<EstimatedCost> estimate(String modelName, ModelUsage usage, Instant occurredAt) {
         PriceSpec spec = find(modelName).orElse(null);
-        if (spec == null || usage == null || !spec.isComplete()) {
+        if (spec == null || usage == null || !spec.isComplete() || !spec.appliesAt(occurredAt)) {
             return Optional.empty();
         }
         RateWindow window = rateWindowAt(occurredAt);
@@ -172,5 +184,26 @@ public final class ModelPricingCatalog {
                 .add(output.multiply(BigDecimal.valueOf(usage.completionTokens())))
                 .divide(MILLION, 8, RoundingMode.HALF_UP);
         return Optional.of(new EstimatedCost(amount, spec.currency(), spec.version(), window));
+    }
+
+    /**
+     * 预占许可的成本上界：按较高的输出单价与 {@code maxOutputTokens} 计算。
+     *
+     * <p>预占发生在真实调用之前，输入 token 与最终输出都不可知。用高峰输出价做保守上界，
+     * 可以避免并发调用在费用上限处同时放行；调用结束后由 {@link #estimate} 按实际用量
+     * 写入真实金额并释放差额。未知模型或未配置输出上限时返回 {@link Optional#empty()}，
+     * 只有调用次数上限生效。</p>
+     */
+    public Optional<BigDecimal> outputHoldCost(String modelName, Integer maxOutputTokens, Instant at) {
+        PriceSpec spec = find(modelName).orElse(null);
+        if (spec == null || maxOutputTokens == null || maxOutputTokens <= 0
+                || !spec.isComplete() || !spec.appliesAt(at)) {
+            return Optional.empty();
+        }
+        BigDecimal worstOutput = spec.outputPeakPerMillion()
+                .max(spec.outputOffPeakPerMillion());
+        return Optional.of(worstOutput
+                .multiply(BigDecimal.valueOf(maxOutputTokens))
+                .divide(MILLION, 8, RoundingMode.HALF_UP));
     }
 }

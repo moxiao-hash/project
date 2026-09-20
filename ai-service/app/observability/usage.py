@@ -3,10 +3,15 @@
 设计要点：
 
 - 每个真实模型调用由 LangChain 回调采集，只使用有界标签，不记录提示词、正文或密钥。
-- 一次逻辑调用使用稳定的 ``usageId``（由 turn/purpose/run_id 决定），上报重试与重复
-  回调都落到同一主键，Java 侧幂等落库，不会重复计费。
+- 一次逻辑调用使用稳定的 ``usageId``：正常来自预算预占许可（``reservationId``），
+  没有预占时退化为 ``turn/purpose/run_id`` 派生的 uuid5；上报重试与重复回调都落到
+  同一主键，Java 侧幂等落库，不会重复计费。
 - 上报失败只能影响可观测性，绝不能把一次成功的模型调用改判为失败：``report`` 内部
   捕获全部异常并计入 Prometheus 指标与日志。
+- 长生命周期模型客户端里的重复回调跟踪必须有界：``ModelUsageCallback`` 只保留最近
+  ``max_tracked_runs`` 个 run，淘汰后仍能正常上报新调用。
+- 派发出去但尚未完成的上报登记在进程级集合里，FastAPI 关停时统一排空，避免一次
+  已经成功的模型调用因为进程退出而丢失。
 """
 
 from __future__ import annotations
@@ -32,6 +37,9 @@ from app.observability.model_metrics import extract_model_usage
 logger = logging.getLogger(__name__)
 
 USAGE_ID_NAMESPACE = UUID("6f1d0f9c-3a2e-4b8e-9a6f-6c2f0f3b9d41")
+
+# 默认保留最近 512 个 run 的去重/计时记录；长驻的缓存模型不会无限增长。
+DEFAULT_TRACKED_RUNS = 512
 
 
 class ModelPurpose:
@@ -60,10 +68,13 @@ class UsageScope:
     turn_id: str | None = None
     execution_id: str | None = None
     purpose: str | None = None
-    max_output_tokens: int | None = None
 
 
 _current_scope: ContextVar[UsageScope | None] = ContextVar("model_usage_scope", default=None)
+# 当前 provider 调用持有的预占许可 id；用量回调据此生成与预占一致的幂等键。
+_current_reservation: ContextVar[str | None] = ContextVar(
+    "model_usage_reservation", default=None
+)
 
 
 @contextmanager
@@ -81,13 +92,61 @@ def current_usage_scope() -> UsageScope | None:
     return _current_scope.get()
 
 
-def bind_max_output_tokens(runnable: Any) -> Any:
-    """把当前轮的输出上限绑定到模型/结构化链；没有上限时原样返回。"""
+@contextmanager
+def reservation_scope(reservation_id: str | None) -> Iterator[None]:
+    """绑定本次 provider 调用持有的预占许可；退出时恢复。"""
 
-    scope = current_usage_scope()
-    if scope is None or not scope.max_output_tokens:
-        return runnable
-    return runnable.bind(max_tokens=scope.max_output_tokens)
+    token: Token[str | None] = _current_reservation.set(reservation_id)
+    try:
+        yield
+    finally:
+        _current_reservation.reset(token)
+
+
+def current_reservation_id() -> str | None:
+    return _current_reservation.get()
+
+
+class _BoundedRunSet:
+    """按插入顺序保留最近 ``max_entries`` 个 run_id 的去重集合。"""
+
+    def __init__(self, max_entries: int) -> None:
+        if max_entries < 1:
+            raise ValueError("max_entries 必须为正整数")
+        self._max_entries = max_entries
+        self._entries: dict[UUID, None] = {}
+
+    def mark(self, run_id: UUID) -> bool:
+        """首次记录返回 ``True``；重复 run 返回 ``False`` 且不改变顺序。"""
+
+        if run_id in self._entries:
+            return False
+        self._entries[run_id] = None
+        while len(self._entries) > self._max_entries:
+            self._entries.pop(next(iter(self._entries)))
+        return True
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+class _BoundedTiming:
+    """按插入顺序保留最近 ``max_entries`` 个 run 的开始时间。"""
+
+    def __init__(self, max_entries: int) -> None:
+        self._max_entries = max_entries
+        self._entries: dict[UUID, float] = {}
+
+    def start(self, run_id: UUID) -> None:
+        self._entries[run_id] = monotonic()
+        while len(self._entries) > self._max_entries:
+            self._entries.pop(next(iter(self._entries)))
+
+    def pop(self, run_id: UUID, default: float) -> float:
+        return self._entries.pop(run_id, default)
+
+    def __len__(self) -> int:
+        return len(self._entries)
 
 
 def _normalized_turn_id(scope: UsageScope) -> str:
@@ -122,6 +181,45 @@ class UsageReportMetrics:
 
 
 USAGE_REPORT_METRICS = UsageReportMetrics()
+
+
+# 进程级待完成上报：FastAPI 关停时排空，避免优雅停机丢掉成功调用的用量。
+_PENDING_REPORTS: set[asyncio.Task[Any]] = set()
+_PENDING_REPORTS_LOCK = Lock()
+
+
+def _track_report(task: asyncio.Task[Any]) -> None:
+    with _PENDING_REPORTS_LOCK:
+        _PENDING_REPORTS.add(task)
+    task.add_done_callback(_untrack_report)
+
+
+def _untrack_report(task: asyncio.Task[Any]) -> None:
+    with _PENDING_REPORTS_LOCK:
+        _PENDING_REPORTS.discard(task)
+
+
+def pending_usage_report_count() -> int:
+    """当前仍未完成的上报数量；用于关停排空与测试。"""
+
+    with _PENDING_REPORTS_LOCK:
+        return sum(1 for task in _PENDING_REPORTS if not task.done())
+
+
+async def drain_pending_usage_reports() -> None:
+    """等待当前事件循环上所有已派发的用量上报完成。"""
+
+    while True:
+        loop = asyncio.get_running_loop()
+        with _PENDING_REPORTS_LOCK:
+            pending = [
+                task
+                for task in _PENDING_REPORTS
+                if not task.done() and task.get_loop() is loop
+            ]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 class AssistantUsageReporter:
@@ -173,7 +271,9 @@ class ModelUsageCallback(BaseCallbackHandler):
     """从 LangChain 回调采集用量并异步上报。
 
     ``owner_id``/``purpose`` 来自模型构造时的 owner 归属；若调用方用
-    :func:`usage_scope` 绑定了更具体的会话与轮次，则优先使用它。
+    :func:`usage_scope` 绑定了更具体的会话与轮次，则优先使用它。当前 provider 调用
+    若持有预占许可（:func:`reservation_scope`），上报使用同一 id，保证预占与用量
+    幂等对应。
     """
 
     def __init__(
@@ -185,6 +285,8 @@ class ModelUsageCallback(BaseCallbackHandler):
         owner_id: str | None = None,
         purpose: str = ModelPurpose.UNKNOWN,
         scope_provider: Callable[[], UsageScope | None] = current_usage_scope,
+        reservation_provider: Callable[[], str | None] = current_reservation_id,
+        max_tracked_runs: int = DEFAULT_TRACKED_RUNS,
     ) -> None:
         self._provider = provider
         self._model = model
@@ -192,8 +294,9 @@ class ModelUsageCallback(BaseCallbackHandler):
         self._owner_id = owner_id
         self._purpose = purpose
         self._scope_provider = scope_provider
-        self._started: dict[UUID, float] = {}
-        self._reported: set[UUID] = set()
+        self._reservation_provider = reservation_provider
+        self._started = _BoundedTiming(max_tracked_runs)
+        self._reported = _BoundedRunSet(max_tracked_runs)
         self._pending: set[asyncio.Task[Any]] = set()
         self._lock = Lock()
 
@@ -205,6 +308,13 @@ class ModelUsageCallback(BaseCallbackHandler):
     def purpose(self) -> str:
         return self._purpose
 
+    @property
+    def tracked_run_count(self) -> int:
+        """当前去重表里保留的 run 数量；用于验证长驻模型不会无限增长。"""
+
+        with self._lock:
+            return len(self._reported)
+
     def on_llm_start(
         self,
         serialized: dict[str, Any],
@@ -215,7 +325,7 @@ class ModelUsageCallback(BaseCallbackHandler):
     ) -> None:
         # prompts 是不可信正文，绝不写日志或指标标签。
         with self._lock:
-            self._started[run_id] = monotonic()
+            self._started.start(run_id)
 
     def on_llm_end(self, response: Any, *, run_id: UUID, **kwargs: Any) -> None:
         self._emit(run_id, extract_model_usage(response), status="SUCCEEDED")
@@ -239,7 +349,8 @@ class ModelUsageCallback(BaseCallbackHandler):
         turn_id = _normalized_turn_id(scope) if scope is not None else (
             current_request_id() or str(uuid4())
         )
-        usage_id = build_usage_id(
+        reservation_id = self._reservation_provider()
+        usage_id = reservation_id or build_usage_id(
             owner_id=owner_id,
             conversation_id=conversation_id,
             turn_id=turn_id,
@@ -248,9 +359,8 @@ class ModelUsageCallback(BaseCallbackHandler):
         )
         with self._lock:
             started = self._started.pop(run_id, monotonic())
-            if run_id in self._reported:
+            if not self._reported.mark(run_id):
                 return
-            self._reported.add(run_id)
         latency_ms = max(0, int((monotonic() - started) * 1000))
         payload = {
             "usageId": usage_id,
@@ -285,24 +395,32 @@ class ModelUsageCallback(BaseCallbackHandler):
             asyncio.run(self._reporter.report(payload))
             return
         task = loop.create_task(self._reporter.report(payload))
-        self._pending.add(task)
+        with self._lock:
+            self._pending.add(task)
         task.add_done_callback(self._pending.discard)
+        _track_report(task)
 
     async def drain(self) -> None:
-        """等待已派发的上报任务完成；供测试与优雅关停使用。"""
+        """等待本回调已派发的上报任务完成；供测试与优雅关停使用。"""
 
-        if self._pending:
-            await asyncio.gather(*tuple(self._pending), return_exceptions=True)
+        with self._lock:
+            pending = tuple(self._pending)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 __all__ = [
     "AssistantUsageReporter",
+    "DEFAULT_TRACKED_RUNS",
     "ModelPurpose",
     "ModelUsageCallback",
     "UsageReportMetrics",
     "UsageScope",
-    "bind_max_output_tokens",
     "build_usage_id",
+    "current_reservation_id",
     "current_usage_scope",
+    "drain_pending_usage_reports",
+    "pending_usage_report_count",
+    "reservation_scope",
     "usage_scope",
 ]

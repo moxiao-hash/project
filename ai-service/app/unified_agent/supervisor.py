@@ -17,7 +17,7 @@ from app.knowledge.models import KnowledgeMode, WebSearchPolicy
 from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
 from app.observability.usage import UsageScope, usage_scope
 from app.persistence.agent_state import AgentPersistence
-from app.providers.budget import ModelBudgetGuard
+from app.providers.budget import ModelBudgetExceededError
 from app.unified_agent.event_stream import (
     DEFAULT_HEARTBEAT_SECONDS,
     DEFAULT_QUEUE_SIZE,
@@ -99,8 +99,6 @@ class SupervisorState(TypedDict, total=False):
     plan_resume: dict[str, Any] | None
     # Task 29：知识问答已实时推送真实模型增量时置真，收尾不再重复分片。
     reply_streamed: bool
-    # Task 31：本轮是否允许新的模型调用；false 时只允许纯 Java 查询/导航。
-    budget_allowed: bool
 
 
 @dataclass
@@ -150,7 +148,6 @@ class UnifiedAgentSupervisor:
         self._events = AssistantEventBus(queue_size=event_queue_size)
         self._event_heartbeat_seconds = event_heartbeat_seconds
         self._reply_delta_source = reply_delta_source
-        self._budget = ModelBudgetGuard(java_backend)
         self._graph = self._build_graph()
 
     async def _emit(
@@ -838,7 +835,6 @@ class UnifiedAgentSupervisor:
                     }
                 )
             else:
-                budget = await self._budget.check(owner_id)
                 gateway = UnifiedToolGateway(
                     self._java, owner_id, ToolBudget(),
                     is_cancelled=lambda: conversation.cancel_requested_turn_id == idempotency_key,
@@ -850,7 +846,6 @@ class UnifiedAgentSupervisor:
                         owner_id=owner_id,
                         conversation_id=conversation_id,
                         turn_id=idempotency_key,
-                        max_output_tokens=budget.max_output_tokens_per_turn,
                     )):
                         values = await self._graph.ainvoke(
                             {
@@ -869,7 +864,6 @@ class UnifiedAgentSupervisor:
                                 "knowledge_conversation_id": (
                                     conversation.knowledge_conversation_id
                                 ),
-                                "budget_allowed": budget.allowed,
                             }
                         )
                 except ToolTurnCancelledError:
@@ -1177,20 +1171,24 @@ class UnifiedAgentSupervisor:
                 }
 
             # Task 28：先尝试模型多步规划。计划必须已通过确定性策略校验；
-            # 模型不可用时保持原有已验证的关键词降级层。
-            planner = (
-                await self._planner_for_turn(state["owner_id"])
-                if state.get("budget_allowed", True)
-                else None
-            )
+            # 模型不可用时保持原有已验证的关键词降级层。Task 31：预算在每次真实
+            # provider 调用前由模型边界预占，拒绝以 ModelBudgetExceededError 冒泡，
+            # 此处只负责改走纯 Java 分支，不做会造成陈旧判定的轮次级预检。
+            budget_denied = False
+            planner = await self._planner_for_turn(state["owner_id"])
             if planner is not None:
-                planner_outcome = await planner.propose(
-                    message=message,
-                    context=context_result.data,
-                    client_context=state.get("client_context", {}),
-                )
+                try:
+                    planner_outcome = await planner.propose(
+                        message=message,
+                        context=context_result.data,
+                        client_context=state.get("client_context", {}),
+                    )
+                except ModelBudgetExceededError:
+                    budget_denied = True
+                    planner_outcome = None
                 if (
-                    planner_outcome.status == PlannerStatus.PLAN
+                    planner_outcome is not None
+                    and planner_outcome.status == PlannerStatus.PLAN
                     and planner_outcome.plan is not None
                 ):
                     if emit is not None:
@@ -1214,7 +1212,10 @@ class UnifiedAgentSupervisor:
                         steps,
                         context_data=context_result.data,
                     )
-                if planner_outcome.status == PlannerStatus.CLARIFY:
+                if (
+                    planner_outcome is not None
+                    and planner_outcome.status == PlannerStatus.CLARIFY
+                ):
                     return {
                         "intent": AssistantIntent.CLARIFY,
                         "reply": planner_outcome.reason
@@ -1704,27 +1705,13 @@ class UnifiedAgentSupervisor:
                     ],
                 }
 
-            if (
-                self._knowledge_services is not None
-                and not state.get("budget_allowed", True)
-                and any(word in message for word in ("查找", "搜索", "解释", "什么是", "怎么学"))
-            ):
-                # 预算耗尽时拒绝新的模型调用，但仍给出可执行的纯 Java 导航入口。
-                return {
-                    "intent": AssistantIntent.NAVIGATION,
-                    "reply": (
-                        "本次模型预算已用尽，暂时无法生成新的知识回答；"
-                        "你可以继续打开学习资料或查询已有内容。"
-                    ),
-                    "tool_steps": steps,
-                    "pending_action": None,
-                    "ui_actions": [
-                        UiAction(route_key="MATERIALS", reason="查看已有学习资料")
-                    ],
-                }
+            knowledge_keywords = ("查找", "搜索", "解释", "什么是", "怎么学")
             if self._knowledge_services is not None and any(
-                word in message for word in ("查找", "搜索", "解释", "什么是", "怎么学")
+                word in message for word in knowledge_keywords
             ):
+                if budget_denied:
+                    # 预算在 Planner 预占时已被拒绝；这里只给出纯 Java 导航入口。
+                    return UnifiedAgentSupervisor._budget_unavailable_reply(steps)
                 knowledge_service = await self._knowledge_services.for_owner(state["owner_id"])
                 knowledge_conversation_id = state.get("knowledge_conversation_id")
                 if knowledge_conversation_id is None:
@@ -1756,21 +1743,26 @@ class UnifiedAgentSupervisor:
                 reply_streamed = emit is not None and hasattr(
                     knowledge_service, "stream_message"
                 )
-                if reply_streamed:
-                    answer = await knowledge_service.stream_message(
-                        knowledge_conversation_id,
-                        message,
-                        WebSearchPolicy.AUTO,
-                        state["owner_id"],
-                        on_delta=on_delta,
-                    )
-                else:
-                    answer = await knowledge_service.send_message(
-                        knowledge_conversation_id,
-                        message,
-                        WebSearchPolicy.AUTO,
-                        state["owner_id"],
-                    )
+                try:
+                    if reply_streamed:
+                        answer = await knowledge_service.stream_message(
+                            knowledge_conversation_id,
+                            message,
+                            WebSearchPolicy.AUTO,
+                            state["owner_id"],
+                            on_delta=on_delta,
+                        )
+                    else:
+                        answer = await knowledge_service.send_message(
+                            knowledge_conversation_id,
+                            message,
+                            WebSearchPolicy.AUTO,
+                            state["owner_id"],
+                        )
+                except ModelBudgetExceededError:
+                    # Planner 消耗掉最后一个许可后，知识模型调用必须在这里被拦截，
+                    # 不允许用轮次级旧判定继续调用 provider。
+                    return UnifiedAgentSupervisor._budget_unavailable_reply(steps)
                 steps.append(
                     PublicToolStep(
                         tool_name="knowledge.search",
@@ -2091,6 +2083,23 @@ class UnifiedAgentSupervisor:
             "pending_action": None,
             "ui_actions": [
                 UiAction(route_key="WORKSPACE_ARTIFACTS", reason="选择代码工作区")
+            ],
+        }
+
+    @staticmethod
+    def _budget_unavailable_reply(steps: list[PublicToolStep]) -> dict[str, Any]:
+        """预算被拒或不可用时唯一允许的模型相关回应：纯 Java 导航入口。"""
+
+        return {
+            "intent": AssistantIntent.NAVIGATION,
+            "reply": (
+                "本次模型预算不可用或已用尽，暂时无法生成新的知识回答；"
+                "你可以继续打开学习资料或查询已有内容。"
+            ),
+            "tool_steps": steps,
+            "pending_action": None,
+            "ui_actions": [
+                UiAction(route_key="MATERIALS", reason="查看已有学习资料")
             ],
         }
 

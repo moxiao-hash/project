@@ -6,7 +6,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.models import PlannerTurn
 from app.agent.state import ConversationState
-from app.observability.usage import bind_max_output_tokens
 from app.prompts.learning_plan import build_learning_plan_prompt
 
 
@@ -50,7 +49,7 @@ class DeepSeekPlanner:
 
         for attempt in range(2):
             try:
-                result = await bind_max_output_tokens(self._structured_model).ainvoke(messages)
+                result = await self._structured_model.ainvoke(messages)
                 return PlannerTurn.model_validate(result)
             except Exception as exc:
                 if attempt == 1:

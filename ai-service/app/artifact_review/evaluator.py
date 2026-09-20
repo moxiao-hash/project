@@ -6,7 +6,6 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.artifact_review.models import ArtifactRubricResult
-from app.observability.usage import bind_max_output_tokens
 
 
 class DeepSeekArtifactEvaluator:
@@ -42,7 +41,7 @@ class DeepSeekArtifactEvaluator:
         ]
         for attempt in range(2):
             try:
-                response = await bind_max_output_tokens(self._model).ainvoke(messages)
+                response = await self._model.ainvoke(messages)
                 return ArtifactRubricResult.model_validate(response)
             except Exception:
                 if attempt == 1:

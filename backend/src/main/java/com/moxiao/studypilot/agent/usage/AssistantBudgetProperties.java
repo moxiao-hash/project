@@ -18,12 +18,23 @@ public class AssistantBudgetProperties {
 
     private String timezone = "Asia/Shanghai";
 
+    /** 预占许可的有效期；进程崩溃后未终结的预占在此时间后自动失效。 */
+    private long reservationTtlSeconds = 900;
+
     public String getTimezone() {
         return timezone;
     }
 
     public void setTimezone(String timezone) {
         this.timezone = timezone;
+    }
+
+    public long getReservationTtlSeconds() {
+        return reservationTtlSeconds;
+    }
+
+    public void setReservationTtlSeconds(long reservationTtlSeconds) {
+        this.reservationTtlSeconds = reservationTtlSeconds;
     }
 
     /** 解析配置的时区；非法值在应用启动装配第一个 bean 时立即失败。 */

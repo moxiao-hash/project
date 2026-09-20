@@ -143,7 +143,6 @@ async def test_scope_supplies_conversation_turn_and_purpose_override():
         turn_id="turn-9",
         execution_id="execution-9",
         purpose=ModelPurpose.AGENT_PLANNING,
-        max_output_tokens=512,
     )
     callback.on_llm_start({}, ["prompt"], run_id=run_id)
     with usage_scope(scope):
