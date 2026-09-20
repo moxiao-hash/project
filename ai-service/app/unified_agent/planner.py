@@ -23,7 +23,8 @@ from pydantic import SecretStr
 
 from app.clients.java_backend import JavaBackendClient
 from app.core.settings import Settings
-from app.observability.usage import ModelPurpose, bind_max_output_tokens
+from app.observability.usage import ModelPurpose
+from app.providers.budget import ModelBudgetExceededError
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -149,11 +150,14 @@ class AssistantPlanner:
         ]
         try:
             raw = await asyncio.wait_for(
-                bind_max_output_tokens(self._structured).ainvoke(messages),
+                self._structured.ainvoke(messages),
                 timeout=self._timeout_seconds,
             )
         except TimeoutError:
             return PlannerOutcome(status=PlannerStatus.UNAVAILABLE)
+        except ModelBudgetExceededError:
+            # 预算拒绝必须让 Supervisor 感知并回落纯 Java 路径，不能伪装成模型不可用。
+            raise
         except Exception:  # noqa: BLE001 - 模型异常不能让整轮会话失败
             return PlannerOutcome(status=PlannerStatus.UNAVAILABLE)
 
@@ -233,10 +237,12 @@ class AssistantPlanner:
         return value[: self._max_context_chars] + "\n...(上下文已裁剪)"
 
 
-def _create_planner_model(settings: Settings, key: SecretStr) -> Any:
-    """Planner 模型的用量用途固定为 AGENT_PLANNING。"""
+def _create_planner_model(settings: Settings, key: SecretStr, owner_id: str) -> Any:
+    """Planner 模型的用量与预算归属固定为传入 owner，用途固定为 AGENT_PLANNING。"""
 
-    return create_chat_model(settings, key, purpose=ModelPurpose.AGENT_PLANNING)
+    return create_chat_model(
+        settings, key, owner_id=owner_id, purpose=ModelPurpose.AGENT_PLANNING
+    )
 
 
 class OwnerScopedAssistantPlannerFactory:
@@ -255,7 +261,7 @@ class OwnerScopedAssistantPlannerFactory:
         settings: Settings,
         java_backend: JavaBackendClient,
         *,
-        model_factory: Callable[[Settings, SecretStr], Any] = _create_planner_model,
+        model_factory: Callable[[Settings, SecretStr, str], Any] = _create_planner_model,
         max_runtime_entries: int = 100,
         idle_ttl_seconds: float = 900,
         clock: Callable[[], float] = monotonic,
@@ -287,7 +293,7 @@ class OwnerScopedAssistantPlannerFactory:
             if cached is not None and self._fingerprints.get(owner_id) == fingerprint:
                 return cached
             planner = AssistantPlanner(
-                model=self._model_factory(self._settings, key),
+                model=self._model_factory(self._settings, key, owner_id),
                 catalog=catalog,
                 validator=PlanPolicyValidator(
                     catalog,

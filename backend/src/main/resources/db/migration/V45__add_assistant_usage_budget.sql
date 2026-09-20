@@ -52,3 +52,35 @@ CREATE TABLE assistant_usage_budget (
     updated_at TIMESTAMP(6) NOT NULL,
     row_version BIGINT NOT NULL DEFAULT 0
 );
+
+-- 模型调用许可：真实 provider 调用之前先按 owner 原子预占，调用结束后再按实际
+-- 用量终结（FINALIZED）或释放（RELEASED）。并发预占必须在数据库层串行化，
+-- 否则"先查计数再调用"会在两个并发请求上同时放行，突破每日调用/费用上限。
+-- id 复用 AI 侧每次调用的 usageId，预占重试与用量回调天然幂等。
+CREATE TABLE assistant_usage_reservation (
+    id VARCHAR(36) PRIMARY KEY,
+    owner_id VARCHAR(36) NOT NULL,
+    conversation_id VARCHAR(36) NOT NULL,
+    turn_id VARCHAR(120) NOT NULL,
+    purpose VARCHAR(40) NOT NULL,
+    provider VARCHAR(40) NOT NULL,
+    model_name VARCHAR(100) NOT NULL,
+    -- RESERVED / FINALIZED / RELEASED。
+    state VARCHAR(20) NOT NULL,
+    -- 预占时下发的单轮输出上限；重复预占时原样回放，保证幂等响应一致。
+    max_output_tokens INT,
+    -- 预占时按 maxOutputTokensPerTurn 与官方单价估算的输出成本上界；未知价格写 NULL。
+    reserved_cost DECIMAL(18, 8),
+    -- 终结时写入的真实估算成本，便于复核预占与实际的差额。
+    actual_cost DECIMAL(18, 8),
+    reserved_at TIMESTAMP(6) NOT NULL,
+    -- 崩溃或进程退出后未被终结的预占会自动过期，不再占用配额。
+    expires_at TIMESTAMP(6) NOT NULL,
+    finalized_at TIMESTAMP(6)
+);
+
+CREATE INDEX idx_assistant_usage_reservation_owner_state
+    ON assistant_usage_reservation (owner_id, state, expires_at);
+
+CREATE INDEX idx_assistant_usage_reservation_owner_time
+    ON assistant_usage_reservation (owner_id, reserved_at);

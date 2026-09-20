@@ -414,7 +414,7 @@ def test_owner_scoped_factory_builds_and_caches_planner_per_owner() -> None:
     factory = OwnerScopedAssistantPlannerFactory(
         planner_settings(),
         java,
-        model_factory=lambda _settings, _key: FakeStructuredModel(
+        model_factory=lambda _settings, _key, _owner_id: FakeStructuredModel(
             plan=plan([step("s1", "assessment.mastery.list")])
         ),
     )
@@ -436,7 +436,7 @@ def test_owner_scoped_factory_returns_none_when_planner_is_disabled() -> None:
     factory = OwnerScopedAssistantPlannerFactory(
         planner_settings(agent_planner_enabled=False),
         java,
-        model_factory=lambda _settings, _key: FakeStructuredModel(),
+        model_factory=lambda _settings, _key, _owner_id: FakeStructuredModel(),
     )
 
     assert asyncio.run(factory.for_owner("user-1")) is None
@@ -450,7 +450,7 @@ def test_owner_scoped_factory_returns_none_when_catalog_is_unavailable() -> None
     factory = OwnerScopedAssistantPlannerFactory(
         planner_settings(),
         java,
-        model_factory=lambda _settings, _key: FakeStructuredModel(),
+        model_factory=lambda _settings, _key, _owner_id: FakeStructuredModel(),
     )
 
     assert asyncio.run(factory.for_owner("user-1")) is None
@@ -463,7 +463,7 @@ def test_owner_scoped_factory_returns_none_when_credentials_are_unavailable() ->
     factory = OwnerScopedAssistantPlannerFactory(
         planner_settings(),
         java,
-        model_factory=lambda _settings, _key: FakeStructuredModel(),
+        model_factory=lambda _settings, _key, _owner_id: FakeStructuredModel(),
     )
 
     assert asyncio.run(factory.for_owner("user-1")) is None
@@ -476,7 +476,7 @@ def test_owner_scoped_factory_rebuilds_planner_after_key_rotation() -> None:
     factory = OwnerScopedAssistantPlannerFactory(
         planner_settings(),
         java,
-        model_factory=lambda _settings, _key: FakeStructuredModel(),
+        model_factory=lambda _settings, _key, _owner_id: FakeStructuredModel(),
     )
 
     first = asyncio.run(factory.for_owner("user-1"))
@@ -495,7 +495,7 @@ def test_owner_scoped_factory_returns_none_when_model_key_is_missing() -> None:
 
     java = FakeFactoryJavaBackend()
 
-    def failing_factory(_settings, _key):
+    def failing_factory(_settings, _key, _owner_id):
         raise ModelConfigurationError("未配置 Key")
 
     factory = OwnerScopedAssistantPlannerFactory(

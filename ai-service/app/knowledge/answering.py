@@ -5,7 +5,6 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from app.observability.usage import bind_max_output_tokens
 from app.retrieval.models import RetrievedEvidence
 from app.search.models import WebSearchResult
 from app.study_scope import STUDYPILOT_SCOPE_POLICY
@@ -89,7 +88,7 @@ class DeepSeekKnowledgeAnswerer:
         materials: list[RetrievedEvidence],
         web_results: list[WebSearchResult],
     ) -> str:
-        response = await bind_max_output_tokens(self._model).ainvoke(
+        response = await self._model.ainvoke(
             self._messages(
                 question=question,
                 history=history,
@@ -114,7 +113,7 @@ class DeepSeekKnowledgeAnswerer:
         同一 turnId"。
         """
 
-        async for chunk in bind_max_output_tokens(self._model).astream(
+        async for chunk in self._model.astream(
             self._messages(
                 question=question,
                 history=history,

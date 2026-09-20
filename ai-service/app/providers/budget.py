@@ -1,9 +1,12 @@
-"""模型调用前的用户预算校验。
+"""Provider 调用前的预算预占与失败关闭策略。
 
-预算判定由 Java 统一持有（每日调用次数、每日估算费用、单轮输出上限），AI 服务
-只在每次真实模型调用前查询一次。判定接口不可达时按"放行并记录"处理：预算服务
-与模型凭据共用同一个 Java 后端，凭据本身已不可用时模型也无法创建，因此这里不会
-成为额外故障点；一旦 Java 明确返回 ``allowed=false`` 则严格拦截。
+预算判定由 Java 统一持有（每日调用次数、每日估算费用、单轮输出上限），并且必须
+在每次真实 provider 调用之前以数据库行锁原子预占一个许可。这里只负责调用预占
+接口、把回执转成许可对象，并在调用失败时释放许可。
+
+判定接口不可达或回执字段非法时**失败关闭**：返回
+:data:`BUDGET_UNAVAILABLE_REASON` 并拒绝模型调用。预算与模型凭据共用同一个 Java
+后端不能作为放行理由——凭据仍有缓存、预算服务仍可能单独故障，静默放行会真实计费。
 """
 
 from __future__ import annotations
@@ -11,8 +14,15 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from typing import Any
+from uuid import uuid4
+
+from app.core.request_context import current_request_id
+from app.observability.usage import current_usage_scope
 
 logger = logging.getLogger(__name__)
+
+# 预算不可用（不可达或回执非法）时使用的可恢复原因。
+BUDGET_UNAVAILABLE_REASON = "BUDGET_CHECK_UNAVAILABLE"
 
 
 class ModelBudgetExceededError(RuntimeError):
@@ -25,7 +35,10 @@ class ModelBudgetExceededError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class TurnBudget:
+class BudgetPermit:
+    """一次预占许可；``allowed=false`` 时不得发起 provider 调用。"""
+
+    reservation_id: str | None
     allowed: bool
     reason: str
     max_output_tokens_per_turn: int | None = None
@@ -33,38 +46,95 @@ class TurnBudget:
 
 
 class ModelBudgetGuard:
-    """查询 Java 预算判定；失败不抛出，显式拒绝才拦截。"""
+    """向 Java 预占模型调用许可；预占失败或回执非法一律失败关闭。"""
 
     def __init__(self, java: Any) -> None:
         self._java = java
 
-    async def check(self, owner_id: str) -> TurnBudget:
+    async def reserve(
+        self,
+        *,
+        owner_id: str,
+        provider: str,
+        model_name: str,
+        purpose: str,
+        conversation_id: str | None = None,
+        turn_id: str | None = None,
+    ) -> BudgetPermit:
+        """为一次 provider 调用预占许可。
+
+        ``usageId`` 在预占时生成；HTTP 重试复用同一 payload 保证 Java 侧幂等。回执必须
+        明确给出 ``allowed``、``reason``，放行时还必须给出 ``reservationId``；任何缺字段、
+        类型错误或连接失败都返回失败关闭的许可。
+        """
+
+        usage_id = str(uuid4())
+        scope = current_usage_scope()
+        payload = {
+            "usageId": usage_id,
+            "ownerId": owner_id,
+            "conversationId": (
+                conversation_id
+                or (scope.conversation_id if scope is not None else None)
+                or "background"
+            ),
+            "turnId": (
+                turn_id
+                or (scope.turn_id if scope is not None else None)
+                or current_request_id()
+                or usage_id
+            ),
+            "purpose": purpose,
+            "provider": provider,
+            "modelName": model_name,
+        }
         try:
-            payload = await self._java.get_assistant_budget(owner_id)
-        except Exception as exc:  # noqa: BLE001 - 预算不可达时放行并暴露日志
+            response = await self._java.reserve_assistant_usage(payload)
+        except Exception as exc:  # noqa: BLE001 - 预算不可达必须失败关闭并暴露日志
             logger.warning(
                 "assistant.budget.unavailable ownerId=%s error=%s",
                 owner_id,
                 type(exc).__name__,
             )
-            return TurnBudget(True, "BUDGET_CHECK_UNAVAILABLE")
-        if not isinstance(payload, dict):
-            return TurnBudget(True, "BUDGET_CHECK_UNAVAILABLE")
-        return TurnBudget(
-            allowed=bool(payload.get("allowed", True)),
-            reason=str(payload.get("reason") or "UNKNOWN"),
-            max_output_tokens_per_turn=_optional_int(payload.get("maxOutputTokensPerTurn")),
-            timezone=str(payload.get("timezone") or "Asia/Shanghai"),
+            return BudgetPermit(None, False, BUDGET_UNAVAILABLE_REASON)
+        if not isinstance(response, dict):
+            logger.warning("assistant.budget.unavailable ownerId=%s error=malformed", owner_id)
+            return BudgetPermit(None, False, BUDGET_UNAVAILABLE_REASON)
+        allowed = response.get("allowed")
+        reason = response.get("reason")
+        reservation_id = response.get("reservationId")
+        if not isinstance(allowed, bool) or not isinstance(reason, str):
+            logger.warning("assistant.budget.unavailable ownerId=%s error=malformed", owner_id)
+            return BudgetPermit(None, False, BUDGET_UNAVAILABLE_REASON)
+        if allowed and not (isinstance(reservation_id, str) and reservation_id):
+            logger.warning(
+                "assistant.budget.unavailable ownerId=%s error=missing_permit", owner_id
+            )
+            return BudgetPermit(None, False, BUDGET_UNAVAILABLE_REASON)
+        timezone = response.get("timezone")
+        return BudgetPermit(
+            reservation_id=reservation_id if isinstance(reservation_id, str) else None,
+            allowed=allowed,
+            reason=reason,
+            max_output_tokens_per_turn=_optional_int(
+                response.get("maxOutputTokensPerTurn")
+            ),
+            timezone=timezone if isinstance(timezone, str) and timezone else "Asia/Shanghai",
         )
 
-    async def require(self, owner_id: str) -> TurnBudget:
-        budget = await self.check(owner_id)
-        if not budget.allowed:
-            raise ModelBudgetExceededError(
-                budget.reason,
-                max_output_tokens_per_turn=budget.max_output_tokens_per_turn,
+    async def release(self, reservation_id: str | None) -> None:
+        """释放未被用量回调终结的预占；失败只记日志，不影响调用结果。"""
+
+        if not reservation_id:
+            return
+        try:
+            await self._java.release_assistant_usage_reservation(reservation_id)
+        except Exception as exc:  # noqa: BLE001 - 释放失败由 TTL 兜底
+            logger.warning(
+                "assistant.budget.release_failed reservationId=%s error=%s",
+                reservation_id,
+                type(exc).__name__,
             )
-        return budget
 
 
 def _optional_int(value: Any) -> int | None:

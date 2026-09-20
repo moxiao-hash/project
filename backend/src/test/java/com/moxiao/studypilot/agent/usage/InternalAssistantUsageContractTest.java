@@ -10,6 +10,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Instant;
+
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,6 +33,9 @@ class InternalAssistantUsageContractTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private AssistantUsageBudgetJpaRepository budgetRepository;
 
     @Test
     void recordsIdempotentlyAndIsolatesOwnersWithExplicitPriceStatus() throws Exception {
@@ -113,6 +118,72 @@ class InternalAssistantUsageContractTest {
                 .andExpect(jsonPath("$.allowed").value(true))
                 .andExpect(jsonPath("$.reason").value("NO_BUDGET_CONFIGURED"))
                 .andExpect(jsonPath("$.timezone").value("Asia/Shanghai"));
+    }
+
+    @Test
+    void reservationEndpointIsIdempotentAndEnforcesOneRemainingCall() throws Exception {
+        Registration owner = registerUser("reservation-owner");
+        budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
+                owner.userId(), 1, null, 512, "USD", Instant.now()));
+
+        // 同一 usageId 的重试返回同一预占，不额外消耗名额。
+        reserve(owner.userId(), "reserve-1")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allowed").value(true))
+                .andExpect(jsonPath("$.reservationId").value("reserve-1"))
+                .andExpect(jsonPath("$.maxOutputTokensPerTurn").value(512))
+                .andExpect(jsonPath("$.reason").value("WITHIN_BUDGET"));
+        reserve(owner.userId(), "reserve-1")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allowed").value(true))
+                .andExpect(jsonPath("$.reservationId").value("reserve-1"));
+
+        // 剩余名额已被预占，第二个不同调用被拒绝。
+        reserve(owner.userId(), "reserve-2")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allowed").value(false))
+                .andExpect(jsonPath("$.reason").value("DAILY_MODEL_CALLS_EXHAUSTED"));
+
+        // 释放后名额重新可用。
+        mockMvc.perform(post("/internal/assistant-usage/reservations/reserve-1/release")
+                        .header("X-Internal-Service-Token", INTERNAL_TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.released").value(true));
+        mockMvc.perform(post("/internal/assistant-usage/reservations/reserve-1/release")
+                        .header("X-Internal-Service-Token", INTERNAL_TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.released").value(false));
+        reserve(owner.userId(), "reserve-3")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allowed").value(true));
+
+        // 缺少内部令牌的预占被拒绝，不能绕过预算。
+        mockMvc.perform(post("/internal/assistant-usage/reservations")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(reservationPayload(owner.userId(), "reserve-4")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    private org.springframework.test.web.servlet.ResultActions reserve(String ownerId, String usageId)
+            throws Exception {
+        return mockMvc.perform(post("/internal/assistant-usage/reservations")
+                .header("X-Internal-Service-Token", INTERNAL_TOKEN)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(reservationPayload(ownerId, usageId)));
+    }
+
+    private String reservationPayload(String ownerId, String usageId) {
+        return """
+                {
+                  "usageId": "%s",
+                  "ownerId": "%s",
+                  "conversationId": "conversation-1",
+                  "turnId": "turn-1",
+                  "purpose": "KNOWLEDGE_QA",
+                  "provider": "deepseek",
+                  "modelName": "deepseek-flash"
+                }
+                """.formatted(usageId, ownerId);
     }
 
     private org.springframework.test.web.servlet.ResultActions record(String payload) throws Exception {

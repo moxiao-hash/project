@@ -3,10 +3,10 @@ package com.moxiao.studypilot.agent.usage;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,16 +29,26 @@ class AssistantUsageServiceTest {
             mock(AssistantModelUsageJpaRepository.class);
     private final AssistantUsageBudgetJpaRepository budgetRepository =
             mock(AssistantUsageBudgetJpaRepository.class);
+    private final AssistantUsageReservationJpaRepository reservationRepository =
+            mock(AssistantUsageReservationJpaRepository.class);
     private final ModelPricingCatalog catalog = ModelPricingCatalog.of(Map.of(MODEL,
             new ModelPricingCatalog.PriceSpec("test-model", "Test-Model-0813",
-                    "test-2026-09-18", LocalDate.of(2026, 9, 18), "USD",
+                    "test-2026-09-18",
+                    Instant.parse("2026-09-18T00:00:00Z"),
+                    Instant.parse("2026-09-19T00:00:00Z"),
+                    "USD",
                     "https://example.invalid/pricing",
                     new BigDecimal("1.00"), new BigDecimal("0.50"),
                     new BigDecimal("4.00"), new BigDecimal("2.00"),
                     new BigDecimal("16.00"), new BigDecimal("8.00"))));
     private final AssistantBudgetProperties budgetProperties = new AssistantBudgetProperties();
-    private final AssistantUsageService service =
-            new AssistantUsageService(usageRepository, budgetRepository, catalog, budgetProperties);
+    private final AssistantUsageService service = new AssistantUsageService(
+            usageRepository,
+            budgetRepository,
+            reservationRepository,
+            catalog,
+            budgetProperties,
+            mock(PlatformTransactionManager.class));
 
     @Test
     void duplicateCallbackForSameUsageIdIsNotChargedTwice() {

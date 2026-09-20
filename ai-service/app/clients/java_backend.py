@@ -703,13 +703,24 @@ class JavaBackendClient:
         )
         return response.json()
 
-    async def get_assistant_budget(self, owner_id: str) -> dict[str, Any]:
-        """读取 owner 当前预算判定与单轮输出上限。"""
+    async def reserve_assistant_usage(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """在真实 provider 调用前预占一个模型调用许可；`usageId` 是幂等键。"""
 
         response = await self._request(
-            "GET",
-            "/internal/assistant-usage/budget",
-            params={"ownerId": owner_id},
+            "POST",
+            "/internal/assistant-usage/reservations",
+            json=payload,
+        )
+        return response.json()
+
+    async def release_assistant_usage_reservation(
+        self, reservation_id: str
+    ) -> dict[str, Any]:
+        """释放未产生用量的预占许可；重复释放是幂等无操作。"""
+
+        response = await self._request(
+            "POST",
+            f"/internal/assistant-usage/reservations/{reservation_id}/release",
         )
         return response.json()
 

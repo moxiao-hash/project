@@ -7,7 +7,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -18,7 +17,10 @@ class ModelPricingCatalogTest {
 
     private final ModelPricingCatalog catalog = ModelPricingCatalog.of(Map.of(MODEL,
             new ModelPricingCatalog.PriceSpec("test-model", "Test-Model-0813",
-                    "test-2026-09-18", LocalDate.of(2026, 9, 18), "USD",
+                    "test-2026-09-18",
+                    Instant.parse("2026-09-18T00:00:00Z"),
+                    Instant.parse("2026-09-19T00:00:00Z"),
+                    "USD",
                     "https://example.invalid/pricing",
                     new BigDecimal("1.00"), new BigDecimal("0.50"),
                     new BigDecimal("4.00"), new BigDecimal("2.00"),
@@ -112,5 +114,53 @@ class ModelPricingCatalogTest {
         assertThat(estimate.window()).isEqualTo(ModelPricingCatalog.RateWindow.PEAK);
         assertThat(estimate.currency()).isEqualTo("USD");
         assertThat(estimate.priceVersion()).isEqualTo("test-2026-09-18");
+    }
+
+    @Test
+    void officialCatalogPublishesEffectiveVerifiedAndSourceMetadata() {
+        var flash = ModelPricingCatalog.official().find("deepseek-flash").orElseThrow();
+        assertThat(flash.version()).isEqualTo("deepseek-pricing-2026-09-20");
+        assertThat(flash.effectiveAt()).isEqualTo(Instant.parse("2026-08-16T16:00:00Z"));
+        assertThat(flash.verifiedAt()).isEqualTo(Instant.parse("2026-09-20T00:00:00Z"));
+        assertThat(flash.sourceUrl())
+                .isEqualTo("https://api-docs.deepseek.com/quick_start/pricing/");
+    }
+
+    @Test
+    void officialCatalogIsUnknownBeforeThePriceEffectiveInstant() {
+        var usage = new ModelUsage("deepseek-flash", 1_000_000, 0, 1_000_000, null, 1L);
+        Instant effectiveAt = Instant.parse("2026-08-16T16:00:00Z");
+        assertThat(ModelPricingCatalog.official()
+                .estimate("deepseek-flash", usage, effectiveAt.minusNanos(1))).isEmpty();
+    }
+
+    @Test
+    void officialCatalogPricesExactlyAtThePriceEffectiveInstant() {
+        var usage = new ModelUsage("deepseek-flash", 1_000_000, 0, 1_000_000, null, 1L);
+        Instant effectiveAt = Instant.parse("2026-08-16T16:00:00Z");
+        var estimate = ModelPricingCatalog.official()
+                .estimate("deepseek-flash", usage, effectiveAt);
+        assertThat(estimate).isPresent();
+        // 2026-08-16T16:00:00Z 是周日，按非高峰计价：0.15 + 0.60 = 0.75 USD。
+        assertThat(estimate.orElseThrow().amount()).isEqualByComparingTo("0.75000000");
+        assertThat(estimate.orElseThrow().window())
+                .isEqualTo(ModelPricingCatalog.RateWindow.OFF_PEAK);
+    }
+
+    @Test
+    void customCatalogEntryIsUnknownBeforeItsOwnEffectiveInstant() {
+        var usage = new ModelUsage(MODEL, 100, 0, 1_000, null, 1L);
+        Instant effectiveAt = Instant.parse("2026-09-18T00:00:00Z");
+        assertThat(catalog.estimate(MODEL, usage, effectiveAt.minusNanos(1))).isEmpty();
+        assertThat(catalog.estimate(MODEL, usage, effectiveAt)).isPresent();
+    }
+
+    @Test
+    void outputHoldCostUsesTheHigherPeakOutputPrice() {
+        Instant offPeak = Instant.parse("2026-09-21T12:00:00Z");
+        // 高峰输出价 16.00 高于非高峰 8.00；预占按 16.00 计算上界。
+        assertThat(catalog.outputHoldCost(MODEL, 1_000_000, offPeak).orElseThrow())
+                .isEqualByComparingTo("16.00000000");
+        assertThat(catalog.outputHoldCost("unlisted-model", 1_000_000, offPeak)).isEmpty();
     }
 }

@@ -6,7 +6,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from app.material.models import MaterialAnalysis, MaterialChunk
-from app.observability.usage import bind_max_output_tokens
 
 
 class CloudMaterialAnalyzer(Protocol):
@@ -61,7 +60,7 @@ class DeepSeekMaterialAnalyzer:
         excerpt = "\n\n".join(
             f"[{chunk.locator}]\n{chunk.text}" for chunk in chunks
         )[:60_000]
-        output = await bind_max_output_tokens(self._model).ainvoke(
+        output = await self._model.ainvoke(
             [
                 SystemMessage(
                     content=(

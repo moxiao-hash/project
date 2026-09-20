@@ -2,7 +2,9 @@ package com.moxiao.studypilot.agent.usage;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -17,19 +19,25 @@ public class AssistantUsageService {
 
     private final AssistantModelUsageJpaRepository usageRepository;
     private final AssistantUsageBudgetJpaRepository budgetRepository;
+    private final AssistantUsageReservationJpaRepository reservationRepository;
     private final ModelPricingCatalog pricingCatalog;
     private final AssistantBudgetProperties budgetProperties;
+    private final TransactionTemplate transactionTemplate;
 
     public AssistantUsageService(
             AssistantModelUsageJpaRepository usageRepository,
             AssistantUsageBudgetJpaRepository budgetRepository,
+            AssistantUsageReservationJpaRepository reservationRepository,
             ModelPricingCatalog pricingCatalog,
-            AssistantBudgetProperties budgetProperties
+            AssistantBudgetProperties budgetProperties,
+            PlatformTransactionManager transactionManager
     ) {
         this.usageRepository = usageRepository;
         this.budgetRepository = budgetRepository;
+        this.reservationRepository = reservationRepository;
         this.pricingCatalog = pricingCatalog;
         this.budgetProperties = budgetProperties;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     /**
@@ -37,7 +45,8 @@ public class AssistantUsageService {
      *
      * <p>{@code usageId} 由 AI 侧在每次逻辑调用开始时生成，跨上报重试保持不变；
      * 并发重复回调由主键约束兜底：先查、插入冲突后回读，都返回 {@code duplicate=true}。
-     * 本方法刻意不加外层事务，插入冲突回滚后仍能在新事务里回读已存在的记录。</p>
+     * 本方法刻意不加外层事务，插入冲突回滚后仍能在新事务里回读已存在的记录。
+     * 落库成功后同时按实际金额终结同 id 的预占许可；重复回调是无操作。</p>
      */
     public AssistantUsageRecord record(RecordUsageCommand command) {
         var existing = usageRepository.findById(command.usageId());
@@ -75,6 +84,10 @@ public class AssistantUsageService {
                     .map(this::duplicate)
                     .orElseThrow(() -> concurrentDuplicate);
         }
+        reservationRepository.finalizeReservation(
+                command.usageId(),
+                estimate.map(ModelPricingCatalog.EstimatedCost::amount).orElse(null),
+                command.occurredAt());
         return new AssistantUsageRecord(
                 entity.getId(),
                 entity.getEstimatedCost(),
@@ -85,6 +98,129 @@ public class AssistantUsageService {
                         ? AssistantUsageRecord.PRICE_UNKNOWN
                         : AssistantUsageRecord.PRICE_KNOWN,
                 false);
+    }
+
+    /**
+     * 在真实 provider 调用之前原子预占一个模型调用许可。
+     *
+     * <p>同一 owner 的并发预占必须先锁定预算行再统计"已终结用量 + 未过期预占"，
+     * 否则两个并发请求会各自读到还剩一个名额并同时放行。锁定范围是整个
+     * 预占事务：第一个事务提交后第二个事务才能继续，因此每日调用/费用上限不会被突破。</p>
+     *
+     * <p>没有配置预算的 owner 直接放行且不写预占行；此时不存在需要保护的上限。</p>
+     */
+    public BudgetPermit reserve(ReserveUsageCommand command, Instant at) {
+        var existing = reservationRepository.findById(command.usageId());
+        if (existing.isPresent()) {
+            return settlePermit(existing.get());
+        }
+        try {
+            return transactionTemplate.execute(status -> reserveInTransaction(command, at));
+        } catch (DataIntegrityViolationException concurrentDuplicate) {
+            // 同一 usageId 的并发重试：一个事务插入成功，另一个回读既有预占。
+            return reservationRepository.findById(command.usageId())
+                    .map(this::settlePermit)
+                    .orElseThrow(() -> concurrentDuplicate);
+        }
+    }
+
+    /** 终结或释放预占；重复调用是无操作，返回是否真的改变了状态。 */
+    @Transactional
+    public boolean release(String reservationId, Instant at) {
+        return reservationRepository.releaseReservation(reservationId, at) > 0;
+    }
+
+    private BudgetPermit reserveInTransaction(ReserveUsageCommand command, Instant at) {
+        ZoneId zone = budgetProperties.zoneId();
+        var configured = budgetRepository.findByOwnerIdForUpdate(command.ownerId());
+        Integer maxOutputTokens = null;
+        boolean withinBudget = true;
+        if (configured.isPresent()) {
+            var budget = configured.get();
+            maxOutputTokens = budget.getMaxOutputTokensPerTurn();
+            Instant[] window = dayWindow(at, zone);
+            List<AssistantModelUsageEntity> today = usageRepository
+                    .findAllByOwnerIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(
+                            command.ownerId(), window[0], window[1]);
+            List<AssistantUsageReservationEntity> holds =
+                    reservationRepository.findAllByOwnerIdAndStateAndExpiresAtAfter(
+                            command.ownerId(),
+                            AssistantUsageReservationEntity.STATE_RESERVED,
+                            at);
+            long calls = today.size() + holds.size();
+            BigDecimal cost = sumCost(today).add(sumReservedCost(holds));
+            if (budget.getDailyModelCalls() != null && calls >= budget.getDailyModelCalls()) {
+                return denied("DAILY_MODEL_CALLS_EXHAUSTED", maxOutputTokens, zone);
+            }
+            if (budget.getDailyEstimatedCost() != null
+                    && cost.compareTo(budget.getDailyEstimatedCost()) >= 0) {
+                return denied("DAILY_ESTIMATED_COST_EXHAUSTED", maxOutputTokens, zone);
+            }
+            withinBudget = budget.getDailyModelCalls() != null
+                    || budget.getDailyEstimatedCost() != null;
+        }
+        BigDecimal holdCost = maxOutputTokens == null
+                ? null
+                : pricingCatalog.outputHoldCost(command.modelName(), maxOutputTokens, at)
+                        .orElse(null);
+        Instant expiresAt = at.plusSeconds(budgetProperties.getReservationTtlSeconds());
+        reservationRepository.saveAndFlush(new AssistantUsageReservationEntity(
+                command.usageId(),
+                command.ownerId(),
+                command.conversationId(),
+                command.turnId(),
+                command.purpose(),
+                command.provider(),
+                command.modelName(),
+                maxOutputTokens,
+                holdCost,
+                at,
+                expiresAt));
+        return new BudgetPermit(
+                command.usageId(),
+                true,
+                withinBudget ? "WITHIN_BUDGET" : "NO_BUDGET_CONFIGURED",
+                maxOutputTokens,
+                zone.getId(),
+                expiresAt);
+    }
+
+    private BudgetPermit settlePermit(AssistantUsageReservationEntity reservation) {
+        String state = reservation.getState();
+        boolean reserved = AssistantUsageReservationEntity.STATE_RESERVED.equals(state);
+        return new BudgetPermit(
+                reservation.getId(),
+                reserved,
+                reserved ? "WITHIN_BUDGET" : "RESERVATION_" + state,
+                reservation.getMaxOutputTokens(),
+                budgetProperties.zoneId().getId(),
+                reservation.getExpiresAt());
+    }
+
+    private BudgetPermit denied(String reason, Integer maxOutputTokens, ZoneId zone) {
+        return new BudgetPermit(null, false, reason, maxOutputTokens, zone.getId(), null);
+    }
+
+    private static Instant[] dayWindow(Instant at, ZoneId zone) {
+        ZonedDateTime local = at.atZone(zone);
+        return new Instant[] {
+                local.toLocalDate().atStartOfDay(zone).toInstant(),
+                local.toLocalDate().plusDays(1).atStartOfDay(zone).toInstant()
+        };
+    }
+
+    private static BigDecimal sumCost(List<AssistantModelUsageEntity> usages) {
+        return usages.stream()
+                .map(AssistantModelUsageEntity::getEstimatedCost)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static BigDecimal sumReservedCost(List<AssistantUsageReservationEntity> holds) {
+        return holds.stream()
+                .map(AssistantUsageReservationEntity::getReservedCost)
+                .filter(Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
@@ -103,18 +239,13 @@ public class AssistantUsageService {
                     null, zone.getId());
         }
         var budget = configured.get();
-        ZonedDateTime local = at.atZone(zone);
-        Instant dayStart = local.toLocalDate().atStartOfDay(zone).toInstant();
-        Instant nextDayStart = local.toLocalDate().plusDays(1).atStartOfDay(zone).toInstant();
+        Instant[] window = dayWindow(at, zone);
         List<AssistantModelUsageEntity> today =
                 usageRepository
                         .findAllByOwnerIdAndOccurredAtGreaterThanEqualAndOccurredAtLessThan(
-                                ownerId, dayStart, nextDayStart);
+                                ownerId, window[0], window[1]);
         long calls = today.size();
-        BigDecimal cost = today.stream()
-                .map(AssistantModelUsageEntity::getEstimatedCost)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cost = sumCost(today);
         if (budget.getDailyModelCalls() != null && calls >= budget.getDailyModelCalls()) {
             return new BudgetDecision(false, "DAILY_MODEL_CALLS_EXHAUSTED", calls, cost,
                     budget.getMaxOutputTokensPerTurn(), zone.getId());
