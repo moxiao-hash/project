@@ -19,6 +19,7 @@
 | 文件 | 动作 | 归属 |
 |---|---|---|
 | `backend/.../db/migration/V45__add_assistant_usage_budget.sql` | 修改（新增 `assistant_usage_reservation`；Task 30 占用 V44，本分支不碰） | DeepSeek Harness |
+| `backend/.../db/migration/V46__add_reservation_input_bound.sql` | 新建（§8 增加 `input_tokens_upper_bound`） | DeepSeek Harness |
 | `backend/.../agent/usage/**` | 新建/修改（预占实体、仓储、服务、DTO、内部接口） | DeepSeek Harness |
 | `backend/.../agent/api/AssistantHealthResponse.java`、`AssistantModelUsageStats.java` | 未改动 | DeepSeek Harness（字段），ZCode 消费 |
 | `backend/.../agent/application/AssistantHealthService.java` | 未改动 | DeepSeek Harness |
@@ -269,12 +270,14 @@ usage:
 
 1. **节假日日历未内置**：官方页注明中国法定节假日全天按非高峰计价。当前实现只按
    "周一至周五 01:00–04:00、06:00–10:00 UTC" 判定高峰，未内置节假日表；需要时由部署方按年维护。
-2. **预占成本上界只覆盖输出**：`reserved_cost` 用高峰输出价乘 `maxOutputTokensPerTurn`
-   作为保守上界，不估算输入 token；因此费用上限对并发调用是"输出侧保守、输入侧事后再算"。
-   调用次数上限始终精确。终结时按实际用量写 `actual_cost`。
+2. ~~预占成本上界只覆盖输出~~ **已在 §8 修复**：预占成本现在包含当前请求输入上界与配置的
+   单轮输出上限，并在"已终结 + 在途 + 本次 > 上限"时拒绝。只有"仅调用次数预算"的 owner
+   仍在 `reserved_cost` 里保留输出侧诊断值。
 3. **预占过期窗口**：进程崩溃遗留的 RESERVED 预占在 `expires_at`（默认 900 秒）后才失效；
    窗口内会占用配额。TTL 可由 `studypilot.assistant.budget.reservation-ttl-seconds` 配置。
-4. **未知价格不进费用预算**：未知价格调用金额为 `NULL`，只计入每日调用次数上限，不计入费用上限。
+4. ~~未知价格不进费用预算~~ **已在 §8 修复**：配置了日费用上限时，价格未知或尚未生效的模型
+   不再放行，而是以 `BUDGET_PRICE_UNKNOWN` 失败关闭；只有"仅调用次数预算"的 owner 仍允许未知
+   价格调用（金额在用量行里保持 `NULL`）。
 5. **`GET /internal/assistant-usage/budget` 仅是诊断接口**：不再参与拦截；
    真正的强制点是每次 provider 调用前的预占。
 6. **本 worktree 无独立 `.venv`**：Python 测试复用主工作区解释器。
@@ -309,3 +312,166 @@ usage:
 - 本次评审修复提交：`5723f6319c4fef9d0c74dcf139b47f3a86a186b6`（`fix: enforce usage budget on every provider call`）
 - 验证文档提交：`docs: verify task 31 review fixes`（本次提交）
 - 远端：`origin/agent/deepseek-task-31-usage-budget`
+
+---
+
+## 8. 第二轮评审修复（2026-09-20）：原子终结与真实费用上界
+
+Codex 验收指出两个阻断缺陷；本节只记录本轮新增证据，基线轮次证据见 §1–§7。
+
+### 8.1 缺陷与修复设计
+
+**缺陷 1：用量落库与预占终结不是一个可恢复的原子单元。**
+旧实现先 `saveAndFlush` 提交用量行，再在另一个事务里 `finalizeReservation`：终结失败、
+或重试命中既有用量行时，预占会一直停在 `RESERVED`，同一次调用既算已计费用量、又算在途预占，
+直到 TTL 过期。修复：
+
+- `AssistantUsageService.record` 用 `TransactionTemplate` 把"插入用量行 + 终结预占"放进同一个事务；
+  终结抛错则整条用量回滚，重试可完整重放。
+- 命中既有用量行（先查到，或并发冲突后回读）时，除返回 `duplicate=true`，还按用量行里已落库的
+  真实金额补终结残留的 `RESERVED`；终结本身幂等，不会重复计费。
+
+**缺陷 2：并发日费用上限不可信。**
+旧 `reserved_cost` 只按 `maxOutputTokensPerTurn` 计算，未配置输出上限时为 `NULL`，输入成本完全不计入。
+修复：
+
+- 预占成本 = 输入上界 × 最贵 cache-miss 单价 + 输出上限 × 最贵输出单价（高峰/非高峰取大者），
+  即这次调用的真实成本上界；终结时按实际用量写 `actual_cost`。
+- 判定改为 `已终结费用 + 在途预占 + 本次预占 > 日费用上限 → 拒绝`，因此并发调用无法一起跨过上限。
+- 费用上限生效但无法保守执行时失败关闭：`BUDGET_PRICE_UNKNOWN`（未知模型或价格尚未生效）、
+  `BUDGET_OUTPUT_CAP_MISSING`（缺单轮输出上限）、`BUDGET_INPUT_BOUND_MISSING`（缺输入上界）。
+- 仅调用次数预算与无预算 owner 行为不变（未知价格不再阻塞它们）。
+
+**预占 Schema 端到端扩展。** `inputTokensUpperBound` 由 AI 侧在每次 provider 调用前计算：把请求
+序列化为文本后取 UTF-8 字节数。字节级 BPE 下每个 token 至少覆盖一个字节，因此
+`token 数 ≤ 字节数` 是严格上界，只会高估不会低估（`app/providers/input_bound.py`）。
+`BudgetedChatModel` 的 `invoke`/`ainvoke`/`astream` 以及 `with_structured_output`/`bind` 返回的
+包装器都经过同一个 `_permit(input)`，不存在绕过路径。
+
+**附带修复（本轮自查发现）：** 证据显示 `reserve` 的幂等快路径只按 `usageId` 查表、不校验 owner：
+跨 owner 复用同一 id 会直接放行别人的预占，而新增的自愈路径还会写入别人的预占行。现在
+`reserve` 对归属不符返回 `IDEMPOTENCY_KEY_OWNER_MISMATCH`，`record` 拒绝跨 owner 上报。
+该问题最初由测试类之间 `usageId` 撞键暴露；测试现在按 owner 隔离幂等键。
+
+### 8.2 RED 证据
+
+```text
+# 缺陷 1：先写测试，立即行为失败
+mvn -o -Dtest=AssistantUsageReservationIntegrityTest test
+[ERROR] Tests run: 2, Failures: 2, Errors: 0
+  usageInsertRollsBackWhenReservationFinalizationFailsAndRetryRecovers
+      Expecting an empty Optional but was containing value: AssistantModelUsageEntity@6a544178
+  duplicateReportHealsStaleReservedReservationWithoutDoubleCharging
+      expected: "FINALIZED" but was: "RESERVED"
+
+# 缺陷 2：新契约尚不存在，编译失败
+[ERROR] 无法将记录 ReserveUsageCommand 中的构造器应用到给定类型（缺 inputTokensUpperBound）
+[ERROR] 找不到符号: 方法 getInputTokensUpperBound()
+```
+
+### 8.3 GREEN 证据
+
+```text
+# 定向
+mvn -o -Dtest='AssistantUsage*Test,ModelPricingCatalogTest,InternalAssistantUsageContractTest' test
+Tests run: 61, Failures: 0, Errors: 0, Skipped: 0   BUILD SUCCESS
+  AssistantUsageReservationIntegrityTest       4
+  AssistantUsageReservationCostBoundTest      12
+  AssistantUsageReservationConcurrencyTest     5
+  AssistantUsageServiceTest                   12
+  ModelPricingCatalogTest                     25
+  InternalAssistantUsageContractTest           3
+
+# 全量
+cd backend && mvn -o test
+Tests run: 443, Failures: 0, Errors: 0, Skipped: 0   BUILD SUCCESS
+
+cd ai-service && PYTHONPATH=. <venv>/python -m pytest -q
+457 passed, 1 warning in 3.86s
+
+cd ai-service && <venv>/python -m ruff check app tests
+All checks passed!
+
+git diff --check   （无输出）
+```
+
+新增覆盖：输入+输出的保守预占与落库、prompt-heavy 请求在上限内被拒、并发预占无法跨过费用上限、
+缺输出上限/未知价格/价格未生效/缺输入上界四种失败关闭、仅调用次数与无预算 owner 不受影响、
+预占重试保持首次上界且只有一行、释放与终结后名额恢复、用量落库随终结失败整体回滚并可重试、
+重复上报自愈残留 `RESERVED` 且不重复计费、跨 owner 幂等键被拒。
+
+### 8.4 真实 MySQL / Flyway + 内部 HTTP 证明
+
+全新迁移：先完整备份现有库（`/tmp/studypilot-backup-before-task31-fix2.sql`，424 KB / 71 张表，
+不进仓库），再清空 `studypilot`，以真实 MySQL 从零执行 46 个迁移（本分支迁移 + Task 30 的
+`V44__add_agent_tool_action_recovery.sql`，取自 `e40575b`）：
+
+```text
+Flyway: Successfully applied 46 migrations to schema `studypilot`, now at version v46 (execution time 00:01.072s)
+Tomcat started on port 18081 (http) with context path '/'
+Started StudyPilotApplication in 4.485 seconds          # spring.jpa.hibernate.ddl-auto=validate 通过
+```
+
+内部 HTTP（`X-Internal-Service-Token`）预占/记录/重试：
+
+```text
+A(reserve r1, inputBound=2000, cap=512, ceiling=0.0015) -> allowed:true  WITHIN_BUDGET
+A(reserve r1 retry, 同一 usageId)                        -> allowed:true  同一 reservationId/expiresAt（幂等）
+A(reserve r2)                                            -> allowed:false DAILY_ESTIMATED_COST_EXHAUSTED
+A(release r1)                                            -> released:true
+A(reserve r3)                                            -> allowed:true
+A(record r3)       -> estimatedCost:0.00015120 priceWindow:OFF_PEAK priceStatus:KNOWN duplicate:false
+A(record r3 again) -> duplicate:true（金额不变）
+B(费用上限 + 无输出上限)   -> allowed:false BUDGET_OUTPUT_CAP_MISSING
+C(费用上限 + 未知模型)     -> allowed:false BUDGET_PRICE_UNKNOWN
+D(仅调用次数 + 未知模型)   -> allowed:true  WITHIN_BUDGET（保持不变）
+E(无预算配置)             -> allowed:true  NO_BUDGET_CONFIGURED（保持不变）
+F(残留 RESERVED + 重复上报) -> 上报前 RESERVED；上报后 FINALIZED，用量行仍为 1 条，下一次预占重新放行
+```
+
+MySQL 回查 `assistant_usage_reservation`：
+
+```text
+id                        state      input_tokens_upper_bound  max_output  reserved_cost  actual_cost
+proof-cost-...-r1         RELEASED   2000                      512         0.00121440     NULL
+proof-cost-...-r3         FINALIZED  2000                      512         0.00121440     0.00015120
+proof-heal-...-r1         FINALIZED  2000                      512         0.00061440     0.00003000
+proof-heal-...-r2         RESERVED   2000                      512         0.00061440     NULL
+proof-calls-...-r1        RESERVED   2000                      NULL        NULL           NULL
+proof-nobudget-...-r1     RESERVED   2000                      NULL        NULL           NULL
+```
+
+- `proof-cost` 的 `reserved_cost = (2000×0.30 + 512×1.20)/1e6 = 0.00121440`（输入 0.0006 + 输出 0.0006144），
+  与 `holdCost` 设计一致；`input_tokens_upper_bound` 真实落库。
+- `proof-heal` 的 `FINALIZED + actual_cost` 直接证明重复上报自愈了残留 `RESERVED`，且用量行仍只有 1 条。
+- `proof-calls` / `proof-nobudget` 属于"仅调用次数/无预算"的 owner：只保留输出侧诊断值或 `NULL`。
+
+### 8.5 本轮变更文件
+
+- `新增`：`backend/.../db/migration/V46__add_reservation_input_bound.sql`
+- `新增`：`backend/.../agent/usage/AssistantUsageReservationCostBoundTest.java`、
+  `backend/.../agent/usage/AssistantUsageReservationIntegrityTest.java`
+- `新增`：`ai-service/app/providers/input_bound.py`、`ai-service/tests/providers/test_input_bound.py`
+- `修改`：`AssistantUsageService`（原子终结 + 自愈 + 保守预占 + 失败关闭 + 归属守卫）、
+  `AssistantUsageReservationEntity`、`ReserveUsageCommand`、`ReserveAssistantUsageRequest`、
+  `ModelPricingCatalog`（`holdCost`）、`ai-service/app/providers/budget.py`、
+  `ai-service/app/providers/budgeted_model.py`
+- `测试修改`：`AssistantUsageReservationConcurrencyTest`（费用上界语义 + 幂等键按 owner 隔离）、
+  `AssistantUsageServiceTest`（事务管理器替身）、`InternalAssistantUsageContractTest`（payload 新字段）、
+  `ai-service/tests/providers/test_budget_guard.py`、`test_budgeted_model.py`
+
+### 8.6 仍未覆盖 / 已知限制
+
+1. **并发用例跑在 H2 的真实事务与行锁上**，不是 MySQL 上的同一套并发用例；MySQL 侧本轮做的是
+   全新迁移 + 内部 HTTP 串行链路（§8.4）。两者都在真实数据库引擎上，但隔离级别与锁实现不同。
+2. **单次调用的保守上界可能提前拒绝**：若一次调用的"输入上界 + 输出上限"本身就超过当日费用上限，
+   这次调用会被拒（`DAILY_ESTIMATED_COST_EXHAUSTED`）。这是刻意的 fail-closed 取舍。
+3. **输入上界按 UTF-8 字节数取严格上界**，CJK 文本会明显高估 token 数，因此可能更早触发费用上限。
+4. **节假日日历仍未内置**（沿用 §5.1）。
+5. **未重跑真实模型调用**：本 worktree 仍无 `DEEPSEEK_API_KEY` / `.env`；§3.4 属于基线轮次证据。
+6. 未运行 `web/**` 测试；未合并 `main`；未启动 Task 32。
+
+### 8.7 提交
+
+- 本轮修复提交：`11575cc`（`fix: make usage finalization atomic and cost holds conservative`）
+- 本轮文档提交：本次提交，`git log --oneline` 可见
