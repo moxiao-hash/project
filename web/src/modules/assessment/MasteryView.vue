@@ -60,18 +60,36 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { assessmentApi } from '@/services/current/assessment'
 import { describeError } from '@/services/http'
 import { formatDateTime } from '@/utils/datetime'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import type { Mastery } from '@/types/api'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 
+const uiActionAdapterStore = useUiActionAdapterStore()
+
 const mastery = ref<Mastery[]>([])
 const loading = ref(true)
 const error = ref('')
+
+let active = true
+let requestSequence = 0
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'MASTERY',
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (resourceKey !== 'MASTERY') {
+        throw new Error(`不支持刷新的资源: ${resourceKey}`)
+      }
+      return executeRefresh()
+    },
+  },
+}
 
 function scoreClass(score: number): string {
   if (score >= 80) return 'score-high'
@@ -79,19 +97,49 @@ function scoreClass(score: number): string {
   return 'score-low'
 }
 
-async function load() {
+async function executeRefresh(): Promise<boolean> {
+  if (!active) {
+    throw new Error('组件已卸载，无法刷新资源 (inactive)')
+  }
+  const sequence = ++requestSequence
   loading.value = true
   error.value = ''
+
   try {
-    mastery.value = await assessmentApi.listMastery()
+    const data = await assessmentApi.listMastery()
+    if (!active || sequence !== requestSequence) {
+      throw new Error('Load was canceled or superseded by a newer request')
+    }
+    mastery.value = data
+    return true
   } catch (e) {
-    error.value = describeError(e)
+    if (active && sequence === requestSequence) {
+      error.value = describeError(e)
+    }
+    throw e
   } finally {
-    loading.value = false
+    if (active && sequence === requestSequence) {
+      loading.value = false
+    }
   }
 }
 
-onMounted(load)
+function load() {
+  void executeRefresh().catch(() => {
+    // Normal initial/retry UX handles error ref without unhandled rejection
+  })
+}
+
+onMounted(() => {
+  uiActionAdapterStore.register(pageAdapters)
+  load()
+})
+
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+  uiActionAdapterStore.unregister('MASTERY', pageAdapters)
+})
 </script>
 
 <style scoped>

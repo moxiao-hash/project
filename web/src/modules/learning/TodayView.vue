@@ -40,17 +40,20 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { getActivePinia } from 'pinia'
 import { learningApi } from '@/services/current/learning'
 import { describeError } from '@/services/http'
 import { roadmapApi } from '@/services/roadmap'
 import { formatMinutes, todayString } from '@/utils/datetime'
 import type { LearningTask } from '@/types/api'
 import type { RoadmapNodeQuiz, RoadmapScheduleItem } from '@/types/roadmap'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import TaskList from '@/components/TaskList.vue'
 
+const uiActionAdapterStore = getActivePinia() ? useUiActionAdapterStore() : null
 const today = todayString()
 const date = ref(today)
 const tasks = ref<LearningTask[]>([])
@@ -64,6 +67,21 @@ const scheduleError = ref('')
 let requestSequence = 0
 let active = true
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'TODAY',
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (!active) {
+        throw new Error('组件已卸载，无法刷新资源 (inactive)')
+      }
+      if (resourceKey !== 'TODAY_TASKS') {
+        throw new Error(`不支持刷新的资源: ${resourceKey}`)
+      }
+      return await reloadCurrentDate()
+    },
+  },
+}
 
 const summary = computed(() => {
   if (tasks.value.length === 0) return null
@@ -100,24 +118,36 @@ async function loadRoadmapQuizzes(sequence: number) {
   roadmapQuizzes.value = Object.fromEntries(entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null))
   scheduleQuizPoll(sequence)
 }
-async function loadSchedule(sequence: number, selectedDate: string) {
+async function loadSchedule(sequence: number, selectedDate: string): Promise<void> {
   try {
     const schedule = await roadmapApi.getSchedule(selectedDate, selectedDate)
     if (!active || sequence !== requestSequence) return
     roadmapItems.value = schedule.days.find((day) => day.date === selectedDate)?.items ?? []
     await loadRoadmapQuizzes(sequence)
   } catch (cause) {
-    if (!active || sequence !== requestSequence) return
-    if (isNotFound(cause)) roadmapItems.value = []
-    else scheduleError.value = describeError(cause)
-  } finally { if (active && sequence === requestSequence) scheduleLoading.value = false }
+    if (!active || sequence !== requestSequence) throw cause
+    if (isNotFound(cause)) {
+      roadmapItems.value = []
+    } else {
+      scheduleError.value = describeError(cause)
+      throw cause
+    }
+  } finally {
+    if (active && sequence === requestSequence) scheduleLoading.value = false
+  }
 }
-async function loadTasks(sequence: number, selectedDate: string) {
+async function loadTasks(sequence: number, selectedDate: string): Promise<void> {
   try {
     const result = await learningApi.listTasks(selectedDate)
     if (active && sequence === requestSequence) tasks.value = result
-  } catch (cause) { if (active && sequence === requestSequence) error.value = describeError(cause) }
-  finally { if (active && sequence === requestSequence) loading.value = false }
+  } catch (cause) {
+    if (active && sequence === requestSequence) {
+      error.value = describeError(cause)
+    }
+    throw cause
+  } finally {
+    if (active && sequence === requestSequence) loading.value = false
+  }
 }
 async function retryQuiz(nodeId: string) {
   if (retryingNodes.value[nodeId]) return
@@ -132,7 +162,10 @@ async function retryQuiz(nodeId: string) {
     if (active && sequence === requestSequence) retryingNodes.value[nodeId] = false
   }
 }
-function load() {
+async function reloadCurrentDate(): Promise<boolean> {
+  if (!active) {
+    throw new Error('组件已卸载，无法刷新资源 (inactive)')
+  }
   const sequence = ++requestSequence
   const selectedDate = date.value
   stopPolling()
@@ -144,12 +177,44 @@ function load() {
   roadmapItems.value = []
   roadmapQuizzes.value = {}
   retryingNodes.value = {}
-  void loadTasks(sequence, selectedDate)
-  void loadSchedule(sequence, selectedDate)
+
+  let invocationError: unknown = null
+  await Promise.all([
+    loadTasks(sequence, selectedDate).catch((err) => {
+      invocationError = invocationError ?? err
+    }),
+    loadSchedule(sequence, selectedDate).catch((err) => {
+      invocationError = invocationError ?? err
+    }),
+  ])
+
+  if (!active || sequence !== requestSequence) {
+    throw new Error('Load was canceled or superseded by a newer request')
+  }
+
+  if (invocationError) {
+    throw invocationError
+  }
+
+  return true
 }
 
-onMounted(load)
-onBeforeUnmount(() => { active = false; requestSequence += 1; stopPolling() })
+function load() {
+  void reloadCurrentDate().catch(() => {
+    // Non-adapter trigger (e.g. initial mount or date input change) sets error ref internally
+  })
+}
+
+onMounted(() => {
+  uiActionAdapterStore?.register(pageAdapters)
+  load()
+})
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+  stopPolling()
+  uiActionAdapterStore?.unregister('TODAY', pageAdapters)
+})
 </script>
 
 <style scoped>

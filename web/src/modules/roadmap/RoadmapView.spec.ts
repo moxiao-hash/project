@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createPinia, getActivePinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import NodeView from './NodeView.vue'
@@ -9,6 +10,7 @@ import StageView from './StageView.vue'
 import RoadmapNodeCard from './components/RoadmapNodeCard.vue'
 import { roadmapApi } from '@/services/roadmap'
 import type { RoadmapMap, RoadmapNode, RoadmapStage, RoadmapUpgrade } from '@/types/roadmap'
+import { useUiActionAdapterStore } from '@/stores/uiActionAdapter'
 
 vi.mock('@/services/roadmap', () => ({
   roadmapApi: {
@@ -171,21 +173,28 @@ function makeRouter(): Router {
 }
 
 async function mountAt(component: object, path = '/roadmap') {
+  const pinia = getActivePinia() ?? createPinia()
+  setActivePinia(pinia)
   const router = makeRouter()
   await router.push(path)
   await router.isReady()
   return {
     wrapper: mount(component, {
-      global: { plugins: [router], stubs: { teleport: true } },
+      global: { plugins: [pinia, router], stubs: { teleport: true } },
     }),
     router,
+    pinia,
   }
 }
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>((done) => { resolve = done })
-  return { promise, resolve }
+  let reject!: (reason?: any) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
 }
 
 describe('roadmap read views', () => {
@@ -596,5 +605,182 @@ describe('roadmap read views', () => {
     expect(stageView.wrapper.text()).toContain('未找到该路线阶段')
     expect(moduleView.wrapper.text()).toContain('未找到该路线模块')
     expect(nodeView.wrapper.text()).toContain('未找到该学习节点')
+  })
+})
+
+describe('RoadmapView ROADMAP UI action adapter', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.resetAllMocks()
+    vi.mocked(roadmapApi.getUpgrades).mockResolvedValue([])
+    vi.mocked(roadmapApi.getCurrentMap).mockResolvedValue(fixtureRoadmap())
+  })
+
+  it('registers ROADMAP resourceManager adapter on mount and unregisters on unmount', async () => {
+    const adapterStore = useUiActionAdapterStore()
+    expect(adapterStore.getAdaptersForRouteKey('ROADMAP').resourceManager).toBeUndefined()
+
+    const { wrapper } = await mountAt(RoadmapView, '/roadmap')
+    await flushPromises()
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+    expect(registered.resourceManager).toBeDefined()
+    expect(typeof registered.resourceManager?.refresh).toBe('function')
+
+    wrapper.unmount()
+    expect(adapterStore.getAdaptersForRouteKey('ROADMAP').resourceManager).toBeUndefined()
+  })
+
+  it('awaits real load on resourceManager.refresh for ROADMAP and updates data', async () => {
+    const updatedMap = {
+      ...fixtureRoadmap(),
+      title: '更新后的学习路线',
+    }
+    vi.mocked(roadmapApi.getCurrentMap)
+      .mockResolvedValueOnce(fixtureRoadmap())
+      .mockResolvedValueOnce(updatedMap)
+
+    const adapterStore = useUiActionAdapterStore()
+    const { wrapper } = await mountAt(RoadmapView, '/roadmap')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('StudyPilot Java + AI 学习路线')
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+    const refreshResult = await registered.resourceManager!.refresh!('ROADMAP')
+
+    expect(refreshResult).toBe(true)
+    await flushPromises()
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('更新后的学习路线')
+  })
+
+  it('accepts only ROADMAP and rejects any other resourceKey', async () => {
+    const adapterStore = useUiActionAdapterStore()
+    await mountAt(RoadmapView, '/roadmap')
+    await flushPromises()
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+    await expect(registered.resourceManager!.refresh!('LEARNING_GOALS')).rejects.toThrow(
+      '不支持刷新的资源: LEARNING_GOALS',
+    )
+    await expect(registered.resourceManager!.refresh!('MATERIALS')).rejects.toThrow(
+      '不支持刷新的资源: MATERIALS',
+    )
+  })
+
+  it('propagates failure when load encounters an error', async () => {
+    vi.mocked(roadmapApi.getCurrentMap)
+      .mockResolvedValueOnce(fixtureRoadmap())
+      .mockRejectedValueOnce(new Error('网络连接异常'))
+
+    const adapterStore = useUiActionAdapterStore()
+    const { wrapper } = await mountAt(RoadmapView, '/roadmap')
+    await flushPromises()
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+    await expect(registered.resourceManager!.refresh!('ROADMAP')).rejects.toThrow('网络连接异常')
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('学习路线加载失败')
+  })
+
+  it('starts and awaits a real API call when refresh is invoked during an unresolved initial load', async () => {
+    const initialDeferred = deferred<RoadmapMap>()
+    const refreshDeferred = deferred<RoadmapMap>()
+
+    vi.mocked(roadmapApi.getCurrentMap)
+      .mockReturnValueOnce(initialDeferred.promise)
+      .mockReturnValueOnce(refreshDeferred.promise)
+
+    const adapterStore = useUiActionAdapterStore()
+    const { wrapper } = await mountAt(RoadmapView, '/roadmap')
+
+    // Initial mount started the first request
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(1)
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+    let refreshResolved = false
+    const refreshPromise = Promise.resolve(registered.resourceManager!.refresh!('ROADMAP')).then((res) => {
+      refreshResolved = true
+      return res
+    })
+
+    // Refresh must NOT return early or borrow initial request; it must start second API call
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(2)
+    expect(refreshResolved).toBe(false)
+
+    // Resolve initial load; refresh promise must still be pending
+    initialDeferred.resolve(fixtureRoadmap())
+    await flushPromises()
+    expect(refreshResolved).toBe(false)
+
+    // Resolve refresh call with updated data
+    refreshDeferred.resolve({
+      ...fixtureRoadmap(),
+      title: '并发刷新后的学习路线',
+    })
+    const result = await refreshPromise
+    await flushPromises()
+
+    expect(result).toBe(true)
+    expect(wrapper.text()).toContain('并发刷新后的学习路线')
+  })
+
+  it('handles overlapping calls with different outcomes and does not borrow outcomes', async () => {
+    const call1Deferred = deferred<RoadmapMap>()
+    const call2Deferred = deferred<RoadmapMap>()
+
+    vi.mocked(roadmapApi.getCurrentMap)
+      .mockResolvedValueOnce(fixtureRoadmap()) // initial mount
+      .mockReturnValueOnce(call1Deferred.promise) // refresh 1
+      .mockReturnValueOnce(call2Deferred.promise) // refresh 2
+
+    const adapterStore = useUiActionAdapterStore()
+    const { wrapper } = await mountAt(RoadmapView, '/roadmap')
+    await flushPromises()
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+
+    // Start call 1
+    const promise1 = registered.resourceManager!.refresh!('ROADMAP')
+    // Start overlapping call 2 (which supersedes call 1)
+    const promise2 = registered.resourceManager!.refresh!('ROADMAP')
+
+    expect(roadmapApi.getCurrentMap).toHaveBeenCalledTimes(3)
+
+    // Call 1 resolves successfully later, but it is superseded so it should throw/reject as superseded
+    call1Deferred.resolve({
+      ...fixtureRoadmap(),
+      title: '旧的路线数据',
+    })
+
+    // Call 2 fails
+    call2Deferred.reject(new Error('路线数据请求失败'))
+
+    await expect(promise1).rejects.toThrow(/superseded|取消|失效/)
+    await expect(promise2).rejects.toThrow('路线数据请求失败')
+
+    await flushPromises()
+    expect(wrapper.text()).toContain('学习路线加载失败')
+  })
+
+  it('rejects an in-flight refresh if component unmounts before completion', async () => {
+    const pending = deferred<RoadmapMap>()
+    vi.mocked(roadmapApi.getCurrentMap)
+      .mockResolvedValueOnce(fixtureRoadmap())
+      .mockReturnValueOnce(pending.promise)
+
+    const adapterStore = useUiActionAdapterStore()
+    const { wrapper } = await mountAt(RoadmapView, '/roadmap')
+    await flushPromises()
+
+    const registered = adapterStore.getAdaptersForRouteKey('ROADMAP')
+    const refreshPromise = registered.resourceManager!.refresh!('ROADMAP')
+
+    wrapper.unmount()
+    pending.resolve(fixtureRoadmap())
+
+    await expect(refreshPromise).rejects.toThrow(/unmounted|已卸载|superseded/)
   })
 })

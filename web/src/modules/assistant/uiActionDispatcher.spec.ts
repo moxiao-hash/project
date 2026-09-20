@@ -6,6 +6,7 @@ import {
   dispatchUiAction,
   getActionReceipt,
   recordActionReceipt,
+  validateUiActionCapability,
   type UiActionContext,
 } from './uiActionDispatcher'
 
@@ -155,43 +156,64 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('2. OPEN_MODAL action', () => {
-    it('opens allowlisted modal with valid parameters', async () => {
-      const action: AssistantUiAction = {
-        actionId: 'act-modal-1',
-        type: 'OPEN_MODAL',
-        routeKey: 'ROADMAP',
-        params: { modalKey: 'CONFIRM_ACTION', targetId: 'task-100' },
-        reason: '确认操作',
+  describe('2. OPEN_MODAL action & frozen matrix', () => {
+    it('accepts all frozen modal route/modalKey pairs', async () => {
+      const cases = [
+        ['LEARNING_GOALS', 'CREATE_GOAL'],
+        ['LEARNING_PLANS', 'CREATE_PLAN'],
+        ['MATERIALS', 'IMPORT_MATERIAL'],
+      ] as const
+
+      for (const [routeKey, modalKey] of cases) {
+        const action: AssistantUiAction = {
+          actionId: `act-modal-${routeKey}`,
+          type: 'OPEN_MODAL',
+          routeKey,
+          params: { modalKey },
+          reason: '打开弹窗',
+        }
+
+        const receipt = await dispatchUiAction(action, context)
+        expect(modalManager.open).toHaveBeenCalledWith(modalKey, {})
+        expect(receipt.status).toBe('SUCCEEDED')
       }
-
-      const receipt = await dispatchUiAction(action, context)
-
-      expect(modalManager.open).toHaveBeenCalledWith('CONFIRM_ACTION', { targetId: 'task-100' })
-      expect(receipt.status).toBe('SUCCEEDED')
-      expect(receipt.currentRoute).toBe('assistant')
     })
 
-    it('rejects unknown modalKey and does not invoke modal manager', async () => {
+    it('strictly rejects mismatched routeKey and modalKey before invoking modalManager', async () => {
       const action: AssistantUiAction = {
-        actionId: 'act-modal-2',
+        actionId: 'act-modal-mismatch',
         type: 'OPEN_MODAL',
-        routeKey: 'ROADMAP',
-        params: { modalKey: 'UNREGISTERED_POPUP' },
-        reason: '未知弹窗',
+        routeKey: 'MATERIALS', // Expects IMPORT_MATERIAL
+        params: { modalKey: 'CREATE_GOAL' },
+        reason: '跨路由弹窗不合法',
       }
 
       await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的弹窗动作')
       expect(modalManager.open).not.toHaveBeenCalled()
     })
 
+    it('strictly rejects unsupported placeholder modals (e.g. CONFIRM_ACTION, REGISTER_WORKSPACE)', async () => {
+      const unsupported = ['CONFIRM_ACTION', 'REGISTER_WORKSPACE', 'NODE_QUIZ_PREVIEW', 'TASK_CONFIRMATION']
+      for (const modalKey of unsupported) {
+        const action: AssistantUiAction = {
+          actionId: `act-modal-unsupp-${modalKey}`,
+          type: 'OPEN_MODAL',
+          routeKey: 'ROADMAP',
+          params: { modalKey },
+          reason: '占位符弹窗已废弃',
+        }
+        await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的弹窗动作')
+        expect(modalManager.open).not.toHaveBeenCalled()
+      }
+    })
+
     it('does not report success when the registered modal executor is unavailable', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-modal-missing-executor',
         type: 'OPEN_MODAL',
-        routeKey: 'ROADMAP',
-        params: { modalKey: 'CONFIRM_ACTION', targetId: 'task-100' },
-        reason: '确认操作',
+        routeKey: 'LEARNING_GOALS',
+        params: { modalKey: 'CREATE_GOAL' },
+        reason: '创建目标',
       }
 
       await expect(dispatchUiAction(action, { router })).rejects.toThrow('弹窗执行器不可用')
@@ -202,29 +224,97 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('3. PREFILL_FORM action (draft only, strictly no auto-submit)', () => {
-    it('fills form draft store without triggering submit', async () => {
+  describe('3. PREFILL_FORM action & frozen matrix', () => {
+    it('accepts all frozen form route/formKey pairs with valid draft data', async () => {
+      const cases: { routeKey: string; formKey: string; fields: Record<string, string> }[] = [
+        {
+          routeKey: 'LEARNING_GOALS',
+          formKey: 'GOAL_FORM',
+          fields: { title: '目标A', targetDate: '2026-10-01', weeklyStudyHours: '10' },
+        },
+        {
+          routeKey: 'LEARNING_PLANS',
+          formKey: 'PLAN_FORM',
+          fields: { title: '计划B', goalId: 'goal-1', startDate: '2026-10-01', endDate: '2026-10-31' },
+        },
+        {
+          routeKey: 'MATERIALS',
+          formKey: 'MATERIAL_FORM',
+          fields: { title: '资料C', content: '这是一篇学习资料' },
+        },
+      ]
+
+      for (const { routeKey, formKey, fields } of cases) {
+        const action: AssistantUiAction = {
+          actionId: `act-form-${routeKey}`,
+          type: 'PREFILL_FORM',
+          routeKey,
+          params: { formKey, ...fields },
+          reason: '预填草稿',
+        }
+
+        const receipt = await dispatchUiAction(action, context)
+        expect(formDraftStore.setDraft).toHaveBeenCalledWith(formKey, fields)
+        expect(receipt.status).toBe('SUCCEEDED')
+      }
+    })
+
+    it('strictly rejects mismatched routeKey and formKey before invoking formDraftStore', async () => {
       const action: AssistantUiAction = {
-        actionId: 'act-form-1',
+        actionId: 'act-form-mismatch',
+        type: 'PREFILL_FORM',
+        routeKey: 'MATERIALS', // Expects MATERIAL_FORM
+        params: { formKey: 'GOAL_FORM', title: '目标' },
+        reason: '跨路由表单不合法',
+      }
+
+      await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的表单草稿预填')
+      expect(formDraftStore.setDraft).not.toHaveBeenCalled()
+    })
+
+    it('strictly rejects unsupported placeholder form keys (e.g. FEEDBACK_FORM)', async () => {
+      const action: AssistantUiAction = {
+        actionId: 'act-form-feedback',
+        type: 'PREFILL_FORM',
+        routeKey: 'LEARNING_GOALS',
+        params: { formKey: 'FEEDBACK_FORM', content: '意见', category: 'bug' },
+        reason: '意见反馈不属于冻结矩阵',
+      }
+
+      await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的表单草稿预填')
+      expect(formDraftStore.setDraft).not.toHaveBeenCalled()
+    })
+
+    it('strictly rejects forbidden fields targetDate and dailyMinutes on PLAN_FORM', async () => {
+      const actionWithTargetDate: AssistantUiAction = {
+        actionId: 'act-plan-target-date',
         type: 'PREFILL_FORM',
         routeKey: 'LEARNING_PLANS',
         params: {
           formKey: 'PLAN_FORM',
-          title: 'Java 并发强化计划',
+          title: '违规目标日期计划',
           targetDate: '2026-10-01',
+        },
+        reason: '非法 targetDate 字段',
+      }
+      await expect(dispatchUiAction(actionWithTargetDate, context)).rejects.toThrow(
+        '表单草稿包含未授权字段: targetDate',
+      )
+
+      const actionWithDailyMinutes: AssistantUiAction = {
+        actionId: 'act-plan-daily-minutes',
+        type: 'PREFILL_FORM',
+        routeKey: 'LEARNING_PLANS',
+        params: {
+          formKey: 'PLAN_FORM',
+          title: '违规每日分钟计划',
           dailyMinutes: '45',
         },
-        reason: '预填计划草稿',
+        reason: '非法 dailyMinutes 字段',
       }
-
-      const receipt = await dispatchUiAction(action, context)
-
-      expect(formDraftStore.setDraft).toHaveBeenCalledWith('PLAN_FORM', {
-        title: 'Java 并发强化计划',
-        targetDate: '2026-10-01',
-        dailyMinutes: '45',
-      })
-      expect(receipt.status).toBe('SUCCEEDED')
+      await expect(dispatchUiAction(actionWithDailyMinutes, context)).rejects.toThrow(
+        '表单草稿包含未授权字段: dailyMinutes',
+      )
     })
 
     it('strictly rejects any autoSubmit parameter', async () => {
@@ -244,29 +334,12 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       expect(formDraftStore.setDraft).not.toHaveBeenCalled()
     })
 
-    it('strictly rejects unauthorized field names outside allowable draft schema', async () => {
-      const action: AssistantUiAction = {
-        actionId: 'act-form-extra',
-        type: 'PREFILL_FORM',
-        routeKey: 'LEARNING_PLANS',
-        params: {
-          formKey: 'PLAN_FORM',
-          title: '合法标题',
-          unauthorizedField: 'malicious',
-        },
-        reason: '多余字段',
-      }
-
-      await expect(dispatchUiAction(action, context)).rejects.toThrow('表单草稿包含未授权字段')
-      expect(formDraftStore.setDraft).not.toHaveBeenCalled()
-    })
-
     it('does not report success when the registered draft executor is unavailable', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-form-missing-executor',
         type: 'PREFILL_FORM',
         routeKey: 'LEARNING_PLANS',
-        params: { formKey: 'PLAN_FORM', title: '计划草稿' },
+        params: { formKey: 'PLAN_FORM', title: '计划草稿', goalId: 'g-1', startDate: '2026-10-01', endDate: '2026-10-20' },
         reason: '预填计划草稿',
       }
 
@@ -275,20 +348,45 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('4. REFRESH_RESOURCE action', () => {
-    it('refreshes allowlisted resource', async () => {
+  describe('4. REFRESH_RESOURCE action & frozen matrix', () => {
+    it('accepts all 8 frozen resource refresh routeKey/resourceKey pairs', async () => {
+      const cases = [
+        ['ROADMAP', 'ROADMAP'],
+        ['TODAY', 'TODAY_TASKS'],
+        ['LEARNING_GOALS', 'LEARNING_GOALS'],
+        ['LEARNING_PLANS', 'LEARNING_PLANS'],
+        ['NOTIFICATIONS', 'NOTIFICATIONS'],
+        ['WRONG_QUESTIONS', 'WRONG_QUESTIONS'],
+        ['MASTERY', 'MASTERY'],
+        ['AGENT_ACTIVITY', 'ACTIVITY'],
+      ] as const
+
+      for (const [routeKey, resourceKey] of cases) {
+        const action: AssistantUiAction = {
+          actionId: `act-ref-${routeKey}`,
+          type: 'REFRESH_RESOURCE',
+          routeKey,
+          params: { resourceKey },
+          reason: '刷新资源',
+        }
+
+        const receipt = await dispatchUiAction(action, context)
+        expect(resourceManager.refresh).toHaveBeenCalledWith(resourceKey)
+        expect(receipt.status).toBe('SUCCEEDED')
+      }
+    })
+
+    it('strictly rejects mismatched routeKey and resourceKey before invoking resourceManager', async () => {
       const action: AssistantUiAction = {
-        actionId: 'act-ref-1',
+        actionId: 'act-ref-mismatch',
         type: 'REFRESH_RESOURCE',
-        routeKey: 'ROADMAP',
-        params: { resourceKey: 'ROADMAP' },
-        reason: '刷新路线进度',
+        routeKey: 'ROADMAP', // Expects ROADMAP
+        params: { resourceKey: 'NOTIFICATIONS' },
+        reason: '跨路由资源不合法',
       }
 
-      const receipt = await dispatchUiAction(action, context)
-
-      expect(resourceManager.refresh).toHaveBeenCalledWith('ROADMAP')
-      expect(receipt.status).toBe('SUCCEEDED')
+      await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的资源刷新')
+      expect(resourceManager.refresh).not.toHaveBeenCalled()
     })
 
     it('rejects unregistered resource key', async () => {
@@ -318,20 +416,55 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('5. FOCUS_ELEMENT action', () => {
-    it('focuses element by registered elementKey without allowing raw CSS selectors', async () => {
+  describe('5. FOCUS_ELEMENT action & frozen matrix', () => {
+    it('accepts all frozen focus routeKey/elementKey pairs', async () => {
+      const cases = [
+        ['ASSISTANT', 'MESSAGE_INPUT'],
+        ['LEARNING_PLANS', 'PLAN_TITLE_INPUT'],
+      ] as const
+
+      for (const [routeKey, elementKey] of cases) {
+        const action: AssistantUiAction = {
+          actionId: `act-focus-${routeKey}`,
+          type: 'FOCUS_ELEMENT',
+          routeKey,
+          params: { elementKey },
+          reason: '聚焦元素',
+        }
+
+        const receipt = await dispatchUiAction(action, context)
+        expect(focusManager.focus).toHaveBeenCalledWith(elementKey)
+        expect(receipt.status).toBe('SUCCEEDED')
+      }
+    })
+
+    it('strictly rejects mismatched routeKey and elementKey before invoking focusManager', async () => {
       const action: AssistantUiAction = {
-        actionId: 'act-focus-1',
+        actionId: 'act-focus-mismatch',
         type: 'FOCUS_ELEMENT',
-        routeKey: 'TODAY',
-        params: { elementKey: 'CHECKIN_SUMMARY_INPUT' },
-        reason: '聚焦打卡总结输入框',
+        routeKey: 'LEARNING_PLANS', // Expects PLAN_TITLE_INPUT
+        params: { elementKey: 'MESSAGE_INPUT' },
+        reason: '跨路由聚焦不匹配',
       }
 
-      const receipt = await dispatchUiAction(action, context)
+      await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的元素聚焦')
+      expect(focusManager.focus).not.toHaveBeenCalled()
+    })
 
-      expect(focusManager.focus).toHaveBeenCalledWith('CHECKIN_SUMMARY_INPUT')
-      expect(receipt.status).toBe('SUCCEEDED')
+    it('strictly rejects unsupported placeholder element keys (e.g. STUDY_INPUT, SEARCH_INPUT)', async () => {
+      const unsupported = ['STUDY_INPUT', 'SEARCH_INPUT', 'QUIZ_ANSWER_AREA', 'ARTIFACT_REVIEW_BUTTON']
+      for (const elementKey of unsupported) {
+        const action: AssistantUiAction = {
+          actionId: `act-focus-unsupp-${elementKey}`,
+          type: 'FOCUS_ELEMENT',
+          routeKey: 'ASSISTANT',
+          params: { elementKey },
+          reason: '占位元素已剔除',
+        }
+
+        await expect(dispatchUiAction(action, context)).rejects.toThrow('不受支持的元素聚焦')
+        expect(focusManager.focus).not.toHaveBeenCalled()
+      }
     })
 
     it('strictly rejects raw CSS selectors in elementKey', async () => {
@@ -347,7 +480,7 @@ describe('assistant UI action dispatcher (Task 30)', () => {
         const action: AssistantUiAction = {
           actionId: `act-focus-bad-${selector}`,
           type: 'FOCUS_ELEMENT',
-          routeKey: 'TODAY',
+          routeKey: 'ASSISTANT',
           params: { elementKey: selector },
           reason: '尝试传入选择器',
         }
@@ -361,9 +494,9 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       const action: AssistantUiAction = {
         actionId: 'act-focus-missing-executor',
         type: 'FOCUS_ELEMENT',
-        routeKey: 'TODAY',
-        params: { elementKey: 'CHECKIN_SUMMARY_INPUT' },
-        reason: '聚焦总结输入框',
+        routeKey: 'ASSISTANT',
+        params: { elementKey: 'MESSAGE_INPUT' },
+        reason: '聚焦输入框',
       }
 
       await expect(dispatchUiAction(action, { router })).rejects.toThrow('元素聚焦执行器不可用')
@@ -371,15 +504,51 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('6. Parameter Security and Defense in Depth', () => {
+  describe('6. Pure preflight validation helper validateUiActionCapability', () => {
+    it('passes for aligned frozen pairs without requiring router or context', () => {
+      expect(() =>
+        validateUiActionCapability({
+          actionId: 'test-preflight-1',
+          type: 'OPEN_MODAL',
+          routeKey: 'LEARNING_GOALS',
+          params: { modalKey: 'CREATE_GOAL' },
+          reason: 'preflight check',
+        }),
+      ).not.toThrow()
+
+      expect(() =>
+        validateUiActionCapability({
+          actionId: 'test-preflight-2',
+          type: 'REFRESH_RESOURCE',
+          routeKey: 'NOTIFICATIONS',
+          params: { resourceKey: 'NOTIFICATIONS' },
+          reason: 'preflight check',
+        }),
+      ).not.toThrow()
+    })
+
+    it('throws error for mismatched or unallowed capability before navigation or execution', () => {
+      expect(() =>
+        validateUiActionCapability({
+          actionId: 'test-preflight-bad',
+          type: 'OPEN_MODAL',
+          routeKey: 'ROADMAP',
+          params: { modalKey: 'CREATE_GOAL' },
+          reason: 'mismatched',
+        }),
+      ).toThrow('不受支持的弹窗动作')
+    })
+  })
+
+  describe('7. Parameter Security and Defense in Depth', () => {
     it('rejects action-specific extra fields before invoking an executor', async () => {
       const cases: Array<{ action: AssistantUiAction; executor: ReturnType<typeof vi.fn> }> = [
         {
           action: {
             actionId: 'act-modal-extra-field',
             type: 'OPEN_MODAL',
-            routeKey: 'ROADMAP',
-            params: { modalKey: 'CONFIRM_ACTION', targetId: 'task-1', arbitraryText: 'hidden' },
+            routeKey: 'LEARNING_GOALS',
+            params: { modalKey: 'CREATE_GOAL', arbitraryText: 'hidden' },
             reason: '弹窗',
           },
           executor: modalManager.open,
@@ -398,8 +567,8 @@ describe('assistant UI action dispatcher (Task 30)', () => {
           action: {
             actionId: 'act-focus-extra-field',
             type: 'FOCUS_ELEMENT',
-            routeKey: 'TODAY',
-            params: { elementKey: 'CHECKIN_SUMMARY_INPUT', arbitraryText: 'hidden' },
+            routeKey: 'ASSISTANT',
+            params: { elementKey: 'MESSAGE_INPUT', arbitraryText: 'hidden' },
             reason: '聚焦',
           },
           executor: focusManager.focus,
@@ -433,6 +602,9 @@ describe('assistant UI action dispatcher (Task 30)', () => {
         params: {
           formKey: 'PLAN_FORM',
           title: '<script>alert("xss")</script>',
+          goalId: 'g-1',
+          startDate: '2026-10-01',
+          endDate: '2026-10-30',
         },
         reason: 'XSS 注入',
       }
@@ -463,7 +635,7 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('7. Authenticity Protection (用户专属行为严禁代办)', () => {
+  describe('8. Authenticity Protection (用户专属行为严禁代办)', () => {
     it('rejects "替我答题" and only allows navigating to quiz page', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-auth-quiz',
@@ -492,7 +664,7 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       expect(router.push).toHaveBeenCalledWith({ name: 'quiz', params: { id: 'quiz-1' } })
     })
 
-    it('rejects "替我写打卡总结" and degrades to focus summary input', async () => {
+    it('rejects "替我写打卡总结"', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-auth-checkin',
         type: 'PREFILL_FORM',
@@ -505,21 +677,9 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       }
 
       await expect(dispatchUiAction(action, context)).rejects.toThrow('打卡总结属于用户专属思考，严禁代办')
-
-      const safeFocusAction: AssistantUiAction = {
-        actionId: 'act-auth-checkin-focus',
-        type: 'FOCUS_ELEMENT',
-        routeKey: 'TODAY',
-        params: { elementKey: 'CHECKIN_SUMMARY_INPUT' },
-        reason: '聚焦打卡输入框由用户独立总结',
-      }
-
-      const receipt = await dispatchUiAction(safeFocusAction, context)
-      expect(receipt.status).toBe('SUCCEEDED')
-      expect(focusManager.focus).toHaveBeenCalledWith('CHECKIN_SUMMARY_INPUT')
     })
 
-    it('rejects "直接接受成果" and only allows focusing review button', async () => {
+    it('rejects "直接接受成果"', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-auth-artifact',
         type: 'PREFILL_FORM',
@@ -535,7 +695,7 @@ describe('assistant UI action dispatcher (Task 30)', () => {
     })
   })
 
-  describe('8. Action Receipt Adapter & Idempotence', () => {
+  describe('9. Action Receipt Adapter & Idempotence', () => {
     it('returns identical receipt on duplicate actionId without re-executing action', async () => {
       const action: AssistantUiAction = {
         actionId: 'act-idemp-1',
@@ -590,6 +750,170 @@ describe('assistant UI action dispatcher (Task 30)', () => {
       expect(receipt?.error).not.toMatch(/http:\/\//)
       expect(receipt?.error).not.toMatch(/node_modules/)
       expect(receipt?.currentRoute).toBe('assistant')
+    })
+
+    describe('Scope isolation for in-memory terminal receipts', () => {
+      it('deduplicates identical actionId within the same scope', async () => {
+        const action: AssistantUiAction = {
+          actionId: 'act-scope-dup',
+          type: 'REFRESH_RESOURCE',
+          routeKey: 'ROADMAP',
+          params: { resourceKey: 'ROADMAP' },
+          reason: '刷新路线',
+        }
+        const scopedContext: UiActionContext = {
+          ...context,
+          receiptScope: 'userA:conv1',
+        }
+
+        const receipt1 = await dispatchUiAction(action, scopedContext)
+        expect(receipt1.status).toBe('SUCCEEDED')
+        expect(resourceManager.refresh).toHaveBeenCalledTimes(1)
+
+        const receipt2 = await dispatchUiAction(action, scopedContext)
+        expect(receipt2).toEqual(receipt1)
+        expect(resourceManager.refresh).toHaveBeenCalledTimes(1)
+        expect(receipt1).not.toHaveProperty('receiptScope')
+        expect(receipt1).not.toHaveProperty('scope')
+      })
+
+      it('executes separately and maintains distinct receipts for same actionId in different scopes', async () => {
+        const action: AssistantUiAction = {
+          actionId: 'act-shared-id',
+          type: 'REFRESH_RESOURCE',
+          routeKey: 'ROADMAP',
+          params: { resourceKey: 'ROADMAP' },
+          reason: '刷新路线',
+        }
+        const contextScopeA: UiActionContext = {
+          ...context,
+          receiptScope: 'owner-100:conv-1',
+        }
+        const contextScopeB: UiActionContext = {
+          ...context,
+          receiptScope: 'owner-200:conv-2',
+        }
+
+        const receiptA = await dispatchUiAction(action, contextScopeA)
+        expect(receiptA.status).toBe('SUCCEEDED')
+        expect(resourceManager.refresh).toHaveBeenCalledTimes(1)
+
+        const receiptB = await dispatchUiAction(action, contextScopeB)
+        expect(receiptB.status).toBe('SUCCEEDED')
+        expect(resourceManager.refresh).toHaveBeenCalledTimes(2)
+
+        const cachedA = getActionReceipt('act-shared-id', 'owner-100:conv-1')
+        const cachedB = getActionReceipt('act-shared-id', 'owner-200:conv-2')
+        expect(cachedA).toBeDefined()
+        expect(cachedB).toBeDefined()
+        expect(cachedA).not.toBe(cachedB)
+        expect(cachedA?.actionId).toBe('act-shared-id')
+        expect(cachedB?.actionId).toBe('act-shared-id')
+        // Wire receipts remain unchanged and contain no scope property
+        expect(cachedA).not.toHaveProperty('scope')
+        expect(cachedA).not.toHaveProperty('receiptScope')
+        expect(cachedB).not.toHaveProperty('scope')
+        expect(cachedB).not.toHaveProperty('receiptScope')
+      })
+
+      it('rejects invalid or unsafe receiptScope (empty, whitespace, overly long, or containing token/email pattern)', async () => {
+        const action: AssistantUiAction = {
+          actionId: 'act-scope-invalid',
+          type: 'REFRESH_RESOURCE',
+          routeKey: 'ROADMAP',
+          params: { resourceKey: 'ROADMAP' },
+          reason: '刷新路线',
+        }
+
+        // Empty string scope
+        await expect(
+          dispatchUiAction(action, { ...context, receiptScope: '   ' }),
+        ).rejects.toThrow('receiptScope')
+
+        // Scope containing email
+        await expect(
+          dispatchUiAction(action, { ...context, receiptScope: 'user@example.com:conv1' }),
+        ).rejects.toThrow('receiptScope')
+
+        // Scope containing Bearer token
+        await expect(
+          dispatchUiAction(action, { ...context, receiptScope: 'Bearer eyJhbGciOi' }),
+        ).rejects.toThrow('receiptScope')
+
+        // Scope exceeding length bound
+        const tooLongScope = 'a'.repeat(257)
+        await expect(
+          dispatchUiAction(action, { ...context, receiptScope: tooLongScope }),
+        ).rejects.toThrow('receiptScope')
+      })
+    })
+
+    describe('Stable actionId boundary enforcement', () => {
+      it('rejects execution when actionId is undefined and performs zero side effects or receipt writes', async () => {
+        const actionWithoutId: AssistantUiAction = {
+          type: 'NAVIGATE',
+          routeKey: 'ROADMAP_NODE',
+          params: { nodeId: 'node-1' },
+          reason: '缺少 actionId 的导航动作',
+        }
+
+        await expect(dispatchUiAction(actionWithoutId, context)).rejects.toThrow(
+          '动作必须包含合法的 stable actionId',
+        )
+
+        expect(router.push).not.toHaveBeenCalled()
+        expect(modalManager.open).not.toHaveBeenCalled()
+        expect(formDraftStore.setDraft).not.toHaveBeenCalled()
+        expect(resourceManager.refresh).not.toHaveBeenCalled()
+        expect(focusManager.focus).not.toHaveBeenCalled()
+
+        // Verify zero retrievable receipts under empty, undefined, or generated key patterns
+        expect(getActionReceipt('')).toBeUndefined()
+        expect(getActionReceipt('undefined')).toBeUndefined()
+      })
+
+      it('rejects execution when actionId is whitespace-only and performs zero side effects or receipt writes', async () => {
+        const actionWithBlankId: AssistantUiAction = {
+          actionId: '    \t\n   ',
+          type: 'OPEN_MODAL',
+          routeKey: 'LEARNING_GOALS',
+          params: { modalKey: 'CREATE_GOAL' },
+          reason: '空白 actionId 的动作',
+        }
+
+        await expect(dispatchUiAction(actionWithBlankId, context)).rejects.toThrow(
+          '动作必须包含合法的 stable actionId',
+        )
+
+        expect(router.push).not.toHaveBeenCalled()
+        expect(modalManager.open).not.toHaveBeenCalled()
+        expect(formDraftStore.setDraft).not.toHaveBeenCalled()
+        expect(resourceManager.refresh).not.toHaveBeenCalled()
+        expect(focusManager.focus).not.toHaveBeenCalled()
+
+        expect(getActionReceipt('    \t\n   ')).toBeUndefined()
+        expect(getActionReceipt('')).toBeUndefined()
+      })
+
+      it('trims leading/trailing whitespace on valid actionId and preserves existing execution behavior', async () => {
+        const actionWithPaddedId: AssistantUiAction = {
+          actionId: '  act-trimmed-valid-1  ',
+          type: 'REFRESH_RESOURCE',
+          routeKey: 'ROADMAP',
+          params: { resourceKey: 'ROADMAP' },
+          reason: '刷新路线',
+        }
+
+        const receipt = await dispatchUiAction(actionWithPaddedId, context)
+
+        expect(resourceManager.refresh).toHaveBeenCalledWith('ROADMAP')
+        expect(receipt.actionId).toBe('act-trimmed-valid-1')
+        expect(receipt.status).toBe('SUCCEEDED')
+
+        const cached = getActionReceipt('act-trimmed-valid-1')
+        expect(cached?.actionId).toBe('act-trimmed-valid-1')
+        expect(cached?.status).toBe('SUCCEEDED')
+      })
     })
   })
 })

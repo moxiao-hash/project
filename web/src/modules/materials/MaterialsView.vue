@@ -118,11 +118,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { materialsApi } from '@/services/current/materials'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import {
   materialCategoryLabels,
   materialStatusBadge,
@@ -187,9 +188,57 @@ async function load() {
     materials.value = await materialsApi.list()
   } catch (e) {
     error.value = describeError(e)
+    throw e
   } finally {
     loading.value = false
   }
+}
+
+function hasUnsavedEdits(): boolean {
+  const hasTitle = importForm.title.trim().length > 0
+  const hasContent = importForm.content.trim().length > 0
+  const hasUrl = importForm.url.trim().length > 0
+  const hasFile = importForm.file !== null
+  return hasTitle || hasContent || hasUrl || hasFile
+}
+
+const uiActionAdapterStore = useUiActionAdapterStore()
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'MATERIALS',
+  modalManager: {
+    open: async (modalKey: string) => {
+      if (modalKey === 'IMPORT_MATERIAL') {
+        importOpen.value = true
+        await nextTick()
+        if (!importOpen.value) {
+          throw new Error('打开导入资料面板失败')
+        }
+        return true
+      }
+      throw new Error(`不支持的资料弹窗: ${modalKey}`)
+    },
+  },
+  formDraftStore: {
+    setDraft: (formKey: string, draft: Record<string, unknown>) => {
+      if (formKey !== 'MATERIAL_FORM') {
+        throw new Error(`不支持的资料表单: ${formKey}`)
+      }
+      if (hasUnsavedEdits()) {
+        throw new Error('资料表单存在未保存的修改，请先保存或清空')
+      }
+      importOpen.value = true
+      importTab.value = 'text'
+      if (typeof draft.title === 'string') {
+        importForm.title = draft.title
+      }
+      if (typeof draft.content === 'string') {
+        importForm.content = draft.content
+      } else {
+        importForm.content = ''
+      }
+    },
+  },
 }
 
 async function onImport() {
@@ -259,7 +308,14 @@ async function onImport() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  uiActionAdapterStore.register(pageAdapters)
+  void load()
+})
+
+onUnmounted(() => {
+  uiActionAdapterStore.unregister('MATERIALS', pageAdapters)
+})
 </script>
 
 <style scoped>

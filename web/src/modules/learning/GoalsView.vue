@@ -73,10 +73,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { learningApi } from '@/services/current/learning'
 import { describeError, getApiError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import { addDays, todayString } from '@/utils/datetime'
 import type { GoalStatus, LearningGoal } from '@/types/api'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -85,6 +86,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const toast = useToastStore()
+const uiActionAdapterStore = useUiActionAdapterStore()
 const goals = ref<LearningGoal[]>([])
 const loading = ref(true)
 const error = ref('')
@@ -97,6 +99,66 @@ const formErrors = reactive<Record<string, string>>({})
 const form = reactive({ title: '', targetDate: '', weeklyStudyHours: 10 })
 
 const minDate = addDays(todayString(), 1)
+
+function hasUnsavedEdits(): boolean {
+  if (editingGoal.value !== null) return true
+  const hasTitle = form.title.trim().length > 0
+  const hasTargetDate = form.targetDate.trim().length > 0
+  const hasChangedHours = form.weeklyStudyHours !== 10
+  return hasTitle || hasTargetDate || hasChangedHours
+}
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'LEARNING_GOALS',
+  modalManager: {
+    open: async (modalKey: string) => {
+      if (modalKey === 'CREATE_GOAL') {
+        openCreate()
+        await nextTick()
+        if (!dialogOpen.value || editingGoal.value !== null) {
+          throw new Error('打开新建目标弹窗失败')
+        }
+        return true
+      }
+      throw new Error(`不支持的目标弹窗: ${modalKey}`)
+    },
+  },
+  formDraftStore: {
+    setDraft: (formKey: string, draft: Record<string, unknown>) => {
+      if (formKey !== 'GOAL_FORM') {
+        throw new Error(`不支持的目标表单: ${formKey}`)
+      }
+      if (hasUnsavedEdits()) {
+        throw new Error('目标表单存在未保存的修改，请先保存或清空')
+      }
+      openCreate()
+      if (typeof draft.title === 'string') {
+        form.title = draft.title
+      }
+      if (typeof draft.targetDate === 'string') {
+        form.targetDate = draft.targetDate
+      }
+      if (draft.weeklyStudyHours !== undefined && draft.weeklyStudyHours !== null) {
+        const parsedHours =
+          typeof draft.weeklyStudyHours === 'number'
+            ? draft.weeklyStudyHours
+            : parseInt(String(draft.weeklyStudyHours), 10)
+        if (!Number.isNaN(parsedHours)) {
+          form.weeklyStudyHours = parsedHours
+        }
+      }
+    },
+  },
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (resourceKey === 'LEARNING_GOALS') {
+        await load()
+        return true
+      }
+      throw new Error(`不支持刷新的资源: ${resourceKey}`)
+    },
+  },
+}
 
 function goalStatusLabel(_status: GoalStatus): string {
   return '进行中'
@@ -118,6 +180,7 @@ async function load() {
     goals.value = await learningApi.listGoals()
   } catch (e) {
     error.value = describeError(e)
+    throw e
   } finally {
     loading.value = false
   }
@@ -193,7 +256,14 @@ async function onSave() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  uiActionAdapterStore.register(pageAdapters)
+  void load().catch(() => {})
+})
+
+onUnmounted(() => {
+  uiActionAdapterStore.unregister('LEARNING_GOALS', pageAdapters)
+})
 </script>
 
 <style scoped>
