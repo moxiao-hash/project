@@ -474,4 +474,5 @@ proof-nobudget-...-r1     RESERVED   2000                      NULL        NULL 
 ### 8.7 提交
 
 - 本轮修复提交：`11575cc`（`fix: make usage finalization atomic and cost holds conservative`）
-- 本轮文档提交：本次提交，`git log --oneline` 可见
+- 本轮文档提交：`2a5d2c1`（`docs: verify task 31 atomic finalization and cost holds`）
+- 后续仅回填本哈希的小提交见 `git log --oneline`（不改动被测代码）
