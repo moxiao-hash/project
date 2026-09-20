@@ -3,6 +3,66 @@ import { computed, ref } from 'vue'
 import { authApi } from '@/services/current/auth'
 import { TOKEN_EXPIRES_KEY, TOKEN_STORAGE_KEY } from '@/services/http'
 import type { User } from '@/types/api'
+import { clearAllOwnerUiActionLifecycles, clearOwnerUiActionLifecycle } from '@/modules/assistant/ownerUiActionLifecycle'
+import { useUiActionAdapterStore } from './uiActionAdapter'
+
+const ASSISTANT_CONVERSATION_KEY = 'studypilot.assistantConversationId'
+const LAST_SEQ_PREFIX = 'studypilot.lastSeq.'
+
+function clearOwnerIsolationState(previousOwnerId?: string | null): void {
+  // 1. Reset live adapter store registrations so no page executor/draft adapter survives
+  try {
+    const adapterStore = useUiActionAdapterStore()
+    adapterStore.clearAll()
+  } catch {
+    // Suppress store resolution or reset errors
+  }
+
+  if (typeof window === 'undefined' || !window.sessionStorage) {
+    return
+  }
+
+  const storage = window.sessionStorage
+
+  // 2. Clear exact previous owner's lifecycle records if known, otherwise clear all owner lifecycles
+  if (previousOwnerId) {
+    try {
+      clearOwnerUiActionLifecycle(storage, previousOwnerId)
+    } catch {
+      // Storage enumeration/removal exceptions must not prevent auth cleanup
+    }
+  } else {
+    try {
+      clearAllOwnerUiActionLifecycles(storage)
+    } catch {
+      // Storage enumeration/removal exceptions must not prevent auth cleanup
+    }
+  }
+
+  // 3. Remove unscoped conversation ID and all sequence cursors (studypilot.lastSeq.*)
+  try {
+    storage.removeItem(ASSISTANT_CONVERSATION_KEY)
+  } catch {
+    // Ignore storage errors
+  }
+
+  try {
+    if (typeof storage.length === 'number' && typeof storage.key === 'function') {
+      const keysToRemove: string[] = []
+      for (let i = 0; i < storage.length; i++) {
+        const key = storage.key(i)
+        if (key && key.startsWith(LAST_SEQ_PREFIX)) {
+          keysToRemove.push(key)
+        }
+      }
+      for (const key of keysToRemove) {
+        storage.removeItem(key)
+      }
+    }
+  } catch {
+    // Ignore storage enumeration/removal errors
+  }
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const accessToken = ref<string | null>(sessionStorage.getItem(TOKEN_STORAGE_KEY))
@@ -13,10 +73,21 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => accessToken.value !== null)
 
   function applySession(token: string, expiresAt: string, u: User) {
+    const previousOwnerId = user.value?.id
+    const isDifferentOwner = previousOwnerId && previousOwnerId !== u.id
+
+    if (isDifferentOwner) {
+      clearOwnerIsolationState(previousOwnerId)
+    }
+
     accessToken.value = token
     user.value = u
-    sessionStorage.setItem(TOKEN_STORAGE_KEY, token)
-    sessionStorage.setItem(TOKEN_EXPIRES_KEY, expiresAt)
+    try {
+      sessionStorage.setItem(TOKEN_STORAGE_KEY, token)
+      sessionStorage.setItem(TOKEN_EXPIRES_KEY, expiresAt)
+    } catch {
+      // Storage failure must not prevent in-memory auth state update
+    }
   }
 
   async function login(email: string, password: string) {
@@ -48,10 +119,17 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function clearSession() {
+    const previousOwnerId = user.value?.id
+    clearOwnerIsolationState(previousOwnerId)
+
     accessToken.value = null
     user.value = null
-    sessionStorage.removeItem(TOKEN_STORAGE_KEY)
-    sessionStorage.removeItem(TOKEN_EXPIRES_KEY)
+    try {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY)
+      sessionStorage.removeItem(TOKEN_EXPIRES_KEY)
+    } catch {
+      // Storage removal failure must not prevent state nulling
+    }
   }
 
   async function logout() {
@@ -68,6 +146,7 @@ export const useAuthStore = defineStore('auth', () => {
     user,
     restored,
     isAuthenticated,
+    applySession,
     login,
     register,
     restore,

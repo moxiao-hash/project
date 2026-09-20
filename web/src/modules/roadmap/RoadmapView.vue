@@ -28,7 +28,7 @@
         class="btn btn-secondary"
         data-testid="roadmap-retry"
         :disabled="loading"
-        @click="load"
+        @click="retryLoad"
       >重试</button>
     </section>
 
@@ -120,13 +120,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUnmounted, ref } from 'vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { roadmapApi } from '@/services/roadmap'
 import type { RoadmapMap, RoadmapUpgrade } from '@/types/roadmap'
 import RoadmapGraph from './components/RoadmapGraph.vue'
 import RoadmapList from './components/RoadmapList.vue'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 
 const roadmap = ref<RoadmapMap | null>(null)
 const loading = ref(false)
@@ -139,8 +140,21 @@ const upgradeDialogOpen = ref(false)
 const upgradeLoading = ref(false)
 const upgradeError = ref('')
 const viewMode = ref<'graph' | 'list'>('graph')
+const uiActionAdapterStore = useUiActionAdapterStore()
 let active = true
 let requestSequence = 0
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'ROADMAP',
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (resourceKey === 'ROADMAP') {
+        return await load()
+      }
+      throw new Error(`不支持刷新的资源: ${resourceKey}`)
+    },
+  },
+}
 
 const progressPercent = computed(() => {
   if (!roadmap.value?.totalRequiredNodes) return 0
@@ -151,25 +165,51 @@ function isNotFound(value: unknown) {
   return (value as { response?: { status?: number } })?.response?.status === 404
 }
 
-async function load() {
-  if (!active || loading.value) return
+async function load(): Promise<boolean> {
+  if (!active) {
+    throw new Error('组件已卸载 (unmounted)')
+  }
   const sequence = ++requestSequence
   loading.value = true
   error.value = false
   notEnrolled.value = false
+
   try {
     const result = await roadmapApi.getCurrentMap()
-    if (!active || sequence !== requestSequence) return
+    if (!active) {
+      throw new Error('组件已卸载 (unmounted)')
+    }
+    if (sequence !== requestSequence) {
+      throw new Error('路线加载已被新请求覆盖 (superseded)')
+    }
     roadmap.value = result
     void loadUpgrade(result.templateVersion, sequence)
+    return true
   } catch (cause) {
-    if (!active || sequence !== requestSequence) return
+    if (!active) {
+      throw cause instanceof Error && cause.message.includes('unmounted')
+        ? cause
+        : new Error('组件已卸载 (unmounted)')
+    }
+    if (sequence !== requestSequence) {
+      throw cause instanceof Error && cause.message.includes('superseded')
+        ? cause
+        : new Error('路线加载已被新请求覆盖 (superseded)')
+    }
     roadmap.value = null
     if (isNotFound(cause)) notEnrolled.value = true
     else error.value = true
+    throw cause
   } finally {
-    if (active && sequence === requestSequence) loading.value = false
+    if (active && sequence === requestSequence) {
+      loading.value = false
+    }
   }
+}
+
+function retryLoad() {
+  if (loading.value) return
+  void load().catch(() => {})
 }
 
 async function enroll() {
@@ -179,7 +219,7 @@ async function enroll() {
   try {
     await roadmapApi.enroll('studypilot-java-ai', 2)
     if (!active) return
-    await load()
+    await load().catch(() => {})
   } catch {
     if (!active) return
     notEnrolled.value = true
@@ -214,7 +254,7 @@ async function confirmUpgrade() {
     await roadmapApi.confirmUpgrade(upgrade.value.id)
     if (!active) return
     upgradeDialogOpen.value = false
-    await load()
+    await load().catch(() => {})
   } catch {
     if (active) upgradeError.value = '升级失败，当前路线没有变化，请稍后重试。'
   } finally {
@@ -222,10 +262,16 @@ async function confirmUpgrade() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  uiActionAdapterStore.register(pageAdapters)
+  void load().catch(() => {})
+})
 onBeforeUnmount(() => {
   active = false
   requestSequence += 1
+})
+onUnmounted(() => {
+  uiActionAdapterStore.unregister('ROADMAP', pageAdapters)
 })
 </script>
 

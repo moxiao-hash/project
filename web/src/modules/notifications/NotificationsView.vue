@@ -49,10 +49,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { getActivePinia } from 'pinia'
 import { agentOpsApi } from '@/services/current/agentOps'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import { formatDateTime } from '@/utils/datetime'
 import { notificationTypeLabels } from '@/utils/labels'
 import type { Notification, NotificationType } from '@/types/api'
@@ -61,10 +63,29 @@ import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 
 const toast = useToastStore()
+const uiActionAdapterStore = getActivePinia() ? useUiActionAdapterStore() : null
 const notifications = ref<Notification[]>([])
 const loading = ref(true)
 const error = ref('')
 const markingAll = ref(false)
+
+let requestSequence = 0
+let active = true
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'NOTIFICATIONS',
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (!active) {
+        throw new Error('组件已卸载，无法刷新资源 (inactive)')
+      }
+      if (resourceKey !== 'NOTIFICATIONS') {
+        throw new Error(`不支持刷新的资源: ${resourceKey}`)
+      }
+      return await reloadNotifications()
+    },
+  },
+}
 
 function icon(type: NotificationType): string {
   const map: Record<NotificationType, string> = {
@@ -78,16 +99,37 @@ function icon(type: NotificationType): string {
   return map[type]
 }
 
-async function load() {
+async function reloadNotifications(): Promise<boolean> {
+  if (!active) {
+    throw new Error('组件已卸载，无法刷新资源 (inactive)')
+  }
+  const sequence = ++requestSequence
   loading.value = true
   error.value = ''
+
   try {
-    notifications.value = await agentOpsApi.listNotifications()
-  } catch (e) {
-    error.value = describeError(e)
+    const list = await agentOpsApi.listNotifications()
+    if (!active || sequence !== requestSequence) {
+      throw new Error('Load was canceled or superseded by a newer request')
+    }
+    notifications.value = list
+    return true
+  } catch (err) {
+    if (active && sequence === requestSequence) {
+      error.value = describeError(err)
+    }
+    throw err
   } finally {
-    loading.value = false
+    if (active && sequence === requestSequence) {
+      loading.value = false
+    }
   }
+}
+
+function load() {
+  void reloadNotifications().catch(() => {
+    // Normal initial/retry UI rendering relies on error.value set above; swallow unhandled rejections for component lifecycle callers
+  })
 }
 
 async function markRead(id: string) {
@@ -115,7 +157,16 @@ async function markAllRead() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  uiActionAdapterStore?.register(pageAdapters)
+  load()
+})
+
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+  uiActionAdapterStore?.unregister('NOTIFICATIONS', pageAdapters)
+})
 </script>
 
 <style scoped>

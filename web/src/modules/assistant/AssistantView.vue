@@ -108,6 +108,7 @@
 
         <form class="composer" @submit.prevent="send">
           <textarea
+            ref="messageInputRef"
             v-model.trim="message"
             class="composer-input"
             rows="2"
@@ -135,15 +136,25 @@ import {
   type EventStreamStatus,
 } from '@/services/current/assistant'
 import { describeError } from '@/services/http'
+import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import type { AssistantConversation, AssistantUiAction, UiActionReceipt } from '@/types/assistant'
-import { dispatchUiAction, getActionReceipt } from './uiActionDispatcher'
+import { executeCrossRouteUiAction } from './crossRouteUiActionExecutor'
+import { OwnerUiActionLifecycle } from './ownerUiActionLifecycle'
+import { getActionReceipt } from './uiActionDispatcher'
 
 const STORAGE_KEY = 'studypilot.assistantConversationId'
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
 const toast = useToastStore()
+const uiActionAdapterStore = useUiActionAdapterStore()
 
+let actionLifecycle: OwnerUiActionLifecycle | null = null
+let receiptScope: string | null = null
+
+const messageInputRef = ref<HTMLTextAreaElement | null>(null)
 const conversation = ref<AssistantConversation | null>(null)
 const message = ref('')
 const loading = ref(true)
@@ -156,9 +167,9 @@ let latestTurnGeneration = 0
 let activeGeneration = 0
 const terminalTurns = new Set<string>()
 
+let assistantPageAdapters: PageAdapters | null = null
 let streamController: AssistantEventStreamController | null = null
-const dispatchedActions = new Set<string>()
-const pendingActionReceipts = new Map<string, UiActionReceipt>()
+let isUnmounted = false
 
 const prompts = [
   { icon: '↗', title: '继续学习', text: '继续昨天没学完的章节' },
@@ -512,9 +523,21 @@ onMounted(async () => {
       activeGeneration = ++latestTurnGeneration
     }
 
-    // 抑制历史动作重放：初始化时将快照中已有的 uiActions 标记为历史动作，避免重载时重复导航
-    for (const action of conversation.value.uiActions) {
-      dispatchedActions.add(`historical:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`)
+    // 抑制历史动作重放与持久化生命周期绑定
+    const ownerId = authStore.user?.id ? String(authStore.user.id) : null
+    if (!ownerId) {
+      actionLifecycle = null
+      receiptScope = null
+      toast.warning('未检测到当前用户信息，自动操作回执功能降级，请通过菜单手动操作')
+    } else {
+      const convId = conversation.value.conversationId
+      actionLifecycle = new OwnerUiActionLifecycle({
+        ownerId,
+        conversationId: convId,
+        storage: sessionStorage,
+      })
+      receiptScope = `${ownerId}::${convId}`
+      void flushPendingReceipts(actionLifecycle, ownerId, convId)
     }
 
     // 协调起点游标：优先使用快照中的 lastEventSequence，防止从 0 重放历史事件
@@ -532,9 +555,54 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+
+  // 注册 ASSISTANT 生产级聚焦适配器
+  assistantPageAdapters = {
+    routeKey: 'ASSISTANT',
+    focusManager: {
+      focus: async (elementKey: string): Promise<boolean> => {
+        if (elementKey !== 'MESSAGE_INPUT') {
+          throw new Error(`不支持的助手聚焦元素: ${elementKey}`)
+        }
+        const timeoutMs = 1500
+        const intervalMs = 25
+        const startTime = Date.now()
+
+        while (!isUnmounted && Date.now() - startTime <= timeoutMs) {
+          const el = messageInputRef.value
+          if (el && !el.disabled) {
+            el.focus()
+            const isFocused = typeof document === 'undefined' || document.activeElement === el
+            if (isFocused) {
+              return true
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, intervalMs))
+        }
+
+        if (isUnmounted) {
+          throw new Error('助手页面已卸载，聚焦取消')
+        }
+        const el = messageInputRef.value
+        if (!el) {
+          throw new Error('消息输入框不存在')
+        }
+        if (el.disabled) {
+          throw new Error('消息输入框处于禁用状态，聚焦超时')
+        }
+        throw new Error('消息输入框聚焦失败')
+      },
+    },
+  }
+  uiActionAdapterStore.register(assistantPageAdapters)
 })
 
 onBeforeUnmount(() => {
+  isUnmounted = true
+  if (assistantPageAdapters) {
+    uiActionAdapterStore.unregister('ASSISTANT', assistantPageAdapters)
+    assistantPageAdapters = null
+  }
   streamController?.close()
   streamController = null
 })
@@ -588,7 +656,6 @@ async function send() {
     const ownMessage = conversation.value.messages.find(m => m.role === 'assistant' && m.turnId === turnId)
     if (latestTurnGeneration === turnGeneration && ownMessage?.status !== 'failed' && ownMessage?.status !== 'cancelled') {
       mergeTurnResult(turnId, result)
-      await executeUiActions(turnId)
     }
   } catch (error) {
     if (activeGeneration === turnGeneration && activeTurnId.value === turnId && !terminalTurns.has(turnId)) {
@@ -601,6 +668,12 @@ async function send() {
       activeTurnId.value = null
       activeGeneration = 0
     }
+  }
+
+  // send finally 结算解除禁用后再执行 REST 快照动作，彻底杜绝 send 结算与焦点等待互锁
+  const ownMessageAfter = conversation.value?.messages.find(m => m.role === 'assistant' && m.turnId === turnId)
+  if (latestTurnGeneration === turnGeneration && ownMessageAfter?.status !== 'failed' && ownMessageAfter?.status !== 'cancelled') {
+    await executeUiActions(turnId)
   }
 }
 
@@ -641,46 +714,173 @@ async function cancelCurrentTurn() {
   }
 }
 
-async function safeDispatchUiAction(action: AssistantUiAction, turnId?: string) {
-  // 基于 actionId 或 turnId + routeKey + params 联合去重，既防止同轮内重复触发，又支持不同新轮次访问同一路由
-  const actionKey = action.actionId || `${turnId || 'global'}:${action.type}:${action.routeKey}:${JSON.stringify(action.params)}`
-  if (dispatchedActions.has(actionKey)) {
-    const pendingReceipt = pendingActionReceipts.get(actionKey)
-    if (conversation.value?.conversationId && pendingReceipt) {
-      try {
-        await assistantApi.reportActionReceipt(conversation.value.conversationId, pendingReceipt)
-        pendingActionReceipts.delete(actionKey)
-      } catch {
-        // 保留待上报回执，等待同一持久化事件重放时继续重试。
-      }
+function resolveCurrentRouteName(): string {
+  const currentRoute = router?.currentRoute as any
+  if (currentRoute && 'value' in currentRoute) {
+    return (currentRoute.value?.name as string) || 'assistant'
+  }
+  return (currentRoute?.name as string) || 'assistant'
+}
+
+function isLifecycleAndOwnerValid(lifecycle: OwnerUiActionLifecycle, ownerId: string): boolean {
+  return lifecycle.isValid() && String(authStore.user?.id ?? '') === ownerId
+}
+
+async function publishReceipt(
+  lifecycle: OwnerUiActionLifecycle,
+  ownerId: string,
+  conversationId: string,
+  receipt: UiActionReceipt,
+): Promise<void> {
+  const actionId = receipt.actionId
+
+  // Wire receipt must never include receiptScope
+  const wireReceipt: UiActionReceipt = {
+    actionId: receipt.actionId,
+    status: receipt.status,
+    currentRoute: receipt.currentRoute,
+    error: receipt.error,
+  }
+
+  // Check validity and owner immediately before the API call
+  if (!isLifecycleAndOwnerValid(lifecycle, ownerId)) {
+    lifecycle.releaseRuntimeClaim(actionId)
+    return
+  }
+
+  try {
+    await assistantApi.reportActionReceipt(conversationId, wireReceipt)
+    if (!isLifecycleAndOwnerValid(lifecycle, ownerId)) {
+      lifecycle.releaseRuntimeClaim(actionId)
+      return
+    }
+    lifecycle.markReported(actionId)
+  } catch (err: unknown) {
+    if (!isLifecycleAndOwnerValid(lifecycle, ownerId)) {
+      lifecycle.releaseRuntimeClaim(actionId)
+      return
+    }
+    const errorMsg = describeError(err)
+    lifecycle.markReportFailure(actionId, errorMsg)
+    const record = lifecycle.get(actionId)
+    if (record && record.reportAttempts >= 3) {
+      toast.warning('自动操作回执上报达到上限，建议刷新或通过页面菜单手动完成操作')
+    }
+  }
+}
+
+async function flushPendingReceipts(
+  lifecycle: OwnerUiActionLifecycle,
+  ownerId: string,
+  conversationId: string,
+): Promise<void> {
+  if (!isLifecycleAndOwnerValid(lifecycle, ownerId)) {
+    return
+  }
+
+  const pendingSummaries = lifecycle.getPendingReceipts()
+  for (const summary of pendingSummaries) {
+    if (!isLifecycleAndOwnerValid(lifecycle, ownerId)) {
+      return
+    }
+    await publishReceipt(lifecycle, ownerId, conversationId, summary.receipt)
+  }
+
+  if (!isLifecycleAndOwnerValid(lifecycle, ownerId)) {
+    return
+  }
+
+  const exhausted = lifecycle.getExhaustedReceipts()
+  if (exhausted.length > 0) {
+    toast.warning('存在未能上报的操作回执，建议通过菜单手动确认操作状态')
+  }
+}
+
+async function safeDispatchUiAction(action: AssistantUiAction, _turnId?: string) {
+  const actionId = action.actionId
+  if (!actionId) {
+    return
+  }
+
+  if (!actionLifecycle || !receiptScope || !conversation.value?.conversationId) {
+    toast.warning('自动操作持久化生命周期未就绪，请手动操作')
+    return
+  }
+
+  // Capture local constants to guard against logout/switch race conditions across awaits
+  const capturedLifecycle = actionLifecycle
+  const capturedOwnerId = authStore.user?.id ? String(authStore.user.id) : ''
+  const capturedReceiptScope = receiptScope
+  const capturedConversationId = conversation.value.conversationId
+
+  if (!capturedOwnerId || !isLifecycleAndOwnerValid(capturedLifecycle, capturedOwnerId)) {
+    return
+  }
+
+  const claimResult = capturedLifecycle.claim(actionId)
+  if (!claimResult.granted) {
+    const existing = capturedLifecycle.get(actionId)
+    if (existing?.lifecycleState === 'TERMINAL' && existing.receipt && !existing.reported) {
+      await publishReceipt(capturedLifecycle, capturedOwnerId, capturedConversationId, existing.receipt)
     }
     return
   }
-  dispatchedActions.add(actionKey)
+
+  if (!claimResult.persistenceOk) {
+    if (!isLifecycleAndOwnerValid(capturedLifecycle, capturedOwnerId)) {
+      capturedLifecycle.releaseRuntimeClaim(actionId)
+      return
+    }
+    const completed = capturedLifecycle.complete(actionId, {
+      status: 'FAILED',
+      currentRoute: resolveCurrentRouteName(),
+      error: 'Storage unavailable for durable UI action lifecycle',
+    })
+    await publishReceipt(capturedLifecycle, capturedOwnerId, capturedConversationId, completed)
+    toast.warning('存储不可用，已取消自动操作，请通过菜单手动操作')
+    return
+  }
 
   let receipt: UiActionReceipt | undefined
   try {
-    receipt = await dispatchUiAction(action, { router })
-  } catch {
+    receipt = await executeCrossRouteUiAction({
+      action,
+      router,
+      registry: uiActionAdapterStore,
+      receiptScope: capturedReceiptScope,
+    })
+  } catch (err: any) {
+    // After executeCrossRouteUiAction settles, check validity before toast or receipt recovery
+    if (!isLifecycleAndOwnerValid(capturedLifecycle, capturedOwnerId)) {
+      capturedLifecycle.releaseRuntimeClaim(actionId)
+      return
+    }
     toast.warning('自动打开页面失败，你仍可通过左侧菜单继续操作')
-    receipt = getActionReceipt(action.actionId || actionKey) || {
-      actionId: action.actionId || actionKey,
+    receipt = getActionReceipt(actionId, capturedReceiptScope) || {
+      actionId,
       status: 'FAILED',
-      currentRoute: (router.currentRoute.value?.name as string) || 'assistant',
-      error: '自动打开页面失败',
+      currentRoute: resolveCurrentRouteName(),
+      error: err?.message || '自动打开页面失败',
     }
   }
 
-  // 异步上报动作回执给 Java 门面（若后端尚在开发，静默捕获不影响页面流程）
-  if (conversation.value?.conversationId && receipt) {
-    pendingActionReceipts.set(actionKey, receipt)
-    try {
-      await assistantApi.reportActionReceipt(conversation.value.conversationId, receipt)
-      pendingActionReceipts.delete(actionKey)
-    } catch {
-      // 保留待上报回执，等待同一持久化事件重放时继续重试。
-    }
+  // Check validity before completion, persistence, or report
+  if (!isLifecycleAndOwnerValid(capturedLifecycle, capturedOwnerId)) {
+    capturedLifecycle.releaseRuntimeClaim(actionId)
+    return
   }
+
+  const terminalStatus = receipt?.status || 'FAILED'
+  const terminalRoute = receipt?.currentRoute || resolveCurrentRouteName()
+  const terminalError = receipt?.error || null
+
+  const terminalReceipt = capturedLifecycle.complete(actionId, {
+    status: terminalStatus,
+    currentRoute: terminalRoute,
+    error: terminalError,
+  })
+
+  await publishReceipt(capturedLifecycle, capturedOwnerId, capturedConversationId, terminalReceipt)
 }
 
 async function executeUiActions(turnId?: string) {

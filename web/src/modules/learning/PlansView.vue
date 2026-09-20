@@ -61,7 +61,7 @@
             </div>
             <div class="form-field">
               <label class="form-label">计划名称</label>
-              <input v-model.trim="form.title" class="input" maxlength="120" placeholder="例如：第一阶段 · 基础入门" required />
+              <input ref="titleInputRef" v-model.trim="form.title" class="input" maxlength="120" placeholder="例如：第一阶段 · 基础入门" required />
             </div>
             <div class="form-field">
               <label class="form-label">开始日期</label>
@@ -87,10 +87,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { learningApi } from '@/services/current/learning'
 import { describeError, getApiError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import { planStatusBadge, planStatusLabels } from '@/utils/labels'
 import { todayString } from '@/utils/datetime'
 import type { LearningGoal, LearningPlan } from '@/types/api'
@@ -100,6 +101,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const toast = useToastStore()
+const uiActionAdapterStore = useUiActionAdapterStore()
 const plans = ref<LearningPlan[]>([])
 const goals = ref<LearningGoal[]>([])
 const loading = ref(true)
@@ -110,7 +112,97 @@ const dialogOpen = ref(false)
 const saving = ref(false)
 const formError = ref('')
 const formErrorField = ref('')
+const titleInputRef = ref<HTMLInputElement | null>(null)
 const form = reactive({ goalId: '', title: '', startDate: todayString(), endDate: '' })
+
+function hasUnsavedEdits(): boolean {
+  if (!dialogOpen.value) return false
+  const hasTitle = form.title.trim().length > 0
+  const hasEndDate = form.endDate.trim().length > 0
+  const defaultGoalId = goals.value[0]?.id ?? ''
+  const hasChangedGoal = form.goalId !== '' && form.goalId !== defaultGoalId
+  const hasChangedStartDate = form.startDate !== '' && form.startDate !== todayString()
+  return hasTitle || hasEndDate || hasChangedGoal || hasChangedStartDate
+}
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'LEARNING_PLANS',
+  modalManager: {
+    open: async (modalKey: string) => {
+      if (modalKey === 'CREATE_PLAN') {
+        openCreate()
+        await nextTick()
+        if (!dialogOpen.value) {
+          throw new Error('打开新建计划弹窗失败')
+        }
+        return true
+      }
+      throw new Error(`不支持的计划弹窗: ${modalKey}`)
+    },
+  },
+  formDraftStore: {
+    setDraft: (formKey: string, draft: Record<string, unknown>) => {
+      if (formKey !== 'PLAN_FORM') {
+        throw new Error(`不支持的计划表单: ${formKey}`)
+      }
+      if ('targetDate' in draft || 'dailyMinutes' in draft) {
+        throw new Error('PLAN_FORM 不接受 targetDate 或 dailyMinutes 字段')
+      }
+      if (hasUnsavedEdits()) {
+        throw new Error('计划表单存在未保存的修改，请先保存或清空')
+      }
+      if (!dialogOpen.value) {
+        openCreate()
+      }
+      if (typeof draft.title === 'string') {
+        form.title = draft.title
+      }
+      if (typeof draft.goalId === 'string') {
+        form.goalId = draft.goalId
+      }
+      if (typeof draft.startDate === 'string') {
+        form.startDate = draft.startDate
+      }
+      if (typeof draft.endDate === 'string') {
+        form.endDate = draft.endDate
+      }
+    },
+  },
+  focusManager: {
+    focus: async (elementKey: string): Promise<boolean> => {
+      if (elementKey === 'PLAN_TITLE_INPUT') {
+        if (!dialogOpen.value) {
+          openCreate()
+          await nextTick()
+        }
+        const el =
+          titleInputRef.value ||
+          (document.body.querySelector('input[placeholder*="第一阶段"]') as HTMLInputElement | null)
+        if (!el) {
+          throw new Error('未找到计划标题输入框')
+        }
+        el.focus()
+        if (typeof document !== 'undefined' && document.activeElement !== el) {
+          throw new Error('计划标题输入框聚焦失败')
+        }
+        return true
+      }
+      throw new Error(`不支持的聚焦元素: ${elementKey}`)
+    },
+  },
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (resourceKey === 'LEARNING_PLANS') {
+        await load()
+        if (error.value) {
+          throw new Error(error.value)
+        }
+        return true
+      }
+      throw new Error(`不支持刷新的资源: ${resourceKey}`)
+    },
+  },
+}
 
 function goalTitle(goalId: string): string {
   return goals.value.find((g) => g.id === goalId)?.title ?? '未知目标'
@@ -128,6 +220,7 @@ async function load() {
     goals.value = goalList
   } catch (e) {
     error.value = describeError(e)
+    throw e
   } finally {
     loading.value = false
   }
@@ -183,7 +276,14 @@ async function onSave() {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  uiActionAdapterStore.register(pageAdapters)
+  void load()
+})
+
+onUnmounted(() => {
+  uiActionAdapterStore.unregister('LEARNING_PLANS', pageAdapters)
+})
 </script>
 
 <style scoped>

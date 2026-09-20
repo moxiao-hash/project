@@ -153,10 +153,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { agentOpsApi } from '@/services/current/agentOps'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import { formatDateTime } from '@/utils/datetime'
 import {
   agentScopeLabels,
@@ -173,6 +174,7 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const toast = useToastStore()
+const uiActionAdapterStore = useUiActionAdapterStore()
 
 const tabs = [
   { key: 'executions' as const, label: '执行记录' },
@@ -193,6 +195,21 @@ const auditLogs = ref<AuditLog[]>([])
 const auditLoading = ref(true)
 const auditError = ref('')
 
+let active = true
+let requestSequence = 0
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'AGENT_ACTIVITY',
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (resourceKey !== 'ACTIVITY') {
+        throw new Error(`不支持刷新的资源: ${resourceKey}`)
+      }
+      return executeRefresh()
+    },
+  },
+}
+
 const grantDialog = ref(false)
 const creatingGrant = ref(false)
 const grantError = ref('')
@@ -211,39 +228,120 @@ const minExpiry = computed(() => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 })
 
+async function executeRefresh(): Promise<boolean> {
+  if (!active) {
+    throw new Error('组件已卸载，无法刷新资源 (inactive)')
+  }
+  const sequence = ++requestSequence
+
+  executionsLoading.value = true
+  executionsError.value = ''
+  grantsLoading.value = true
+  grantsError.value = ''
+  auditLoading.value = true
+  auditError.value = ''
+
+  const [execResult, grantResult, auditResult] = await Promise.allSettled([
+    agentOpsApi.listExecutions(),
+    agentOpsApi.listGrants(),
+    agentOpsApi.listAuditLogs(),
+  ])
+
+  if (!active || sequence !== requestSequence) {
+    throw new Error('Load was canceled or superseded by a newer request')
+  }
+
+  executionsLoading.value = false
+  grantsLoading.value = false
+  auditLoading.value = false
+
+  let firstError: unknown = null
+
+  if (execResult.status === 'fulfilled') {
+    executions.value = execResult.value
+  } else {
+    executionsError.value = describeError(execResult.reason)
+    if (!firstError) firstError = execResult.reason
+  }
+
+  if (grantResult.status === 'fulfilled') {
+    grants.value = grantResult.value
+  } else {
+    grantsError.value = describeError(grantResult.reason)
+    if (!firstError) firstError = grantResult.reason
+  }
+
+  if (auditResult.status === 'fulfilled') {
+    auditLogs.value = auditResult.value
+  } else {
+    auditError.value = describeError(auditResult.reason)
+    if (!firstError) firstError = auditResult.reason
+  }
+
+  if (firstError) {
+    throw firstError
+  }
+
+  return true
+}
+
 async function loadExecutions() {
+  if (!active) return
   executionsLoading.value = true
   executionsError.value = ''
   try {
-    executions.value = await agentOpsApi.listExecutions()
+    const data = await agentOpsApi.listExecutions()
+    if (active) {
+      executions.value = data
+    }
   } catch (e) {
-    executionsError.value = describeError(e)
+    if (active) {
+      executionsError.value = describeError(e)
+    }
   } finally {
-    executionsLoading.value = false
+    if (active) {
+      executionsLoading.value = false
+    }
   }
 }
 
 async function loadGrants() {
+  if (!active) return
   grantsLoading.value = true
   grantsError.value = ''
   try {
-    grants.value = await agentOpsApi.listGrants()
+    const data = await agentOpsApi.listGrants()
+    if (active) {
+      grants.value = data
+    }
   } catch (e) {
-    grantsError.value = describeError(e)
+    if (active) {
+      grantsError.value = describeError(e)
+    }
   } finally {
-    grantsLoading.value = false
+    if (active) {
+      grantsLoading.value = false
+    }
   }
 }
 
 async function loadAudit() {
+  if (!active) return
   auditLoading.value = true
   auditError.value = ''
   try {
-    auditLogs.value = await agentOpsApi.listAuditLogs()
+    const data = await agentOpsApi.listAuditLogs()
+    if (active) {
+      auditLogs.value = data
+    }
   } catch (e) {
-    auditError.value = describeError(e)
+    if (active) {
+      auditError.value = describeError(e)
+    }
   } finally {
-    auditLoading.value = false
+    if (active) {
+      auditLoading.value = false
+    }
   }
 }
 
@@ -276,9 +374,15 @@ async function onCreateGrant() {
 }
 
 onMounted(() => {
-  void loadExecutions()
-  void loadGrants()
-  void loadAudit()
+  uiActionAdapterStore.register(pageAdapters)
+  void executeRefresh().catch(() => {
+    // Normal initial mount handles per-section errors without unhandled rejection
+  })
+})
+
+onBeforeUnmount(() => {
+  active = false
+  uiActionAdapterStore.unregister('AGENT_ACTIVITY', pageAdapters)
 })
 </script>
 

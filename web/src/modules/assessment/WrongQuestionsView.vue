@@ -117,11 +117,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { assessmentApi } from '@/services/current/assessment'
 import { describeError } from '@/services/http'
 import { useToastStore } from '@/stores/toast'
+import { useUiActionAdapterStore, type PageAdapters } from '@/stores/uiActionAdapter'
 import type { WrongQuestion, WrongQuestionReview, WrongQuestionStatus, WrongQuestionSummary } from '@/types/api'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
@@ -129,6 +130,8 @@ import LoadingBlock from '@/components/LoadingBlock.vue'
 const router = useRouter()
 const route = useRoute()
 const toast = useToastStore()
+const uiActionAdapterStore = useUiActionAdapterStore()
+
 const mode = ref<'review' | 'redo'>(route.query.mode === 'redo' ? 'redo' : 'review')
 const status = ref<WrongQuestionStatus>('ACTIVE')
 const chapterKey = ref('')
@@ -142,6 +145,21 @@ const error = ref('')
 const pageIndex = ref(0)
 const pageSize = 20
 const totalElements = ref(0)
+
+let active = true
+let requestSequence = 0
+
+const pageAdapters: PageAdapters = {
+  routeKey: 'WRONG_QUESTIONS',
+  resourceManager: {
+    refresh: async (resourceKey: string) => {
+      if (resourceKey !== 'WRONG_QUESTIONS') {
+        throw new Error(`不支持刷新的资源: ${resourceKey}`)
+      }
+      return executeRefresh()
+    },
+  },
+}
 
 const activeChapters = computed(() => summary.value?.chapters.filter((c) => c.activeCount > 0) ?? [])
 const selectedActiveCount = computed(() => {
@@ -165,12 +183,18 @@ function changePage(next: number) {
 }
 
 async function loadQuestions() {
+  const currentStatus = status.value
+  const currentChapterKey = chapterKey.value || undefined
+  const currentPage = pageIndex.value
+  const currentSize = pageSize
+
   const page = await assessmentApi.listWrongQuestions({
-    status: status.value,
-    chapterKey: chapterKey.value || undefined,
-    page: pageIndex.value,
-    size: pageSize,
+    status: currentStatus,
+    chapterKey: currentChapterKey,
+    page: currentPage,
+    size: currentSize,
   })
+  if (!active) return
   questions.value = page.items
   totalElements.value = page.totalElements
 }
@@ -195,28 +219,72 @@ async function startRedo() {
   }
 }
 
-async function load() {
+async function executeRefresh(): Promise<boolean> {
+  if (!active) {
+    throw new Error('组件已卸载，无法刷新资源 (inactive)')
+  }
+  const sequence = ++requestSequence
   loading.value = true
   error.value = ''
+
+  const currentStatus = status.value
+  const currentChapterKey = chapterKey.value || undefined
+  const currentPage = pageIndex.value
+  const currentSize = pageSize
+
   try {
-    const [nextSummary, review] = await Promise.all([
+    const [nextSummary, review, page] = await Promise.all([
       assessmentApi.getWrongQuestionSummary(),
       assessmentApi.getCurrentWrongQuestionReview(),
+      assessmentApi.listWrongQuestions({
+        status: currentStatus,
+        chapterKey: currentChapterKey,
+        page: currentPage,
+        size: currentSize,
+      }),
     ])
+
+    if (!active || sequence !== requestSequence) {
+      throw new Error('Load was canceled or superseded by a newer request')
+    }
+
     summary.value = nextSummary
     currentReview.value = review
-    await loadQuestions()
+    questions.value = page.items
+    totalElements.value = page.totalElements
+    return true
   } catch (e) {
-    error.value = describeError(e)
+    if (active && sequence === requestSequence) {
+      error.value = describeError(e)
+    }
+    throw e
   } finally {
-    loading.value = false
+    if (active && sequence === requestSequence) {
+      loading.value = false
+    }
   }
+}
+
+function load() {
+  void executeRefresh().catch(() => {
+    // Normal initial/retry UX handles error ref without unhandled rejection
+  })
 }
 
 watch(mode, (next) => {
   if (next === 'review') void loadQuestions()
 })
-onMounted(load)
+
+onMounted(() => {
+  uiActionAdapterStore.register(pageAdapters)
+  load()
+})
+
+onBeforeUnmount(() => {
+  active = false
+  requestSequence += 1
+  uiActionAdapterStore.unregister('WRONG_QUESTIONS', pageAdapters)
+})
 </script>
 
 <style scoped>
