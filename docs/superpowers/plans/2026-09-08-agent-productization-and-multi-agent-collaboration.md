@@ -237,7 +237,7 @@ Task 28 与 29 可在契约冻结后分支并行；Task 30 与 31 可并行；Ta
 
 **Files:**
 
-- Create: `backend/src/main/resources/db/migration/V44__add_assistant_usage_budget.sql`
+- Create: `backend/src/main/resources/db/migration/V45__add_assistant_usage_budget.sql`（Task 30 已占用 V44，Task 31 顺延到 V45）
 - Create: `backend/src/main/java/com/moxiao/studypilot/agent/usage/AssistantUsageService.java`
 - Create: `backend/src/main/java/com/moxiao/studypilot/agent/usage/ModelPricingCatalog.java`
 - Modify: `backend/src/main/java/com/moxiao/studypilot/agent/api/AssistantHealthResponse.java`

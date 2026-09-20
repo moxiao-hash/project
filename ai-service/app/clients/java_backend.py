@@ -693,6 +693,26 @@ class JavaBackendClient:
         )
         return response.json()
 
+    async def record_assistant_usage(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """上报一次模型调用用量；`usageId` 是 AI 侧生成的幂等键。"""
+
+        response = await self._request(
+            "POST",
+            "/internal/assistant-usage",
+            json=payload,
+        )
+        return response.json()
+
+    async def get_assistant_budget(self, owner_id: str) -> dict[str, Any]:
+        """读取 owner 当前预算判定与单轮输出上限。"""
+
+        response = await self._request(
+            "GET",
+            "/internal/assistant-usage/budget",
+            params={"ownerId": owner_id},
+        )
+        return response.json()
+
     async def _request(
         self,
         method: str,

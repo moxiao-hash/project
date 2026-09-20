@@ -6,6 +6,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.knowledge.models import KnowledgeCitation
+from app.observability.usage import bind_max_output_tokens
 from app.teaching.models import TeachingAnswer, TeachingTurn
 
 
@@ -35,7 +36,7 @@ class DeepSeekTeachingAnswerer:
     ) -> TeachingAnswer:
         history_text = "\n".join(f"{role}: {content}" for role, content in history)
         result = TeachingTurn.model_validate(
-            await self._model.ainvoke(
+            await bind_max_output_tokens(self._model).ainvoke(
                 [
                     SystemMessage(
                         content=(

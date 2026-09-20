@@ -12,6 +12,7 @@ from app.agent.adjustment_models import (
     classify_adjustment_risk,
 )
 from app.clients.java_backend import JavaBackendClient
+from app.observability.usage import bind_max_output_tokens
 from app.schemas.agent import CreatePlanAdjustmentAgentExecutionRequest
 from app.schemas.learning import (
     AdaptationContext,
@@ -71,7 +72,7 @@ class DeepSeekAdjustmentGenerator:
         for attempt in range(2):
             try:
                 return PlanAdjustmentDraft.model_validate(
-                    await self._model.ainvoke(messages)
+                    await bind_max_output_tokens(self._model).ainvoke(messages)
                 )
             except Exception as exc:
                 if attempt == 1:

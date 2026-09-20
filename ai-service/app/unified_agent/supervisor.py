@@ -15,7 +15,9 @@ from langgraph.graph import END, START, StateGraph
 from app.clients.java_backend import JavaBackendClient
 from app.knowledge.models import KnowledgeMode, WebSearchPolicy
 from app.observability.agent_metrics import AGENT_RUNTIME_METRICS, AgentRuntimeMetrics
+from app.observability.usage import UsageScope, usage_scope
 from app.persistence.agent_state import AgentPersistence
+from app.providers.budget import ModelBudgetGuard
 from app.unified_agent.event_stream import (
     DEFAULT_HEARTBEAT_SECONDS,
     DEFAULT_QUEUE_SIZE,
@@ -97,6 +99,8 @@ class SupervisorState(TypedDict, total=False):
     plan_resume: dict[str, Any] | None
     # Task 29：知识问答已实时推送真实模型增量时置真，收尾不再重复分片。
     reply_streamed: bool
+    # Task 31：本轮是否允许新的模型调用；false 时只允许纯 Java 查询/导航。
+    budget_allowed: bool
 
 
 @dataclass
@@ -146,6 +150,7 @@ class UnifiedAgentSupervisor:
         self._events = AssistantEventBus(queue_size=event_queue_size)
         self._event_heartbeat_seconds = event_heartbeat_seconds
         self._reply_delta_source = reply_delta_source
+        self._budget = ModelBudgetGuard(java_backend)
         self._graph = self._build_graph()
 
     async def _emit(
@@ -833,6 +838,7 @@ class UnifiedAgentSupervisor:
                     }
                 )
             else:
+                budget = await self._budget.check(owner_id)
                 gateway = UnifiedToolGateway(
                     self._java, owner_id, ToolBudget(),
                     is_cancelled=lambda: conversation.cancel_requested_turn_id == idempotency_key,
@@ -840,25 +846,32 @@ class UnifiedAgentSupervisor:
                 )
                 turn_started = monotonic()
                 try:
-                    values = await self._graph.ainvoke(
-                        {
-                            "owner_id": owner_id,
-                            "message": message,
-                            "idempotency_key": idempotency_key,
-                            # 客户端上下文只是提示。当前确定性路由不从中读取 ownerId，
-                            # 后续使用实体 ID 时仍必须由 Java 工具重新校验归属。
-                            "client_context": client_context,
-                            "gateway": gateway,
-                            "emit_event": self._emit_callback(conversation),
-                            "is_cancelled": lambda: (
-                                conversation.cancel_requested_turn_id
-                                == idempotency_key
-                            ),
-                            "knowledge_conversation_id": (
-                                conversation.knowledge_conversation_id
-                            ),
-                        }
-                    )
+                    with usage_scope(UsageScope(
+                        owner_id=owner_id,
+                        conversation_id=conversation_id,
+                        turn_id=idempotency_key,
+                        max_output_tokens=budget.max_output_tokens_per_turn,
+                    )):
+                        values = await self._graph.ainvoke(
+                            {
+                                "owner_id": owner_id,
+                                "message": message,
+                                "idempotency_key": idempotency_key,
+                                # 客户端上下文只是提示。当前确定性路由不从中读取 ownerId，
+                                # 后续使用实体 ID 时仍必须由 Java 工具重新校验归属。
+                                "client_context": client_context,
+                                "gateway": gateway,
+                                "emit_event": self._emit_callback(conversation),
+                                "is_cancelled": lambda: (
+                                    conversation.cancel_requested_turn_id
+                                    == idempotency_key
+                                ),
+                                "knowledge_conversation_id": (
+                                    conversation.knowledge_conversation_id
+                                ),
+                                "budget_allowed": budget.allowed,
+                            }
+                        )
                 except ToolTurnCancelledError:
                     values = {"intent": "UNKNOWN"}
                 except BaseException as exc:
@@ -1165,7 +1178,11 @@ class UnifiedAgentSupervisor:
 
             # Task 28：先尝试模型多步规划。计划必须已通过确定性策略校验；
             # 模型不可用时保持原有已验证的关键词降级层。
-            planner = await self._planner_for_turn(state["owner_id"])
+            planner = (
+                await self._planner_for_turn(state["owner_id"])
+                if state.get("budget_allowed", True)
+                else None
+            )
             if planner is not None:
                 planner_outcome = await planner.propose(
                     message=message,
@@ -1687,6 +1704,24 @@ class UnifiedAgentSupervisor:
                     ],
                 }
 
+            if (
+                self._knowledge_services is not None
+                and not state.get("budget_allowed", True)
+                and any(word in message for word in ("查找", "搜索", "解释", "什么是", "怎么学"))
+            ):
+                # 预算耗尽时拒绝新的模型调用，但仍给出可执行的纯 Java 导航入口。
+                return {
+                    "intent": AssistantIntent.NAVIGATION,
+                    "reply": (
+                        "本次模型预算已用尽，暂时无法生成新的知识回答；"
+                        "你可以继续打开学习资料或查询已有内容。"
+                    ),
+                    "tool_steps": steps,
+                    "pending_action": None,
+                    "ui_actions": [
+                        UiAction(route_key="MATERIALS", reason="查看已有学习资料")
+                    ],
+                }
             if self._knowledge_services is not None and any(
                 word in message for word in ("查找", "搜索", "解释", "什么是", "怎么学")
             ):

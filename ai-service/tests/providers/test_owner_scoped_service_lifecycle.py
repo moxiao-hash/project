@@ -116,7 +116,7 @@ async def test_runtime_ttl_and_capacity_keep_conversation_and_reinject_new_key(
         async def resolve(self, owner_id: str, provider: CredentialProvider) -> SecretStr:
             return SecretStr(keys[(owner_id, provider)])
 
-    def create_model(_settings, key: SecretStr) -> FakePlanner:
+    def create_model(_settings, key: SecretStr, **_kwargs) -> FakePlanner:
         planner = FakePlanner(key.get_secret_value())
         created_keys.append(planner.key)
         planner_refs.append(weakref.ref(planner))
@@ -218,7 +218,7 @@ async def test_concurrent_first_owner_lookup_returns_one_service(
     monkeypatch.setattr(
         conversations_api,
         "create_chat_model",
-        lambda _settings, key: FakePlanner(key.get_secret_value()),
+        lambda _settings, key, **_kwargs: FakePlanner(key.get_secret_value()),
     )
     monkeypatch.setattr(conversations_api, "DeepSeekPlanner", lambda model: model)
     monkeypatch.setattr(

@@ -2,6 +2,7 @@ package com.moxiao.studypilot.agent.usage;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
@@ -16,6 +17,8 @@ public record RecordAssistantUsageRequest(
         @Size(max = 36) String executionId,
         @NotBlank @Size(max = 40) String provider,
         @NotBlank @Size(max = 100) String modelName,
+        @NotBlank @Size(max = 40) String purpose,
+        @NotBlank @Pattern(regexp = "SUCCEEDED|FAILED") String status,
         @PositiveOrZero Integer promptTokens,
         @PositiveOrZero Integer cachedPromptTokens,
         @PositiveOrZero Integer completionTokens,
@@ -27,6 +30,7 @@ public record RecordAssistantUsageRequest(
     public RecordUsageCommand toCommand() {
         return new RecordUsageCommand(
                 usageId, ownerId, conversationId, turnId, executionId, provider,
+                purpose, status,
                 new ModelUsage(
                         modelName,
                         promptTokens == null ? 0L : promptTokens,

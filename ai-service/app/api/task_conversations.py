@@ -27,6 +27,7 @@ from app.agent.task_service import TaskRecognitionService
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.observability.usage import ModelPurpose
 from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
@@ -76,7 +77,9 @@ class OwnerScopedTaskConversationServices:
             return service
 
         recognition_service = TaskRecognitionService(
-            DeepSeekTaskRecognizer(create_chat_model(self._settings, key)),
+            DeepSeekTaskRecognizer(create_chat_model(
+                self._settings, key,
+                owner_id=owner_id, purpose=ModelPurpose.TASK_RECOGNITION)),
             java,
         )
         if service is None:

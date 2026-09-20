@@ -13,6 +13,7 @@ from app.assessment.models import (
     RoadmapGeneratedQuiz,
 )
 from app.assessment.service import InvalidGeneratedQuizError, QuizMix
+from app.observability.usage import bind_max_output_tokens
 from app.schemas.learning import LearningTask
 
 
@@ -62,7 +63,7 @@ class DeepSeekQuizGenerator:
         ]
         for attempt in range(2):
             try:
-                result = await self._model.ainvoke(messages)
+                result = await bind_max_output_tokens(self._model).ainvoke(messages)
                 return GeneratedQuiz.model_validate(result)
             except Exception as exc:
                 if attempt == 1:
@@ -116,7 +117,9 @@ class DeepSeekQuizGenerator:
         ]
         for attempt in range(2):
             try:
-                generated = RoadmapDiagnosticQuiz.model_validate(await model.ainvoke(messages))
+                generated = RoadmapDiagnosticQuiz.model_validate(
+                    await bind_max_output_tokens(model).ainvoke(messages)
+                )
                 node_ids = {str(node["nodeId"]) for node in context["nodeSnapshot"]}
                 coverage = [question.coverage_node_id for question in generated.questions]
                 fallback = bool(context.get("insufficientQuestionFallback", False))

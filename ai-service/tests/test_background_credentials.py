@@ -21,7 +21,7 @@ async def test_background_builders_use_each_users_key_with_empty_environment(
         def with_structured_output(self, *_args, **_kwargs):
             return object()
 
-    def fake_model(_settings, key):
+    def fake_model(_settings, key, **_kwargs):
         captured.append(key.get_secret_value())
         return FakeChat()
 

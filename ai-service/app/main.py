@@ -57,7 +57,9 @@ from app.core.settings import get_settings
 from app.material.analysis import DeepSeekMaterialAnalyzer, MaterialAnalyzer
 from app.material.processing import MaterialProcessingService
 from app.observability.safe_logging import install_secret_redaction
+from app.observability.usage import ModelPurpose
 from app.persistence.lifecycle import open_agent_persistence
+from app.providers.budget import ModelBudgetGuard
 from app.providers.credentials import CredentialProvider, CredentialResolver
 from app.providers.model_factory import ModelConfigurationError, create_chat_model
 from app.retrieval.factory import get_hybrid_index
@@ -83,7 +85,9 @@ async def build_owner_material_analyzer(
     java: JavaBackendClient,
 ) -> MaterialAnalyzer:
     key = await CredentialResolver(java, settings).resolve(owner_id, CredentialProvider.DEEPSEEK)
-    return MaterialAnalyzer(DeepSeekMaterialAnalyzer(create_chat_model(settings, key)))
+    await ModelBudgetGuard(java).require(owner_id)
+    return MaterialAnalyzer(DeepSeekMaterialAnalyzer(create_chat_model(
+        settings, key, owner_id=owner_id, purpose=ModelPurpose.MATERIAL_ANALYSIS)))
 
 
 async def build_owner_coding_evaluator(
@@ -92,7 +96,9 @@ async def build_owner_coding_evaluator(
     java: JavaBackendClient,
 ) -> DeepSeekCodingEvaluator:
     key = await CredentialResolver(java, settings).resolve(owner_id, CredentialProvider.DEEPSEEK)
-    return DeepSeekCodingEvaluator(create_chat_model(settings, key))
+    await ModelBudgetGuard(java).require(owner_id)
+    return DeepSeekCodingEvaluator(create_chat_model(
+        settings, key, owner_id=owner_id, purpose=ModelPurpose.CODE_EVALUATION))
 
 
 async def build_owner_adjustment_service(
@@ -101,7 +107,9 @@ async def build_owner_adjustment_service(
     java: JavaBackendClient,
 ):
     key = await CredentialResolver(java, settings).resolve(owner_id, CredentialProvider.DEEPSEEK)
-    return build_plan_adjustment_service(settings, key)
+    await ModelBudgetGuard(java).require(owner_id)
+    return build_plan_adjustment_service(
+        settings, key, owner_id=owner_id, purpose=ModelPurpose.PLAN_ADJUSTMENT)
 
 
 async def run_nightly_adjustment_job() -> None:
@@ -193,7 +201,10 @@ async def run_roadmap_quiz_job() -> None:
 
             async def generator_for(owner_id: str):
                 key = await resolver.resolve(owner_id, CredentialProvider.DEEPSEEK)
-                return DeepSeekQuizGenerator(create_chat_model(settings, key))
+                await ModelBudgetGuard(java).require(owner_id)
+                return DeepSeekQuizGenerator(create_chat_model(
+                    settings, key, owner_id=owner_id,
+                    purpose=ModelPurpose.QUIZ_GENERATION))
 
             async def web_search_for(owner_id: str):
                 key = await resolver.resolve(owner_id, CredentialProvider.TAVILY)
@@ -220,7 +231,10 @@ async def run_roadmap_quiz_job() -> None:
                 key = await diagnostic_resolver.resolve(
                     owner_id, CredentialProvider.DEEPSEEK
                 )
-                return DeepSeekQuizGenerator(create_chat_model(settings, key))
+                await ModelBudgetGuard(diagnostic_java).require(owner_id)
+                return DeepSeekQuizGenerator(create_chat_model(
+                    settings, key, owner_id=owner_id,
+                    purpose=ModelPurpose.QUIZ_GENERATION))
 
             _roadmap_diagnostic_worker = RoadmapDiagnosticWorker(
                 diagnostic_java,
@@ -238,7 +252,10 @@ async def run_roadmap_quiz_job() -> None:
                 key = await graduation_resolver.resolve(
                     owner_id, CredentialProvider.DEEPSEEK
                 )
-                return DeepSeekQuizGenerator(create_chat_model(settings, key))
+                await ModelBudgetGuard(graduation_java).require(owner_id)
+                return DeepSeekQuizGenerator(create_chat_model(
+                    settings, key, owner_id=owner_id,
+                    purpose=ModelPurpose.QUIZ_GENERATION))
 
             _roadmap_graduation_worker = RoadmapGraduationWorker(
                 graduation_java,
