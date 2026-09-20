@@ -23,6 +23,7 @@ from pydantic import SecretStr
 
 from app.clients.java_backend import JavaBackendClient
 from app.core.settings import Settings
+from app.observability.usage import ModelPurpose, bind_max_output_tokens
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -148,7 +149,7 @@ class AssistantPlanner:
         ]
         try:
             raw = await asyncio.wait_for(
-                self._structured.ainvoke(messages),
+                bind_max_output_tokens(self._structured).ainvoke(messages),
                 timeout=self._timeout_seconds,
             )
         except TimeoutError:
@@ -232,6 +233,12 @@ class AssistantPlanner:
         return value[: self._max_context_chars] + "\n...(上下文已裁剪)"
 
 
+def _create_planner_model(settings: Settings, key: SecretStr) -> Any:
+    """Planner 模型的用量用途固定为 AGENT_PLANNING。"""
+
+    return create_chat_model(settings, key, purpose=ModelPurpose.AGENT_PLANNING)
+
+
 class OwnerScopedAssistantPlannerFactory:
     """按 owner 解析 DeepSeek 凭据并缓存 Planner。
 
@@ -248,7 +255,7 @@ class OwnerScopedAssistantPlannerFactory:
         settings: Settings,
         java_backend: JavaBackendClient,
         *,
-        model_factory: Callable[[Settings, SecretStr], Any] = create_chat_model,
+        model_factory: Callable[[Settings, SecretStr], Any] = _create_planner_model,
         max_runtime_entries: int = 100,
         idle_ttl_seconds: float = 900,
         clock: Callable[[], float] = monotonic,

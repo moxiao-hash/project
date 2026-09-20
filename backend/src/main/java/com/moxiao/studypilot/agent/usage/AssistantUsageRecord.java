@@ -13,6 +13,11 @@ public record AssistantUsageRecord(
         BigDecimal estimatedCost,
         String currency,
         String priceVersion,
+        String priceWindow,
+        String priceStatus,
         boolean duplicate
 ) {
+
+    public static final String PRICE_KNOWN = "KNOWN";
+    public static final String PRICE_UNKNOWN = "UNKNOWN";
 }

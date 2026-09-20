@@ -12,14 +12,24 @@ CREATE TABLE assistant_model_usage (
     execution_id VARCHAR(36),
     provider VARCHAR(40) NOT NULL,
     model_name VARCHAR(100) NOT NULL,
+    -- 用途：AGENT_PLANNING / KNOWLEDGE_QA / QUIZ_GENERATION / CODE_EVALUATION /
+    -- RUBRIC_SCORING / MATERIAL_ANALYSIS / PLAN_ADJUSTMENT 等。
+    purpose VARCHAR(40) NOT NULL,
+    -- 一次模型调用的结果：SUCCEEDED / FAILED。失败也计一次调用与失败率。
+    status VARCHAR(20) NOT NULL,
     prompt_tokens INT,
     cached_prompt_tokens INT,
     completion_tokens INT,
+    -- reasoning 已包含在 completion 内，仅作为子类明细保存，不参与再次求和。
     reasoning_tokens INT,
+    -- 输入 + 输出；reasoning 不重复加入。
+    total_tokens INT,
     latency_ms BIGINT,
     estimated_cost DECIMAL(18, 8),
     currency VARCHAR(8),
-    price_version VARCHAR(40),
+    price_version VARCHAR(64),
+    -- 计价时段：PEAK / OFF_PEAK；历史记录保留当时的时段以便复核金额。
+    price_window VARCHAR(10),
     occurred_at TIMESTAMP(6) NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
 );
@@ -29,6 +39,9 @@ CREATE INDEX idx_assistant_model_usage_owner_time
 
 CREATE INDEX idx_assistant_model_usage_turn
     ON assistant_model_usage (conversation_id, turn_id);
+
+CREATE INDEX idx_assistant_model_usage_owner_model
+    ON assistant_model_usage (owner_id, model_name, occurred_at);
 
 CREATE TABLE assistant_usage_budget (
     owner_id VARCHAR(36) PRIMARY KEY,

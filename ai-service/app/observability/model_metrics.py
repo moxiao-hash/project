@@ -3,9 +3,9 @@
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from threading import Lock
 from time import monotonic
-from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +15,7 @@ from prometheus_client import REGISTRY, CollectorRegistry, Counter, Histogram
 from app.core.request_context import current_request_id
 
 logger = logging.getLogger(__name__)
+
 
 class ModelMetrics:
     """只使用 provider/model/status 三个有界标签，避免指标基数爆炸。"""
@@ -155,11 +156,17 @@ def extract_model_usage(response: Any) -> ModelUsageSample | None:
         cached = _as_int(token_usage.get("prompt_cache_hit_tokens"))
         if cached == 0 and token_usage.get("prompt_cache_miss_tokens") is not None:
             cached = max(0, prompt_tokens - _as_int(token_usage.get("prompt_cache_miss_tokens")))
+        details = token_usage.get("completion_tokens_details")
+        reasoning = None
+        if isinstance(details, dict):
+            reasoning = _as_optional_int(details.get("reasoning_tokens"))
+        if reasoning is None:
+            reasoning = _as_optional_int(token_usage.get("reasoning_tokens"))
         return ModelUsageSample(
             prompt_tokens=prompt_tokens,
             cached_prompt_tokens=cached,
             completion_tokens=_as_int(token_usage.get("completion_tokens")),
-            reasoning_tokens=None,
+            reasoning_tokens=reasoning,
         )
     metadata = _usage_metadata(response)
     if not metadata:

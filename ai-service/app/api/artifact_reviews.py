@@ -9,6 +9,7 @@ from app.artifact_review.models import ArtifactReviewRequest
 from app.clients.java_backend import JavaBackendClient
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.observability.usage import ModelPurpose
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -33,7 +34,9 @@ class OwnerScopedArtifactReviewServices:
             owner_id,
             CredentialProvider.DEEPSEEK,
         )
-        return DeepSeekArtifactEvaluator(create_chat_model(self._settings, key))
+        return DeepSeekArtifactEvaluator(create_chat_model(
+            self._settings, key,
+            owner_id=owner_id, purpose=ModelPurpose.RUBRIC_SCORING))
 
 
 def get_artifact_review_service(

@@ -15,6 +15,7 @@ from app.agent.adjustment_service import (
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.observability.usage import ModelPurpose
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -42,8 +43,11 @@ class ConfirmPlanAdjustmentRequest(JavaContractModel):
 def build_plan_adjustment_service(
     settings: Settings,
     api_key: SecretStr | None = None,
+    *,
+    owner_id: str | None = None,
+    purpose: str = ModelPurpose.PLAN_ADJUSTMENT,
 ) -> PlanAdjustmentService:
-    model = create_chat_model(settings, api_key)
+    model = create_chat_model(settings, api_key, owner_id=owner_id, purpose=purpose)
     return PlanAdjustmentService(
         DeepSeekAdjustmentGenerator(model),
         JavaBackendClient(settings, timeout_seconds=45),
@@ -60,7 +64,9 @@ class OwnerScopedAdjustmentServices:
             owner_id, CredentialProvider.DEEPSEEK
         )
         service = PlanAdjustmentService(
-            DeepSeekAdjustmentGenerator(create_chat_model(self._settings, key)),
+            DeepSeekAdjustmentGenerator(create_chat_model(
+                self._settings, key, owner_id=owner_id,
+                purpose=ModelPurpose.PLAN_ADJUSTMENT)),
             java,
         )
         return service

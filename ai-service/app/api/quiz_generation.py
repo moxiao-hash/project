@@ -15,6 +15,7 @@ from app.assessment.service import (
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.observability.usage import ModelPurpose
 from app.providers.credentials import (
     CredentialProvider,
     CredentialResolver,
@@ -57,7 +58,9 @@ class OwnerScopedQuizServices:
                 ),
                 java,
             ),
-            DeepSeekQuizGenerator(create_chat_model(self._settings, deepseek_key)),
+            DeepSeekQuizGenerator(create_chat_model(
+                self._settings, deepseek_key,
+                owner_id=owner_id, purpose=ModelPurpose.QUIZ_GENERATION)),
         )
         return service
 

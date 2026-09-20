@@ -20,6 +20,7 @@ from app.knowledge.service import (
     KnowledgeConversationNotFoundError,
     KnowledgeConversationService,
 )
+from app.observability.usage import ModelPurpose
 from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
@@ -80,7 +81,9 @@ class OwnerScopedKnowledgeServices:
             java,
         )
         answerer = DeepSeekKnowledgeAnswerer(
-            create_chat_model(self._settings, deepseek_key),
+            create_chat_model(
+                self._settings, deepseek_key,
+                owner_id=owner_id, purpose=ModelPurpose.KNOWLEDGE_QA),
             model_provider=self._settings.model_provider,
             model_name=self._settings.model_name,
         )

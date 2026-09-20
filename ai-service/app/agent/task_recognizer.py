@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agent.task_models import TaskRecognitionOutput
+from app.observability.usage import bind_max_output_tokens
 from app.prompts.task_action import build_task_action_prompt
 from app.schemas.learning import LearningTask
 
@@ -62,7 +63,7 @@ class DeepSeekTaskRecognizer:
 
         for attempt in range(2):
             try:
-                output = await self._structured_model.ainvoke(messages)
+                output = await bind_max_output_tokens(self._structured_model).ainvoke(messages)
                 return TaskRecognitionOutput.model_validate(output)
             except Exception as exc:
                 if attempt == 1:

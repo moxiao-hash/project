@@ -24,6 +24,7 @@ from app.agent.service import (
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings, get_settings
+from app.observability.usage import ModelPurpose
 from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
@@ -78,7 +79,9 @@ class OwnerScopedConversationServices:
         if service is not None and cached_fingerprint == fingerprint:
             return service
 
-        model = create_chat_model(self._settings, deepseek_key)
+        model = create_chat_model(
+            self._settings, deepseek_key,
+            owner_id=owner_id, purpose=ModelPurpose.AGENT_PLANNING)
         grounding = PlanGroundingService(
             AsyncHybridRetriever(
                 get_hybrid_index(

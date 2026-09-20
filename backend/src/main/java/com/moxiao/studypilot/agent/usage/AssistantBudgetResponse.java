@@ -7,11 +7,14 @@ public record AssistantBudgetResponse(
         boolean allowed,
         String reason,
         long dailyModelCalls,
-        BigDecimal dailyEstimatedCost
+        BigDecimal dailyEstimatedCost,
+        Integer maxOutputTokensPerTurn,
+        String timezone
 ) {
 
     public static AssistantBudgetResponse from(BudgetDecision decision) {
         return new AssistantBudgetResponse(decision.allowed(), decision.reason(),
-                decision.dailyModelCalls(), decision.dailyEstimatedCost());
+                decision.dailyModelCalls(), decision.dailyEstimatedCost(),
+                decision.maxOutputTokensPerTurn(), decision.timezone());
     }
 }

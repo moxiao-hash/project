@@ -40,6 +40,12 @@ public class AssistantModelUsageEntity {
     @Column(name = "model_name", nullable = false, length = 100)
     private String modelName;
 
+    @Column(name = "purpose", nullable = false, length = 40)
+    private String purpose;
+
+    @Column(name = "status", nullable = false, length = 20)
+    private String status;
+
     @Column(name = "prompt_tokens")
     private Integer promptTokens;
 
@@ -52,6 +58,9 @@ public class AssistantModelUsageEntity {
     @Column(name = "reasoning_tokens")
     private Integer reasoningTokens;
 
+    @Column(name = "total_tokens")
+    private Integer totalTokens;
+
     @Column(name = "latency_ms")
     private Long latencyMs;
 
@@ -61,8 +70,11 @@ public class AssistantModelUsageEntity {
     @Column(name = "currency", length = 8)
     private String currency;
 
-    @Column(name = "price_version", length = 40)
+    @Column(name = "price_version", length = 64)
     private String priceVersion;
+
+    @Column(name = "price_window", length = 10)
+    private String priceWindow;
 
     @Column(name = "occurred_at", nullable = false)
     private Instant occurredAt;
@@ -78,14 +90,18 @@ public class AssistantModelUsageEntity {
             String executionId,
             String provider,
             String modelName,
+            String purpose,
+            String status,
             Integer promptTokens,
             Integer cachedPromptTokens,
             Integer completionTokens,
             Integer reasoningTokens,
+            Integer totalTokens,
             Long latencyMs,
             BigDecimal estimatedCost,
             String currency,
             String priceVersion,
+            String priceWindow,
             Instant occurredAt
     ) {
         this.id = id;
@@ -95,14 +111,18 @@ public class AssistantModelUsageEntity {
         this.executionId = executionId;
         this.provider = provider;
         this.modelName = modelName;
+        this.purpose = purpose;
+        this.status = status;
         this.promptTokens = promptTokens;
         this.cachedPromptTokens = cachedPromptTokens;
         this.completionTokens = completionTokens;
         this.reasoningTokens = reasoningTokens;
+        this.totalTokens = totalTokens;
         this.latencyMs = latencyMs;
         this.estimatedCost = estimatedCost;
         this.currency = currency;
         this.priceVersion = priceVersion;
+        this.priceWindow = priceWindow;
         this.occurredAt = occurredAt;
     }
 
@@ -134,6 +154,14 @@ public class AssistantModelUsageEntity {
         return modelName;
     }
 
+    public String getPurpose() {
+        return purpose;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
     public Integer getPromptTokens() {
         return promptTokens;
     }
@@ -150,6 +178,10 @@ public class AssistantModelUsageEntity {
         return reasoningTokens;
     }
 
+    public Integer getTotalTokens() {
+        return totalTokens;
+    }
+
     public Long getLatencyMs() {
         return latencyMs;
     }
@@ -164,6 +196,10 @@ public class AssistantModelUsageEntity {
 
     public String getPriceVersion() {
         return priceVersion;
+    }
+
+    public String getPriceWindow() {
+        return priceWindow;
     }
 
     public Instant getOccurredAt() {

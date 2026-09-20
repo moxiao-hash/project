@@ -14,4 +14,9 @@ public record ModelUsage(
     public long uncachedPromptTokens() {
         return Math.max(0L, promptTokens - cachedPromptTokens);
     }
+
+    /** 总 token = 输入 + 输出；reasoning 是 completion 的子集，不重复相加。 */
+    public long totalTokens() {
+        return promptTokens + completionTokens;
+    }
 }

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from app.clients.java_backend import JavaBackendClient, JavaBackendError
 from app.core.security import require_internal_token
 from app.core.settings import Settings
+from app.observability.usage import ModelPurpose
 from app.persistence.agent_state import AgentPersistence
 from app.providers.credentials import (
     CredentialProvider,
@@ -63,7 +64,9 @@ class OwnerScopedTeachingServices:
         if service is not None and self._fingerprints.get(owner_id) == fingerprint:
             return service
         answerer = DeepSeekTeachingAnswerer(
-            create_chat_model(self._settings, key),
+            create_chat_model(
+                self._settings, key,
+                owner_id=owner_id, purpose=ModelPurpose.TEACHING_QA),
             model_provider=self._settings.model_provider,
             model_name=self._settings.model_name,
         )
