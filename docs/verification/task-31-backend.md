@@ -5,7 +5,7 @@
 - **执行时间**：2026-09-20 19:59–20:15 (Asia/Shanghai)
 - **关联分支**：`agent/deepseek-task-31-usage-budget`（已推送到 origin）
 - **工作树**：`/Users/moxiao/Desktop/Deepseek Harness/workspaces/studypilot-task31`
-- **实现提交**：`<IMPL_SHA>`（本文件随后作为文档提交 `docs: verify task 31 usage budget` 落库）
+- **实现提交**：`f6da5c6892ff5b54582bdfa7f6b7da539fdfe6b9`（本文件随后作为文档提交 `docs: verify task 31 usage budget` 落库）
 
 ---
 
@@ -242,6 +242,6 @@ usage:
 
 ## 7. 提交
 
-- 实现提交：`<IMPL_SHA>`
+- 实现提交：`f6da5c6892ff5b54582bdfa7f6b7da539fdfe6b9`
 - 验证文档提交：`docs: verify task 31 usage budget`（本次提交）
 - 远端：`origin/agent/deepseek-task-31-usage-budget`（已推送）
