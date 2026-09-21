@@ -75,17 +75,17 @@
             <small v-else>按官方目录估算核算</small>
           </article>
 
-          <!-- 4. 延迟分位 P50 / P95：无调用或无样本时显示明确暂无数据，绝不记为 0 ms -->
+          <!-- 4. 延迟分位 P50 / P95：仅依据模型遥测字段判断，绝不耦合 legacy latencySamples -->
           <article class="card metric-card" data-testid="model-latency-card">
             <span class="metric-label">模型延迟分位</span>
-            <strong v-if="!health.modelCalls || !health.latencySamples" data-testid="model-latency-empty">
+            <strong v-if="!health.modelCalls || (!health.p50LatencyMs && !health.p95LatencyMs)" data-testid="model-latency-empty">
               暂无数据
             </strong>
             <strong v-else-if="health.p50LatencyMs !== null && health.p50LatencyMs !== undefined">
               {{ health.p50LatencyMs.toLocaleString() }} ms
             </strong>
             <strong v-else>暂无数据</strong>
-            <small v-if="!health.modelCalls || !health.latencySamples">
+            <small v-if="!health.modelCalls || (!health.p50LatencyMs && !health.p95LatencyMs)">
               暂无延迟采样数据
             </small>
             <small v-else>
