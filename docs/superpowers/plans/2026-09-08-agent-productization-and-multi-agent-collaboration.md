@@ -17,7 +17,7 @@
 - Supervisor 主要依赖关键词分支，不是通用的模型规划循环。
 - 页面动作目前实际只执行 `NAVIGATE`；其他动作协议未形成产品闭环。
 - 当前事件接口是有限事件集合，不是持续的 token/工具事件流。
-- Task 20 的真实 Token、价格和预算限制未完成。
+- Task 20 的真实 Token、价格和预算限制已由 Task 31 完成并通过 Codex 独立验收。
 - Task 25 没有实际 Playwright/IDE 适配器；策略预览不能视为执行。
 - Task 26 只完成了 Java→Python→MySQL 的确定性业务冒烟，未完成模型/RAG/前端/Runner/Rubric/Git 的一次串联。
 
@@ -218,14 +218,14 @@ Task 28 与 29 可在契约冻结后分支并行；Task 30 与 31 可并行；Ta
 - Test: `backend/src/test/java/com/moxiao/studypilot/agent/api/GovernedAgentToolWorkflowTest.java`
 - Test: `web/src/modules/assistant/uiActionDispatcher.spec.ts`
 
-- [ ] **Step 1: 从 Task 27 矩阵生成失败覆盖测试。** 每个允许的页面操作必须有工具、Handler、风险、输出 schema 和 route/action；用户专属行为必须拒绝。
-- [ ] **Step 2: 补齐业务工具。** 优先完成“继续节点、生成测验、重做错题、调整今日容量、查资料、标记通知、创建目标/计划、查看执行、登记工作区、发起成果评审”。
-- [ ] **Step 3: 扩展 UI Action 为 `NAVIGATE / OPEN_MODAL / PREFILL_FORM / REFRESH_RESOURCE / FOCUS_ELEMENT`。** 参数只能来自固定 registry；`PREFILL_FORM` 只填草稿，不能自动提交。
-- [ ] **Step 4: 实现动作回执。** Vue 将 `actionId/status/error/currentRoute` 回传 Java，再交 Python 决定重试、降级为人工链接或结束；模型不读取 DOM。
-- [ ] **Step 5: 加入前端纵深防御。** 拒绝 URL、HTML、JavaScript、CSS selector、额外参数和未注册实体；ownerId 始终不来自动作。
-- [ ] **Step 6: 建立真实性测试。** “替我答题”“替我写打卡总结”“直接接受成果”必须被拒绝并导航到用户操作页面。
-- [ ] **Step 7: 运行矩阵校验、Java/Python/Vue 全量测试与构建。** 预期全部通过。
-- [ ] **Step 8: 提交。** `feat: operate every studypilot workflow through agent actions`
+- [x] **Step 1: 从 Task 27 矩阵生成失败覆盖测试。** 每个允许的页面操作必须有工具、Handler、风险、输出 schema 和 route/action；用户专属行为必须拒绝。
+- [x] **Step 2: 补齐业务工具。** 优先完成“继续节点、生成测验、重做错题、调整今日容量、查资料、标记通知、创建目标/计划、查看执行、登记工作区、发起成果评审”。
+- [x] **Step 3: 扩展 UI Action 为 `NAVIGATE / OPEN_MODAL / PREFILL_FORM / REFRESH_RESOURCE / FOCUS_ELEMENT`。** 参数只能来自固定 registry；`PREFILL_FORM` 只填草稿，不能自动提交。
+- [x] **Step 4: 实现动作回执。** Vue 将 `actionId/status/error/currentRoute` 回传 Java，再交 Python 决定重试、降级为人工链接或结束；模型不读取 DOM。
+- [x] **Step 5: 加入前端纵深防御。** 拒绝 URL、HTML、JavaScript、CSS selector、额外参数和未注册实体；ownerId 始终不来自动作。
+- [x] **Step 6: 建立真实性测试。** “替我答题”“替我写打卡总结”“直接接受成果”必须被拒绝并导航到用户操作页面。
+- [x] **Step 7: 运行矩阵校验、Java/Python/Vue 全量测试与构建。** 预期全部通过。
+- [x] **Step 8: 提交。** `feat: operate every studypilot workflow through agent actions`
 
 **完成标准:** 传统菜单保留，但矩阵中所有可代办操作都能从统一 Agent 完成；不能代办的操作能直接把用户带到正确位置并说明原因。
 
@@ -249,14 +249,14 @@ Task 28 与 29 可在契约冻结后分支并行；Task 30 与 31 可并行；Ta
 - Test: `ai-service/tests/unified_agent/test_supervisor.py`
 - Test: `web/src/modules/assistant/AssistantHealthView.spec.ts`
 
-- [ ] **Step 1: 写失败测试。** 覆盖缓存/非缓存输入、输出、reasoning token 缺失、未知模型价格、重复回调、跨用户、日预算耗尽、确认中的写操作以及模型调用失败。
-- [ ] **Step 2: 保存原始 usage 与价格版本。** 不仅保存总 token；金额用 `DECIMAL`，不能用浮点数；未知价格显示“不可估算”，不能记为零成本。
-- [ ] **Step 3: 在模型响应边界采集 usage。** 所有计划、问答、测验、代码评估和 Rubric 统一上报；幂等键绑定 turn/execution，重复事件不重复计费。
-- [ ] **Step 4: 增加用户预算。** 支持每日模型调用次数、每日估算费用和单轮最大输出；达到预算后允许纯 Java 查询/导航，拒绝新的模型调用并给出可恢复提示。
-- [ ] **Step 5: 健康页展示模型 id、调用量、Token、估算费用、P50/P95 延迟和失败率。** 不展示提示词、Key 或其他用户数据。
-- [ ] **Step 6: 用官方价格配置加版本日期。** 价格变化只影响新记录，历史记录保留原估算。
-- [ ] **Step 7: 运行 Flyway/MySQL 集成、三端全量测试和真实最小模型调用。** 记录实际 model id 与 usage，不记录正文和 Key。
-- [ ] **Step 8: 提交。** `feat: enforce assistant usage and cost budgets`
+- [x] **Step 1: 写失败测试。** 覆盖缓存/非缓存输入、输出、reasoning token 缺失、未知模型价格、重复回调、跨用户、日预算耗尽、确认中的写操作以及模型调用失败。
+- [x] **Step 2: 保存原始 usage 与价格版本。** 不仅保存总 token；金额用 `DECIMAL`，不能用浮点数；未知价格显示“不可估算”，不能记为零成本。
+- [x] **Step 3: 在模型响应边界采集 usage。** 所有计划、问答、测验、代码评估和 Rubric 统一上报；幂等键绑定 turn/execution，重复事件不重复计费。
+- [x] **Step 4: 增加用户预算。** 支持每日模型调用次数、每日估算费用和单轮最大输出；达到预算后允许纯 Java 查询/导航，拒绝新的模型调用并给出可恢复提示。
+- [x] **Step 5: 健康页展示模型 id、调用量、Token、估算费用、P50/P95 延迟和失败率。** 不展示提示词、Key 或其他用户数据。
+- [x] **Step 6: 用官方价格配置加版本日期。** 价格变化只影响新记录，历史记录保留原估算。
+- [x] **Step 7: 运行 Flyway/MySQL 集成、三端全量测试和真实最小模型调用。** 记录实际 model id 与 usage，不记录正文和 Key。
+- [x] **Step 8: 提交。** `feat: enforce assistant usage and cost budgets`
 
 **完成标准:** Task 20 全部勾选；用户和开发者都能回答“本轮调用了什么模型、用了多少 Token、估算花费多少、为什么被预算阻止”。
 

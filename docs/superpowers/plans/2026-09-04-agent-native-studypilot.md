@@ -18,7 +18,7 @@
 - [x] Task 17：新增 `/assistant` 首页、全局快捷入口、过程卡片和白名单 UI Action Dispatcher。
 - [x] Task 18：补齐路线、今日、测验、错题、掌握度、资料、计划、通知、设置、工作区全部页面能力。
 - [x] Task 19：主动自动化规则、租约、授权内低风险执行、高风险通知和全局暂停。
-- [ ] Task 20：固定 Agent 评测集、越权和 Prompt Injection 测试、循环与成本限制、健康指标页面。
+- [x] Task 20：固定 Agent 评测集、越权和 Prompt Injection 测试、循环与成本限制、健康指标页面。
 
 ## Runner 与 Developer Agent
 
@@ -36,8 +36,8 @@ Task 20、25、26 的缺口不再零散修补，统一纳入 [Agent 产品化与
 - [x] Task 27：能力矩阵、契约冻结与协作门禁。
 - [x] Task 28：模型驱动的多步 Planner 与确定性策略验证。
 - [x] Task 29：真正的持续 SSE 与断线恢复。
-- [ ] Task 30：全部 StudyPilot 能力工具化与完整 UI Action。
-- [ ] Task 31：真实 Token、价格、预算与可观测性，并关闭 Task 20。
+- [x] Task 30：全部 StudyPilot 能力工具化与完整 UI Action。
+- [x] Task 31：真实 Token、价格、预算与可观测性，并关闭 Task 20。
 - [ ] Task 32：Developer Agent 安全加固与临时 Git 全链路。
 - [ ] Task 33：受控界面适配器，并关闭 Task 25。
 - [ ] Task 34：真实全栈验收与发布门禁；通过后才关闭 Task 26。
@@ -108,20 +108,17 @@ Task 20、25、26 的缺口不再零散修补，统一纳入 [Agent 产品化与
 - [x] 修改规则时区或执行时间会重新安排尚未执行的任务，已完成历史不会被覆盖。
 - [x] Java 307 项、Python 278 项、前端 122 项测试全部通过；Ruff、TypeScript 和生产构建通过。
 
-## Task 20 当前进度（2026-09-05）
+## Task 20 验收结果（2026-09-21）
 
 - [x] 新增个人执行统计 API `/api/assistant/health` 与“运行健康”页面。
 - [x] 成功率仅包含已成功/失败记录；用量、成本、延迟返回样本数，未采集显示“暂无数据”。
 - [x] 统一 Agent 增加有限标签的轮次、工具结果和延迟指标。
 - [x] 固定指令回归覆盖路线、测验、薄弱点和自动化设置，以及注入和失败预算边界。
 - [x] 修复失败调用不消耗预算的问题，失败后相同工具参数也禁止重放。
-- [ ] 接通统一会话的真实模型 Token、计费口径及成本预算限制；当前页面仅累计执行记录已上报字段。
+- [x] 接通统一会话的真实模型 Token、计费口径及成本预算限制；模型调用与历史执行记录分区展示。
 - [x] 扩大安全评测集与鲁棒性治理：补全工具调用中途取消中断、确认请求非 SUCCEEDED 终态对齐及操作幂等、自动化 Worker 心跳失效并发中断、租约过期达到最大重试时阻断并告警标记 FAILED。
 
-Task 20 尚未整体完成，后续验证完成后才勾选总任务。
-
-验证：Java 全量 308 项及新增统计单测 1 项通过；Python 295 项、前端 124 项通过，
-Ruff、TypeScript、生产构建和 `git diff --check` 通过。未执行真实模型计费联调。
+Task 20 已由 Task 31 收口。2026-09-21 Codex 在集成分支独立验证 Java 482 项、Python 556 项、Vue 319 项，并通过 Ruff、TypeScript、生产构建和 `git diff --check`。真实 MySQL 9.6/Flyway V46 与最小 DeepSeek 调用已回查；浏览器健康页显示实际模型、Token、费用、延迟和定价版本。完整证据见 `docs/verification/task-31-integration-review.md`。
 
 ## Task 21 验收证据
 
