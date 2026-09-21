@@ -4,7 +4,7 @@
       <div>
         <p class="eyebrow">AGENT OBSERVABILITY</p>
         <h1 class="page-title">运行健康</h1>
-        <p class="page-subtitle">查看你的受治理执行记录、模型消耗明细与每日用量预算。</p>
+        <p class="page-subtitle">查看你的受治理执行记录、模型消耗明细与可观测性指标。</p>
       </div>
       <button class="btn btn-secondary" type="button" :disabled="loading" @click="load">
         刷新
@@ -14,129 +14,197 @@
     <LoadingBlock v-if="loading" text="正在汇总 Agent 指标…" />
     <ErrorState v-else-if="error" :message="error" @retry="load" />
     <template v-else-if="health">
-      <!-- 每日用量硬预算告警横幅 -->
-      <section
-        v-if="health.budget?.budgetExhausted"
-        class="card budget-alert-card"
-        data-testid="budget-alert"
-      >
-        <div class="alert-icon">⚠️</div>
-        <div class="alert-content">
-          <strong>今日模型调用额度已用尽</strong>
-          <p>{{ health.budget.exhaustedReason || '今日调用次数或费用已达到上限，纯 Java 查阅与导航仍可使用，次日 0 点重置。' }}</p>
+      <!-- 分区 1：真实模型遥测与用量可观测性 -->
+      <section class="section-container" data-testid="model-telemetry-section">
+        <div class="section-header">
+          <h2 class="section-title">模型调用与用量可观测性</h2>
+          <span v-if="health.priceVersion" class="price-version-tag">定价版本 {{ health.priceVersion }}</span>
+        </div>
+
+        <div class="metric-grid">
+          <!-- 1. 模型调用次数 -->
+          <article class="card metric-card accent">
+            <span class="metric-label">模型调用</span>
+            <strong>{{ health.modelCalls !== undefined ? health.modelCalls.toLocaleString() : '暂无数据' }}</strong>
+            <small v-if="health.failedModelCalls">
+              失败 {{ health.failedModelCalls }} 次 ({{ Math.round((health.modelFailureRate ?? 0) * 100) }}%)
+            </small>
+            <small v-else-if="health.modelCalls">全部调用成功</small>
+            <small v-else>暂无调用记录</small>
+          </article>
+
+          <!-- 2. Token 用量：直接取后端 modelTotalTokens，绝不二次相加 -->
+          <article class="card metric-card">
+            <span class="metric-label">Token 用量</span>
+            <strong>{{ health.modelTotalTokens !== undefined ? health.modelTotalTokens.toLocaleString() : '暂无数据' }}</strong>
+            <small>
+              缓存命中 {{ health.modelCachedPromptTokens?.toLocaleString() ?? 0 }} · 未缓存 {{ health.modelUncachedPromptTokens?.toLocaleString() ?? 0 }}
+            </small>
+            <small>
+              输出 {{ health.modelCompletionTokens?.toLocaleString() ?? 0 }} · 思考 {{ health.modelReasoningTokens?.toLocaleString() ?? 0 }}
+            </small>
+          </article>
+
+          <!-- 3. 估算费用：动态货币符号，priceStatus 为 UNKNOWN 或 cost 为 null 时显示价格未知 -->
+          <article class="card metric-card">
+            <span class="metric-label">估算费用</span>
+            <div class="cost-value-wrapper">
+              <span
+                v-if="health.priceStatus === 'UNKNOWN' || health.usageEstimatedCost === null || health.usageEstimatedCost === undefined"
+                class="badge-unknown"
+                data-testid="cost-unknown-badge"
+              >
+                价格未知
+              </span>
+              <strong v-else>
+                {{ formatCost(health.usageEstimatedCost, health.currency) }}
+              </strong>
+            </div>
+            <small v-if="health.unknownPriceCalls && health.unknownPriceCalls > 0">
+              含 {{ health.unknownPriceCalls }} 次未计价调用
+            </small>
+            <small v-else>按官方目录精确核算</small>
+          </article>
+
+          <!-- 4. 延迟分位 P50 / P95 -->
+          <article class="card metric-card">
+            <span class="metric-label">模型延迟分位</span>
+            <strong>{{ health.p50LatencyMs !== null && health.p50LatencyMs !== undefined ? `${health.p50LatencyMs.toLocaleString()} ms` : '暂无数据' }}</strong>
+            <small>
+              P50 {{ health.p50LatencyMs?.toLocaleString() ?? '-' }} ms · P95 {{ health.p95LatencyMs?.toLocaleString() ?? '-' }} ms
+            </small>
+          </article>
+        </div>
+
+        <!-- 模型维度明细看板 -->
+        <div class="card models-card">
+          <div class="table-header">
+            <h3>模型维度明细</h3>
+            <span class="table-subtitle">按实际调用的模型底层 ID 与提供商独立统计</span>
+          </div>
+
+          <div v-if="!health.models || health.models.length === 0" class="empty-state" data-testid="models-empty-state">
+            暂无模型调用数据
+          </div>
+
+          <div v-else class="table-responsive">
+            <table class="models-table" data-testid="models-table">
+              <thead>
+                <tr>
+                  <th>模型名称</th>
+                  <th>提供商</th>
+                  <th>调用次数</th>
+                  <th>失败率</th>
+                  <th>Prompt (缓存/未缓存)</th>
+                  <th>输出 (输出/思考)</th>
+                  <th>总 Token</th>
+                  <th>延迟 (P50/P95)</th>
+                  <th>定价版本</th>
+                  <th>估算费用</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="m in health.models"
+                  :key="m.modelName"
+                  :data-testid="`model-row-${m.modelName}`"
+                >
+                  <td class="model-name-cell">
+                    <code>{{ m.modelName }}</code>
+                  </td>
+                  <td>{{ m.provider }}</td>
+                  <td>
+                    {{ m.calls }} 次
+                    <span v-if="m.failedCalls" class="text-danger">({{ m.failedCalls }} 失败)</span>
+                  </td>
+                  <td>{{ Math.round(m.failureRate * 100) }}%</td>
+                  <td>
+                    {{ m.promptTokens.toLocaleString() }}
+                    <small class="text-muted">({{ m.cachedPromptTokens.toLocaleString() }} / {{ m.uncachedPromptTokens.toLocaleString() }})</small>
+                  </td>
+                  <td>
+                    {{ m.completionTokens.toLocaleString() }}
+                    <small class="text-muted">({{ m.completionTokens.toLocaleString() }} / {{ m.reasoningTokens.toLocaleString() }})</small>
+                  </td>
+                  <td><strong>{{ m.totalTokens.toLocaleString() }}</strong></td>
+                  <td>{{ m.p50LatencyMs !== null && m.p50LatencyMs !== undefined ? `${m.p50LatencyMs} ms` : '-' }} / {{ m.p95LatencyMs !== null && m.p95LatencyMs !== undefined ? `${m.p95LatencyMs} ms` : '-' }}</td>
+                  <td>
+                    <span class="version-badge">{{ m.priceVersion || '-' }}</span>
+                  </td>
+                  <td>
+                    <span
+                      v-if="m.priceStatus === 'UNKNOWN' || m.estimatedCost === null || m.estimatedCost === undefined"
+                      class="badge-unknown-small"
+                    >
+                      价格未知
+                    </span>
+                    <span v-else class="cost-text">
+                      {{ formatCost(m.estimatedCost, m.currency) }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
-      <!-- 核心指标卡片网格 -->
-      <section class="metric-grid">
-        <article class="card metric-card accent">
-          <span class="metric-label">执行成功率</span>
-          <strong>{{ health.successfulExecutions + health.failedExecutions ? `${Math.round(health.successRate * 100)}%` : '暂无数据' }}</strong>
-          <small>{{ health.successfulExecutions }} 成功 / {{ health.failedExecutions }} 失败</small>
-        </article>
-        <article class="card metric-card">
-          <span class="metric-label">累计执行</span>
-          <strong>{{ health.totalExecutions }}</strong>
-          <small>受治理的业务与自动化操作</small>
-        </article>
-        <article class="card metric-card">
-          <span class="metric-label">平均耗时</span>
-          <strong>{{ health.latencySamples ? `${health.averageLatencyMs} ms` : '暂无数据' }}</strong>
-          <small v-if="health.p50LatencyMs !== undefined && health.p95LatencyMs !== undefined">
-            P50 延迟 {{ health.p50LatencyMs.toLocaleString() }} ms · P95 延迟 {{ health.p95LatencyMs.toLocaleString() }} ms
-          </small>
-          <small v-else>仅统计已上报延迟的执行</small>
-        </article>
-        <article class="card metric-card">
-          <span class="metric-label">Token 用量</span>
-          <strong>{{ health.tokenSamples ? totalTokens.toLocaleString() : '暂无数据' }}</strong>
-          <small>输入 {{ health.promptTokens.toLocaleString() }} · 输出 {{ health.completionTokens.toLocaleString() }}<template v-if="health.reasoningTokens"> · 思考 {{ health.reasoningTokens.toLocaleString() }}</template></small>
-        </article>
-        <article class="card metric-card">
-          <span class="metric-label">估算成本</span>
-          <strong>{{ health.costSamples ? (health.isCostEstimated === false ? '不可估算' : health.estimatedCost) : '暂无数据' }}</strong>
-          <small>按官方目录精确核算，未知价格模型不记零</small>
-        </article>
-        <article class="card metric-card" :class="{ warning: health.pendingConfirmations > 0 }">
-          <span class="metric-label">需要你的决定</span>
-          <strong>{{ health.pendingConfirmations }}</strong>
-          <small>{{ health.pendingConfirmations }} 个操作等待确认</small>
-        </article>
-      </section>
-
-      <!-- 每日用量预算进度面板 -->
-      <section v-if="health.budget" class="card budget-card">
-        <h2>用户每日预算与硬限制</h2>
-        <div class="budget-items">
-          <div class="budget-item">
-            <span class="budget-title">今日调用次数配额</span>
-            <div class="budget-bar-wrapper">
-              <div
-                class="budget-bar-fill"
-                :style="{ width: `${Math.min(100, Math.round((health.budget.dailyCallsUsed / (health.budget.dailyCallsLimit || 1)) * 100))}%` }"
-                :class="{ exceeded: health.budget.dailyCallsUsed >= health.budget.dailyCallsLimit }"
-              />
-            </div>
-            <span class="budget-stat">{{ health.budget.dailyCallsUsed }} / {{ health.budget.dailyCallsLimit }} 次</span>
-          </div>
-          <div class="budget-item">
-            <span class="budget-title">今日预计花费限额</span>
-            <div class="budget-bar-wrapper">
-              <div
-                class="budget-bar-fill"
-                :style="{ width: `${Math.min(100, Math.round((health.budget.dailyCostUsed / (health.budget.dailyCostLimit || 1)) * 100))}%` }"
-                :class="{ exceeded: health.budget.dailyCostUsed >= health.budget.dailyCostLimit }"
-              />
-            </div>
-            <span class="budget-stat">¥{{ health.budget.dailyCostUsed.toFixed(2) }} / ¥{{ health.budget.dailyCostLimit.toFixed(2) }}</span>
-          </div>
+      <!-- 分区 2：历史执行记录与治理统计 (Legacy Execution Metrics) -->
+      <section class="section-container" data-testid="legacy-execution-section">
+        <div class="section-header">
+          <h2 class="section-title">执行记录与治理统计</h2>
+          <span class="section-subtitle">受治理的业务操作、安全决策与自动化执行</span>
         </div>
-      </section>
 
-      <!-- 分模型用量与明细看板 -->
-      <section v-if="health.models && health.models.length > 0" class="card models-card">
-        <h2>模型维度用量与费用核算</h2>
-        <div class="table-responsive">
-          <table class="models-table">
-            <thead>
-              <tr>
-                <th>模型 ID</th>
-                <th>调用次数</th>
-                <th>Prompt Tokens</th>
-                <th>Completion Tokens</th>
-                <th>Reasoning Tokens</th>
-                <th>估算费用</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="m in health.models" :key="m.modelId">
-                <td class="model-id-cell">
-                  <code>{{ m.modelId }}</code>
-                </td>
-                <td>{{ m.callCount }}</td>
-                <td>{{ m.promptTokens.toLocaleString() }}</td>
-                <td>{{ m.completionTokens.toLocaleString() }}</td>
-                <td>{{ (m.reasoningTokens || 0).toLocaleString() }}</td>
-                <td>
-                  <span v-if="m.isEstimated">¥{{ m.estimatedCost }}</span>
-                  <span v-else class="badge-unestimated" data-testid="unestimated-badge">不可估算</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="metric-grid">
+          <article class="card metric-card">
+            <span class="metric-label">执行成功率</span>
+            <strong>{{ health.successfulExecutions + health.failedExecutions ? `${(health.successRate * 100).toFixed(1)}%` : '暂无数据' }}</strong>
+            <small>{{ health.successfulExecutions }} 成功 / {{ health.failedExecutions }} 失败</small>
+          </article>
+
+          <article class="card metric-card">
+            <span class="metric-label">累计执行</span>
+            <strong>{{ health.totalExecutions.toLocaleString() }}</strong>
+            <small>受治理的业务与自动化操作</small>
+          </article>
+
+          <article class="card metric-card">
+            <span class="metric-label">平均耗时</span>
+            <strong>{{ health.latencySamples ? `${health.averageLatencyMs} ms` : '暂无数据' }}</strong>
+            <small>仅统计已上报延迟的执行</small>
+          </article>
+
+          <article class="card metric-card">
+            <span class="metric-label">历史执行 Token</span>
+            <strong>{{ (health.promptTokens + health.completionTokens).toLocaleString() }}</strong>
+            <small>输入 {{ health.promptTokens.toLocaleString() }} · 输出 {{ health.completionTokens.toLocaleString() }}</small>
+          </article>
+
+          <article class="card metric-card">
+            <span class="metric-label">历史估算成本</span>
+            <strong>{{ health.costSamples ? formatCost(health.estimatedCost, 'USD') : '暂无数据' }}</strong>
+            <small>按历史执行记录累计</small>
+          </article>
+
+          <article class="card metric-card" :class="{ warning: health.pendingConfirmations > 0 }">
+            <span class="metric-label">需要你的决定</span>
+            <strong>{{ health.pendingConfirmations }}</strong>
+            <small>{{ health.pendingConfirmations }} 个操作等待确认</small>
+          </article>
         </div>
       </section>
 
       <section class="card boundary-card">
         <h2>如何理解这些数据</h2>
-        <p>成功率仅计算已成功或已失败的执行。用量与耗时按每次执行的底层模型返回严格计量。系统遵循隐私安全底线，绝不记录或持久化任何 Prompt 明文、请求 Header 或 API Key。估算成本严格依据官方目录版本核算，未知价格明确标注为不可估算，不记为零成本。</p>
+        <p>模型遥测展示底层大语言模型调用的实际用量、延迟分位和根据官方目录核算的估算金额；执行记录展示被系统治理的业务写操作、工具执行和待确认事件。系统遵循隐私安全底线，绝不记录或持久化任何 Prompt 明文、请求 Header 或 API Key。未知价格模型明确标注为价格未知，绝不伪记为零成本。</p>
       </section>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import ErrorState from '@/components/ErrorState.vue'
 import LoadingBlock from '@/components/LoadingBlock.vue'
 import { assistantApi } from '@/services/current/assistant'
@@ -146,11 +214,12 @@ import type { AssistantHealth } from '@/types/assistant'
 const health = ref<AssistantHealth | null>(null)
 const loading = ref(true)
 const error = ref('')
-const totalTokens = computed(() =>
-  (health.value?.promptTokens ?? 0) +
-  (health.value?.completionTokens ?? 0) +
-  (health.value?.reasoningTokens ?? 0),
-)
+
+function formatCost(cost: number | null | undefined, currency: string | null | undefined): string {
+  if (cost === null || cost === undefined) return '价格未知'
+  const unit = currency || 'USD'
+  return `${cost} ${unit}`
+}
 
 async function load() {
   loading.value = true
@@ -170,45 +239,37 @@ onMounted(load)
 <style scoped>
 .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 24px; }
 .eyebrow { color: var(--color-primary); font-size: 12px; font-weight: 800; letter-spacing: .12em; }
-.metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.metric-card { min-height: 150px; display: flex; flex-direction: column; gap: 10px; }
-.metric-card strong { font-size: 34px; line-height: 1; }
-.metric-card small, .metric-label { color: var(--color-text-muted); }
+.page-title { margin-top: 4px; font-size: 26px; }
+.page-subtitle { color: var(--color-text-secondary); margin-top: 4px; font-size: 14px; }
+
+.section-container { margin-bottom: 32px; }
+.section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.section-title { font-size: 18px; font-weight: 700; color: var(--color-text); }
+.section-subtitle { font-size: 13px; color: var(--color-text-muted); }
+.price-version-tag { font-size: 12px; color: var(--color-text-secondary); background: #f3f4f6; padding: 2px 8px; border-radius: 4px; font-family: monospace; }
+
+.metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+[data-testid="legacy-execution-section"] .metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.metric-card { min-height: 140px; display: flex; flex-direction: column; gap: 8px; padding: 18px; }
+.metric-card strong { font-size: 28px; line-height: 1.1; font-weight: 750; }
+.metric-card small { color: var(--color-text-muted); font-size: 12px; line-height: 1.4; }
+.metric-label { color: var(--color-text-muted); font-size: 13px; font-weight: 600; }
 .metric-card.accent { border-top: 3px solid var(--color-primary); }
 .metric-card.warning { border-color: #f59e0b; background: #fffbeb; }
 
-/* 预算告警横幅 */
-.budget-alert-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 20px;
-  background: #fffbeb;
-  border: 1px solid #f59e0b;
-  color: #92400e;
+.cost-value-wrapper { display: flex; align-items: center; min-height: 32px; }
+.badge-unknown {
+  display: inline-block;
+  padding: 4px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
 }
-.alert-icon { font-size: 24px; }
-.alert-content strong { display: block; font-size: 15px; margin-bottom: 4px; color: #b45309; }
-.alert-content p { margin: 0; font-size: 13px; color: #78350f; }
-
-/* 预算进度看板 */
-.budget-card, .models-card, .boundary-card { margin-top: 20px; }
-.budget-card h2, .models-card h2, .boundary-card h2 { margin-bottom: 12px; font-size: 17px; }
-.budget-items { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 12px; }
-.budget-item { display: flex; flex-direction: column; gap: 6px; }
-.budget-title { font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
-.budget-bar-wrapper { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-.budget-bar-fill { height: 100%; background: var(--color-primary); border-radius: 4px; transition: width .3s ease; }
-.budget-bar-fill.exceeded { background: #ef4444; }
-.budget-stat { font-size: 12px; color: var(--color-text-muted); text-align: right; }
-
-/* 模型明细表格 */
-.table-responsive { overflow-x: auto; margin-top: 8px; }
-.models-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
-.models-table th, .models-table td { padding: 10px 12px; border-bottom: 1px solid #f1f3f8; }
-.models-table th { color: var(--color-text-muted); font-weight: 600; background: #fafbfc; }
-.model-id-cell code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
-.badge-unestimated {
+.badge-unknown-small {
   display: inline-block;
   padding: 2px 6px;
   font-size: 11px;
@@ -218,13 +279,30 @@ onMounted(load)
   border-radius: 4px;
 }
 
+.models-card { margin-top: 16px; padding: 20px; }
+.table-header { margin-bottom: 14px; }
+.table-header h3 { font-size: 16px; font-weight: 700; margin: 0 0 4px; }
+.table-subtitle { font-size: 12px; color: var(--color-text-muted); }
+.empty-state { padding: 32px; text-align: center; color: var(--color-text-muted); font-size: 14px; }
+
+.table-responsive { overflow-x: auto; }
+.models-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+.models-table th, .models-table td { padding: 10px 12px; border-bottom: 1px solid #f1f3f8; }
+.models-table th { color: var(--color-text-muted); font-weight: 600; background: #fafbfc; white-space: nowrap; }
+.model-name-cell code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.cost-text { font-family: monospace; font-weight: 600; }
+.text-muted { color: var(--color-text-muted); }
+.text-danger { color: #ef4444; }
+
+.boundary-card { margin-top: 24px; padding: 20px; }
+.boundary-card h2 { margin-bottom: 8px; font-size: 16px; }
 .boundary-card p { color: var(--color-text-muted); line-height: 1.7; font-size: 13px; margin: 0; }
-@media (max-width: 900px) {
-  .metric-grid { grid-template-columns: repeat(2, 1fr); }
-  .budget-items { grid-template-columns: 1fr; }
+
+@media (max-width: 1024px) {
+  .metric-grid { grid-template-columns: repeat(2, 1fr) !important; }
 }
-@media (max-width: 620px) {
-  .metric-grid { grid-template-columns: 1fr; }
+@media (max-width: 640px) {
+  .metric-grid { grid-template-columns: 1fr !important; }
   .page-header { flex-direction: column; }
 }
 </style>
