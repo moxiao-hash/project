@@ -230,4 +230,49 @@ describe('AssistantHealthView (Task 31 真实用量与模型遥测可观测性)'
     expect(wrapper.text()).not.toContain('今日调用次数配额')
     expect(wrapper.text()).not.toContain('今日预计花费限额')
   })
+
+  it('真实零行响应：modelCalls=0, models=[], priceStatus=NONE, usageEstimatedCost=0, currency=null, p50LatencyMs=0, p95LatencyMs=0 显示暂无数据而非 0 USD/0 ms/价格未知', async () => {
+    getAssistantHealth.mockResolvedValue(createHealthFixture({
+      modelCalls: 0,
+      failedModelCalls: 0,
+      modelFailureRate: 0,
+      modelPromptTokens: 0,
+      modelCachedPromptTokens: 0,
+      modelUncachedPromptTokens: 0,
+      modelCompletionTokens: 0,
+      modelReasoningTokens: 0,
+      modelTotalTokens: 0,
+      unknownPriceCalls: 0,
+      usageEstimatedCost: 0,
+      currency: null,
+      priceStatus: 'NONE',
+      priceVersion: null,
+      p50LatencyMs: 0,
+      p95LatencyMs: 0,
+      models: [],
+    }))
+
+    const wrapper = mount(AssistantHealthView)
+    await flushPromises()
+
+    const telemetrySection = wrapper.find('[data-testid="model-telemetry-section"]')
+    expect(telemetrySection.exists()).toBe(true)
+
+    // 严禁渲染 0 USD, 0 ms, 价格未知徽标或精确核算文案
+    expect(telemetrySection.text()).not.toContain('0 USD')
+    expect(telemetrySection.text()).not.toContain('0 ms')
+    expect(telemetrySection.find('[data-testid="cost-unknown-badge"]').exists()).toBe(false)
+    expect(telemetrySection.text()).not.toContain('精确核算')
+
+    // 估算费用卡片与延迟卡片渲染明确的暂无数据
+    const costCard = telemetrySection.find('[data-testid="model-cost-card"]')
+    expect(costCard.exists()).toBe(true)
+    expect(costCard.text()).toContain('暂无数据')
+    expect(costCard.text()).toContain('暂无已计价调用')
+
+    const latencyCard = telemetrySection.find('[data-testid="model-latency-card"]')
+    expect(latencyCard.exists()).toBe(true)
+    expect(latencyCard.text()).toContain('暂无数据')
+    expect(latencyCard.text()).toContain('暂无延迟采样数据')
+  })
 })
