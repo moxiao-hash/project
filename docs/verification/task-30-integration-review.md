@@ -57,3 +57,22 @@ git diff --check: passed
 ```
 
 仓库根目录执行 `ruff check .` 会扫描不属于 Python 项目配置范围的既有 `scripts/agent-planner-smoke.py` 并报错；项目规定且可复现的命令 `cd ai-service && python -m ruff check app tests` 通过。该误用不作为 Task 30 缺陷或通过依据。
+
+## 2026-09-20 最终继承验收
+
+### 结论
+
+Task 30 通过验收。验收分支 `codex/task-30-31-acceptance` 接入后端整改提交 `f48d5b0`、`0020dbd`、`934af4d`、`650f61c`，以及前端整改提交 `c796d87`。未合并 `main`。
+
+### 新鲜证据
+
+- ZCode 分支 `agent/zcode-task-30-remediation` 的远端提交为 `c796d876eaff0786bfc71b653b778de854fbc9e4`。该提交只修改 `web/**` 和 `docs/verification/task-30-frontend-remediation.md`。
+- 前端定向测试通过 31 项。ZCode 的提交前全量结果为 34 个测试文件和 311 项测试通过。类型检查、生产构建和 `git diff --check` 均通过。
+- 真实环境使用 Spring Boot 8081、FastAPI 8001、Vue 5174 和本机 MySQL。三个服务的健康检查均为 `UP`。
+- 真实 DeepSeek 返回 `FOCUS_ELEMENT / ASSISTANT / MESSAGE_INPUT`。浏览器最终满足 `document.activeElement === textarea.composer-input`。
+- Java 会话快照为 `COMPLETED`，`warnings=[]`，并保留服务端稳定 `actionId`。FastAPI 收到动作回执 POST，返回 200。
+- 先前真实验收已通过 `NAVIGATE`、`OPEN_MODAL`、`PREFILL_FORM` 和 `REFRESH_RESOURCE`。本轮只重跑此前唯一失败的焦点路径。
+
+### 环境说明
+
+共享 MySQL 测试库已被 Task 31 的独立迁移验证推进到 V45。Task 30 服务成功校验 45 条历史记录，但日志明确提示数据库版本高于本分支最新迁移 V44。因此，本轮证明 Task 30 运行链路兼容已升级数据库，不作为一份从 V43 到 V44 的干净迁移证明。此前的 V44 迁移证据仍由 Task 30 后端验收记录承担。
