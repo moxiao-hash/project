@@ -714,13 +714,17 @@ class JavaBackendClient:
         return response.json()
 
     async def release_assistant_usage_reservation(
-        self, reservation_id: str
+        self, reservation_id: str, owner_id: str
     ) -> dict[str, Any]:
-        """释放未产生用量的预占许可；重复释放是幂等无操作。"""
+        """按 owner 释放未产生用量的预占许可；重复释放是幂等无操作。
+
+        owner 必须随请求一起提交：Java 侧据此拒绝跨 owner 的 id-only 释放。
+        """
 
         response = await self._request(
             "POST",
             f"/internal/assistant-usage/reservations/{reservation_id}/release",
+            params={"ownerId": owner_id},
         )
         return response.json()
 

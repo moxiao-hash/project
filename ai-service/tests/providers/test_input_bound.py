@@ -1,50 +1,115 @@
-"""预占输入上界：确定性，且对字节级 BPE 是严格上界。"""
+"""预占输入上界：确定性、保守，且绝不因深度或类型而静默丢内容。"""
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from collections import OrderedDict
 
-from app.providers.input_bound import input_token_upper_bound
+import pytest
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-
-class _PromptValue:
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def __repr__(self) -> str:
-        return f"PromptValue({self.text!r})"
+from app.providers.input_bound import UnboundedInputError, input_token_upper_bound
 
 
-def test_bound_is_the_utf8_byte_length_of_plain_prompt_text():
+def _bytes(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
+def test_plain_text_is_counted_as_utf8_bytes():
     assert input_token_upper_bound("abc") == 3
-    # 结构化消息还会把 role/content 等键算进去，只会更保守，不会更小。
-    assert input_token_upper_bound([{"role": "user", "content": "abc"}]) >= 3
+    assert input_token_upper_bound("学习计划") == _bytes("学习计划")
 
 
-def test_bound_never_underestimates_multibyte_text():
-    text = "学习计划" * 10
-    assert input_token_upper_bound(text) == len(text.encode("utf-8"))
-    # 中文字符 3 字节，字节数严格大于字符数，因此也严格大于任何等量的 token 数。
-    assert input_token_upper_bound(text) > len(text)
+def test_deeply_nested_content_is_never_dropped():
+    marker = "深层内容不可丢弃"
+    payload: dict = {"level": {}}
+    cursor = payload["level"]
+    for _ in range(20):
+        cursor["next"] = {}
+        cursor = cursor["next"]
+    cursor["leaf"] = marker
+
+    assert input_token_upper_bound(payload) >= _bytes(marker)
 
 
-def test_bound_covers_langchain_messages_including_tool_calls():
+def test_bound_grows_with_additional_nested_content():
     plain = [HumanMessage(content="问题")]
-    with_tools = [HumanMessage(content="问题", tool_calls=[
-        {"name": "learning.context.get", "args": {"nodeId": "n1"}, "id": "call-1"},
-    ])]
+    nested = [HumanMessage(content="问题", additional_kwargs={"a": {"b": "额外内容"}})]
 
-    assert input_token_upper_bound(plain) >= len("问题".encode())
-    assert input_token_upper_bound(with_tools) > input_token_upper_bound(plain)
+    assert input_token_upper_bound(nested) > input_token_upper_bound(plain)
 
 
-def test_bound_is_deterministic_for_the_same_request():
+def test_empty_system_and_tool_messages_still_contribute_framing():
+    assert input_token_upper_bound([HumanMessage(content="")]) > 0
+    assert input_token_upper_bound([SystemMessage(content="")]) > 0
+    assert input_token_upper_bound([ToolMessage(content="", tool_call_id="call-1")]) > 0
+
+
+def test_message_roles_are_part_of_the_bound():
+    system = input_token_upper_bound([SystemMessage(content="x")])
+    human = input_token_upper_bound([HumanMessage(content="x")])
+
+    assert system != human
+
+
+def test_mappings_and_nested_tool_calls_are_counted():
+    with_tool_call = HumanMessage(content="问题", tool_calls=[
+        {"name": "learning.context.get", "args": {"nested": {"deep": "深层参数"}}, "id": "call-1"},
+    ])
+
+    assert input_token_upper_bound([with_tool_call]) > input_token_upper_bound(
+        [HumanMessage(content="问题")]
+    )
+    assert input_token_upper_bound([with_tool_call]) >= _bytes("深层参数")
+
+
+def test_bytes_are_counted_without_decoding_failures():
+    raw = b"\xff\xfe\x00binary"
+
+    assert input_token_upper_bound(raw) >= len(raw)
+    assert input_token_upper_bound([HumanMessage(content="x"), raw]) >= len(raw)
+
+
+def test_unknown_objects_fail_closed_instead_of_using_repr():
+    class Opaque:
+        __slots__ = ()
+
+    with pytest.raises(UnboundedInputError):
+        input_token_upper_bound([Opaque()])
+
+
+def test_bound_is_deterministic_across_repeated_calls():
+    payload = [SystemMessage(content="你是学习助手"), HumanMessage(content="继续昨天的章节")]
+    first = input_token_upper_bound(payload)
+
+    assert all(input_token_upper_bound(payload) == first for _ in range(5))
+    same_shape = [SystemMessage(content="你是学习助手"), HumanMessage(content="继续昨天的章节")]
+    assert input_token_upper_bound(same_shape) == first
+
+
+def test_cycles_do_not_hang_and_stay_bounded():
+    cyclic: list = ["guard"]
+    cyclic.append(cyclic)
+
+    assert input_token_upper_bound(cyclic) >= _bytes("guard")
+
+
+def test_nested_containers_are_counted_and_never_dropped():
+    payload = OrderedDict([("a", ["x", "y", {"b": ["z"]}])])
+
+    assert input_token_upper_bound(payload) >= _bytes("xyz")
+
+
+def test_bound_never_undercounts_the_sum_of_leaf_bytes():
     payload = [
-        SystemMessage(content="你是学习助手"),
-        HumanMessage(content="继续昨天的章节"),
+        SystemMessage(content="系统提示"),
+        HumanMessage(content="用户问题"),
+        {"role": "user", "content": "字典消息"},
     ]
-    assert input_token_upper_bound(payload) == input_token_upper_bound(payload)
+    leaves = (
+        _bytes("系统提示")
+        + _bytes("用户问题")
+        + _bytes("字典消息")
+        + _bytes("role")
+        + _bytes("user")
+        + _bytes("content")
+    )
 
-
-def test_empty_inputs_bound_to_zero_and_unknown_objects_are_not_ignored():
-    assert input_token_upper_bound(None) == 0
-    assert input_token_upper_bound([]) == 0
-    assert input_token_upper_bound(_PromptValue("hello")) >= len("hello")
+    assert input_token_upper_bound(payload) >= leaves

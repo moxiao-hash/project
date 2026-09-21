@@ -75,6 +75,13 @@ public class AssistantUsageService {
     }
 
     private AssistantUsageRecord persistNewUsage(RecordUsageCommand command) {
+        // 幂等键是全局的，但由调用方提供：先确认它没有被另一个 owner 的预占占用，
+        // 否则这次"新记录"会顺手终结对方的许可。
+        var reservation = reservationRepository.findById(command.usageId());
+        if (reservation.isPresent()
+                && !command.ownerId().equals(reservation.get().getOwnerId())) {
+            throw new AssistantUsageOwnerConflictException(command.usageId());
+        }
         ModelUsage usage = command.usage();
         var estimate = pricingCatalog.estimate(usage.modelName(), usage, command.occurredAt());
         var entity = new AssistantModelUsageEntity(
@@ -100,9 +107,18 @@ public class AssistantUsageService {
                         .map(Enum::name).orElse(null),
                 command.occurredAt());
         usageRepository.saveAndFlush(entity);
-        // 同一事务内终结；抛错则整条用量回滚，不会出现"已落库但预占仍 RESERVED"。
-        reservationRepository.finalizeReservation(
-                command.usageId(), entity.getEstimatedCost(), command.occurredAt());
+        if (reservation.isPresent()
+                && AssistantUsageReservationEntity.STATE_RESERVED
+                        .equals(reservation.get().getState())) {
+            // 同一事务内按 owner 终结，且要求恰好命中一行；否则整体回滚，重试可完整重放，
+            // 不会出现"已落库但预占仍 RESERVED"，也不会替别人终结。
+            int finalized = reservationRepository.finalizeReservation(
+                    command.usageId(), command.ownerId(),
+                    entity.getEstimatedCost(), command.occurredAt());
+            if (finalized != 1) {
+                throw new IllegalStateException("预占未能按 owner 终结，回滚本次用量以便重试");
+            }
+        }
         return new AssistantUsageRecord(
                 entity.getId(),
                 entity.getEstimatedCost(),
@@ -143,10 +159,22 @@ public class AssistantUsageService {
         }
     }
 
-    /** 终结或释放预占；重复调用是无操作，返回是否真的改变了状态。 */
+    /**
+     * 终结或释放预占；只有归属 owner 能改动自己的许可。
+     *
+     * <p>重复调用是无操作，返回是否真的改变了状态。id 属于其他 owner 时抛出
+     * {@link AssistantUsageOwnerConflictException}，绝不改动对方那一行。</p>
+     */
     @Transactional
-    public boolean release(String reservationId, Instant at) {
-        return reservationRepository.releaseReservation(reservationId, at) > 0;
+    public boolean release(String reservationId, String ownerId, Instant at) {
+        var existing = reservationRepository.findById(reservationId);
+        if (existing.isEmpty()) {
+            return false;
+        }
+        if (!existing.get().getOwnerId().equals(ownerId)) {
+            throw new AssistantUsageOwnerConflictException(reservationId);
+        }
+        return reservationRepository.releaseReservation(reservationId, ownerId, at) > 0;
     }
 
     private BudgetPermit reserveInTransaction(ReserveUsageCommand command, Instant at) {
@@ -337,12 +365,18 @@ public class AssistantUsageService {
             RecordUsageCommand command
     ) {
         // usageId 属于另一个 owner 时，既不能把对方的数字当成本次重复上报返回，
-        // 更不能替对方终结预占；新的自愈路径必须先校验归属。
+        // 更不能替对方终结预占；自愈路径必须先校验归属。
         if (!stored.getOwnerId().equals(command.ownerId())) {
-            throw new IllegalStateException("usageId 已归属于其他 owner，拒绝跨 owner 上报");
+            throw new AssistantUsageOwnerConflictException(stored.getId());
+        }
+        var reservation = reservationRepository.findById(stored.getId());
+        if (reservation.isPresent()
+                && !command.ownerId().equals(reservation.get().getOwnerId())) {
+            // 自愈只允许终结"本次上报 owner"名下的预占。
+            throw new AssistantUsageOwnerConflictException(stored.getId());
         }
         reservationRepository.finalizeReservation(
-                stored.getId(), stored.getEstimatedCost(), command.occurredAt());
+                stored.getId(), command.ownerId(), stored.getEstimatedCost(), command.occurredAt());
         return new AssistantUsageRecord(
                 stored.getId(),
                 stored.getEstimatedCost(),

@@ -146,10 +146,12 @@ class InternalAssistantUsageContractTest {
 
         // 释放后名额重新可用。
         mockMvc.perform(post("/internal/assistant-usage/reservations/reserve-1/release")
+                        .param("ownerId", owner.userId())
                         .header("X-Internal-Service-Token", INTERNAL_TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.released").value(true));
         mockMvc.perform(post("/internal/assistant-usage/reservations/reserve-1/release")
+                        .param("ownerId", owner.userId())
                         .header("X-Internal-Service-Token", INTERNAL_TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.released").value(false));
@@ -162,6 +164,46 @@ class InternalAssistantUsageContractTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(reservationPayload(owner.userId(), "reserve-4")))
                 .andExpect(status().isUnauthorized());
+    }
+
+
+    @Test
+    void ownerScopedIdsCannotBeReleasedOrFinalizedByAnotherOwner() throws Exception {
+        Registration ownerA = registerUser("owner-scope-a");
+        Registration ownerB = registerUser("owner-scope-b");
+        Instant now = Instant.now();
+        budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
+                ownerA.userId(), 5, null, 512, "USD", now));
+        budgetRepository.saveAndFlush(new AssistantUsageBudgetEntity(
+                ownerB.userId(), 5, null, 512, "USD", now));
+        String usageId = "scope-" + System.nanoTime();
+
+        reserve(ownerA.userId(), usageId)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.allowed").value(true));
+
+        // 另一个 owner 不能用 id-only 路径终结别人的预占。
+        mockMvc.perform(post("/internal/assistant-usage")
+                        .header("X-Internal-Service-Token", INTERNAL_TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(usage(ownerB.userId(), usageId, "deepseek-flash", "SUCCEEDED",
+                                100, 0, 10, null)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ASSISTANT_USAGE_OWNER_CONFLICT"));
+
+        // 也不能释放。
+        mockMvc.perform(post("/internal/assistant-usage/reservations/" + usageId + "/release")
+                        .param("ownerId", ownerB.userId())
+                        .header("X-Internal-Service-Token", INTERNAL_TOKEN))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ASSISTANT_USAGE_OWNER_CONFLICT"));
+
+        // 归属 owner 自己仍然可用。
+        mockMvc.perform(post("/internal/assistant-usage/reservations/" + usageId + "/release")
+                        .param("ownerId", ownerA.userId())
+                        .header("X-Internal-Service-Token", INTERNAL_TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.released").value(true));
     }
 
     private org.springframework.test.web.servlet.ResultActions reserve(String ownerId, String usageId)

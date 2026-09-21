@@ -7,9 +7,17 @@ import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
@@ -47,7 +55,7 @@ class AssistantUsageReservationIntegrityTest {
         assertThat(service.reserve(reserveCommand(owner, conversation, usageId), at).allowed()).isTrue();
 
         doThrow(new IllegalStateException("finalize failed"))
-                .when(reservationRepository).finalizeReservation(eq(usageId), any(), any());
+                .when(reservationRepository).finalizeReservation(eq(usageId), any(), any(), any());
 
         RecordUsageCommand record = recordCommand(owner, conversation, usageId);
         assertThatThrownBy(() -> service.record(record))
@@ -129,7 +137,190 @@ class AssistantUsageReservationIntegrityTest {
         usageRepository.saveAndFlush(usageEntity(ownerA, conversation, usageId));
 
         assertThatThrownBy(() -> service.record(recordCommand(ownerB, conversation, usageId)))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(AssistantUsageOwnerConflictException.class);
+    }
+
+
+    @Test
+    void newRecordMustNotFinalizeAnotherOwnersReservation() {
+        String ownerA = "o-xa-" + System.nanoTime();
+        String ownerB = "o-xb-" + System.nanoTime();
+        String usageId = "x-shared-" + System.nanoTime();
+        String conversationA = "cx-a-" + System.nanoTime();
+        String conversationB = "cx-b-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(reserveCommand(ownerA, conversationA, usageId), at).allowed())
+                .isTrue();
+
+        try {
+            service.record(recordCommand(ownerB, conversationB, usageId));
+        } catch (RuntimeException expected) {
+            // 冲突必须显式暴露；这里只断言"绝不改写别人的预占"。
+        }
+
+        var foreign = reservationRepository.findById(usageId).orElseThrow();
+        assertThat(foreign.getOwnerId()).isEqualTo(ownerA);
+        assertThat(foreign.getState()).isEqualTo(AssistantUsageReservationEntity.STATE_RESERVED);
+        assertThat(usageRepository.findById(usageId)).isEmpty();
+    }
+
+    @Test
+    void duplicateSelfHealMustNotFinalizeAnotherOwnersReservation() {
+        String ownerA = "o-ya-" + System.nanoTime();
+        String ownerB = "o-yb-" + System.nanoTime();
+        String usageId = "y-shared-" + System.nanoTime();
+        String conversation = "cy-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(reserveCommand(ownerB, conversation, usageId), at).allowed())
+                .isTrue();
+        usageRepository.saveAndFlush(usageEntity(ownerA, conversation, usageId));
+
+        try {
+            service.record(recordCommand(ownerA, conversation, usageId));
+        } catch (RuntimeException expected) {
+            // 同上：重复上报的自愈不得跨 owner。
+        }
+
+        var foreign = reservationRepository.findById(usageId).orElseThrow();
+        assertThat(foreign.getOwnerId()).isEqualTo(ownerB);
+        assertThat(foreign.getState()).isEqualTo(AssistantUsageReservationEntity.STATE_RESERVED);
+        assertThat(usageRepository.findById(usageId)).isPresent();
+    }
+
+
+    @Test
+    void newRecordConflictIsMachineReadableAndLeavesTheForeignReservationAlone() {
+        String ownerA = "o-cda-" + System.nanoTime();
+        String ownerB = "o-cdb-" + System.nanoTime();
+        String usageId = "code-shared-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(
+                reserveCommand(ownerA, "cc-a-" + System.nanoTime(), usageId), at)
+                .allowed()).isTrue();
+
+        AssistantUsageOwnerConflictException conflict = catchThrowableOfType(
+                () -> service.record(recordCommand(
+                        ownerB, "cc-b-" + System.nanoTime(), usageId)),
+                AssistantUsageOwnerConflictException.class);
+
+        assertThat(conflict).isNotNull();
+        assertThat(conflict.code()).isEqualTo(AssistantUsageOwnerConflictException.CODE);
+        assertThat(reservationRepository.findById(usageId).orElseThrow().getState())
+                .isEqualTo(AssistantUsageReservationEntity.STATE_RESERVED);
+        assertThat(usageRepository.findById(usageId)).isEmpty();
+    }
+
+    @Test
+    void duplicateSelfHealConflictIsMachineReadable() {
+        String ownerA = "o-c2a-" + System.nanoTime();
+        String ownerB = "o-c2b-" + System.nanoTime();
+        String usageId = "code2-shared-" + System.nanoTime();
+        String conversation = "cc2-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(reserveCommand(ownerB, conversation, usageId), at).allowed())
+                .isTrue();
+        usageRepository.saveAndFlush(usageEntity(ownerA, conversation, usageId));
+
+        AssistantUsageOwnerConflictException conflict = catchThrowableOfType(
+                () -> service.record(recordCommand(ownerA, conversation, usageId)),
+                AssistantUsageOwnerConflictException.class);
+
+        assertThat(conflict).isNotNull();
+        assertThat(conflict.code()).isEqualTo(AssistantUsageOwnerConflictException.CODE);
+        assertThat(reservationRepository.findById(usageId).orElseThrow().getState())
+                .isEqualTo(AssistantUsageReservationEntity.STATE_RESERVED);
+    }
+
+    @Test
+    void releaseIsOwnerScopedAndIdempotent() {
+        String ownerA = "o-rla-" + System.nanoTime();
+        String ownerB = "o-rlb-" + System.nanoTime();
+        String usageId = "rel-shared-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(
+                reserveCommand(ownerA, "cr-" + System.nanoTime(), usageId), at)
+                .allowed()).isTrue();
+
+        AssistantUsageOwnerConflictException conflict = catchThrowableOfType(
+                () -> service.release(usageId, ownerB, at),
+                AssistantUsageOwnerConflictException.class);
+
+        assertThat(conflict).isNotNull();
+        assertThat(conflict.code()).isEqualTo(AssistantUsageOwnerConflictException.CODE);
+        assertThat(reservationRepository.findById(usageId).orElseThrow().getState())
+                .isEqualTo(AssistantUsageReservationEntity.STATE_RESERVED);
+        // 自己的释放照常生效，且重复释放仍是无操作。
+        assertThat(service.release(usageId, ownerA, at)).isTrue();
+        assertThat(service.release(usageId, ownerA, at)).isFalse();
+    }
+
+    @Test
+    void concurrentDuplicateRecordsInsertOneRowAndFinalizeOnce() throws Exception {
+        String owner = "o-ccr-" + System.nanoTime();
+        String usageId = "conc-record-" + System.nanoTime();
+        String conversation = "ccr-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(reserveCommand(owner, conversation, usageId), at).allowed())
+                .isTrue();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Callable<AssistantUsageRecord> attempt = () -> {
+                barrier.await(5, TimeUnit.SECONDS);
+                return service.record(recordCommand(owner, conversation, usageId));
+            };
+            Future<AssistantUsageRecord> first = pool.submit(attempt);
+            Future<AssistantUsageRecord> second = pool.submit(attempt);
+            List<AssistantUsageRecord> results = List.of(
+                    first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
+
+            assertThat(results.stream().filter(record -> !record.duplicate()).count()).isEqualTo(1);
+            assertThat(results.stream().filter(AssistantUsageRecord::duplicate).count()).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(usageRepository.findAllByConversationIdAndTurnId(conversation, "turn-1"))
+                .hasSize(1);
+        assertThat(reservationRepository.findById(usageId).orElseThrow().getState())
+                .isEqualTo(AssistantUsageReservationEntity.STATE_FINALIZED);
+    }
+
+    @Test
+    void concurrentRecordsWithForeignReservationNeverFinalizeIt() throws Exception {
+        String ownerA = "o-ccx-" + System.nanoTime();
+        String ownerB = "o-ccy-" + System.nanoTime();
+        String usageId = "conc-x-shared-" + System.nanoTime();
+        String conversationA = "ccx-" + System.nanoTime();
+        Instant at = Instant.now();
+        assertThat(service.reserve(reserveCommand(ownerB, conversationA, usageId), at).allowed())
+                .isTrue();
+
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Callable<Throwable> attempt = () -> {
+                barrier.await(5, TimeUnit.SECONDS);
+                try {
+                    service.record(recordCommand(ownerA, conversationA, usageId));
+                    return null;
+                } catch (Throwable error) {
+                    return error;
+                }
+            };
+            Future<Throwable> first = pool.submit(attempt);
+            Future<Throwable> second = pool.submit(attempt);
+
+            assertThat(first.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(AssistantUsageOwnerConflictException.class);
+            assertThat(second.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(AssistantUsageOwnerConflictException.class);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(reservationRepository.findById(usageId).orElseThrow().getState())
+                .isEqualTo(AssistantUsageReservationEntity.STATE_RESERVED);
+        assertThat(usageRepository.findById(usageId)).isEmpty();
     }
 
     private static ReserveUsageCommand reserveCommand(String owner, String conversation, String usageId) {

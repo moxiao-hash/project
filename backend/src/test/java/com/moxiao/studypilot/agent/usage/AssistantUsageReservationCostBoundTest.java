@@ -165,7 +165,7 @@ class AssistantUsageReservationCostBoundTest {
         assertThat(permit.allowed()).isTrue();
         assertThat(service.reserve(command(owner, "hold-2", INPUT_BOUND), PEAK).allowed()).isFalse();
 
-        assertThat(service.release(permit.reservationId(), PEAK)).isTrue();
+        assertThat(service.release(permit.reservationId(), owner, PEAK)).isTrue();
         assertThat(service.reserve(command(owner, "hold-3", INPUT_BOUND), PEAK).allowed()).isTrue();
     }
 
