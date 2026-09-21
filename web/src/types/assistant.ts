@@ -104,6 +104,26 @@ export interface AutomationSettings {
   updatedAt: string
 }
 
+export interface ModelUsageDetail {
+  modelId: string
+  callCount: number
+  promptTokens: number
+  completionTokens: number
+  reasoningTokens?: number
+  estimatedCost: number
+  isEstimated: boolean
+}
+
+export interface UserBudgetStatus {
+  dailyCallsLimit: number
+  dailyCallsUsed: number
+  dailyCostLimit: number
+  dailyCostUsed: number
+  maxOutputTokensPerTurn: number
+  budgetExhausted: boolean
+  exhaustedReason?: string | null
+}
+
 export interface AssistantHealth {
   costSamples: number
   tokenSamples: number
@@ -114,9 +134,15 @@ export interface AssistantHealth {
   successRate: number
   promptTokens: number
   completionTokens: number
+  reasoningTokens?: number
   estimatedCost: number
+  isCostEstimated?: boolean
   averageLatencyMs: number
+  p50LatencyMs?: number
+  p95LatencyMs?: number
   pendingConfirmations: number
+  models?: ModelUsageDetail[]
+  budget?: UserBudgetStatus
 }
 
 export type AssistantEventType =
