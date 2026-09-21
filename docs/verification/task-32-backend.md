@@ -8,9 +8,14 @@
 - **分支**：`agent/deepseek-task-32-developer-hardening`
 - **工作树**：`/Users/moxiao/IdeaProjects/project-deepseek-task-32`
 - **接手基线**：`dac37e5`（含本 worktree 内约 22 个已修改文件 + 3 个新增文件的未提交工作）
-- **实现提交**：`5cc8bd1ad9653c46846f3f458ca50d4b67c7d6b4`（`fix: harden governed developer agent workflows`）
-- **本验证文档提交**：`docs: verify task 32 backend hardening`（本次提交）
+- **首轮实现提交**：`5cc8bd1ad9653c46846f3f458ca50d4b67c7d6b4`（`fix: harden governed developer agent workflows`）
+- **首轮证据提交**：`41a1fcde84ae1b5867875bb2ca4f994f2b17428a`（`docs: verify task 32 backend hardening`）
+- **Codex 阻断项整改提交**：`176ccd38af3c493cd5f7c4f80ec55d51b46491d8`（`fix: bind git push to the effective push destination`）
+- **本验证文档提交**：`docs: record task 32 push destination remediation`（本次提交）
 - **真实容器链路**：**BLOCKED**（见 §5，未降级为宿主 shell 执行）
+
+> 本文件已按 Codex 独立验收结论更新：首轮 501 项通过**不能**覆盖
+> §3.6 的 push 目标绑定缺陷；该缺陷已按 TDD 整改并在本文件记录 RED/GREEN。
 
 ---
 
@@ -81,11 +86,33 @@
 
 ### 2.3 commit / push 加固（Step 4）
 
-- `GitPushPreview` / `GitPushRequest` 绑定 `remoteUrlDigest`（远端 URL 摘要）、
-  `expectedRemoteRef`、**`expectedRemoteRefCommit`**（预览时解析出的远端 ref 提交）与
-  `timeoutSeconds`；`validateGitPush` 逐项比对，任一漂移即失败关闭。
+- `GitPushPreview` / `GitPushRequest` 绑定 `remoteUrlDigest`（**JGit 实际 PUSH 使用的唯一目标地址**
+  摘要，见 §2.4）、`expectedRemoteRef`、**`expectedRemoteRefCommit`**（预览时解析出的远端 ref 提交）
+  与 `timeoutSeconds`；`validateGitPush` 逐项比对，任一漂移即失败关闭。
 - `push` 调用 `setTimeout(...)`，并把超时限制在 1–120 秒。
 - 确认 commit 仍然只创建本地提交，绝不隐式 push。
+
+### 2.4 push 目标绑定修复（Codex 验收阻断项）
+
+JGit 的 PUSH 走 `Transport.openAll(repository, remote, Operation.PUSH)`，其地址来自
+`RemoteConfig.getPushURIs()`（`remote.<name>.pushurl`），**只有 pushurl 为空时才回退**
+`getURIs()`（`remote.<name>.url`）。首轮实现只哈希 `remote.origin.url`，因此
+`remote.origin.pushurl` 能把已确认的推送改到未绑定的目标；多个 pushurl 还可能出现部分写入，
+而预览只绑定了一个无关地址。
+
+修复（`WorkspaceDeveloperService`）：
+
+- `effectivePushUris(config)`：用 `new RemoteConfig(config, "origin")` 派生唯一有效 PUSH URI
+  （pushurl 非空用 pushurl，否则用 fetch url）；有效目标数量不为 1 时直接拒绝。
+- `canonicalDestination(uri)`：只保留 scheme/host/port/path，**不含用户名与密码**——摘要无法反推
+  凭据，也不会因凭据轮换误报漂移；写入目标只由这四项决定。
+- `pushDestinationDigest(config)`：对规范化形式计算 SHA-256，继续复用公开字段 `remoteUrlDigest`，
+  **未做 Schema 变更**。
+- 确认阶段（`validateGitPush`）重新派生并比对；**无法再派生唯一目标时按冲突（409）**处理
+  （预览是成功的，目标消失属于状态漂移，不是参数错误）。
+- `pushConfirmed` 在取锁后立即再校验一次，随后才 `git.push()`；push 之后用
+  `PushResult.getURI()` 复核 JGit **实际使用**的目标地址是否仍是绑定的那一个（静默重定向检测）。
+- 分支、HEAD、远端 ref、超时、幂等、owner 隔离与 commit/push 独立确认行为不变。
 
 ## 3. RED / GREEN 证据
 
@@ -168,25 +195,70 @@ GREEN（恢复比对后）：
 [INFO] Tests run: 2, Failures: 0, Errors: 0  -- DeveloperGitWorkflowTest
 ```
 
+### 3.6 RED：push 目标绑定缺陷（Codex 验收阻断项）→ GREEN
+
+Codex 独立验收指出：`GitPushPreview.remoteUrlDigest` 只哈希 `remote.origin.url`，
+但 JGit 的 PUSH 使用 `RemoteConfig.getPushURIs()`（`remote.origin.pushurl`），
+仅在 pushurl 为空时才回退 fetch url。因此 pushurl 可以把已确认的推送改到未绑定的目标，
+多个 pushurl 还可能部分写入。新增三个测试，修复前**全红**：
+
+```
+[ERROR] DeveloperWorkspaceHardeningTest.pushPreviewBindsTheEffectivePushUrlInsteadOfTheFetchUrl:222
+        Expecting actual:
+          "60c63bba1e1efbd9a97df0830fe20c3e03f5b3f85e2eec23551b3f4391bd7fd6"
+        not to be equal to:
+          "60c63bba1e1efbd9a97df0830fe20c3e03f5b3f85e2eec23551b3f4391bd7fd6"
+[ERROR] DeveloperWorkspaceHardeningTest.pushConfirmationFailsClosedWhenThePushUrlChangesAfterPreview:242
+        Expecting code to raise a throwable.
+[ERROR] DeveloperWorkspaceHardeningTest.pushRejectsMultipleEffectiveDestinationsInsteadOfPartiallyPushing:261
+        Expecting code to raise a throwable.
+[ERROR] Tests run: 15, Failures: 3, Errors: 0, Skipped: 0
+```
+
+第一条失败的对比值**完全相同**，正是缺陷本身：设置 `pushurl` 前后摘要一字不变，
+说明摘要根本没有绑定实际写入目标。三个测试分别覆盖：
+
+1. `origin.url` 指向 bare A、`origin.pushurl` 指向 bare B：预览必须绑定 B，
+   确认后只有 B 前进、A 不变（修复后 `pushConfirmed` 断言 `bareHead(B) == expectedHead`）。
+2. 预览后把 `pushurl` 改到另一个 bare：确认必须 `ConflictException`，两个远端都不得变化。
+3. 两个 pushurl（以及无 pushurl 但多个 fetch url）：预览与确认都必须拒绝，不得部分推送。
+
+修复后：
+
+```
+[INFO] Tests run: 15, Failures: 0, Errors: 0  -- DeveloperWorkspaceHardeningTest
+```
+
+其中第 3 项在实现过程中还暴露一处语义不一致并已修正：确认阶段"无法再派生唯一目标"
+原先抛出 400 语义的 `IllegalArgumentException`，但预览此前是成功的，目标消失属于
+**状态漂移**，因此改为 409 语义的 `ConflictException`（与 `validateGitPush` 的契约一致）。
+
 ## 4. 自动化验证结果
+
+整改后（`176ccd3`）的新鲜结果：
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-| Java 聚焦（Task 32 相关 10 个测试类） | `./mvnw -o test -Dtest='DeveloperWorkspaceHardeningTest,WorkspaceDeveloperServiceTest,DeveloperPatchWorkflowTest,DeveloperGitWorkflowTest,InterfaceFallbackPolicyTest,RunnerGovernanceWorkflowTest,RunnerProtocolSecurityTest,RunnerWorkingDirectoryWorkflowTest,UnixSocketRunnerClientTest,AgentToolCoverageTest'` | **69 项通过** |
-| Java 全量 | `./mvnw -o test` | **501 项通过，0 失败 0 错误** |
+| Java 聚焦（Task 32 相关 9 个测试类） | `./mvnw -o test -Dtest='DeveloperWorkspaceHardeningTest,WorkspaceDeveloperServiceTest,DeveloperPatchWorkflowTest,DeveloperGitWorkflowTest,RunnerGovernanceWorkflowTest,RunnerProtocolSecurityTest,RunnerWorkingDirectoryWorkflowTest,UnixSocketRunnerClientTest,AgentToolCoverageTest'` | **70 项通过** |
+| Java 全量 | `./mvnw -o test` | **504 项通过，0 失败 0 错误** |
 | ai-service 全量 | `PYTHONPATH=ai-service <venv>/python -m pytest -q ai-service/tests` | **556 项通过**（1 条上游 Starlette 弃用警告） |
 | runner-service | `PYTHONPATH=runner-service <venv>/python -m pytest -q runner-service/tests` | **35 项通过** |
-| Ruff | `ruff check runner-service` / `ruff check ai-service` | 全部通过 |
+| Ruff | `ruff check runner-service` / `ruff check ai-service`（根目录执行） | 全部通过 |
 | 能力矩阵门禁 | `node scripts/verify-agent-capability-matrix.mjs` | 通过（31 页面 / 64 工具） |
 | 空白检查 | `git diff --check` | 干净 |
 
-上述均为自动化/H2 证据，除 §5 的 REAL_E2E 外不得写成真实全链路通过。
+> 首轮（`5cc8bd1`）结果是 Java 501 / 聚焦 69；整改新增 3 个 push 目标绑定测试后为 504 / 70。
+> 上述均为自动化/H2 证据，除 §5 的 REAL_E2E 外不得写成真实全链路通过。
 
 ## 5. Step 5：一次性临时仓库 REAL_E2E（`[REAL_E2E]`，部分 BLOCKED）
 
 脚本：`scripts/task32-temp-git-e2e.py`。它新建一次性临时工作仓库与本地 bare remote
 （**不使用 StudyPilot 主仓库作破坏性样本**），通过真实运行中的 Java 服务 + 真实 MySQL
 驱动 internal agent-tools + 专用确认链路，并在结束时删除整个临时目录。
+
+**整改后复跑**（`176ccd3`，改动 push 目标绑定之后）：链路结果与下表一致，`push-confirm` 仍为 PASS
+（真实 `file://` bare remote 的远端 ref 等于本地 HEAD），说明新的目标派生与 push 后复核
+没有破坏真实推送；容器段仍为 BLOCKED。
 
 运行方式（本次实际执行）：
 
@@ -256,6 +328,10 @@ podman-machine-default*  libkrun  2 weeks ago  LAST UP: Never
    `ai-service/app/unified_agent/supervisor.py`（原样回传预览事实）与全部相关测试。
    注意：仅绑定 `expectedRemoteRef`（ref 名称）是常量，无法发现远端前移，
    `expectedRemoteRefCommit` 才是真正的漂移检测。
+   整改（§3.6）**只改变 `remoteUrlDigest` 的语义**（由 fetch URL 改为有效 PUSH 目标地址的摘要），
+   **字段名、类型与 Schema 均未变化**，因此调用方无需改动。
+   新增策略：**有效推送目标必须唯一**——配置了多个 `pushurl`，或在没有 `pushurl` 时配置了多个
+   `url`，预览与确认都会被拒绝（预览 400 / 确认 409），不允许部分多目标推送。
 2. **`workingDirectory`**：`RunnerExecutionRequest`/`Preview`/`SignedEnvelope` 新增字段，
    DB 迁移 V47；`runner.execution.preview`、`runner.check.run`、
    `runner.dependencies.prepare` 三个工具新增**可选** `workingDirectory` 参数。
@@ -277,11 +353,26 @@ podman-machine-default*  libkrun  2 weeks ago  LAST UP: Never
    但意味着 Developer Agent 无法读取大文件。若产品希望改为截断+`truncated=true`，
    属于行为变更，需 Codex 决策。
 5. `V47` 依赖 V46 之后为空号；若 Codex 在其他分支已占用 V47，需要重新编号（本分支未合并 `main`）。
+6. **push 目标校验的残余时间窗口（已知限制，未隐藏）**：`pushConfirmed` 在取工作区锁后立即重新
+   派生并比对目标摘要，随后才调用 `git.push()`；两次调用之间仍存在同机进程改写
+   `.git/config` 的极短窗口。本分支用两种方式收敛该风险：(a) 比对紧贴 push，(b) push 之后用
+   `PushResult.getURI()` 复核实际目标并在不一致时显式失败。**未**改为"按 URI 直接推送"，
+   因为那会改变真实远端的认证路径（凭据助手/URL 重写），而本环境无法验证该行为；
+   如需彻底消除窗口，建议作为独立任务在具备真实远端的环境中评估。
+7. 推送失败时的异常按既有约定包装为 `IllegalArgumentException("执行 Git push 失败", cause)`；
+   `GlobalExceptionHandler` 与 `AgentToolActionService.safeError` 都只取
+   `exception.getMessage()`（不含 cause、不含栈），且新增消息均为静态文本、
+   `canonicalDestination` 明确剔除用户名与密码，因此不会把带凭据的 URL 写入响应、通知或审计。
 
 ## 8. 下一步（交给 Codex）
 
 1. 独立复跑 §4 的命令（注意 worktree 内无 `.venv`，需用主工作区解释器）。
-2. 审查 §6 的契约变更是否与冻结契约一致，特别是 `developer.git.push` 的必填字段
-   是否已由前端/其他调用方按新契约传参（本分支未改 `web/**`）。
-3. 决定 §7.3/§7.4 两项观察是否需要独立任务。
-4. 在本机具备容器运行时后再补 Step 7 的真实容器链路，Task 32 的容器部分在此之前保持 BLOCKED。
+2. 复审 §3.6 的 push 目标绑定修复：`effectivePushUris` 的派生是否与 JGit
+   `Transport.openAll(..., Operation.PUSH)` 语义一致、多目标策略是否为期望的"唯一目标"策略，
+   以及 §7.6 记录的残余窗口与替代方案取舍是否可接受。
+3. 审查 §6 的其他契约变更是否与冻结契约一致，特别是 `developer.git.push` 的必填字段
+   是否已由前端/其他调用方按新契约传参（本分支未改 `web/**`；Codex 已确认 Python
+   supervisor 是当前 push 调用方且已同步）。
+4. §7.3/§7.4 两项观察按 Codex 结论保持现状：`/api/agent-grants` 的 2038 问题记入独立 backlog，
+   `readFile` >64 KiB 维持确定性拒绝。
+5. 在本机具备容器运行时后再补 Step 7 的真实容器链路，Task 32 的容器部分在此之前保持 BLOCKED。
