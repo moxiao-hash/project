@@ -69,8 +69,8 @@ class SequencedGuard:
             1000 + len(self.reserves),
         )
 
-    async def release(self, reservation_id):
-        self.released.append(reservation_id)
+    async def release(self, reservation_id, *, owner_id):
+        self.released.append((reservation_id, owner_id))
 
 
 class FailingGuard:
@@ -79,7 +79,7 @@ class FailingGuard:
     async def reserve(self, **kwargs):
         return BudgetPermit(None, False, "BUDGET_CHECK_UNAVAILABLE")
 
-    async def release(self, reservation_id):
+    async def release(self, reservation_id, *, owner_id):
         return None
 
 
@@ -233,7 +233,7 @@ async def test_provider_error_releases_the_reservation():
     model, _ = _model(guard, runnable=ExplodingRunnable())
     with pytest.raises(RuntimeError):
         await model.ainvoke([{"role": "user", "content": "x"}])
-    assert guard.released == ["reservation-1"]
+    assert guard.released == [("reservation-1", "owner-1")]
 
 
 @pytest.mark.anyio
@@ -456,3 +456,34 @@ async def test_every_reservation_carries_a_conservative_input_bound():
     # 上界必须覆盖正文的 UTF-8 字节数（结构化字段只会让它更大）。
     assert guard.reserves[0]["input_tokens_upper_bound"] >= len(text.encode("utf-8"))
     assert guard.reserves[0]["input_tokens_upper_bound"] > 0
+
+
+@pytest.mark.anyio
+async def test_release_carries_the_owning_owner():
+    class ExplodingRunnable(RecordingRunnable):
+        async def ainvoke(self, messages, config=None, **kwargs):
+            self.calls.append(messages)
+            raise RuntimeError("provider down")
+
+    guard = SequencedGuard()
+    model, _ = _model(guard, owner_id="owner-42", runnable=ExplodingRunnable())
+    with pytest.raises(RuntimeError):
+        await model.ainvoke([{"role": "user", "content": "x"}])
+
+    assert guard.released == [("reservation-1", "owner-42")]
+
+
+@pytest.mark.anyio
+async def test_unbounded_input_fails_closed_before_any_provider_call():
+    class Opaque:
+        __slots__ = ()
+
+    guard = SequencedGuard()
+    model, runnable = _model(guard)
+
+    with pytest.raises(ModelBudgetExceededError) as error:
+        await model.ainvoke([Opaque()])
+
+    assert error.value.reason == "MODEL_INPUT_UNBOUNDED"
+    assert runnable.calls == []
+    assert guard.reserves == []

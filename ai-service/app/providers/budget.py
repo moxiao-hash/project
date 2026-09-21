@@ -127,17 +127,22 @@ class ModelBudgetGuard:
             timezone=timezone if isinstance(timezone, str) and timezone else "Asia/Shanghai",
         )
 
-    async def release(self, reservation_id: str | None) -> None:
-        """释放未被用量回调终结的预占；失败只记日志，不影响调用结果。"""
+    async def release(self, reservation_id: str | None, *, owner_id: str) -> None:
+        """释放未被用量回调终结的预占；必须带上 owner，失败只记日志。
+
+        Java 侧按 ``(reservationId, ownerId)`` 释放，因此一个 owner 无法用 id-only 路径
+        释放另一个 owner 的许可。
+        """
 
         if not reservation_id:
             return
         try:
-            await self._java.release_assistant_usage_reservation(reservation_id)
+            await self._java.release_assistant_usage_reservation(reservation_id, owner_id)
         except Exception as exc:  # noqa: BLE001 - 释放失败由 TTL 兜底
             logger.warning(
-                "assistant.budget.release_failed reservationId=%s error=%s",
+                "assistant.budget.release_failed reservationId=%s ownerId=%s error=%s",
                 reservation_id,
+                owner_id,
                 type(exc).__name__,
             )
 

@@ -136,9 +136,9 @@ class AssistantUsageReservationConcurrencyTest {
         assertThat(permit.allowed()).isTrue();
         assertThat(service.reserve(command(owner, "release-2"), at).allowed()).isFalse();
 
-        assertThat(service.release(permit.reservationId(), at)).isTrue();
+        assertThat(service.release(permit.reservationId(), owner, at)).isTrue();
         // 重复释放是无操作。
-        assertThat(service.release(permit.reservationId(), at)).isFalse();
+        assertThat(service.release(permit.reservationId(), owner, at)).isFalse();
         assertThat(service.reserve(command(owner, "release-3"), at).allowed()).isTrue();
     }
 

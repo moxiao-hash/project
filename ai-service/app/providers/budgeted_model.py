@@ -21,7 +21,7 @@ from typing import Any
 
 from app.observability.usage import ModelPurpose, current_usage_scope, reservation_scope
 from app.providers.budget import BudgetPermit, ModelBudgetExceededError, ModelBudgetGuard
-from app.providers.input_bound import input_token_upper_bound
+from app.providers.input_bound import UnboundedInputError, input_token_upper_bound
 
 
 class BudgetedChatModel:
@@ -68,24 +68,29 @@ class BudgetedChatModel:
             purpose=self._purpose,
         )
 
-    async def _permit(self, input: Any) -> BudgetPermit:
+    async def _permit(self, input: Any) -> tuple[BudgetPermit, str]:
         owner_id = self._resolve_owner()
         if not owner_id:
             raise ModelBudgetExceededError("MODEL_OWNER_UNKNOWN")
+        try:
+            input_bound = input_token_upper_bound(input)
+        except UnboundedInputError:
+            # 给不出可信上界时绝不调用 provider，也不留下预占。
+            raise ModelBudgetExceededError("MODEL_INPUT_UNBOUNDED") from None
         # 预占必须带上本次请求的输入上界，否则日费用上限无法保守执行。
         permit = await self._guard.reserve(
             owner_id=owner_id,
             provider=self._provider,
             model_name=self._model_name,
             purpose=self._purpose,
-            input_tokens_upper_bound=input_token_upper_bound(input),
+            input_tokens_upper_bound=input_bound,
         )
         if not permit.allowed:
             raise ModelBudgetExceededError(
                 permit.reason,
                 max_output_tokens_per_turn=permit.max_output_tokens_per_turn,
             )
-        return permit
+        return permit, owner_id
 
     def _bound(self, permit: BudgetPermit) -> Any:
         if permit.max_output_tokens_per_turn:
@@ -93,25 +98,25 @@ class BudgetedChatModel:
         return self._runnable
 
     async def ainvoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
-        permit = await self._permit(input)
+        permit, owner_id = await self._permit(input)
         try:
             with reservation_scope(permit.reservation_id):
                 return await self._bound(permit).ainvoke(input, config, **kwargs)
         except BaseException:
-            await self._guard.release(permit.reservation_id)
+            await self._guard.release(permit.reservation_id, owner_id=owner_id)
             raise
 
     def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> Any:
         return _run_sync(self.ainvoke(input, config, **kwargs))
 
     async def astream(self, input: Any, config: Any = None, **kwargs: Any):
-        permit = await self._permit(input)
+        permit, owner_id = await self._permit(input)
         try:
             with reservation_scope(permit.reservation_id):
                 async for chunk in self._bound(permit).astream(input, config, **kwargs):
                     yield chunk
         except BaseException:
-            await self._guard.release(permit.reservation_id)
+            await self._guard.release(permit.reservation_id, owner_id=owner_id)
             raise
 
     def with_structured_output(self, schema: Any, **kwargs: Any) -> BudgetedChatModel:

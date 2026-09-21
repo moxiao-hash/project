@@ -22,8 +22,8 @@ class FakeJava:
             raise self.error
         return self.payload
 
-    async def release_assistant_usage_reservation(self, reservation_id: str):
-        self.released.append(reservation_id)
+    async def release_assistant_usage_reservation(self, reservation_id: str, owner_id: str):
+        self.released.append((reservation_id, owner_id))
         return {"reservationId": reservation_id, "released": True}
 
 
@@ -105,22 +105,22 @@ async def test_malformed_budget_response_fails_closed(payload):
 
 
 @pytest.mark.anyio
-async def test_release_forwards_reservation_and_swallows_failures():
+async def test_release_forwards_owner_and_swallows_failures():
     guard, java = _guard()
-    await guard.release("reservation-1")
-    assert java.released == ["reservation-1"]
+    await guard.release("reservation-1", owner_id="owner-1")
+    assert java.released == [("reservation-1", "owner-1")]
     # 没有许可时不发请求。
-    await guard.release(None)
-    assert java.released == ["reservation-1"]
+    await guard.release(None, owner_id="owner-1")
+    assert java.released == [("reservation-1", "owner-1")]
 
     failing_java = FakeJava()
 
-    async def broken(_reservation_id: str):
+    async def broken(_reservation_id: str, _owner_id: str):
         raise RuntimeError("java down")
 
     failing_java.release_assistant_usage_reservation = broken
     # 释放失败必须被吞掉：TTL 会兜底，不影响调用结果。
-    await ModelBudgetGuard(failing_java).release("reservation-2")
+    await ModelBudgetGuard(failing_java).release("reservation-2", owner_id="owner-1")
 
 
 @pytest.mark.anyio
