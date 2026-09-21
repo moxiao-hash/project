@@ -210,6 +210,75 @@ class DeveloperWorkspaceHardeningTest {
     }
 
     @Test
+    void pushPreviewBindsTheEffectivePushUrlInsteadOfTheFetchUrl() throws Exception {
+        Path pushRemote = createBareRemote("push-target.git");
+        String fetchOnlyDigest = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        commitLocalChange();
+        // remote.origin.url 指向 fetch 远端，remote.origin.pushurl 指向另一个 bare remote：
+        // JGit 的 PUSH 使用 pushurl，因此预览必须绑定 pushurl 指向的目标。
+        run(root, "git", "config", "remote.origin.pushurl", pushRemote.toUri().toString());
+        GitPushPreview preview = service.previewGitPush(owner, workspaceId);
+
+        assertThat(preview.remoteUrlDigest()).hasSize(64).isNotEqualTo(fetchOnlyDigest);
+        String originBefore = remoteHead();
+        service.pushConfirmed(owner, pushRequest(preview));
+        assertThat(bareHead(pushRemote)).isEqualTo(preview.expectedHead());
+        assertThat(remoteHead()).isEqualTo(originBefore);
+    }
+
+    @Test
+    void pushConfirmationFailsClosedWhenThePushUrlChangesAfterPreview() throws Exception {
+        Path first = createBareRemote("pushurl-first.git");
+        Path second = createBareRemote("pushurl-second.git");
+        run(root, "git", "push", first.toUri().toString(), "main");
+        run(root, "git", "push", second.toUri().toString(), "main");
+        run(root, "git", "config", "remote.origin.pushurl", first.toUri().toString());
+        commitLocalChange();
+        GitPushPreview preview = service.previewGitPush(owner, workspaceId);
+        String firstBefore = bareHead(first);
+        String secondBefore = bareHead(second);
+        run(root, "git", "config", "remote.origin.pushurl", second.toUri().toString());
+
+        assertThatThrownBy(() -> service.pushConfirmed(owner, pushRequest(preview)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(bareHead(first)).isEqualTo(firstBefore);
+        assertThat(bareHead(second)).isEqualTo(secondBefore);
+    }
+
+    @Test
+    void pushRejectsMultipleEffectiveDestinationsInsteadOfPartiallyPushing() throws Exception {
+        Path first = createBareRemote("multi-first.git");
+        Path second = createBareRemote("multi-second.git");
+        run(root, "git", "push", first.toUri().toString(), "main");
+        run(root, "git", "push", second.toUri().toString(), "main");
+        String firstBefore = bareHead(first);
+        String secondBefore = bareHead(second);
+        commitLocalChange();
+
+        // 两个 pushurl：目标不唯一，预览直接拒绝，不得部分推送。
+        run(root, "git", "config", "--add", "remote.origin.pushurl", first.toUri().toString());
+        run(root, "git", "config", "--add", "remote.origin.pushurl", second.toUri().toString());
+        assertThatThrownBy(() -> service.previewGitPush(owner, workspaceId))
+                .isInstanceOf(RuntimeException.class);
+
+        // 单目标预览后追加第二个目标：确认同样失败关闭，两个远端都不得变化。
+        run(root, "git", "config", "--unset-all", "remote.origin.pushurl");
+        run(root, "git", "config", "remote.origin.pushurl", first.toUri().toString());
+        GitPushPreview single = service.previewGitPush(owner, workspaceId);
+        run(root, "git", "config", "--add", "remote.origin.pushurl", second.toUri().toString());
+        assertThatThrownBy(() -> service.pushConfirmed(owner, pushRequest(single)))
+                .isInstanceOf(ConflictException.class);
+        assertThat(bareHead(first)).isEqualTo(firstBefore);
+        assertThat(bareHead(second)).isEqualTo(secondBefore);
+
+        // 没有 pushurl 但有多个 fetch URL 时，目标同样不唯一。
+        run(root, "git", "config", "--unset-all", "remote.origin.pushurl");
+        run(root, "git", "config", "--add", "remote.origin.url", second.toUri().toString());
+        assertThatThrownBy(() -> service.previewGitPush(owner, workspaceId))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
     void pushConfirmationFailsClosedWhenTheTimeoutIsOutOfRange() throws Exception {
         commitLocalChange();
         GitPushPreview preview = service.previewGitPush(owner, workspaceId);
@@ -245,6 +314,18 @@ class DeveloperWorkspaceHardeningTest {
         return new GitPushRequest(workspaceId, preview.remoteName(), preview.branch(),
                 preview.expectedHead(), preview.remoteUrlDigest(), preview.expectedRemoteRef(),
                 preview.expectedRemoteRefCommit(), preview.timeoutSeconds());
+    }
+
+    /** 新建一个独立的 bare remote；每个目标各自持有 refs/heads/main 便于断言"没有被写入"。 */
+    private Path createBareRemote(String name) throws Exception {
+        Path directory = Files.createDirectory(temporary.resolve(name + "-dir"));
+        Path bare = directory.resolve(name);
+        run(root, "git", "init", "--bare", bare.toString());
+        return bare;
+    }
+
+    private String bareHead(Path bare) throws Exception {
+        return run(root, "git", "--git-dir", bare.toString(), "rev-parse", "refs/heads/main").trim();
     }
 
     private String remoteHead() throws Exception {

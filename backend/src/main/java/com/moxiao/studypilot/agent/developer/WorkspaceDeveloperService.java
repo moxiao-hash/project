@@ -6,11 +6,14 @@ import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.diff.DiffFormatter;
+import org.eclipse.jgit.lib.Config;
 import org.eclipse.jgit.lib.Constants;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.transport.RemoteConfig;
 import org.eclipse.jgit.transport.RemoteRefUpdate;
+import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
 import org.springframework.stereotype.Service;
@@ -18,6 +21,7 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -321,10 +325,6 @@ public class WorkspaceDeveloperService {
             if (head == null || branch == null || Constants.HEAD.equals(branch)) {
                 throw new IllegalArgumentException("Git 当前不在可推送的本地分支上");
             }
-            String remoteUrl = repository.getConfig().getString("remote", "origin", "url");
-            if (remoteUrl == null || remoteUrl.isBlank()) {
-                throw new IllegalArgumentException("Git 仓库未配置 origin");
-            }
             String remoteRef = "refs/remotes/origin/" + branch;
             ObjectId remote = repository.resolve(remoteRef);
             int ahead = 0;
@@ -334,7 +334,7 @@ public class WorkspaceDeveloperService {
                 ahead++;
             }
             return new GitPushPreview(workspaceId, "origin",
-                    sha256(remoteUrl.getBytes(StandardCharsets.UTF_8)),
+                    pushDestinationDigest(repository.getConfig()),
                     branch, head.name(), remoteRef,
                     remote == null ? "" : remote.name(), ahead, PUSH_TIMEOUT_SECONDS);
         } catch (IllegalArgumentException exception) {
@@ -345,7 +345,7 @@ public class WorkspaceDeveloperService {
     }
 
     /**
-     * push 确认必须绑定预览时的全部事实：远端名、远端 URL 摘要、分支、本地 HEAD、
+     * push 确认必须绑定预览时的全部事实：远端名、**有效推送目标地址摘要**、分支、本地 HEAD、
      * 期望的远端 ref 及其解析出的提交、有限超时。任一不符即失败关闭，
      * 绝不"照着旧预览推新远端"。
      */
@@ -356,7 +356,14 @@ public class WorkspaceDeveloperService {
         if (request.timeoutSeconds() < 1 || request.timeoutSeconds() > MAX_PUSH_TIMEOUT_SECONDS) {
             throw new ConflictException("Git push 超时必须为 1 到 " + MAX_PUSH_TIMEOUT_SECONDS + " 秒");
         }
-        GitPushPreview current = previewGitPush(ownerId, request.workspaceId());
+        GitPushPreview current;
+        try {
+            current = previewGitPush(ownerId, request.workspaceId());
+        } catch (IllegalArgumentException exception) {
+            // 确认阶段无法再派生唯一目标（例如被追加第二个 pushurl、origin 被移除）：
+            // 这是确认所绑定的状态已经变化，属于冲突而不是参数错误。
+            throw new ConflictException("Git push 目标已变化，请重新创建 push 预览");
+        }
         if (!current.branch().equals(request.branch())
                 || !current.expectedHead().equals(request.expectedHead())
                 || !current.remoteUrlDigest().equals(request.remoteUrlDigest())
@@ -370,16 +377,24 @@ public class WorkspaceDeveloperService {
         }
     }
 
+    /**
+     * 推送并复核实际写入目标。
+     *
+     * <p>取得工作区锁后立即重新校验一次绑定事实，随后才执行 push；push 之后再核对 JGit
+     * 实际使用的目标地址是否仍是预览绑定的那一个，避免"确认后目标被改写"的静默重定向。</p>
+     */
     public GitPushResult pushConfirmed(String ownerId, GitPushRequest request) {
         validateGitPush(ownerId, request);
         Path root = workspaceRoot(findWorkspace(ownerId, request.workspaceId()));
         synchronized (fileLocks[Math.floorMod(request.workspaceId().hashCode(), fileLocks.length)]) {
+            // 与 git.push() 之间只隔一次调用，尽量压缩"校验通过后被改写"的窗口。
             validateGitPush(ownerId, request);
             try (Git git = openGit(root)) {
                 var results = git.push().setRemote("origin")
                         .setTimeout(request.timeoutSeconds())
                         .add("refs/heads/" + request.branch()).call();
                 for (var result : results) {
+                    verifyPushedDestination(result.getURI(), request.remoteUrlDigest());
                     for (RemoteRefUpdate update : result.getRemoteUpdates()) {
                         if (update.getStatus() != RemoteRefUpdate.Status.OK
                                 && update.getStatus() != RemoteRefUpdate.Status.UP_TO_DATE) {
@@ -392,6 +407,68 @@ public class WorkspaceDeveloperService {
             } catch (Exception exception) {
                 throw new IllegalArgumentException("执行 Git push 失败", exception);
             }
+        }
+    }
+
+    /**
+     * 派生 JGit 实际 PUSH 使用的**唯一**目标地址并返回其摘要。
+     *
+     * <p>JGit 的 PUSH 走 {@code Transport.openAll(repository, remote, Operation.PUSH)}，
+     * 其地址来自 {@code RemoteConfig.getPushURIs()}（即 {@code remote.<name>.pushurl}），
+     * 只有 pushurl 为空时才回退到 {@code getURIs()}（{@code remote.<name>.url}）。
+     * 只哈希 fetch URL 会允许 pushurl 把已确认的推送改到未绑定的目标。</p>
+     *
+     * <p>多个有效目标无法保证"要么全成、要么全不成"，因此直接拒绝而不是部分推送。</p>
+     */
+    private String pushDestinationDigest(Config config) {
+        List<URIish> effective = effectivePushUris(config);
+        String canonical = canonicalDestination(effective.get(0));
+        if (canonical.isBlank()) {
+            throw new IllegalArgumentException("Git 仓库未配置 origin");
+        }
+        return sha256(canonical.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private List<URIish> effectivePushUris(Config config) {
+        RemoteConfig remote;
+        try {
+            remote = new RemoteConfig(config, "origin");
+        } catch (URISyntaxException exception) {
+            throw new IllegalArgumentException("Git 仓库 origin 地址无效");
+        }
+        List<URIish> pushUris = remote.getPushURIs();
+        List<URIish> effective = pushUris.isEmpty() ? remote.getURIs() : pushUris;
+        if (effective.isEmpty()) {
+            throw new IllegalArgumentException("Git 仓库未配置 origin");
+        }
+        if (effective.size() != 1) {
+            throw new IllegalArgumentException(
+                    "Git push 目标必须是唯一确定的一个远端地址，请移除多余的 url 或 pushurl");
+        }
+        return effective;
+    }
+
+    /**
+     * 目标地址的规范化形式：只保留 scheme/host/port/path。
+     *
+     * <p>刻意**不含用户名与密码**：摘要既无法反推凭据，也不会因为凭据轮换而误报漂移；
+     * 而写入目标只由 scheme/host/port/path 决定。</p>
+     */
+    private static String canonicalDestination(URIish uri) {
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+        String path = uri.getPath() == null ? "" : uri.getPath();
+        String port = uri.getPort() > 0 ? ":" + uri.getPort() : "";
+        return scheme + "://" + host + port + path;
+    }
+
+    /** 复核 JGit 实际使用的目标地址；不一致说明推送被重定向，必须显式失败而不是静默成功。 */
+    private void verifyPushedDestination(URIish actual, String boundDigest) {
+        if (actual == null) return;
+        String canonical = canonicalDestination(actual);
+        if (canonical.isBlank()) return;
+        if (!sha256(canonical.getBytes(StandardCharsets.UTF_8)).equals(boundDigest)) {
+            throw new IllegalStateException("Git push 实际写入目标与确认的目标不一致");
         }
     }
 
