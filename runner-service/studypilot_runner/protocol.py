@@ -33,6 +33,20 @@ def _parse_time(value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def _validate_working_directory(value: Any) -> None:
+    """工作目录必须是工作区内的相对路径；绝对路径、穿越与空路径段一律拒绝。"""
+
+    if value in (None, "", "."):
+        return
+    if not isinstance(value, str):
+        raise ProtocolError("invalid working directory")
+    portable = value.replace("\\", "/")
+    if portable.startswith("/") or ":" in portable or portable.endswith("/"):
+        raise ProtocolError("invalid working directory")
+    if any(part in ("", ".", "..") for part in portable.split("/")):
+        raise ProtocolError("invalid working directory")
+
+
 def canonical_payload(envelope: dict[str, Any]) -> bytes:
     """生成与 Java RunnerSecurityService 完全一致的长度前缀载荷。"""
 
@@ -47,6 +61,7 @@ def canonical_payload(envelope: dict[str, Any]) -> bytes:
         str(envelope.get("templateType") or ""),
         str(envelope.get("riskLevel") or ""),
         str(envelope.get("workspacePath") or ""),
+        str(envelope.get("workingDirectory") or "."),
         str(len(tokens)),
         *tokens,
         str(envelope.get("isolationMode") or ""),
@@ -125,6 +140,7 @@ class EnvelopeVerifier:
             raise ProtocolError("invalid security metadata")
         if envelope.get("riskLevel") not in {"LOW", "HIGH"}:
             raise ProtocolError("invalid security metadata")
+        _validate_working_directory(envelope.get("workingDirectory"))
         if type(envelope.get("networkDisabled")) is not bool:
             raise ProtocolError("invalid security metadata")
         timeout = envelope.get("timeoutSeconds")

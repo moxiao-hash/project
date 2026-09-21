@@ -96,3 +96,27 @@ def test_rejects_signed_but_structurally_invalid_metadata(tmp_path, change) -> N
             envelope(**change),
             datetime(2026, 9, 6, 4, 1, tzinfo=timezone.utc),
         )
+
+
+def test_canonical_payload_binds_the_working_directory() -> None:
+    root = envelope(workingDirectory=".")
+    nested = envelope(workingDirectory="backend")
+
+    assert canonical_payload(root) != canonical_payload(nested)
+
+
+@pytest.mark.parametrize("hostile", ["/etc", "..", "../outside", "a/../../b"])
+def test_rejects_unsafe_working_directory_in_envelope(tmp_path, hostile: str) -> None:
+    verifier = EnvelopeVerifier(SECRET, tmp_path / "nonces.sqlite")
+
+    with pytest.raises(ProtocolError, match="working directory"):
+        verifier.verify_and_consume(envelope(workingDirectory=hostile))
+
+
+def test_rejects_tampered_working_directory_after_signing(tmp_path) -> None:
+    verifier = EnvelopeVerifier(SECRET, tmp_path / "nonces.sqlite")
+    tampered = envelope(workingDirectory="backend")
+    tampered["workingDirectory"] = "web"
+
+    with pytest.raises(ProtocolError):
+        verifier.verify_and_consume(tampered)

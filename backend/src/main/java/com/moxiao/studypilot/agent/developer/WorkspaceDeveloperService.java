@@ -41,10 +41,13 @@ import java.util.stream.Stream;
 public class WorkspaceDeveloperService {
     private static final int MAX_TREE_ENTRIES = 2_000;
     private static final int MAX_READ_BYTES = 64 * 1024;
+    private static final int MAX_READ_LINES = 2_000;
     private static final int MAX_SEARCH_FILES = 2_000;
     private static final int MAX_SEARCH_MATCHES = 50;
     private static final int MAX_GIT_OUTPUT_BYTES = 64 * 1024;
     private static final int MAX_PATCH_CHARACTERS = 20_000;
+    private static final int PUSH_TIMEOUT_SECONDS = 30;
+    private static final int MAX_PUSH_TIMEOUT_SECONDS = 120;
     private static final int FILE_LOCK_STRIPES = 64;
     private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(
             ".git", ".idea", ".ssh", ".aws", ".venv", "venv", "node_modules",
@@ -74,8 +77,9 @@ public class WorkspaceDeveloperService {
                 boolean directory = Files.isDirectory(candidate);
                 if (!directory && (!Files.isRegularFile(candidate) || sensitive(relative))) continue;
                 entries.add(new WorkspaceFileTreeResponse.FileEntry(
-                        portable(relative), candidate.getFileName().toString(), directory,
-                        directory ? 0 : Files.size(candidate)));
+                        DeveloperOutputSanitizer.sanitize(portable(relative)),
+                        DeveloperOutputSanitizer.sanitize(candidate.getFileName().toString()),
+                        directory, directory ? 0 : Files.size(candidate)));
             }
         } catch (IOException exception) {
             throw new IllegalArgumentException("读取工作区文件树失败", exception);
@@ -94,9 +98,14 @@ public class WorkspaceDeveloperService {
                 bytes = input.readNBytes(MAX_READ_BYTES + 1);
             }
             if (containsNul(bytes)) throw new IllegalArgumentException("不允许读取二进制文件");
+            String content = new String(bytes, StandardCharsets.UTF_8);
+            String[] lines = content.split("\n", -1);
+            boolean truncated = lines.length > MAX_READ_LINES;
+            if (truncated) {
+                content = String.join("\n", java.util.Arrays.copyOf(lines, MAX_READ_LINES));
+            }
             return new WorkspaceFileReadResponse(workspaceId, portable(root.relativize(target)),
-                    DeveloperOutputSanitizer.sanitize(new String(bytes, StandardCharsets.UTF_8)),
-                    size, false);
+                    DeveloperOutputSanitizer.sanitize(content), size, truncated);
         } catch (IOException exception) {
             throw new IllegalArgumentException("读取文件失败", exception);
         }
@@ -152,7 +161,7 @@ public class WorkspaceDeveloperService {
             ObjectId head = repository.resolve(Constants.HEAD);
             return new WorkspaceGitStatusResponse(workspaceId, true, repository.getBranch(),
                     head == null ? null : head.name(), status.isClean(),
-                    modified.stream().sorted().toList(), status.getUntracked().stream().sorted().toList());
+                    sanitizedSorted(modified), sanitizedSorted(status.getUntracked()));
         } catch (Exception exception) {
             throw new IllegalArgumentException("读取 Git 状态失败", exception);
         }
@@ -197,39 +206,40 @@ public class WorkspaceDeveloperService {
     ) {
         Path root = workspaceRoot(findWorkspace(ownerId, workspaceId));
         List<String> changes = changedFiles == null ? List.of() : changedFiles;
-        LinkedHashSet<com.moxiao.studypilot.agent.runner.RunnerTemplateType> templates =
-                new LinkedHashSet<>();
+        List<DeveloperTestRecommendation.RecommendedExecution> executions = new ArrayList<>();
         List<String> reasons = new ArrayList<>();
         if (matchesArea(changes, "backend/", ".java", ".xml")
-                && Files.isRegularFile(root.resolve("backend/pom.xml"))) {
-            templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST);
+                && projectDirectory(root, "backend", "pom.xml")) {
+            executions.add(execution(com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST,
+                    "backend"));
             reasons.add("Java/Maven 代码发生变化");
         }
         if (matchesArea(changes, "web/", ".vue", ".ts", ".js", ".css")
-                && Files.isRegularFile(root.resolve("web/package.json"))) {
-            templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST);
+                && projectDirectory(root, "web", "package.json")) {
+            executions.add(execution(com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST,
+                    "web"));
             reasons.add("Vue/TypeScript 前端发生变化");
         }
         if (matchesArea(changes, "ai-service/", ".py")
-                && (Files.isRegularFile(root.resolve("ai-service/pyproject.toml"))
-                || Files.isRegularFile(root.resolve("ai-service/requirements.txt")))) {
-            templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.PYTEST);
+                && projectDirectory(root, "ai-service", "pyproject.toml", "requirements.txt")) {
+            executions.add(execution(com.moxiao.studypilot.agent.runner.RunnerTemplateType.PYTEST,
+                    "ai-service"));
             reasons.add("Python AI 服务发生变化");
         }
-        if (templates.isEmpty()) {
-            if (Files.isRegularFile(root.resolve("pom.xml"))) {
-                templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST);
-                reasons.add("工作区根目录是 Maven 项目");
-            } else if (Files.isRegularFile(root.resolve("package.json"))) {
-                templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST);
-                reasons.add("工作区根目录是 npm 项目");
-            } else if (Files.isRegularFile(root.resolve("pyproject.toml"))) {
-                templates.add(com.moxiao.studypilot.agent.runner.RunnerTemplateType.PYTEST);
-                reasons.add("工作区根目录是 Python 项目");
-            }
+        if (executions.isEmpty() && Files.isRegularFile(root.resolve("pom.xml"))) {
+            executions.add(execution(com.moxiao.studypilot.agent.runner.RunnerTemplateType.MAVEN_TEST, "."));
+            reasons.add("工作区根目录是 Maven 项目");
+        } else if (executions.isEmpty() && Files.isRegularFile(root.resolve("package.json"))) {
+            executions.add(execution(com.moxiao.studypilot.agent.runner.RunnerTemplateType.NPM_TEST, "."));
+            reasons.add("工作区根目录是 npm 项目");
+        } else if (executions.isEmpty() && Files.isRegularFile(root.resolve("pyproject.toml"))) {
+            executions.add(execution(com.moxiao.studypilot.agent.runner.RunnerTemplateType.PYTEST, "."));
+            reasons.add("工作区根目录是 Python 项目");
         }
-        return new DeveloperTestRecommendation(workspaceId, List.copyOf(templates), false,
-                List.copyOf(reasons));
+        List<com.moxiao.studypilot.agent.runner.RunnerTemplateType> templates = executions.stream()
+                .map(DeveloperTestRecommendation.RecommendedExecution::templateType).toList();
+        return new DeveloperTestRecommendation(workspaceId, templates, List.copyOf(executions),
+                false, List.copyOf(reasons));
     }
 
     public GitCommitPreview previewGitCommit(
@@ -311,17 +321,22 @@ public class WorkspaceDeveloperService {
             if (head == null || branch == null || Constants.HEAD.equals(branch)) {
                 throw new IllegalArgumentException("Git 当前不在可推送的本地分支上");
             }
-            if (repository.getConfig().getString("remote", "origin", "url") == null) {
+            String remoteUrl = repository.getConfig().getString("remote", "origin", "url");
+            if (remoteUrl == null || remoteUrl.isBlank()) {
                 throw new IllegalArgumentException("Git 仓库未配置 origin");
             }
-            ObjectId remote = repository.resolve("refs/remotes/origin/" + branch);
+            String remoteRef = "refs/remotes/origin/" + branch;
+            ObjectId remote = repository.resolve(remoteRef);
             int ahead = 0;
             for (var ignored : remote == null
                     ? git.log().add(head).call()
                     : git.log().addRange(remote, head).call()) {
                 ahead++;
             }
-            return new GitPushPreview(workspaceId, "origin", branch, head.name(), ahead);
+            return new GitPushPreview(workspaceId, "origin",
+                    sha256(remoteUrl.getBytes(StandardCharsets.UTF_8)),
+                    branch, head.name(), remoteRef,
+                    remote == null ? "" : remote.name(), ahead, PUSH_TIMEOUT_SECONDS);
         } catch (IllegalArgumentException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -329,14 +344,26 @@ public class WorkspaceDeveloperService {
         }
     }
 
+    /**
+     * push 确认必须绑定预览时的全部事实：远端名、远端 URL 摘要、分支、本地 HEAD、
+     * 期望的远端 ref 及其解析出的提交、有限超时。任一不符即失败关闭，
+     * 绝不"照着旧预览推新远端"。
+     */
     public void validateGitPush(String ownerId, GitPushRequest request) {
         if (!"origin".equals(request.remoteName())) {
             throw new IllegalArgumentException("只允许推送到登记仓库的 origin");
         }
+        if (request.timeoutSeconds() < 1 || request.timeoutSeconds() > MAX_PUSH_TIMEOUT_SECONDS) {
+            throw new ConflictException("Git push 超时必须为 1 到 " + MAX_PUSH_TIMEOUT_SECONDS + " 秒");
+        }
         GitPushPreview current = previewGitPush(ownerId, request.workspaceId());
         if (!current.branch().equals(request.branch())
-                || !current.expectedHead().equals(request.expectedHead())) {
-            throw new ConflictException("Git 分支或提交已变化，请重新创建 push 预览");
+                || !current.expectedHead().equals(request.expectedHead())
+                || !current.remoteUrlDigest().equals(request.remoteUrlDigest())
+                || !current.expectedRemoteRef().equals(request.expectedRemoteRef())
+                || !current.expectedRemoteRefCommit().equals(request.expectedRemoteRefCommit())
+                || current.timeoutSeconds() != request.timeoutSeconds()) {
+            throw new ConflictException("Git 远端或提交已变化，请重新创建 push 预览");
         }
         if (current.aheadCount() < 1) {
             throw new ConflictException("当前没有需要推送的新提交");
@@ -350,6 +377,7 @@ public class WorkspaceDeveloperService {
             validateGitPush(ownerId, request);
             try (Git git = openGit(root)) {
                 var results = git.push().setRemote("origin")
+                        .setTimeout(request.timeoutSeconds())
                         .add("refs/heads/" + request.branch()).call();
                 for (var result : results) {
                     for (RemoteRefUpdate update : result.getRemoteUpdates()) {
@@ -529,6 +557,32 @@ public class WorkspaceDeveloperService {
         return false;
     }
 
+    private static DeveloperTestRecommendation.RecommendedExecution execution(
+            com.moxiao.studypilot.agent.runner.RunnerTemplateType templateType, String workingDirectory
+    ) {
+        return new DeveloperTestRecommendation.RecommendedExecution(templateType, workingDirectory);
+    }
+
+    /**
+     * 推荐的子项目目录必须是工作区内真实存在、且不经过符号链接的目录。
+     *
+     * <p>符号链接会把 Runner 的工作目录指向工作区外部，因此这里直接判定为"该项目不存在"，
+     * 而不是把越界路径交给执行层。</p>
+     */
+    private boolean projectDirectory(Path root, String directory, String... markers) {
+        Path candidate = root.resolve(directory);
+        if (Files.isSymbolicLink(candidate) || !Files.isDirectory(candidate)) return false;
+        try {
+            if (!candidate.toRealPath().startsWith(root.toRealPath())) return false;
+        } catch (IOException exception) {
+            return false;
+        }
+        for (String marker : markers) {
+            if (Files.isRegularFile(candidate.resolve(marker))) return true;
+        }
+        return false;
+    }
+
     private boolean matchesArea(List<String> files, String prefix, String... extensions) {
         return files.stream().map(this::portableInput).anyMatch(file -> {
             if (!file.startsWith(prefix)) return false;
@@ -609,6 +663,12 @@ public class WorkspaceDeveloperService {
     }
 
     private String safeMessage(Exception exception) {
-        return exception.getMessage() == null ? "补丁无效" : exception.getMessage();
+        return DeveloperOutputSanitizer.sanitize(
+                exception.getMessage() == null ? "补丁无效" : exception.getMessage());
+    }
+
+    /** Git 状态里的路径同样要过敏感扫描，避免文件名把凭据带进响应与审计。 */
+    private List<String> sanitizedSorted(java.util.Collection<String> values) {
+        return values.stream().map(DeveloperOutputSanitizer::sanitize).sorted().toList();
     }
 }

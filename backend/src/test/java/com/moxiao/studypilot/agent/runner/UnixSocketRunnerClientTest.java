@@ -43,7 +43,7 @@ class UnixSocketRunnerClientTest {
                     "test-secret-32-bytes-long-123456").createEnvelope(
                     "execution-1", "owner-1", "workspace-1", RunnerTemplateType.MAVEN_TEST,
                     com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.LOW,
-                    "/workspace", List.of("mvn", "test"), RunnerIsolationMode.LOCAL_RUNNER,
+                    "/workspace", ".", List.of("mvn", "test"), RunnerIsolationMode.LOCAL_RUNNER,
                     true, "512m", "1.0", 60, null);
 
             RunnerExecutionResult result = new UnixSocketRunnerClient(

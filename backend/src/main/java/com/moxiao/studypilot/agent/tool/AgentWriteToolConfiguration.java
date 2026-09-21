@@ -305,7 +305,8 @@ public class AgentWriteToolConfiguration {
     ) {
         return write(mapper, "runner.check.run", "RUNNER", AgentToolRiskLevel.LOW,
                 "RUNNER_MANAGEMENT", ExecutionType.RUNNER_EXECUTION,
-                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
+                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string",
+                        "workingDirectory", "string"),
                 Set.of("workspaceId", "templateType"),
                 arguments -> "执行项目本地检查任务（" + text(arguments, "templateType") + "）",
                 (context, arguments) -> requireRunnerSuccess(service.submitExecution(
@@ -316,7 +317,8 @@ public class AgentWriteToolConfiguration {
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
                                 optionalText(arguments, "explanation"),
-                                runnerIdempotencyKey(context, arguments)))));
+                                runnerIdempotencyKey(context, arguments),
+                                optionalText(arguments, "workingDirectory")))));
     }
 
     @Bean
@@ -326,7 +328,8 @@ public class AgentWriteToolConfiguration {
     ) {
         return write(mapper, "runner.dependencies.prepare", "RUNNER", AgentToolRiskLevel.HIGH,
                 "RUNNER_MANAGEMENT", ExecutionType.RUNNER_EXECUTION,
-                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
+                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string",
+                        "workingDirectory", "string"),
                 Set.of("workspaceId", "templateType"),
                 arguments -> "准备并安装项目运行环境依赖（" + text(arguments, "templateType") + "）",
                 (context, arguments) -> requireRunnerSuccess(service.submitExecution(
@@ -337,7 +340,8 @@ public class AgentWriteToolConfiguration {
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
                                 optionalText(arguments, "explanation"),
-                                runnerIdempotencyKey(context, arguments)))));
+                                runnerIdempotencyKey(context, arguments),
+                                optionalText(arguments, "workingDirectory")))));
     }
 
     private static com.moxiao.studypilot.agent.runner.RunnerExecutionResult requireRunnerSuccess(
@@ -406,8 +410,11 @@ public class AgentWriteToolConfiguration {
         return writeValidated(mapper, "developer.git.push", "DEVELOPER", AgentToolRiskLevel.HIGH,
                 "DEVELOPER_MANAGEMENT", ExecutionType.GIT_PUSH,
                 Map.of("workspaceId", "string", "remoteName", "string", "branch", "string",
-                        "expectedHead", "string"),
-                Set.of("workspaceId", "remoteName", "branch", "expectedHead"),
+                        "expectedHead", "string", "remoteUrlDigest", "string",
+                        "expectedRemoteRef", "string", "expectedRemoteRefCommit", "string",
+                        "timeoutSeconds", "integer"),
+                Set.of("workspaceId", "remoteName", "branch", "expectedHead", "remoteUrlDigest",
+                        "expectedRemoteRef", "expectedRemoteRefCommit", "timeoutSeconds"),
                 arguments -> "推送 Git 分支 " + text(arguments, "branch") + " 到 origin",
                 (context, arguments) -> service.validateGitPush(
                         context.ownerId(), gitPushRequest(arguments)),
@@ -429,7 +436,10 @@ public class AgentWriteToolConfiguration {
     ) {
         return new com.moxiao.studypilot.agent.developer.GitPushRequest(
                 text(arguments, "workspaceId"), text(arguments, "remoteName"),
-                text(arguments, "branch"), text(arguments, "expectedHead"));
+                text(arguments, "branch"), text(arguments, "expectedHead"),
+                text(arguments, "remoteUrlDigest"), text(arguments, "expectedRemoteRef"),
+                text(arguments, "expectedRemoteRefCommit"),
+                arguments.path("timeoutSeconds").asInt(0));
     }
 
     private static com.moxiao.studypilot.agent.developer.ApplyCodePatchRequest patchRequest(

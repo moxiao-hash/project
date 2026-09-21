@@ -44,6 +44,7 @@ public class RunnerSecurityService {
             RunnerTemplateType templateType,
             AgentToolRiskLevel riskLevel,
             String workspacePath,
+            String workingDirectory,
             List<String> commandTokens,
             RunnerIsolationMode isolationMode,
             boolean networkDisabled,
@@ -58,7 +59,7 @@ public class RunnerSecurityService {
 
         String payloadToSign = buildSignaturePayload(
                 PROTOCOL_VERSION, executionId, ownerId, workspaceId, templateType,
-                riskLevel, workspacePath, commandTokens,
+                riskLevel, workspacePath, workingDirectory, commandTokens,
                 isolationMode, networkDisabled, memoryLimit, cpuLimit,
                 timeoutSeconds, now, confirmedAt, expiresAt, nonce
         );
@@ -73,6 +74,7 @@ public class RunnerSecurityService {
                 templateType,
                 riskLevel,
                 workspacePath,
+                workingDirectory,
                 commandTokens,
                 isolationMode,
                 networkDisabled,
@@ -111,6 +113,7 @@ public class RunnerSecurityService {
                 envelope.templateType(),
                 envelope.riskLevel(),
                 envelope.workspacePath(),
+                envelope.workingDirectory(),
                 envelope.commandTokens(),
                 envelope.isolationMode(),
                 envelope.networkDisabled(),
@@ -146,6 +149,7 @@ public class RunnerSecurityService {
             RunnerTemplateType templateType,
             AgentToolRiskLevel riskLevel,
             String workspacePath,
+            String workingDirectory,
             List<String> commandTokens,
             RunnerIsolationMode isolationMode,
             boolean networkDisabled,
@@ -165,6 +169,7 @@ public class RunnerSecurityService {
         append(payload, templateType == null ? null : templateType.name());
         append(payload, riskLevel == null ? null : riskLevel.name());
         append(payload, workspacePath);
+        append(payload, workingDirectory);
         List<String> tokens = commandTokens == null ? List.of() : commandTokens;
         append(payload, Integer.toString(tokens.size()));
         tokens.forEach(token -> append(payload, token));

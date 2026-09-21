@@ -19,6 +19,9 @@ public record RunnerExecutionRequest(
 
         @NotBlank(message = "幂等键不能为空")
         @Size(max = 180, message = "幂等键长度不能超过 180")
-        String idempotencyKey
+        String idempotencyKey,
+
+        @Size(max = 512, message = "工作目录长度不能超过 512")
+        String workingDirectory
 ) {
 }

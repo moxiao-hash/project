@@ -225,13 +225,18 @@ class WorkspaceDeveloperServiceTest {
         assertTrue(pushPreview.aheadCount() >= 1);
         GitPushResult push = service.pushConfirmed(OWNER_ID,
                 new GitPushRequest(WORKSPACE_ID, pushPreview.remoteName(),
-                        pushPreview.branch(), pushPreview.expectedHead()));
+                        pushPreview.branch(), pushPreview.expectedHead(),
+                        pushPreview.remoteUrlDigest(), pushPreview.expectedRemoteRef(),
+                        pushPreview.expectedRemoteRefCommit(), pushPreview.timeoutSeconds()));
         assertEquals(pushPreview.expectedHead(), push.pushedCommit());
 
+        // 陈旧确认必须失败关闭：绑定的是提交前的 HEAD，而不是刚刚推送的提交。
         assertThrows(com.moxiao.studypilot.shared.error.ConflictException.class,
                 () -> service.pushConfirmed(OWNER_ID,
                         new GitPushRequest(WORKSPACE_ID, "origin", "main",
-                                commitPreview.expectedHead())));
+                                commitPreview.expectedHead(), pushPreview.remoteUrlDigest(),
+                                pushPreview.expectedRemoteRef(), pushPreview.expectedRemoteRefCommit(),
+                                pushPreview.timeoutSeconds())));
     }
 
     @Test

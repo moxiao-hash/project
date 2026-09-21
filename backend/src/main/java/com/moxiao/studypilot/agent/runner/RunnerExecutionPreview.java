@@ -8,6 +8,7 @@ public record RunnerExecutionPreview(
         String workspaceId,
         String workspaceName,
         String workspacePath,
+        String workingDirectory,
         RunnerTemplateType templateType,
         String templateDescription,
         AgentToolRiskLevel riskLevel,

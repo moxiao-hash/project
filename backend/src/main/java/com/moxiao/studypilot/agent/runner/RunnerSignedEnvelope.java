@@ -14,6 +14,7 @@ public record RunnerSignedEnvelope(
         RunnerTemplateType templateType,
         AgentToolRiskLevel riskLevel,
         String workspacePath,
+        String workingDirectory,
         List<String> commandTokens,
         RunnerIsolationMode isolationMode,
         boolean networkDisabled,

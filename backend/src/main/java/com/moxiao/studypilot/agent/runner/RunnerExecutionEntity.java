@@ -26,6 +26,10 @@ public class RunnerExecutionEntity {
     private String workspacePath;
     @Column(name = "workspace_fingerprint", nullable = false, length = 64)
     private String workspaceFingerprint;
+
+    /** 已验证的工作区相对工作目录；{@code "."} 表示工作区根目录。 */
+    @Column(name = "working_directory", nullable = false, length = 512)
+    private String workingDirectory;
     @Enumerated(EnumType.STRING)
     @Column(name = "template_type", nullable = false, length = 40)
     private RunnerTemplateType templateType;
@@ -70,7 +74,8 @@ public class RunnerExecutionEntity {
 
     public RunnerExecutionEntity(
             String id, String ownerId, String workspaceId, String workspacePath,
-            String workspaceFingerprint, RunnerTemplateType templateType, String targetPattern,
+            String workspaceFingerprint, String workingDirectory,
+            RunnerTemplateType templateType, String targetPattern,
             String commandTokensJson, AgentToolRiskLevel riskLevel, int timeoutSeconds,
             String idempotencyKey, String requestFingerprint, String governanceExecutionId,
             ExecutionStatus status, Instant now
@@ -80,6 +85,7 @@ public class RunnerExecutionEntity {
         this.workspaceId = workspaceId;
         this.workspacePath = workspacePath;
         this.workspaceFingerprint = workspaceFingerprint;
+        this.workingDirectory = workingDirectory;
         this.templateType = templateType;
         this.targetPattern = targetPattern;
         this.commandTokensJson = commandTokensJson;
@@ -124,6 +130,8 @@ public class RunnerExecutionEntity {
     public String getWorkspaceId() { return workspaceId; }
     public String getWorkspacePath() { return workspacePath; }
     public String getWorkspaceFingerprint() { return workspaceFingerprint; }
+
+    public String getWorkingDirectory() { return workingDirectory; }
     public RunnerTemplateType getTemplateType() { return templateType; }
     public String getTargetPattern() { return targetPattern; }
     public String getCommandTokensJson() { return commandTokensJson; }

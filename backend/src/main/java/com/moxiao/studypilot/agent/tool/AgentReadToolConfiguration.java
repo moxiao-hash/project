@@ -311,7 +311,8 @@ public class AgentReadToolConfiguration {
             com.moxiao.studypilot.agent.runner.RunnerGovernanceService service
     ) {
         return read(mapper, "runner.execution.preview", "RUNNER",
-                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string"),
+                Map.of("workspaceId", "string", "templateType", "string", "idempotencyKey", "string",
+                        "workingDirectory", "string"),
                 Set.of("workspaceId", "templateType", "idempotencyKey"),
                 (context, arguments) -> service.preview(
                         context.ownerId(),
@@ -321,7 +322,8 @@ public class AgentReadToolConfiguration {
                                         text(arguments, "templateType")),
                                 optionalText(arguments, "targetPattern"),
                                 optionalText(arguments, "explanation"),
-                                text(arguments, "idempotencyKey"))));
+                                text(arguments, "idempotencyKey"),
+                                optionalText(arguments, "workingDirectory"))));
     }
     @Bean
     AgentToolHandler developerFileTreeTool(

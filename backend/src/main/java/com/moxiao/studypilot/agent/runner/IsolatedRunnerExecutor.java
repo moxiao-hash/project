@@ -45,6 +45,7 @@ public class IsolatedRunnerExecutor {
             AgentToolRiskLevel riskLevel,
             Instant confirmedAt,
             String workspacePath,
+            String relativeWorkingDirectory,
             List<String> commandTokens,
             int timeoutSeconds
     ) {
@@ -56,6 +57,7 @@ public class IsolatedRunnerExecutor {
                 templateType,
                 riskLevel,
                 canonicalWorkspace,
+                normalizeWorkingDirectory(relativeWorkingDirectory),
                 commandTokens,
                 RunnerIsolationMode.LOCAL_RUNNER,
                 templateType != RunnerTemplateType.PREPARE_DEPENDENCIES,
@@ -65,6 +67,31 @@ public class IsolatedRunnerExecutor {
                 confirmedAt
         );
         return transport.execute(envelope, workspaceId, templateType);
+    }
+
+    /**
+     * Runner 侧最后一道工作目录校验：只接受 {@code "."} 或工作区内的相对目录。
+     *
+     * <p>绝对路径、目录穿越、空路径段一律拒绝；Java 侧已经在服务层验证过一次，
+     * 这里独立复核，避免其它调用方绕过。</p>
+     */
+    private String normalizeWorkingDirectory(String relativeWorkingDirectory) {
+        if (relativeWorkingDirectory == null || relativeWorkingDirectory.isBlank()) {
+            return ".";
+        }
+        String portable = relativeWorkingDirectory.trim().replace('\\', '/');
+        if (".".equals(portable)) {
+            return ".";
+        }
+        if (portable.startsWith("/") || portable.contains(":") || portable.endsWith("/")) {
+            throw new SecurityException("工作目录必须是工作区内的相对目录");
+        }
+        for (String part : portable.split("/")) {
+            if (part.isBlank() || part.equals(".") || part.equals("..")) {
+                throw new SecurityException("工作目录不能包含穿越或空路径段");
+            }
+        }
+        return portable;
     }
 
     private String canonicalWorkspace(String workspacePath) {

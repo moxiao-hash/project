@@ -1256,10 +1256,16 @@ class UnifiedAgentSupervisor:
                 invocation = await gateway.invoke(
                     "developer.git.push",
                     {
+                        # Task 32：push 确认必须原样回传预览绑定的全部事实，
+                        # 任一项漂移都会由 Java 侧失败关闭。
                         "workspaceId": workspace_id,
                         "remoteName": preview.get("remoteName"),
                         "branch": preview.get("branch"),
                         "expectedHead": preview.get("expectedHead"),
+                        "remoteUrlDigest": preview.get("remoteUrlDigest"),
+                        "expectedRemoteRef": preview.get("expectedRemoteRef"),
+                        "expectedRemoteRefCommit": preview.get("expectedRemoteRefCommit"),
+                        "timeoutSeconds": preview.get("timeoutSeconds"),
                     },
                     idempotency_key=state["idempotency_key"],
                 )

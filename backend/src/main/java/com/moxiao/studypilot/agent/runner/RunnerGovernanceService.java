@@ -83,8 +83,10 @@ public class RunnerGovernanceService {
         RunnerTemplateType template = request.templateType();
         List<String> tokens = template.resolveTokens(targetPattern);
         String explanation = normalizeExplanation(request.explanation(), workspace, template);
+        String workingDirectory = validateWorkingDirectory(
+                binding.canonicalPath(), request.workingDirectory());
         return new RunnerExecutionPreview(
-                workspace.getId(), workspace.getName(), binding.canonicalPath(), template,
+                workspace.getId(), workspace.getName(), binding.canonicalPath(), workingDirectory, template,
                 template.getDescription(), template.getRiskLevel(), tokens,
                 String.join(" ", tokens), template.getDefaultTimeoutSeconds(),
                 template.isConfirmationRequired(), explanation);
@@ -151,6 +153,8 @@ public class RunnerGovernanceService {
         WorkspaceBinding binding = validateCurrentWorkspace(workspace);
         RunnerTemplateType template = request.templateType();
         String explanation = normalizeExplanation(request.explanation(), workspace, template);
+        String workingDirectory = validateWorkingDirectory(
+                binding.canonicalPath(), request.workingDirectory());
         RiskLevel governanceRisk = template.isConfirmationRequired() ? RiskLevel.HIGH : RiskLevel.LOW;
         AgentExecutionEntity governance = governanceService.createExecution(new CreateAgentExecutionRequest(
                 ownerId, "runner:" + sha256(request.idempotencyKey()), ExecutionType.RUNNER_EXECUTION,
@@ -158,7 +162,7 @@ public class RunnerGovernanceService {
         Instant now = Instant.now();
         RunnerExecutionEntity entity = runnerRepository.save(new RunnerExecutionEntity(
                 UUID.randomUUID().toString(), ownerId, workspace.getId(), binding.canonicalPath(),
-                binding.identity(), template, request.targetPattern(),
+                binding.identity(), workingDirectory, template, request.targetPattern(),
                 objectMapper.writeValueAsString(request.commandTokens()), template.getRiskLevel(),
                 request.timeoutSeconds(), request.idempotencyKey(), request.requestFingerprint(),
                 governance.getId(), governance.getStatus(), now));
@@ -211,7 +215,8 @@ public class RunnerGovernanceService {
                     claimed.getTemplateType(), claimed.getRiskLevel(),
                     claimed.getRiskLevel() == com.moxiao.studypilot.agent.tool.AgentToolRiskLevel.HIGH
                             ? claimed.getUpdatedAt() : null,
-                    claimed.getWorkspacePath(), commandTokens(claimed), claimed.getTimeoutSeconds());
+                    claimed.getWorkspacePath(), claimed.getWorkingDirectory(),
+                    commandTokens(claimed), claimed.getTimeoutSeconds());
         } catch (RuntimeException exception) {
             executorResult = new RunnerExecutionResult(
                     claimed.getId(), claimed.getGovernanceExecutionId(), claimed.getWorkspaceId(),
@@ -271,6 +276,12 @@ public class RunnerGovernanceService {
                 || !execution.getWorkspaceFingerprint().equals(current.identity())) {
             throw new ConflictException("工作区路径或指纹已变化，请重新提交 Runner 执行");
         }
+        // 工作目录同样是安全边界：确认执行前重新校验，目录被换成符号链接或移出工作区就失败关闭。
+        String currentWorkingDirectory = validateWorkingDirectory(
+                current.canonicalPath(), execution.getWorkingDirectory());
+        if (!execution.getWorkingDirectory().equals(currentWorkingDirectory)) {
+            throw new ConflictException("工作目录已变化，请重新提交 Runner 执行");
+        }
     }
 
     private WorkspaceBinding validateCurrentWorkspace(ProjectWorkspaceEntity workspace) {
@@ -300,6 +311,44 @@ public class RunnerGovernanceService {
         }
     }
 
+    /**
+     * 校验并规范化工作区内的相对工作目录。
+     *
+     * <p>绝对路径、目录穿越、空路径段、符号链接、缺失目录与指向工作区外部的路径
+     * 都在执行之前被拒绝；{@code null}/空白表示工作区根目录。</p>
+     */
+    private String validateWorkingDirectory(String canonicalWorkspace, String requested) {
+        if (requested == null || requested.isBlank()) return ".";
+        String portable = requested.trim().replace('\\', '/');
+        if (portable.startsWith("/") || portable.contains(":") || portable.endsWith("/")) {
+            throw new IllegalArgumentException("工作目录必须是工作区内的相对目录");
+        }
+        if (".".equals(portable)) return ".";
+        String[] parts = portable.split("/");
+        for (String part : parts) {
+            if (part.isBlank() || part.equals(".") || part.equals("..")) {
+                throw new IllegalArgumentException("工作目录不能包含穿越或空路径段");
+            }
+        }
+        Path root = Path.of(canonicalWorkspace);
+        Path cursor = root;
+        for (String part : parts) {
+            cursor = cursor.resolve(part);
+            if (Files.isSymbolicLink(cursor)) {
+                throw new IllegalArgumentException("工作目录不能是符号链接");
+            }
+        }
+        try {
+            Path real = root.resolve(portable).normalize().toRealPath();
+            if (!Files.isDirectory(real) || !real.startsWith(root.toRealPath())) {
+                throw new IllegalArgumentException("工作目录不存在或超出工作区");
+            }
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("工作目录不存在或不可访问");
+        }
+        return portable;
+    }
+
     private String normalizeTargetPattern(String targetPattern) {
         if (targetPattern == null || targetPattern.isBlank()) return null;
         String normalized = targetPattern.trim();
@@ -322,14 +371,17 @@ public class RunnerGovernanceService {
         String idempotencyKey = request.idempotencyKey().trim();
         String targetPattern = normalizeTargetPattern(request.targetPattern());
         String explanation = normalizeNullable(request.explanation());
+        String workingDirectory = normalizeNullable(request.workingDirectory()).replace('\\', '/');
         RunnerTemplateType template = request.templateType();
         List<String> commandTokens = template.resolveTokens(targetPattern);
         int timeoutSeconds = template.getDefaultTimeoutSeconds();
+        // 工作目录参与请求指纹：同一幂等键换目录必须被判定为不同请求。
         String fingerprint = sha256(String.join("\u001f",
                 workspaceId, template.name(), normalizeNullable(targetPattern),
-                commandTokens.toString(), Integer.toString(timeoutSeconds), explanation));
+                commandTokens.toString(), Integer.toString(timeoutSeconds), explanation,
+                workingDirectory));
         return new CanonicalRequest(
-                workspaceId, template, targetPattern, explanation, commandTokens,
+                workspaceId, template, targetPattern, explanation, workingDirectory, commandTokens,
                 timeoutSeconds, idempotencyKey, fingerprint);
     }
 
@@ -404,6 +456,7 @@ public class RunnerGovernanceService {
             RunnerTemplateType templateType,
             String targetPattern,
             String explanation,
+            String workingDirectory,
             List<String> commandTokens,
             int timeoutSeconds,
             String idempotencyKey,

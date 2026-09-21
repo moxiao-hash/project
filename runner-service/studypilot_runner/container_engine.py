@@ -53,6 +53,29 @@ _EXCLUDED_DIRECTORIES = {
 }
 
 
+def _relative_working_directory(request: dict[str, Any]) -> str:
+    """校验并返回容器内的工作目录后缀（"/workspace" 之后的相对路径）。
+
+    Java 侧已经验证过一次，这里是运行前的最后一道确定性校验：绝对路径、目录穿越、
+    空路径段一律拒绝。返回 "" 表示工作区根目录。
+    """
+
+    raw = request.get("workingDirectory")
+    if raw is None:
+        return ""
+    if not isinstance(raw, str):
+        raise ExecutionRejected("working directory must be a relative path")
+    value = raw.strip().replace("\\", "/")
+    if value in ("", "."):
+        return ""
+    if value.startswith("/") or ":" in value or value.endswith("/"):
+        raise ExecutionRejected("working directory must be a relative path")
+    parts = value.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ExecutionRejected("working directory must not contain traversal or empty segments")
+    return "/" + value
+
+
 class ContainerEngine:
     def __init__(self, engine_path: str, staging_root: Path | None = None) -> None:
         path = Path(engine_path)
@@ -120,6 +143,8 @@ class ContainerEngine:
                 "/workspace:rw,exec,nosuid,size=1g,mode=1777",
                 "--workdir",
                 "/workspace",
+                "--env",
+                f"STUDYPILOT_WORKDIR=/workspace{_relative_working_directory(request)}",
                 "--mount",
                 f"type=bind,src={workspace},dst=/source,readonly",
                 "--mount",

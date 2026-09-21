@@ -40,6 +40,7 @@ class RunnerProtocolSecurityTest {
                 "exec-001", "owner-1", "workspace-1", RunnerTemplateType.MAVEN_TEST,
                 AgentToolRiskLevel.LOW,
                 tempDir.toAbsolutePath().toString(),
+                ".",
                 List.of("echo", "hello"),
                 RunnerIsolationMode.LOCAL_RUNNER,
                 true,
@@ -61,6 +62,7 @@ class RunnerProtocolSecurityTest {
                 "v1", "exec-exp", "owner-exp", "workspace-exp",
                 RunnerTemplateType.MAVEN_TEST, AgentToolRiskLevel.LOW,
                 tempDir.toAbsolutePath().toString(),
+                ".",
                 List.of("echo", "test"),
                 RunnerIsolationMode.LOCAL_RUNNER,
                 true,
@@ -81,6 +83,7 @@ class RunnerProtocolSecurityTest {
                 "exec-002", "owner-2", "workspace-2", RunnerTemplateType.MAVEN_TEST,
                 AgentToolRiskLevel.LOW,
                 tempDir.toAbsolutePath().toString(),
+                ".",
                 List.of("echo", "safe"),
                 RunnerIsolationMode.LOCAL_RUNNER,
                 true,
@@ -93,7 +96,7 @@ class RunnerProtocolSecurityTest {
         RunnerSignedEnvelope tampered = new RunnerSignedEnvelope(
                 original.protocolVersion(), original.executionId(), original.ownerId(),
                 original.workspaceId(), original.templateType(), original.riskLevel(),
-                original.workspacePath(),
+                original.workspacePath(), original.workingDirectory(),
                 List.of("rm", "-rf", "/"),
                 original.isolationMode(),
                 original.networkDisabled(),
@@ -114,6 +117,7 @@ class RunnerProtocolSecurityTest {
                 "exec-003", "owner-3", "workspace-3", RunnerTemplateType.MAVEN_TEST,
                 AgentToolRiskLevel.LOW,
                 tempDir.toAbsolutePath().toString(),
+                ".",
                 List.of("echo", "replay"),
                 RunnerIsolationMode.LOCAL_RUNNER,
                 true,
@@ -137,6 +141,7 @@ class RunnerProtocolSecurityTest {
         assertThrows(IllegalStateException.class, () -> unsafe.createEnvelope(
                 "exec-default-secret", "owner", "workspace", RunnerTemplateType.MAVEN_TEST,
                 AgentToolRiskLevel.LOW, tempDir.toAbsolutePath().toString(),
+                ".",
                 List.of("mvn", "test"), RunnerIsolationMode.LOCAL_RUNNER,
                 true, "512m", "1.0", 60, null));
     }
@@ -154,7 +159,7 @@ class RunnerProtocolSecurityTest {
                     "exec-symlink", "owner-1", "ws-1",
                     RunnerTemplateType.MAVEN_TEST,
                     AgentToolRiskLevel.LOW, null,
-                    linkDir.toString(),
+                    linkDir.toString(), ".",
                     List.of("echo", "symlink"),
                     60
             );
@@ -171,7 +176,7 @@ class RunnerProtocolSecurityTest {
                     "exec-safe-1", "owner-1", "ws-1",
                     RunnerTemplateType.MAVEN_TEST,
                     AgentToolRiskLevel.LOW, null,
-                    workDir.toRealPath().toString(),
+                    workDir.toRealPath().toString(), ".",
                     List.of("touch", marker.toString()),
                     10
             ));
@@ -194,7 +199,7 @@ class RunnerProtocolSecurityTest {
         RunnerExecutionResult result = executor.execute(
                 "exec-socket", "owner-socket", "ws-socket",
                 RunnerTemplateType.MAVEN_TEST, AgentToolRiskLevel.LOW, null,
-                workDir.toRealPath().toString(), List.of("mvn", "test"), 30);
+                workDir.toRealPath().toString(), ".", List.of("mvn", "test"), 30);
 
         assertTrue(result.success());
         assertNotNull(received.get());
@@ -213,11 +218,11 @@ class RunnerProtocolSecurityTest {
         RunnerSignedEnvelope pythonEnvelope = new RunnerSignedEnvelope(
                 "v1", "golden-execution", "golden-owner", "golden-workspace",
                 RunnerTemplateType.MAVEN_TEST, AgentToolRiskLevel.LOW,
-                "/workspace/golden", List.of("mvn", "test", "-Dtest=GoldenTest"),
+                "/workspace/golden", ".", List.of("mvn", "test", "-Dtest=GoldenTest"),
                 RunnerIsolationMode.LOCAL_RUNNER, true, "512m", "1.0", 60,
                 Instant.parse("2026-09-06T04:00:00Z"), null,
                 Instant.parse("2026-09-06T04:10:00Z"), "golden-nonce",
-                "157afb2c890adf4a129954bfb9fd7bb4548dc357cc03577ffc63f72541392d15"
+                "d40ca4c9a420cc9ed74a10477926a1a333ad26be005572017eb8ca6f994f9b9a"
         );
 
         assertTrue(verifier.verifyEnvelope(

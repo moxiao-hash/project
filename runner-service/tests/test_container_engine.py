@@ -109,3 +109,35 @@ def test_stages_workspace_below_configured_shared_root(tmp_path) -> None:
     with engine.stage_workspace(source) as staged:
         assert staged.is_relative_to(staging_root)
         assert (staged / "README.md").read_text() == "safe"
+
+
+def test_container_workdir_is_bound_to_the_validated_relative_subdirectory() -> None:
+    engine = ContainerEngine(engine_path="/usr/local/bin/docker")
+
+    command = engine.build_command(request(workingDirectory="backend"))
+
+    index = command.index("--workdir")
+    assert command[index : index + 2] == ["--workdir", "/workspace"]
+    env_index = command.index("STUDYPILOT_WORKDIR=/workspace/backend")
+    assert command[env_index - 1] == "--env"
+
+
+def test_container_workdir_defaults_to_the_workspace_root() -> None:
+    engine = ContainerEngine(engine_path="/usr/local/bin/docker")
+
+    for value in (None, "", "."):
+        command = engine.build_command(request(workingDirectory=value))
+        index = command.index("--workdir")
+        assert command[index : index + 2] == ["--workdir", "/workspace"], value
+        assert "STUDYPILOT_WORKDIR=/workspace" in command, value
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    ["/etc", "..", "../outside", "backend/../../outside", "/workspace/backend", "a/./b"],
+)
+def test_rejects_unsafe_working_directory(hostile: str) -> None:
+    engine = ContainerEngine(engine_path="/usr/local/bin/docker")
+
+    with pytest.raises(ExecutionRejected, match="working directory"):
+        engine.build_command(request(workingDirectory=hostile))

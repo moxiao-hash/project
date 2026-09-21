@@ -277,7 +277,7 @@ public final class AgentToolOutputSchemas {
             "workspaceId", str(), "workspaceName", str(), "workspacePath", str(),
             "templateType", str(), "templateDescription", str(), "riskLevel", str(),
             "commandTokens", array(str()), "renderedCommand", str(), "timeoutSeconds", integer(),
-            "confirmationRequired", bool(), "explanation", strN());
+            "confirmationRequired", bool(), "explanation", strN(), "workingDirectory", str());
     private static final Spec RUNNER_RESULT = object(
             "executionId", str(), "governanceExecutionId", str(), "workspaceId", str(),
             "templateType", str(), "status", str(), "exitCode", integer(),
@@ -308,13 +308,15 @@ public final class AgentToolOutputSchemas {
             "conflictReason", strN(), "affectedLines", array(str()), "safeToApply", bool());
     private static final Spec TEST_RECOMMENDATION = object(
             "workspaceId", str(), "templates", array(str()),
+            "executions", array(object("templateType", str(), "workingDirectory", str())),
             "requiresDependencyPreparation", bool(), "reasons", array(str()));
     private static final Spec COMMIT_PREVIEW = object(
             "workspaceId", str(), "branch", str(), "expectedHead", str(),
             "changeFingerprint", str(), "paths", array(str()), "message", str());
     private static final Spec PUSH_PREVIEW = object(
-            "workspaceId", str(), "remoteName", str(), "branch", str(),
-            "expectedHead", str(), "aheadCount", integer());
+            "workspaceId", str(), "remoteName", str(), "remoteUrlDigest", str(), "branch", str(),
+            "expectedHead", str(), "expectedRemoteRef", str(), "expectedRemoteRefCommit", str(),
+            "aheadCount", integer(), "timeoutSeconds", integer());
     private static final Spec INTERFACE_FALLBACK = object(
             "channel", str(), "actionKey", str(), "fallbackRequired", bool(), "reason", str());
     private static final Spec COMMIT_RESULT = object(
