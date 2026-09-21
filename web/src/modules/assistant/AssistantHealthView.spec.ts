@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import AssistantHealthView from './AssistantHealthView.vue'
+import type { AssistantHealth } from '@/types/assistant'
 
 const { getAssistantHealth } = vi.hoisted(() => ({
   getAssistantHealth: vi.fn(),
@@ -10,170 +11,223 @@ vi.mock('@/services/current/assistant', () => ({
   assistantApi: { getAssistantHealth },
 }))
 
-describe('AssistantHealthView (Task 31 真实用量、价格与预算可观测性)', () => {
+function createHealthFixture(overrides: Partial<AssistantHealth> = {}): AssistantHealth {
+  return {
+    // 采样计数
+    costSamples: 10,
+    tokenSamples: 10,
+    latencySamples: 10,
+
+    // 旧版执行治理指标 (Legacy Execution Metrics)
+    totalExecutions: 12,
+    successfulExecutions: 10,
+    failedExecutions: 2,
+    successRate: 0.833,
+    promptTokens: 5000,
+    completionTokens: 2500,
+    estimatedCost: 0.05,
+    averageLatencyMs: 650,
+    pendingConfirmations: 1,
+
+    // 真实模型遥测指标 (Model Telemetry)
+    modelCalls: 10,
+    failedModelCalls: 1,
+    modelFailureRate: 0.1,
+    modelPromptTokens: 12000,
+    modelCachedPromptTokens: 4000,
+    modelUncachedPromptTokens: 8000,
+    modelCompletionTokens: 3000,
+    modelReasoningTokens: 1000,
+    modelTotalTokens: 16000, // 后端已准确求和，前端严禁二次相加
+    unknownPriceCalls: 0,
+    usageEstimatedCost: 0.0425,
+    currency: 'USD',
+    priceStatus: 'KNOWN',
+    priceVersion: '2026-09-08',
+    p50LatencyMs: 520,
+    p95LatencyMs: 1280,
+
+    models: [
+      {
+        modelName: 'deepseek-chat',
+        provider: 'deepseek',
+        calls: 8,
+        failedCalls: 0,
+        failureRate: 0,
+        promptTokens: 10000,
+        cachedPromptTokens: 4000,
+        uncachedPromptTokens: 6000,
+        completionTokens: 2500,
+        reasoningTokens: 0,
+        totalTokens: 12500,
+        estimatedCost: 0.035,
+        currency: 'USD',
+        priceStatus: 'KNOWN',
+        priceVersion: '2026-09-08',
+        p50LatencyMs: 480,
+        p95LatencyMs: 950,
+      },
+      {
+        modelName: 'deepseek-reasoner',
+        provider: 'deepseek',
+        calls: 2,
+        failedCalls: 1,
+        failureRate: 0.5,
+        promptTokens: 2000,
+        cachedPromptTokens: 0,
+        uncachedPromptTokens: 2000,
+        completionTokens: 500,
+        reasoningTokens: 1000,
+        totalTokens: 3500,
+        estimatedCost: 0.0075,
+        currency: 'USD',
+        priceStatus: 'KNOWN',
+        priceVersion: '2026-09-08',
+        p50LatencyMs: 890,
+        p95LatencyMs: 1800,
+      },
+    ],
+    ...overrides,
+  }
+}
+
+describe('AssistantHealthView (Task 31 真实用量与模型遥测可观测性)', () => {
   beforeEach(() => {
     getAssistantHealth.mockReset()
-    getAssistantHealth.mockResolvedValue({
-      totalExecutions: 10,
-      successfulExecutions: 8,
-      failedExecutions: 2,
-      successRate: 0.8,
-      promptTokens: 1200,
-      completionTokens: 600,
-      reasoningTokens: 200,
-      estimatedCost: 0.025,
-      isCostEstimated: true,
-      averageLatencyMs: 850,
-      p50LatencyMs: 720,
-      p95LatencyMs: 1450,
-      pendingConfirmations: 1,
-      costSamples: 3,
-      tokenSamples: 3,
-      latencySamples: 3,
+    getAssistantHealth.mockResolvedValue(createHealthFixture())
+  })
+
+  it('模型遥测与执行记录分立展示：独立呈现模型可观测指标与执行层统计', async () => {
+    const wrapper = mount(AssistantHealthView)
+    await flushPromises()
+
+    // 验证两大核心分区的存在
+    expect(wrapper.find('[data-testid="model-telemetry-section"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="legacy-execution-section"]').exists()).toBe(true)
+
+    // 模型指标区展示
+    const telemetrySection = wrapper.find('[data-testid="model-telemetry-section"]')
+    expect(telemetrySection.text()).toContain('模型调用')
+    expect(telemetrySection.text()).toContain('10')
+    expect(telemetrySection.text()).toContain('失败 1 次 (10%)')
+
+    // 执行层指标区展示
+    const executionSection = wrapper.find('[data-testid="legacy-execution-section"]')
+    expect(executionSection.text()).toContain('执行记录')
+    expect(executionSection.text()).toContain('83.3%')
+    expect(executionSection.text()).toContain('1 个操作等待确认')
+  })
+
+  it('Token 用量直接取后端 modelTotalTokens，绝不二次叠加 reasoningTokens', async () => {
+    const wrapper = mount(AssistantHealthView)
+    await flushPromises()
+
+    // 后端返回的 modelTotalTokens 为 16000
+    // 如果前端错误地加上 reasoningTokens (1000)，会变成 17000
+    const telemetrySection = wrapper.find('[data-testid="model-telemetry-section"]')
+    expect(telemetrySection.text()).toContain('16,000')
+    expect(telemetrySection.text()).not.toContain('17,000')
+    expect(telemetrySection.text()).toContain('缓存命中 4,000 · 未缓存 8,000')
+    expect(telemetrySection.text()).toContain('输出 3,000 · 思考 1,000')
+  })
+
+  it('费用展示动态货币符号（通常为 USD），严禁出现硬编码人民币符号 ¥', async () => {
+    const wrapper = mount(AssistantHealthView)
+    await flushPromises()
+
+    const text = wrapper.text()
+    // 严禁包含硬编码人民币符号
+    expect(text).not.toContain('¥')
+    expect(text).not.toContain('￥')
+
+    // 动态展示 USD 货币标识与数值
+    expect(text).toContain('0.0425')
+    expect(text).toContain('USD')
+  })
+
+  it('当 priceStatus 为 UNKNOWN 或金额为 null 时，显式展示未知状态，绝不记为 0', async () => {
+    getAssistantHealth.mockResolvedValue(createHealthFixture({
+      priceStatus: 'UNKNOWN',
+      usageEstimatedCost: null,
+      unknownPriceCalls: 3,
       models: [
         {
-          modelId: 'deepseek-chat',
-          callCount: 8,
+          modelName: 'unknown-model-x',
+          provider: 'custom',
+          calls: 3,
+          failedCalls: 0,
+          failureRate: 0,
           promptTokens: 1000,
-          completionTokens: 500,
+          cachedPromptTokens: 0,
+          uncachedPromptTokens: 1000,
+          completionTokens: 200,
           reasoningTokens: 0,
-          estimatedCost: 0.015,
-          isEstimated: true,
-        },
-        {
-          modelId: 'experimental-model-v1',
-          callCount: 2,
-          promptTokens: 200,
-          completionTokens: 100,
-          reasoningTokens: 200,
-          estimatedCost: 0,
-          isEstimated: false,
+          totalTokens: 1200,
+          estimatedCost: null,
+          currency: null,
+          priceStatus: 'UNKNOWN',
+          priceVersion: null,
+          p50LatencyMs: 300,
+          p95LatencyMs: 600,
         },
       ],
-      budget: {
-        dailyCallsLimit: 100,
-        dailyCallsUsed: 85,
-        dailyCostLimit: 5.0,
-        dailyCostUsed: 1.25,
-        maxOutputTokensPerTurn: 4096,
-        budgetExhausted: false,
-        exhaustedReason: null,
-      },
-    })
-  })
+    }))
 
-  it('未采集的费用和用量显示暂无数据', async () => {
-    getAssistantHealth.mockResolvedValue({
-      totalExecutions: 0,
-      successfulExecutions: 0,
-      failedExecutions: 0,
-      successRate: 0,
-      promptTokens: 0,
-      completionTokens: 0,
-      estimatedCost: 0,
-      averageLatencyMs: 0,
-      pendingConfirmations: 0,
-      costSamples: 0,
-      tokenSamples: 0,
-      latencySamples: 0,
-    })
-    const wrapper = mount(AssistantHealthView)
-    await flushPromises()
-    expect(wrapper.text().match(/暂无数据/g)?.length).toBe(4)
-  })
-
-  it('展示个人 Agent 的成功率、成本和待确认操作', async () => {
     const wrapper = mount(AssistantHealthView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('80%')
-    expect(wrapper.text()).toContain('2,000') // 1200 prompt + 600 completion + 200 reasoning
-    expect(wrapper.text()).toContain('0.025')
-    expect(wrapper.text()).toContain('1 个操作等待确认')
+    const costBadge = wrapper.find('[data-testid="cost-unknown-badge"]')
+    expect(costBadge.exists()).toBe(true)
+    expect(costBadge.text()).toContain('价格未知')
+    expect(wrapper.text()).toContain('含 3 次未计价调用')
+
+    // 表格内模型项也必须显示价格未知，不能出现 $0 或 0.00
+    const modelRow = wrapper.find('[data-testid="model-row-unknown-model-x"]')
+    expect(modelRow.text()).toContain('未知')
+    expect(modelRow.text()).not.toContain('$0')
   })
 
-  it('分模型用量明细：正确渲染模型列表、Token 及未知价格的“不可估算”标记', async () => {
+  it('无模型调用行时，真实呈现无数据空状态', async () => {
+    getAssistantHealth.mockResolvedValue(createHealthFixture({
+      modelCalls: 0,
+      models: [],
+    }))
+
     const wrapper = mount(AssistantHealthView)
     await flushPromises()
 
-    // 验证模型 ID 正常展示
-    expect(wrapper.text()).toContain('deepseek-chat')
-    expect(wrapper.text()).toContain('experimental-model-v1')
-
-    // 验证已知模型费用正常格式化
-    expect(wrapper.text()).toContain('0.015')
-
-    // 验证未录入价格的模型严禁显示为 0，必须明确标为“不可估算”
-    expect(wrapper.text()).toContain('不可估算')
-    expect(wrapper.find('[data-testid="unestimated-badge"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="models-empty-state"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="models-empty-state"]').text()).toContain('暂无模型调用数据')
   })
 
-  it('延迟可观测性：同时展示 P50 与 P95 延迟分位数指标', async () => {
+  it('分模型详细指标展示：覆盖失败次数、缓存/未缓存 Prompt、P50/P95 与定价版本', async () => {
     const wrapper = mount(AssistantHealthView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('P50 延迟')
-    expect(wrapper.text()).toContain('720 ms')
-    expect(wrapper.text()).toContain('P95 延迟')
-    expect(wrapper.text()).toContain('1,450 ms')
+    const table = wrapper.find('[data-testid="models-table"]')
+    expect(table.exists()).toBe(true)
+
+    // 检查表头及明细字段
+    expect(table.text()).toContain('deepseek-chat')
+    expect(table.text()).toContain('deepseek-reasoner')
+    expect(table.text()).toContain('deepseek')
+    expect(table.text()).toContain('480 ms / 950 ms')
+    expect(table.text()).toContain('890 ms / 1800 ms')
+    expect(table.text()).toContain('2026-09-08')
+
+    // 顶层分区展示整体 P50 / P95
+    const telemetry = wrapper.find('[data-testid="model-telemetry-section"]')
+    expect(telemetry.text()).toContain('520 ms')
+    expect(telemetry.text()).toContain('1,280 ms')
   })
 
-  it('用户每日预算展示：正常状态下展示调用配额进度与花费限额', async () => {
+  it('彻底移除虚构的 budget UI，公开健康接口不包含 budget 字段', async () => {
     const wrapper = mount(AssistantHealthView)
     await flushPromises()
 
-    expect(wrapper.text()).toContain('今日调用次数配额')
-    expect(wrapper.text()).toContain('85 / 100')
-    expect(wrapper.text()).toContain('今日预计花费限额')
-    expect(wrapper.text()).toContain('¥1.25 / ¥5.00')
     expect(wrapper.find('[data-testid="budget-alert"]').exists()).toBe(false)
-  })
-
-  it('预算耗尽拦截：当每日预算耗尽时渲染醒目的预算告警与降级提示', async () => {
-    getAssistantHealth.mockResolvedValueOnce({
-      totalExecutions: 100,
-      successfulExecutions: 95,
-      failedExecutions: 5,
-      successRate: 0.95,
-      promptTokens: 50000,
-      completionTokens: 20000,
-      estimatedCost: 5.2,
-      isCostEstimated: true,
-      averageLatencyMs: 900,
-      p50LatencyMs: 800,
-      p95LatencyMs: 1600,
-      pendingConfirmations: 0,
-      costSamples: 100,
-      tokenSamples: 100,
-      latencySamples: 100,
-      budget: {
-        dailyCallsLimit: 100,
-        dailyCallsUsed: 100,
-        dailyCostLimit: 5.0,
-        dailyCostUsed: 5.2,
-        maxOutputTokensPerTurn: 4096,
-        budgetExhausted: true,
-        exhaustedReason: '今日调用次数已达上限（100次），纯 Java 查阅与导航仍可使用',
-      },
-    })
-
-    const wrapper = mount(AssistantHealthView)
-    await flushPromises()
-
-    const alert = wrapper.find('[data-testid="budget-alert"]')
-    expect(alert.exists()).toBe(true)
-    expect(alert.text()).toContain('今日调用次数已达上限')
-    expect(alert.text()).toContain('纯 Java 查阅与导航仍可使用')
-  })
-
-  it('隐私安全防线：页面严禁透传或渲染任何用户 Prompt 明文与敏感凭据', async () => {
-    const wrapper = mount(AssistantHealthView)
-    await flushPromises()
-
-    const pageText = wrapper.text()
-    expect(pageText).not.toContain('promptText')
-    expect(pageText).not.toContain('apiKey')
-    expect(pageText).not.toContain('Bearer')
-    expect(pageText).not.toContain('sk-')
+    expect(wrapper.find('.budget-card').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('今日调用次数配额')
+    expect(wrapper.text()).not.toContain('今日预计花费限额')
   })
 })

@@ -116,24 +116,24 @@ export interface AutomationSettings {
   updatedAt: string
 }
 
-export interface ModelUsageDetail {
-  modelId: string
-  callCount: number
+export interface AssistantModelUsageStats {
+  modelName: string
+  provider: string
+  calls: number
+  failedCalls: number
+  failureRate: number
   promptTokens: number
+  cachedPromptTokens: number
+  uncachedPromptTokens: number
   completionTokens: number
-  reasoningTokens?: number
-  estimatedCost: number
-  isEstimated: boolean
-}
-
-export interface UserBudgetStatus {
-  dailyCallsLimit: number
-  dailyCallsUsed: number
-  dailyCostLimit: number
-  dailyCostUsed: number
-  maxOutputTokensPerTurn: number
-  budgetExhausted: boolean
-  exhaustedReason?: string | null
+  reasoningTokens: number
+  totalTokens: number
+  estimatedCost: number | null
+  currency: string | null
+  priceStatus: string
+  priceVersion: string | null
+  p50LatencyMs: number | null
+  p95LatencyMs: number | null
 }
 
 export interface AssistantHealth {
@@ -146,15 +146,26 @@ export interface AssistantHealth {
   successRate: number
   promptTokens: number
   completionTokens: number
-  reasoningTokens?: number
   estimatedCost: number
-  isCostEstimated?: boolean
   averageLatencyMs: number
-  p50LatencyMs?: number
-  p95LatencyMs?: number
   pendingConfirmations: number
-  models?: ModelUsageDetail[]
-  budget?: UserBudgetStatus
+  modelCalls?: number
+  failedModelCalls?: number
+  modelFailureRate?: number
+  modelPromptTokens?: number
+  modelCachedPromptTokens?: number
+  modelUncachedPromptTokens?: number
+  modelCompletionTokens?: number
+  modelReasoningTokens?: number
+  modelTotalTokens?: number
+  unknownPriceCalls?: number
+  usageEstimatedCost?: number | null
+  currency?: string | null
+  priceStatus?: string
+  priceVersion?: string | null
+  p50LatencyMs?: number | null
+  p95LatencyMs?: number | null
+  models?: AssistantModelUsageStats[]
 }
 
 export type AssistantEventType =
