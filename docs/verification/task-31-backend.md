@@ -466,7 +466,8 @@ proof-nobudget-...-r1     RESERVED   2000                      NULL        NULL 
    全新迁移 + 内部 HTTP 串行链路（§8.4）。两者都在真实数据库引擎上，但隔离级别与锁实现不同。
 2. **单次调用的保守上界可能提前拒绝**：若一次调用的"输入上界 + 输出上限"本身就超过当日费用上限，
    这次调用会被拒（`DAILY_ESTIMATED_COST_EXHAUSTED`）。这是刻意的 fail-closed 取舍。
-3. **输入上界按 UTF-8 字节数取严格上界**，CJK 文本会明显高估 token 数，因此可能更早触发费用上限。
+3. ~~输入上界按 UTF-8 字节数取严格上界~~ **已在 §9 加强**：上界现在覆盖全部嵌套内容、
+   role/容器/tool-call 框架开销，对无法确定性枚举的对象失败关闭；CJK 仍按字节高估，属于刻意保守。
 4. **节假日日历仍未内置**（沿用 §5.1）。
 5. **未重跑真实模型调用**：本 worktree 仍无 `DEEPSEEK_API_KEY` / `.env`；§3.4 属于基线轮次证据。
 6. 未运行 `web/**` 测试；未合并 `main`；未启动 Task 32。
@@ -476,3 +477,157 @@ proof-nobudget-...-r1     RESERVED   2000                      NULL        NULL 
 - 本轮修复提交：`11575cc`（`fix: make usage finalization atomic and cost holds conservative`）
 - 本轮文档提交：`2a5d2c1`（`docs: verify task 31 atomic finalization and cost holds`）
 - 后续仅回填本哈希的小提交见 `git log --oneline`（不改动被测代码）
+
+---
+
+## 9. 第三轮评审修复（2026-09-21）：owner 安全的终结/释放与严格输入上界
+
+Codex 复审指出两个仍然阻断的缺陷；本节只记录本轮新增证据。
+
+### 9.1 缺陷与修复设计
+
+**缺陷 1：首个写入路径仍然不是 owner 安全的。**
+`persistNewUsage` 为 `command.ownerId` 插入用量行后，按**裸 id** 调用 `finalizeReservation`：
+若该 `usageId` 属于另一个 owner 的 `RESERVED` 行、而且当时还没有用量行，就会把对方的许可终结掉；
+重复上报的自愈路径同样只按 id 终结。修复：
+
+- `finalizeReservation(id, ownerId, cost, at)` 与 `releaseReservation(id, ownerId, at)` 都加上 owner 条件
+  （`where r.id = :id and r.ownerId = :ownerId and r.state = 'RESERVED'`）。
+- 新记录路径在插入前确认该幂等键没有被其他 owner 的预占占用；被占用即抛
+  `AssistantUsageOwnerConflictException`，整个事务回滚（不写用量行、不改写对方许可）。
+- 该 owner 的预占存在且仍为 `RESERVED` 时，要求 owner-scoped 终结**恰好命中 1 行**；
+  命中 0 行（例如并发 release）则回滚以允许完整重试；已是 `FINALIZED`/`RELEASED` 时不重复终结，
+  但仍接受用量（用量行才是金额事实源）。
+- 自愈路径依次校验"用量行 owner == 上报 owner""预占 owner == 上报 owner"，任一不符即冲突。
+- `release(reservationId, ownerId, at)` 先读行校验归属；内部接口
+  `POST /internal/assistant-usage/reservations/{id}/release` 新增必填 `ownerId`；
+  AI 侧 `ModelBudgetGuard.release(..., owner_id=...)` 与 `BudgetedChatModel` 的两个释放调用点
+  都带上本次预占解析出的 owner。
+- 冲突以 **HTTP 409 + `{"code":"ASSISTANT_USAGE_OWNER_CONFLICT"}`** 返回，是稳定的机器可读结果；
+  `reserve` 侧维持既有的 `IDEMPOTENCY_KEY_OWNER_MISMATCH` 拒绝回执。
+
+**缺陷 2：`input_token_upper_bound` 不是严格上界。**
+旧 `_text_parts` 在深度 > 8 时返回空列表（静默丢弃深层内容），只统计 `content`/`tool_calls`，
+漏掉 role、容器分隔符、tool-call 框架与协议开销；未知对象退回 `repr`，可能带内存地址而不可确定。
+`app/providers/input_bound.py` 重写为：
+
+- **显式栈**遍历整个结构，不设深度上限、不因类型丢内容；对环状结构只计一次框架，避免死循环。
+- 计入字符串 UTF-8 字节数（`surrogatepass` 容错）、字节串长度、整数/浮点字面长度、
+  `Mapping`/序列的每个键与元素、消息对象上的 `type/role/name/content/tool_calls/tool_call_id/
+  function_call/additional_kwargs/messages/text` 以及其实例 `__dict__` 的公开字段。
+- 每条消息加 16 字节、每个容器加 2 字节、每个条目加 8 字节的框架开销（字节当量，同时是 token 余量）。
+- 无法确定性枚举的对象（既无已知字段也无 `__dict__`）抛 `UnboundedInputError`；
+  `BudgetedChatModel._permit` 捕获后以 `ModelBudgetExceededError("MODEL_INPUT_UNBOUNDED")`
+  **失败关闭**：不预占、不调用 provider。
+- 只产出并传输数字，不持久化提示词或正文；异常只带类型名。
+
+### 9.2 RED 证据
+
+```text
+# 缺陷 1 行为级（先写测试即失败）
+mvn -o -Dtest=AssistantUsageReservationIntegrityTest test
+[ERROR] Tests run: 6, Failures: 2
+  newRecordMustNotFinalizeAnotherOwnersReservation
+      expected: "RESERVED" but was: "FINALIZED"
+  duplicateSelfHealMustNotFinalizeAnotherOwnersReservation
+      expected: "RESERVED" but was: "FINALIZED"
+
+# 缺陷 1 契约级（新 API 尚不存在）
+[ERROR] ...AssistantUsageReservationIntegrityTest.java:[201,9] 找不到符号
+  符号: 类 AssistantUsageOwnerConflictException
+
+# 缺陷 2
+ERROR collecting tests/providers/test_input_bound.py
+E   ImportError: cannot import name 'UnboundedInputError' from 'app.providers.input_bound'
+```
+
+### 9.3 GREEN 证据
+
+```text
+mvn -o -Dtest='AssistantUsage*Test,ModelPricingCatalogTest,InternalAssistantUsageContractTest' test
+Tests run: 69, Failures: 0, Errors: 0, Skipped: 0   BUILD SUCCESS
+  AssistantUsageReservationIntegrityTest      11
+  AssistantUsageReservationCostBoundTest      12
+  AssistantUsageReservationConcurrencyTest     5
+  AssistantUsageServiceTest                   12
+  ModelPricingCatalogTest                     25
+  InternalAssistantUsageContractTest           4
+
+cd backend && mvn -o test
+Tests run: 451, Failures: 0, Errors: 0, Skipped: 0   BUILD SUCCESS
+
+cd ai-service && PYTHONPATH=. <venv>/python -m pytest -q
+466 passed, 1 warning
+
+cd ai-service && <venv>/python -m ruff check app tests
+All checks passed!
+
+git diff --check   （无输出）
+```
+
+新增覆盖：新记录撞上他人 `RESERVED` 预占（不改写、不写用量行、机器可读冲突码）、
+自愈路径撞上他人预占、id 归属不符的释放被拒（且本人释放仍幂等）、
+并发重复上报只写一行且只终结一次、并发上报在他人预占存在时双方都冲突且对方行不变；
+深于 8 层的嵌套内容不被丢弃、空/系统/工具消息仍计框架、role 计入上界、
+映射与嵌套 tool call 计入、字节串无解码失败、未知对象失败关闭、重复调用确定性、
+环状结构不死循环、叶子字节总和不被低估；跨 owner 释放携带 owner。
+
+### 9.4 真实 MySQL / Flyway + 内部 HTTP 跨 owner 证明
+
+真实 MySQL 9.6（schema 已在 v46，Flyway 报 `Current version of schema studypilot: 46`，
+`ddl-auto=validate` 通过，Tomcat 18081）。两个 owner 各写入 5 次调用预算后：
+
+```text
+1. reserve(A, X)          -> 201 allowed:true  WITHIN_BUDGET          X state = RESERVED
+2. record(B, X)           -> 409 {"code":"ASSISTANT_USAGE_OWNER_CONFLICT"}
+                             X state = RESERVED（未被改写）  X 用量行 = 0
+3. release(B, X)          -> 409 {"code":"ASSISTANT_USAGE_OWNER_CONFLICT"}
+                             X state = RESERVED（未被改写）
+4. release(A, X)          -> 200 released:true                        X state = RELEASED
+5. reserve(B, Y) -> 201；预置 owner=A 的用量行
+   record(A, Y)           -> 409 {"code":"ASSISTANT_USAGE_OWNER_CONFLICT"}
+                             Y state = RESERVED（未被自愈路径终结）  Y 用量行 = 1
+6. reserve(A, Z) / record(A, Z) -> 201 duplicate:false estimatedCost:0.00030240
+                             Z state = FINALIZED actual_cost = 0.00030240
+   record(A, Z) 重复       -> 201 duplicate:true（金额不变）
+
+MySQL 回查 assistant_usage_reservation：
+own-x-... | own-a-... | RELEASED  | input_tokens_upper_bound=2000
+own-y-... | own-b-... | RESERVED  | 2000
+own-z-... | own-a-... | FINALIZED | 2000
+```
+
+输入上界驱动预占的真实 HTTP 复核（owner 费用上限 0.001、输出上限 8）：
+
+```text
+inputTokensUpperBound=0     -> allowed:true  WITHIN_BUDGET
+inputTokensUpperBound=10000 -> allowed:false DAILY_ESTIMATED_COST_EXHAUSTED
+```
+
+### 9.5 本轮变更文件
+
+- `新增`：`backend/.../agent/usage/AssistantUsageOwnerConflictException.java`、
+  `backend/.../agent/usage/AssistantUsageConflictResponse.java`
+- `修改`：`AssistantUsageService`（owner-scoped 终结/释放、恰好一行、冲突异常）、
+  `AssistantUsageReservationJpaRepository`（两个 update 加 owner 条件）、
+  `InternalAssistantUsageController`（release 必填 ownerId、冲突 409 处理）
+- `修改`：`ai-service/app/providers/input_bound.py`（重写为严格上界 + 失败关闭）、
+  `providers/budget.py`（释放带 owner）、`providers/budgeted_model.py`（失败关闭 + 释放带 owner）、
+  `clients/java_backend.py`（释放带 ownerId）
+- `测试`：`AssistantUsageReservationIntegrityTest`（+7）、`InternalAssistantUsageContractTest`（+1）、
+  `ai-service/tests/providers/test_input_bound.py`（12 个对抗用例）、`test_budget_guard.py`、
+  `test_budgeted_model.py`
+
+### 9.6 仍未覆盖 / 已知限制
+
+1. 并发用例仍在 H2 的真实事务/行锁上；MySQL 侧本轮做的是 schema v46 上的真实内部 HTTP 链路。
+2. 单次调用的保守上界可能提前拒绝（沿用 §8.6.2）；CJK 文本按字节上界仍会高估。
+3. 无法确定性枚举的输入对象会被拒绝调用（fail closed），这是刻意取舍；当前所有模型调用点传入的
+   都是 LangChain 消息或字典，未出现该分支。
+4. 节假日日历未内置；未重跑真实模型调用（worktree 无 `DEEPSEEK_API_KEY`）。
+5. 未运行 `web/**` 测试；未合并 `main`；未启动 Task 32。
+
+### 9.7 提交
+
+- 本轮修复提交：`0600fcd`（`fix: scope usage finalization and release to the owning owner`）
+- 本轮文档提交：见 `git log --oneline`（`docs: verify task 31 owner-scoped usage and strict input bound`）
