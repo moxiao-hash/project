@@ -4,6 +4,7 @@ import com.moxiao.studypilot.agent.runner.RunnerTemplateType;
 import com.moxiao.studypilot.roadmap.infrastructure.ProjectWorkspaceEntity;
 import com.moxiao.studypilot.roadmap.infrastructure.ProjectWorkspaceJpaRepository;
 import com.moxiao.studypilot.shared.error.ConflictException;
+import org.eclipse.jgit.api.Git;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -276,6 +277,93 @@ class DeveloperWorkspaceHardeningTest {
         run(root, "git", "config", "--add", "remote.origin.url", second.toUri().toString());
         assertThatThrownBy(() -> service.previewGitPush(owner, workspaceId))
                 .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void pushDestinationDigestDistinguishesTheRemoteUser() throws Exception {
+        // 语法合法的 SSH URI，仅用户名不同：可能解析到不同账号/仓库，必须产生不同摘要。
+        run(root, "git", "config", "remote.origin.pushurl", "ssh://alice@127.0.0.1:1/team/repo.git");
+        String sshAlice = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        run(root, "git", "config", "remote.origin.pushurl", "ssh://bob@127.0.0.1:1/team/repo.git");
+        String sshBob = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        assertThat(sshAlice).isNotEqualTo(sshBob);
+
+        // SCP 形态同样必须区分用户。
+        run(root, "git", "config", "remote.origin.pushurl", "alice@127.0.0.1:team/repo.git");
+        String scpAlice = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        run(root, "git", "config", "remote.origin.pushurl", "bob@127.0.0.1:team/repo.git");
+        String scpBob = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        assertThat(scpAlice).isNotEqualTo(scpBob);
+        assertThat(scpAlice).isNotEqualTo(sshAlice);
+
+        // 等价的显式默认端口必须保持同一目标，避免误报漂移。
+        run(root, "git", "config", "remote.origin.pushurl", "ssh://alice@127.0.0.1/team/repo.git");
+        String implicitPort = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        run(root, "git", "config", "remote.origin.pushurl", "ssh://alice@127.0.0.1:22/team/repo.git");
+        String explicitPort = service.previewGitPush(owner, workspaceId).remoteUrlDigest();
+        assertThat(implicitPort).isEqualTo(explicitPort);
+    }
+
+    @Test
+    void pushConfirmationFailsClosedWhenTheRemoteUserChangesAfterPreview() throws Exception {
+        run(root, "git", "config", "remote.origin.pushurl", "ssh://alice@127.0.0.1:1/team/repo.git");
+        commitLocalChange();
+        GitPushPreview preview = service.previewGitPush(owner, workspaceId);
+        run(root, "git", "config", "remote.origin.pushurl", "ssh://bob@127.0.0.1:1/team/repo.git");
+
+        // 必须在任何网络或推送尝试之前失败关闭：若摘要忽略用户名，这里会去连接 127.0.0.1:1
+        // 并抛出传输异常，而不是 ConflictException。
+        assertThatThrownBy(() -> service.pushConfirmed(owner, pushRequest(preview)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void pushRejectsRemoteOptionsThatACapturedDestinationCannotCarry() throws Exception {
+        commitLocalChange();
+
+        // 预览阶段：JGit 只在按远端名解析时通过 applyConfig 应用 receivepack；
+        // 捕获目标后无法保留该设置，必须在产生任何副作用之前拒绝而不是静默丢弃。
+        run(root, "git", "config", "remote.origin.receivepack", "/opt/custom/git-receive-pack");
+        assertThatThrownBy(() -> service.previewGitPush(owner, workspaceId))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        // 确认阶段：预览之后才新增 receivepack，同样必须失败关闭。
+        run(root, "git", "config", "--unset", "remote.origin.receivepack");
+        GitPushPreview valid = service.previewGitPush(owner, workspaceId);
+        run(root, "git", "config", "remote.origin.receivepack", "/opt/custom/git-receive-pack");
+        assertThatThrownBy(() -> service.pushConfirmed(owner, pushRequest(valid)))
+                .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void capturedPushBindingCannotBeRedirectedByLaterRemoteConfigMutation() throws Exception {
+        Path bound = createBareRemote("bound.git");
+        Path substituted = createBareRemote("substituted.git");
+        run(root, "git", "push", bound.toUri().toString(), "main");
+        run(root, "git", "push", substituted.toUri().toString(), "main");
+        run(root, "git", "config", "remote.origin.pushurl", bound.toUri().toString());
+        commitLocalChange();
+        String boundBefore = bareHead(bound);
+        String substitutedBefore = bareHead(substituted);
+
+        // 确定性捕获目标（不依赖任何时序）：捕获之后再改写远端配置。
+        GitPushDestination captured;
+        try (Git git = Git.open(root.toFile())) {
+            captured = service.capturePushDestination(git.getRepository());
+        }
+        run(root, "git", "config", "remote.origin.pushurl", substituted.toUri().toString());
+        assertThat(service.previewGitPush(owner, workspaceId).remoteUrlDigest())
+                .isNotEqualTo(captured.digest());
+
+        GitPushRequest request = new GitPushRequest(workspaceId, "origin", "main",
+                captured.digest(), captured.digest(), "refs/remotes/origin/main", "", 30);
+        try (Git git = Git.open(root.toFile())) {
+            service.pushToCapturedDestination(git, captured, request);
+        }
+
+        // 被捕获的目标前进，被替换的远端必须保持原样。
+        assertThat(bareHead(bound)).isNotEqualTo(boundBefore);
+        assertThat(bareHead(substituted)).isEqualTo(substitutedBefore);
     }
 
     @Test

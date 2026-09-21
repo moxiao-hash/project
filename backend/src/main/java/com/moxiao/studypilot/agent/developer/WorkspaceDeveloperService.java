@@ -6,13 +6,15 @@ import com.moxiao.studypilot.shared.error.ConflictException;
 import com.moxiao.studypilot.shared.error.ResourceNotFoundException;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.diff.DiffFormatter;
-import org.eclipse.jgit.lib.Config;
 import org.eclipse.jgit.lib.Constants;
+import org.eclipse.jgit.lib.NullProgressMonitor;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.ObjectReader;
 import org.eclipse.jgit.lib.Repository;
-import org.eclipse.jgit.transport.RemoteConfig;
+import org.eclipse.jgit.transport.PushResult;
+import org.eclipse.jgit.transport.RefSpec;
 import org.eclipse.jgit.transport.RemoteRefUpdate;
+import org.eclipse.jgit.transport.Transport;
 import org.eclipse.jgit.transport.URIish;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.eclipse.jgit.treewalk.FileTreeIterator;
@@ -21,7 +23,6 @@ import org.springframework.stereotype.Service;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -32,6 +33,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -327,14 +329,9 @@ public class WorkspaceDeveloperService {
             }
             String remoteRef = "refs/remotes/origin/" + branch;
             ObjectId remote = repository.resolve(remoteRef);
-            int ahead = 0;
-            for (var ignored : remote == null
-                    ? git.log().add(head).call()
-                    : git.log().addRange(remote, head).call()) {
-                ahead++;
-            }
+            int ahead = countAhead(git, remote, head);
             return new GitPushPreview(workspaceId, "origin",
-                    pushDestinationDigest(repository.getConfig()),
+                    capturePushDestination(repository).digest(),
                     branch, head.name(), remoteRef,
                     remote == null ? "" : remote.name(), ahead, PUSH_TIMEOUT_SECONDS);
         } catch (IllegalArgumentException exception) {
@@ -350,126 +347,172 @@ public class WorkspaceDeveloperService {
      * 绝不"照着旧预览推新远端"。
      */
     public void validateGitPush(String ownerId, GitPushRequest request) {
+        Path root = workspaceRoot(findWorkspace(ownerId, request.workspaceId()));
+        try (Git git = openGit(root)) {
+            bindAndValidatePush(git, request);
+        } catch (IOException exception) {
+            throw new IllegalArgumentException("读取 Git 推送状态失败", exception);
+        }
+    }
+
+    /**
+     * 在锁内**一次性**捕获不可变推送目标并完成全部校验，返回该目标供真正推送使用。
+     *
+     * <p>捕获之后不再读取可变的 {@code .git/config}，因此"校验通过后配置被改写"无法再改变
+     * 实际写入目标。</p>
+     */
+    private GitPushDestination bindAndValidatePush(Git git, GitPushRequest request) {
         if (!"origin".equals(request.remoteName())) {
             throw new IllegalArgumentException("只允许推送到登记仓库的 origin");
         }
         if (request.timeoutSeconds() < 1 || request.timeoutSeconds() > MAX_PUSH_TIMEOUT_SECONDS) {
             throw new ConflictException("Git push 超时必须为 1 到 " + MAX_PUSH_TIMEOUT_SECONDS + " 秒");
         }
-        GitPushPreview current;
+        Repository repository = git.getRepository();
+        GitPushDestination destination;
         try {
-            current = previewGitPush(ownerId, request.workspaceId());
+            destination = capturePushDestination(repository);
         } catch (IllegalArgumentException exception) {
-            // 确认阶段无法再派生唯一目标（例如被追加第二个 pushurl、origin 被移除）：
-            // 这是确认所绑定的状态已经变化，属于冲突而不是参数错误。
+            // 预览阶段是成功的；确认时无法再派生唯一目标（被追加第二个 pushurl、origin 被移除、
+            // 或新增了无法保留的 receivepack）属于状态漂移，按冲突处理。
             throw new ConflictException("Git push 目标已变化，请重新创建 push 预览");
         }
-        if (!current.branch().equals(request.branch())
-                || !current.expectedHead().equals(request.expectedHead())
-                || !current.remoteUrlDigest().equals(request.remoteUrlDigest())
-                || !current.expectedRemoteRef().equals(request.expectedRemoteRef())
-                || !current.expectedRemoteRefCommit().equals(request.expectedRemoteRefCommit())
-                || current.timeoutSeconds() != request.timeoutSeconds()) {
-            throw new ConflictException("Git 远端或提交已变化，请重新创建 push 预览");
+        if (!destination.digest().equals(request.remoteUrlDigest())) {
+            throw new ConflictException("Git push 目标已变化，请重新创建 push 预览");
         }
-        if (current.aheadCount() < 1) {
+        String branch;
+        ObjectId head;
+        try {
+            branch = repository.getBranch();
+            head = repository.resolve(Constants.HEAD);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("读取 Git 推送状态失败", exception);
+        }
+        if (head == null || branch == null || Constants.HEAD.equals(branch)
+                || !branch.equals(request.branch())
+                || !head.name().equals(request.expectedHead())) {
+            throw new ConflictException("Git 分支或提交已变化，请重新创建 push 预览");
+        }
+        String remoteRef = "refs/remotes/origin/" + branch;
+        ObjectId remote;
+        try {
+            remote = repository.resolve(remoteRef);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("读取 Git 推送状态失败", exception);
+        }
+        if (!remoteRef.equals(request.expectedRemoteRef())
+                || !(remote == null ? "" : remote.name()).equals(request.expectedRemoteRefCommit())) {
+            throw new ConflictException("Git 远端分支已变化，请重新创建 push 预览");
+        }
+        if (countAhead(git, remote, head) < 1) {
             throw new ConflictException("当前没有需要推送的新提交");
+        }
+        return destination;
+    }
+
+    private int countAhead(Git git, ObjectId remote, ObjectId head) {
+        try {
+            int ahead = 0;
+            for (var ignored : remote == null
+                    ? git.log().add(head).call()
+                    : git.log().addRange(remote, head).call()) {
+                ahead++;
+            }
+            return ahead;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("读取 Git 推送状态失败", exception);
         }
     }
 
     /**
      * 推送并复核实际写入目标。
      *
-     * <p>取得工作区锁后立即重新校验一次绑定事实，随后才执行 push；push 之后再核对 JGit
-     * 实际使用的目标地址是否仍是预览绑定的那一个，避免"确认后目标被改写"的静默重定向。</p>
+     * <p>取得工作区锁后一次性捕获并校验不可变目标，随后**只向该已捕获的 URI** 推送，
+     * 不再要求 JGit 按可变的远端名重新解析配置。</p>
      */
     public GitPushResult pushConfirmed(String ownerId, GitPushRequest request) {
-        validateGitPush(ownerId, request);
         Path root = workspaceRoot(findWorkspace(ownerId, request.workspaceId()));
         synchronized (fileLocks[Math.floorMod(request.workspaceId().hashCode(), fileLocks.length)]) {
-            // 与 git.push() 之间只隔一次调用，尽量压缩"校验通过后被改写"的窗口。
-            validateGitPush(ownerId, request);
             try (Git git = openGit(root)) {
-                var results = git.push().setRemote("origin")
-                        .setTimeout(request.timeoutSeconds())
-                        .add("refs/heads/" + request.branch()).call();
-                for (var result : results) {
-                    verifyPushedDestination(result.getURI(), request.remoteUrlDigest());
-                    for (RemoteRefUpdate update : result.getRemoteUpdates()) {
-                        if (update.getStatus() != RemoteRefUpdate.Status.OK
-                                && update.getStatus() != RemoteRefUpdate.Status.UP_TO_DATE) {
-                            throw new IllegalStateException("远端拒绝推送: " + update.getStatus());
-                        }
-                    }
-                }
-                return new GitPushResult(request.workspaceId(), "origin", request.branch(),
-                        request.expectedHead(), Instant.now());
-            } catch (Exception exception) {
-                throw new IllegalArgumentException("执行 Git push 失败", exception);
+                GitPushDestination destination = bindAndValidatePush(git, request);
+                return pushToCapturedDestination(git, destination, request);
+            } catch (IOException exception) {
+                throw new IllegalArgumentException("读取 Git 推送状态失败", exception);
             }
         }
     }
 
     /**
-     * 派生 JGit 实际 PUSH 使用的**唯一**目标地址并返回其摘要。
+     * 针对**已捕获并已校验**的目标执行推送。
      *
-     * <p>JGit 的 PUSH 走 {@code Transport.openAll(repository, remote, Operation.PUSH)}，
-     * 其地址来自 {@code RemoteConfig.getPushURIs()}（即 {@code remote.<name>.pushurl}），
-     * 只有 pushurl 为空时才回退到 {@code getURIs()}（{@code remote.<name>.url}）。
-     * 只哈希 fetch URL 会允许 pushurl 把已确认的推送改到未绑定的目标。</p>
+     * <p>包级可见：与生产路径共用同一实现；测试可以在捕获目标后修改远端配置，再直接以捕获结果
+     * 调用本方法，确定性地验证"捕获之后配置变化不会改变实际去向"，无需仅测试钩子。</p>
      *
-     * <p>多个有效目标无法保证"要么全成、要么全不成"，因此直接拒绝而不是部分推送。</p>
+     * <p>推送只通过从已捕获 URI 打开的 {@link Transport} 执行，不再要求 JGit 按可变的远端名
+     * 重新解析 {@code .git/config}；因此校验通过之后改写配置无法改变实际写入目标。</p>
      */
-    private String pushDestinationDigest(Config config) {
-        List<URIish> effective = effectivePushUris(config);
-        String canonical = canonicalDestination(effective.get(0));
-        if (canonical.isBlank()) {
-            throw new IllegalArgumentException("Git 仓库未配置 origin");
+    GitPushResult pushToCapturedDestination(Git git, GitPushDestination destination, GitPushRequest request) {
+        Repository repository = git.getRepository();
+        List<RefSpec> specs = List.of(new RefSpec("refs/heads/" + request.branch()));
+        try (Transport transport = Transport.open(repository, destination.uri())) {
+            // 目标锚点必须在产生任何副作用之前确认；无法确认即失败关闭。
+            verifyBoundTransport(transport, destination);
+            // JGit 的 PushCommand 从不应用 setTimeout；这里显式施加绑定超时，让超时成为真实执行边界。
+            transport.setTimeout(request.timeoutSeconds());
+            Collection<RemoteRefUpdate> updates = transport.findRemoteRefUpdatesFor(specs);
+            PushResult result = transport.push(NullProgressMonitor.INSTANCE, updates);
+            // 纵深防御：JGit 在连接阶段通过 OperationResult.setAdvertisedRefs 记录实际联系的目标，
+            // 缺失即为"无法确认"，必须失败而不是静默通过。
+            crossCheckReportedDestination(result, destination);
+            for (RemoteRefUpdate update : result.getRemoteUpdates()) {
+                if (update.getStatus() != RemoteRefUpdate.Status.OK
+                        && update.getStatus() != RemoteRefUpdate.Status.UP_TO_DATE) {
+                    throw new IllegalStateException("远端拒绝推送: " + update.getStatus());
+                }
+            }
+            return new GitPushResult(request.workspaceId(), "origin", request.branch(),
+                    request.expectedHead(), Instant.now());
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("执行 Git push 失败", exception);
         }
-        return sha256(canonical.getBytes(StandardCharsets.UTF_8));
     }
 
-    private List<URIish> effectivePushUris(Config config) {
-        RemoteConfig remote;
-        try {
-            remote = new RemoteConfig(config, "origin");
-        } catch (URISyntaxException exception) {
-            throw new IllegalArgumentException("Git 仓库 origin 地址无效");
+    /** 传输锚点必须等于捕获目标：无法确认或与绑定不一致都在推送前失败关闭。 */
+    private static void verifyBoundTransport(Transport transport, GitPushDestination bound) {
+        URIish opened = transport.getURI();
+        if (opened == null || GitPushDestination.canonicalize(opened).isBlank()) {
+            throw new IllegalStateException("无法确认 Git push 的实际目标地址");
         }
-        List<URIish> pushUris = remote.getPushURIs();
-        List<URIish> effective = pushUris.isEmpty() ? remote.getURIs() : pushUris;
-        if (effective.isEmpty()) {
-            throw new IllegalArgumentException("Git 仓库未配置 origin");
+        if (!GitPushDestination.canonicalize(opened).equals(bound.canonical())) {
+            throw new IllegalStateException("Git push 实际写入目标与确认的目标不一致");
         }
-        if (effective.size() != 1) {
-            throw new IllegalArgumentException(
-                    "Git push 目标必须是唯一确定的一个远端地址，请移除多余的 url 或 pushurl");
-        }
-        return effective;
     }
 
     /**
-     * 目标地址的规范化形式：只保留 scheme/host/port/path。
+     * 交叉核对 JGit 实际联系的目标。
      *
-     * <p>刻意**不含用户名与密码**：摘要既无法反推凭据，也不会因为凭据轮换而误报漂移；
-     * 而写入目标只由 scheme/host/port/path 决定。</p>
+     * <p>JGit 在连接阶段用 {@code OperationResult.setAdvertisedRefs(URIish, ...)} 写入该 URI，
+     * 因此正常推送都有值；缺失或空白表示"无法确认实际目标"，必须失败关闭，绝不静默通过。
+     * 与绑定不一致同样失败。真正的强制发生在推送之前（捕获目标 + 传输锚点），这里只作纵深防御。</p>
      */
-    private static String canonicalDestination(URIish uri) {
-        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
-        String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
-        String path = uri.getPath() == null ? "" : uri.getPath();
-        String port = uri.getPort() > 0 ? ":" + uri.getPort() : "";
-        return scheme + "://" + host + port + path;
-    }
-
-    /** 复核 JGit 实际使用的目标地址；不一致说明推送被重定向，必须显式失败而不是静默成功。 */
-    private void verifyPushedDestination(URIish actual, String boundDigest) {
-        if (actual == null) return;
-        String canonical = canonicalDestination(actual);
-        if (canonical.isBlank()) return;
-        if (!sha256(canonical.getBytes(StandardCharsets.UTF_8)).equals(boundDigest)) {
+    private static void crossCheckReportedDestination(PushResult result, GitPushDestination bound) {
+        URIish reported = result.getURI();
+        if (reported == null || GitPushDestination.canonicalize(reported).isBlank()) {
+            throw new IllegalStateException("无法确认 Git push 的实际写入目标");
+        }
+        if (!GitPushDestination.canonicalize(reported).equals(bound.canonical())) {
             throw new IllegalStateException("Git push 实际写入目标与确认的目标不一致");
         }
+    }
+
+    /**
+     * 派生 JGit 实际 PUSH 使用的**唯一**目标地址的摘要。
+     *
+     * <p>包级可见：生产路径（预览 / 确认 / 推送）与测试共用同一实现，测试可以在捕获目标之后
+     * 修改远端配置并验证捕获结果不受影响，无需额外的仅测试钩子。</p>
+     */
+    GitPushDestination capturePushDestination(Repository repository) {
+        return GitPushDestination.resolve(repository.getConfig());
     }
 
     public CodePatchPreview previewPatch(String ownerId, String workspaceId, String targetFile, String diff) {
