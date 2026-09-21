@@ -275,4 +275,55 @@ describe('AssistantHealthView (Task 31 真实用量与模型遥测可观测性)'
     expect(latencyCard.text()).toContain('暂无数据')
     expect(latencyCard.text()).toContain('暂无延迟采样数据')
   })
+
+  it('RED用例 (a)：modelCalls>0 且具备正值 p50/p95 延迟时，即使 legacy latencySamples=0 也必须正常展示模型延迟', async () => {
+    getAssistantHealth.mockResolvedValue(createHealthFixture({
+      modelCalls: 5,
+      p50LatencyMs: 520,
+      p95LatencyMs: 1280,
+      // 遗留执行层延迟样本为 0
+      latencySamples: 0,
+      averageLatencyMs: 0,
+    }))
+
+    const wrapper = mount(AssistantHealthView)
+    await flushPromises()
+
+    const latencyCard = wrapper.find('[data-testid="model-latency-card"]')
+    expect(latencyCard.exists()).toBe(true)
+    // 绝不能因为 legacy latencySamples=0 而错误判定为“暂无数据”
+    expect(latencyCard.text()).not.toContain('暂无数据')
+    expect(latencyCard.text()).toContain('520 ms')
+    expect(latencyCard.text()).toContain('P50 520 ms · P95 1,280 ms')
+
+    // 遗留执行区平均耗时仍然独立使用 latencySamples
+    const legacySection = wrapper.find('[data-testid="legacy-execution-section"]')
+    expect(legacySection.text()).toContain('暂无数据')
+  })
+
+  it('RED用例 (b)：modelCalls=0 且模型未采样时，即使 legacy latencySamples>0 也必须展示模型暂无数据', async () => {
+    getAssistantHealth.mockResolvedValue(createHealthFixture({
+      modelCalls: 0,
+      p50LatencyMs: 0,
+      p95LatencyMs: 0,
+      models: [],
+      // 遗留执行层存在历史采样
+      latencySamples: 15,
+      averageLatencyMs: 650,
+    }))
+
+    const wrapper = mount(AssistantHealthView)
+    await flushPromises()
+
+    const latencyCard = wrapper.find('[data-testid="model-latency-card"]')
+    expect(latencyCard.exists()).toBe(true)
+    // 绝不能因为 legacy latencySamples>0 而将模型延迟错误展示为已测量 0 ms
+    expect(latencyCard.text()).toContain('暂无数据')
+    expect(latencyCard.text()).toContain('暂无延迟采样数据')
+    expect(latencyCard.text()).not.toContain('0 ms')
+
+    // 遗留执行区平均耗时正常展示其历史样本
+    const legacySection = wrapper.find('[data-testid="legacy-execution-section"]')
+    expect(legacySection.text()).toContain('650 ms')
+  })
 })
