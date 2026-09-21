@@ -45,32 +45,50 @@
             </small>
           </article>
 
-          <!-- 3. 估算费用：动态货币符号，priceStatus 为 UNKNOWN 或 cost 为 null 时显示价格未知 -->
-          <article class="card metric-card">
+          <!-- 3. 估算费用：动态货币符号，priceStatus 为 UNKNOWN 或 cost 为 null 时显示价格未知；无调用或 NONE 时显示暂无数据 -->
+          <article class="card metric-card" data-testid="model-cost-card">
             <span class="metric-label">估算费用</span>
             <div class="cost-value-wrapper">
+              <strong v-if="health.priceStatus === 'NONE' || !health.modelCalls" data-testid="model-cost-empty">
+                暂无数据
+              </strong>
               <span
-                v-if="health.priceStatus === 'UNKNOWN' || health.usageEstimatedCost === null || health.usageEstimatedCost === undefined"
+                v-else-if="health.priceStatus === 'UNKNOWN' || health.usageEstimatedCost === null || health.usageEstimatedCost === undefined"
                 class="badge-unknown"
                 data-testid="cost-unknown-badge"
               >
                 价格未知
               </span>
-              <strong v-else>
+              <strong v-else data-testid="model-cost-value">
                 {{ formatCost(health.usageEstimatedCost, health.currency) }}
               </strong>
             </div>
-            <small v-if="health.unknownPriceCalls && health.unknownPriceCalls > 0">
+            <small v-if="health.priceStatus === 'NONE' || !health.modelCalls">
+              暂无已计价调用
+            </small>
+            <small v-else-if="health.unknownPriceCalls && health.unknownPriceCalls > 0">
               含 {{ health.unknownPriceCalls }} 次未计价调用
             </small>
-            <small v-else>按官方目录精确核算</small>
+            <small v-else-if="health.priceVersion">
+              定价版本 {{ health.priceVersion }}
+            </small>
+            <small v-else>按官方目录估算核算</small>
           </article>
 
-          <!-- 4. 延迟分位 P50 / P95 -->
-          <article class="card metric-card">
+          <!-- 4. 延迟分位 P50 / P95：无调用或无样本时显示明确暂无数据，绝不记为 0 ms -->
+          <article class="card metric-card" data-testid="model-latency-card">
             <span class="metric-label">模型延迟分位</span>
-            <strong>{{ health.p50LatencyMs !== null && health.p50LatencyMs !== undefined ? `${health.p50LatencyMs.toLocaleString()} ms` : '暂无数据' }}</strong>
-            <small>
+            <strong v-if="!health.modelCalls || !health.latencySamples" data-testid="model-latency-empty">
+              暂无数据
+            </strong>
+            <strong v-else-if="health.p50LatencyMs !== null && health.p50LatencyMs !== undefined">
+              {{ health.p50LatencyMs.toLocaleString() }} ms
+            </strong>
+            <strong v-else>暂无数据</strong>
+            <small v-if="!health.modelCalls || !health.latencySamples">
+              暂无延迟采样数据
+            </small>
+            <small v-else>
               P50 {{ health.p50LatencyMs?.toLocaleString() ?? '-' }} ms · P95 {{ health.p95LatencyMs?.toLocaleString() ?? '-' }} ms
             </small>
           </article>
@@ -197,7 +215,7 @@
 
       <section class="card boundary-card">
         <h2>如何理解这些数据</h2>
-        <p>模型遥测展示底层大语言模型调用的实际用量、延迟分位和根据官方目录核算的估算金额；执行记录展示被系统治理的业务写操作、工具执行和待确认事件。系统遵循隐私安全底线，绝不记录或持久化任何 Prompt 明文、请求 Header 或 API Key。未知价格模型明确标注为价格未知，绝不伪记为零成本。</p>
+        <p>模型遥测展示底层大语言模型调用的实际用量、延迟分位和基于官方目录估算的费用；执行记录展示被系统治理的业务写操作、工具执行和待确认事件。系统遵循隐私安全底线，绝不记录或持久化任何 Prompt 明文、请求 Header 或 API Key。未知价格模型明确标注为价格未知，绝不伪记为零成本。</p>
       </section>
     </template>
   </div>
