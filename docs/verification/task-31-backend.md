@@ -630,4 +630,5 @@ inputTokensUpperBound=10000 -> allowed:false DAILY_ESTIMATED_COST_EXHAUSTED
 ### 9.7 提交
 
 - 本轮修复提交：`0600fcd`（`fix: scope usage finalization and release to the owning owner`）
-- 本轮文档提交：见 `git log --oneline`（`docs: verify task 31 owner-scoped usage and strict input bound`）
+- 本轮文档提交：`b5ddc88`（`docs: verify task 31 owner-scoped usage and strict input bound`）
+- 后续仅回填哈希的小提交见 `git log --oneline`（不改动被测代码）
