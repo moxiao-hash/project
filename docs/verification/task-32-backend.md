@@ -10,12 +10,13 @@
 - **接手基线**：`dac37e5`（含本 worktree 内约 22 个已修改文件 + 3 个新增文件的未提交工作）
 - **首轮实现提交**：`5cc8bd1ad9653c46846f3f458ca50d4b67c7d6b4`（`fix: harden governed developer agent workflows`）
 - **首轮证据提交**：`41a1fcde84ae1b5867875bb2ca4f994f2b17428a`（`docs: verify task 32 backend hardening`）
-- **Codex 阻断项整改提交**：`176ccd38af3c493cd5f7c4f80ec55d51b46491d8`（`fix: bind git push to the effective push destination`）
-- **本验证文档提交**：`docs: record task 32 push destination remediation`（本次提交）
+- **Codex 阻断项整改提交（第一轮）**：`176ccd38af3c493cd5f7c4f80ec55d51b46491d8`（`fix: bind git push to the effective push destination`）
+- **Codex 阻断项整改提交（第二轮，当前源码）**：`a91d1e51960863765f3a4ca121a0e2f7c374bf64`（`fix: bind git push to an immutable destination and keep the remote user`）
+- **本验证文档提交**：`docs: record task 32 immutable push destination remediation`（本次提交）
 - **真实容器链路**：**BLOCKED**（见 §5，未降级为宿主 shell 执行）
 
-> 本文件已按 Codex 独立验收结论更新：首轮 501 项通过**不能**覆盖
-> §3.6 的 push 目标绑定缺陷；该缺陷已按 TDD 整改并在本文件记录 RED/GREEN。
+> 本文件已按 Codex 两轮独立验收结论更新。首轮 501 项、第二轮整改后的 504 项全绿
+> **都不能**覆盖 §3.6/§3.7 记录的目标绑定缺陷；两次缺陷均已按 TDD 整改。
 
 ---
 
@@ -113,6 +114,29 @@ JGit 的 PUSH 走 `Transport.openAll(repository, remote, Operation.PUSH)`，其�
 - `pushConfirmed` 在取锁后立即再校验一次，随后才 `git.push()`；push 之后用
   `PushResult.getURI()` 复核 JGit **实际使用**的目标地址是否仍是绑定的那一个（静默重定向检测）。
 - 分支、HEAD、远端 ref、超时、幂等、owner 隔离与 commit/push 独立确认行为不变。
+
+### 2.5 不可变推送目标与目标身份（Codex 第二轮阻断项）
+
+第二轮整改把"目标"从"每次比对时重新读取配置"改成"一次捕获、按捕获值执行"：
+
+- 新增 `GitPushDestination`（包级值对象）：`resolve(Config)` 一次性派生**唯一有效 PUSH URI**
+  （pushurl 非空用 pushurl，否则用 fetch url），计算规范化形式与 SHA-256 摘要。
+  `toString()` 只输出摘要，绝不输出 URI 或凭据。
+- 规范化形式：`scheme://user@host[:effectivePort]path`
+  （SCP 形式 scheme 记为 `scp`，默认端口按 scheme 归一：ssh 22 / http 80 / https 443 / git 9418）。
+  **保留用户名**：SSH/SCP 下不同账号可能解析到不同仓库与授权；
+  **剔除密码**：密码不参与目标判定，保留只会让凭据轮换误报漂移并有泄漏风险。
+  SCP 与 `ssh://` 不折叠（JGit 中后者 path 是绝对路径，语义不同）。
+- `pushConfirmed` 在**工作区锁内**一次性 `capturePushDestination` + 全部校验，随后调用
+  `pushToCapturedDestination`：**只**通过从捕获 URI 打开的 `Transport` 推送，
+  不再调用 `git.push().setRemote("origin")`（那会让 JGit 重新读取可变 `.git/config`）。
+- 目标锚点（`Transport.getURI()`）在**产生副作用之前**必须等于捕获目标，缺失/空白即失败。
+- 推送后交叉核对 JGit 实际联系的目标（`OperationResult.getURI()`，由连接阶段的
+  `setAdvertisedRefs` 写入）：缺失、空白或与绑定不一致都失败关闭。
+- `Transport.setTimeout(绑定超时)`：JGit 的 `PushCommand` **从不**应用 `setTimeout`，
+  因此改在传输上显式施加，使"超时"成为真实执行边界。
+- `origin` 声明 `receivepack` 时，JGit 只在按远端名解析时通过 `Transport.applyConfig` 应用它；
+  捕获目标后无法保留，改为推送前失败关闭。
 
 ## 3. RED / GREEN 证据
 
@@ -233,21 +257,67 @@ Codex 独立验收指出：`GitPushPreview.remoteUrlDigest` 只哈希 `remote.or
 原先抛出 400 语义的 `IllegalArgumentException`，但预览此前是成功的，目标消失属于
 **状态漂移**，因此改为 409 语义的 `ConflictException`（与 `validateGitPush` 的契约一致）。
 
+### 3.7 RED：目标身份丢失 + 校验与副作用之间的可变窗口（Codex 第二轮阻断项）→ GREEN
+
+两项阻断项各有一组 RED，合计 4 个新测试。
+
+**BLOCKER 1（规范化丢失用户名）** —— 两个测试先红：
+
+```
+[ERROR] pushDestinationDigestDistinguishesTheRemoteUser:288
+        Expecting actual:  "d8b4d4abda1d2908a580910e4f97264ceed83e19f0c6e5489969967eb6f31ea9"
+        not to be equal to: "d8b4d4abda1d2908a580910e4f97264ceed83e19f0c6e5489969967eb6f31ea9"
+[ERROR] pushConfirmationFailsClosedWhenTheRemoteUserChangesAfterPreview:316
+        Expecting actual throwable to be an instance of ConflictException
+        but was: IllegalArgumentException: 执行 Git push 失败
+```
+
+第一条的对比值**完全相同**，证明 `ssh://alice@…` 与 `ssh://bob@…` 摘要一致、用户名被丢弃；
+第二条更严重：把 pushurl 从 `alice@127.0.0.1:1` 改成 `bob@127.0.0.1:1` 后，
+确认阶段**真的去执行了推送**（因此得到传输异常而不是 ConflictException），
+说明用户名漂移没有在任何网络/推送动作之前被拦下。
+
+**BLOCKER 2（校验后仍按远端名解析配置）** —— 确定性接缝测试先红。
+测试不使用时序：先在 pushurl 指向 bare A 时**捕获**目标，再把 pushurl 改到 bare B，
+然后直接以捕获结果调用真实的推送实现。
+
+```
+[ERROR] capturedPushBindingCannotBeRedirectedByLaterRemoteConfigMutation:367
+        Expecting actual:  "b5072a6c5c213b13d406ee13a019ba860973e1db"
+        not to be equal to: "b5072a6c5c213b13d406ee13a019ba860973e1db"
+```
+
+该断言是"被捕获的 bare A 必须前进"；它失败说明 A **没有**收到提交。
+配套探针（临时吞掉异常后再断言）确认被替换的 bare B 才是真正收到提交的一端：
+即**未经确认的目标真的发生了写入**，而失败只在远端写入之后才报出——正是本轮要消除的情形。
+
+**GREEN（`a91d1e5`）**：
+
+```
+[INFO] Tests run: 19, Failures: 0, Errors: 0  -- DeveloperWorkspaceHardeningTest
+[INFO] Tests run: 74, Failures: 0, Errors: 0  -- Task 32 聚焦 9 个测试类
+[INFO] Tests run: 508, Failures: 0, Errors: 0 -- Java 全量
+```
+
+修复后，捕获重定向测试同时断言"被捕获的远端前进、被替换的远端保持原样"，
+即配置改写不再能改变实际写入目标（不依赖时序）。
+
 ## 4. 自动化验证结果
 
-整改后（`176ccd3`）的新鲜结果：
+整改后（`a91d1e5`，当前源码）的新鲜结果：
 
 | 检查 | 命令 | 结果 |
 |---|---|---|
-| Java 聚焦（Task 32 相关 9 个测试类） | `./mvnw -o test -Dtest='DeveloperWorkspaceHardeningTest,WorkspaceDeveloperServiceTest,DeveloperPatchWorkflowTest,DeveloperGitWorkflowTest,RunnerGovernanceWorkflowTest,RunnerProtocolSecurityTest,RunnerWorkingDirectoryWorkflowTest,UnixSocketRunnerClientTest,AgentToolCoverageTest'` | **70 项通过** |
-| Java 全量 | `./mvnw -o test` | **504 项通过，0 失败 0 错误** |
+| Java 聚焦（Task 32 相关 9 个测试类） | `./mvnw -o test -Dtest='DeveloperWorkspaceHardeningTest,WorkspaceDeveloperServiceTest,DeveloperPatchWorkflowTest,DeveloperGitWorkflowTest,RunnerGovernanceWorkflowTest,RunnerProtocolSecurityTest,RunnerWorkingDirectoryWorkflowTest,UnixSocketRunnerClientTest,AgentToolCoverageTest'` | **74 项通过** |
+| Java 全量 | `./mvnw -o test` | **508 项通过，0 失败 0 错误** |
 | ai-service 全量 | `PYTHONPATH=ai-service <venv>/python -m pytest -q ai-service/tests` | **556 项通过**（1 条上游 Starlette 弃用警告） |
 | runner-service | `PYTHONPATH=runner-service <venv>/python -m pytest -q runner-service/tests` | **35 项通过** |
 | Ruff | `ruff check runner-service` / `ruff check ai-service`（根目录执行） | 全部通过 |
 | 能力矩阵门禁 | `node scripts/verify-agent-capability-matrix.mjs` | 通过（31 页面 / 64 工具） |
 | 空白检查 | `git diff --check` | 干净 |
 
-> 首轮（`5cc8bd1`）结果是 Java 501 / 聚焦 69；整改新增 3 个 push 目标绑定测试后为 504 / 70。
+> 轮次对照：首轮 `5cc8bd1` 为 Java 501 / 聚焦 69；第一轮整改（`176ccd3`，有效目标绑定）
+> 为 504 / 70；第二轮整改（`a91d1e5`，不可变目标 + 用户名身份）为 508 / 74。
 > 上述均为自动化/H2 证据，除 §5 的 REAL_E2E 外不得写成真实全链路通过。
 
 ## 5. Step 5：一次性临时仓库 REAL_E2E（`[REAL_E2E]`，部分 BLOCKED）
@@ -256,9 +326,9 @@ Codex 独立验收指出：`GitPushPreview.remoteUrlDigest` 只哈希 `remote.or
 （**不使用 StudyPilot 主仓库作破坏性样本**），通过真实运行中的 Java 服务 + 真实 MySQL
 驱动 internal agent-tools + 专用确认链路，并在结束时删除整个临时目录。
 
-**整改后复跑**（`176ccd3`，改动 push 目标绑定之后）：链路结果与下表一致，`push-confirm` 仍为 PASS
-（真实 `file://` bare remote 的远端 ref 等于本地 HEAD），说明新的目标派生与 push 后复核
-没有破坏真实推送；容器段仍为 BLOCKED。
+**最终代码复跑**（`a91d1e5`，推送改为"从捕获 URI 打开 Transport"之后）：链路结果与下表一致，
+`push-confirm` 仍为 PASS（真实 `file://` bare remote 的远端 ref 等于本地 HEAD），
+说明不可变目标 + 显式超时 + 目标锚点/交叉核对没有破坏真实推送；容器段仍为 BLOCKED。
 
 运行方式（本次实际执行）：
 
@@ -330,8 +400,11 @@ podman-machine-default*  libkrun  2 weeks ago  LAST UP: Never
    `expectedRemoteRefCommit` 才是真正的漂移检测。
    整改（§3.6）**只改变 `remoteUrlDigest` 的语义**（由 fetch URL 改为有效 PUSH 目标地址的摘要），
    **字段名、类型与 Schema 均未变化**，因此调用方无需改动。
+   第二轮整改（§3.7）进一步把摘要输入从 scheme/host/port/path 扩展为
+   **scheme/user/host/effectivePort/path**（新增用户名身份，仍不含密码），同样不涉及 Schema。
    新增策略：**有效推送目标必须唯一**——配置了多个 `pushurl`，或在没有 `pushurl` 时配置了多个
    `url`，预览与确认都会被拒绝（预览 400 / 确认 409），不允许部分多目标推送。
+   新增限制：`origin` 声明 `receivepack` 时预览/确认都会被拒绝（捕获目标后无法保留该设置）。
 2. **`workingDirectory`**：`RunnerExecutionRequest`/`Preview`/`SignedEnvelope` 新增字段，
    DB 迁移 V47；`runner.execution.preview`、`runner.check.run`、
    `runner.dependencies.prepare` 三个工具新增**可选** `workingDirectory` 参数。
@@ -353,26 +426,50 @@ podman-machine-default*  libkrun  2 weeks ago  LAST UP: Never
    但意味着 Developer Agent 无法读取大文件。若产品希望改为截断+`truncated=true`，
    属于行为变更，需 Codex 决策。
 5. `V47` 依赖 V46 之后为空号；若 Codex 在其他分支已占用 V47，需要重新编号（本分支未合并 `main`）。
-6. **push 目标校验的残余时间窗口（已知限制，未隐藏）**：`pushConfirmed` 在取工作区锁后立即重新
-   派生并比对目标摘要，随后才调用 `git.push()`；两次调用之间仍存在同机进程改写
-   `.git/config` 的极短窗口。本分支用两种方式收敛该风险：(a) 比对紧贴 push，(b) push 之后用
-   `PushResult.getURI()` 复核实际目标并在不一致时显式失败。**未**改为"按 URI 直接推送"，
-   因为那会改变真实远端的认证路径（凭据助手/URL 重写），而本环境无法验证该行为；
-   如需彻底消除窗口，建议作为独立任务在具备真实远端的环境中评估。
-7. 推送失败时的异常按既有约定包装为 `IllegalArgumentException("执行 Git push 失败", cause)`；
+6. **推送目标的重定向窗口已在第二轮整改中消除**（第一轮遗留的 §7.6 已不再适用）：
+   目标是锁内一次性捕获的不可变 `URIish`，推送只通过从该 URI 打开的 `Transport` 执行，
+   校验之后不再读取可变的 `.git/config`；锚点校验发生在副作用之前，回报目标缺失/空白/不一致
+   都在推送后失败关闭。确定性测试（§3.7）证明捕获后改写配置无法重定向写入。
+   仍然成立的边界：本环境只真实执行过 `file://` 与 `http/https`（JGit 侧）目标，
+   **SSH/SFTP 远端未在本机验证**；`PushResult.getURI()` 由连接阶段
+   `OperationResult.setAdvertisedRefs` 写入，本地与 HTTP 实测均有值，若某传输实现不写入
+   该值，推送会**失败关闭**（不会静默通过）。
+7. `receivepack` 属于"捕获目标后无法保留"的远端级设置，因此被显式拒绝；其余
+   `remote.<origin>.*`（`uploadpack`/`tagopt` 属 fetch 侧、`mirror` 与 `push` refspec 因我们
+   始终显式传入单一 refspec 而不生效、`timeout` 由我们显式覆盖）不影响推送语义，未做限制。
+   经查 JGit **没有** `credential.helper` 支持，URL 重写（`insteadOf`/`pushInsteadOf`）则在
+   `RemoteConfig` 构造函数内完成，因此捕获到的就是重写后的有效目标，无需为二者拒绝配置。
+8. 推送失败时的异常按既有约定包装为 `IllegalArgumentException("执行 Git push 失败", cause)`；
    `GlobalExceptionHandler` 与 `AgentToolActionService.safeError` 都只取
-   `exception.getMessage()`（不含 cause、不含栈），且新增消息均为静态文本、
-   `canonicalDestination` 明确剔除用户名与密码，因此不会把带凭据的 URL 写入响应、通知或审计。
+   `exception.getMessage()`（不含 cause、不含栈）；`GitPushDestination.toString()` 只输出摘要，
+   规范化形式剔除密码，因此不会把带凭据的 URL 写入响应、通知或审计。
 
 ## 8. 下一步（交给 Codex）
 
 1. 独立复跑 §4 的命令（注意 worktree 内无 `.venv`，需用主工作区解释器）。
-2. 复审 §3.6 的 push 目标绑定修复：`effectivePushUris` 的派生是否与 JGit
-   `Transport.openAll(..., Operation.PUSH)` 语义一致、多目标策略是否为期望的"唯一目标"策略，
-   以及 §7.6 记录的残余窗口与替代方案取舍是否可接受。
-3. 审查 §6 的其他契约变更是否与冻结契约一致，特别是 `developer.git.push` 的必填字段
+2. 复审 §3.7 的两项整改：规范化形式保留用户名/剔除密码的取舍、SCP 与 `ssh://` 不折叠、
+   多目标唯一性策略、`receivepack` 拒绝，以及"锚点在副作用前确认 + 回报目标交叉核对"的
+   纵深防御是否满足要求。
+3. 审查 §6 的契约变更是否与冻结契约一致，特别是 `developer.git.push` 的必填字段
    是否已由前端/其他调用方按新契约传参（本分支未改 `web/**`；Codex 已确认 Python
    supervisor 是当前 push 调用方且已同步）。
 4. §7.3/§7.4 两项观察按 Codex 结论保持现状：`/api/agent-grants` 的 2038 问题记入独立 backlog，
    `readFile` >64 KiB 维持确定性拒绝。
-5. 在本机具备容器运行时后再补 Step 7 的真实容器链路，Task 32 的容器部分在此之前保持 BLOCKED。
+5. 在本机具备容器运行时后再补 Step 7 的真实容器链路，Task 32 的容器部分在此之前保持 BLOCKED；
+   SSH/SFTP 远端的真实推送同样留待具备远端环境的阶段验证。
+
+## 附录 A：本次验证依赖的 JGit 7.3 行为与核对方式
+
+以下事实是两轮整改的设计依据，均以 `org.eclipse.jgit:org.eclipse.jgit:7.3.0.202506031305-r`
+的实际字节码/运行行为核对（`javap -p -c`、`jshell`），不是凭文档推测：
+
+| 事实 | 核对方式 |
+|---|---|
+| PUSH 的目标地址取 `RemoteConfig.getPushURIs()`，为空才回退 `getURIs()` | `Transport.getURIs(RemoteConfig, Operation)` 字节码中的 PUSH 分支 |
+| 传入的远端字符串不是已配置远端名时，`Transport.openAll(..., String, Operation)` 会把它当 URI 处理 | `Transport.doesNotExist` = `getURIs().isEmpty() && getPushURIs().isEmpty()`；该方法随后 `new URIish(name)` 并 `Transport.open(repo, uriish, name)` |
+| `url.*.insteadOf` / `pushInsteadOf` 在 `RemoteConfig` **构造函数**内应用，因此 `getURIs()`/`getPushURIs()` 返回的是重写后的有效目标 | `RemoteConfig` 构造函数字节码调用 `UrlConfig.replace` / `hasPushReplacements` / `replacePush` |
+| `remote.<name>.receivepack` 只在按远端名解析时由 `Transport.applyConfig(RemoteConfig)` 生效 | `Transport.openAll(repo, RemoteConfig, op)` 调用 `applyConfig`；URI 分支不调用 |
+| `PushCommand.setTimeout(...)` 不生效（`call()` 内没有任何 `Transport.setTimeout`） | `PushCommand.call()` 字节码中 `timeout` 字段只出现在 `getTimeout()` |
+| `PushResult.getURI()` 由连接阶段的 `OperationResult.setAdvertisedRefs(URIish, Map)` 写入，因此本地/HTTP 推送都有值 | `OperationResult` 字段与 `setAdvertisedRefs`；本地 `file://` 推送实测非空（§3.7 的探针输出） |
+| JGit 不实现 `credential.helper` | JGit 类与文本常量中不存在该键，只有自身 `CredentialsProvider` 机制 |
+| `URIish.toPrivateString()` 对 SCP / `ssh://` / `file://` 往返无损，`toString()` 剔除密码 | `jshell` 实测四种形态的 `scheme/user/host/port/path` 往返一致 |
