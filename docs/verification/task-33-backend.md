@@ -9,8 +9,10 @@
 - **工作树**：`/Users/moxiao/IdeaProjects/project-minimax-task-33`
 - **共同基线**：`9f8537115ac3d9c3bd86ddc1a43128db3a58414b`（Task 32 验收提交，与派发一致，开工时工作树干净）
 - **冻结契约**：`project-main-integration/docs/verification/task-33-frozen-contract.md`（本次未修改任何冻结字段、枚举、传输或所有权边界）
-- **交付提交**：`1c5723bc3b9573fa7431c7682c9ac12b91dffb1c`（`feat: execute allowlisted local interface fallbacks`）
-- **本验证文档提交**：`docs: record task 33 backend local interface verification`（本次提交）
+- **首轮交付提交**：`1c5723bc3b9573fa7431c7682c9ac12b91dffb1c`（`feat: execute allowlisted local interface fallbacks`）
+- **首轮证据提交**：`b8b04aee2b79f577ced3c8238a5945f66a52eb3f`（`docs: record task 33 backend local interface verification`）
+- **Codex 独立验收对象**：`b8b04aee2b79f577ced3c8238a5945f66a52eb3f`（验收结论：三项 P1）
+- **P1 整改提交**：`fix: close task 33 receipt, framing and nonce protocol gaps`（本次提交）
 
 ---
 
@@ -97,6 +99,30 @@
 
 ---
 
+### 1.4 RED-D：Codex 独立验收整改（P1）的失败测试
+
+Codex 对 `b8b04aee2b79f577ced3c8238a5945f66a52eb3f` 的独立验收提出三项 P1。整改前先写失败测试：
+
+```
+./mvnw -o -Dtest='LocalAutomationRequestTest,UnixSocketLocalAutomationClientTest' test
+[ERROR] Tests run: 26, Failures: 5 -- UnixSocketLocalAutomationClientTest
+[ERROR] Tests run: 9, Failures: 6 -- LocalAutomationRequestTest
+[ERROR] Tests run: 35, Failures: 11, Errors: 0
+```
+
+关键失败（断言级，逐条对应验收意见）：
+
+| 失败用例 | 现象 | 对应 P1 |
+|---|---|---|
+| `rejectsReceiptsThatOmitTheErrorCodeFieldEntirely` | `Expected LocalAutomationException to be thrown, but nothing was thrown` | 回执 `errorCode` 缺失未被判为非法 |
+| `rejectsReceiptFieldsWithWrongJsonTypesInsteadOfCoercingThem` | 同上（11 种错配类型全部被隐式强转放过） | 依赖 `asInt/asText` 强转 |
+| `rejectsMalformedTargetDigestFormatBeforeComparison` | `expected: <LOCAL_ADAPTER_PROTOCOL_ERROR> but was: <LOCAL_ADAPTER_RESPONSE_MISMATCH>` | 摘要格式未先校验 |
+| `rejectsNonWhitespaceTrailingDataAfterTheReceiptDocument` | `Expected ... to be thrown, but nothing was thrown` | **`readFrame` 在首个换行处返回，静默忽略同一读取块内的尾部字节** |
+| `rejectsInjectedNoncesThatBreakTheFrozenBase64Url128BitRule` | 同上（注入的非法 nonce 被放行） | 注入生成器只校验了长度 |
+| `LocalAutomationRequestTest` 6 项 | 有效期倒挂、非法 target、非法 ownerHash/签名、非法 requestId、非法 nonce、未知通道/动作组合均未抛异常 | 请求 record 缺少冻结格式不变量 |
+
+---
+
 ## 2. 已实现范围与关键设计取舍
 
 ### 2.1 签名与规范化（`LocalAutomationSigning`）
@@ -180,16 +206,42 @@
 
 ---
 
+### 2.6 Codex 验收整改（P1）
+
+1. **回执形状与精确类型**：`REQUIRED_RECEIPT_FIELDS` 现在包含 `errorCode`——字段必须存在，
+   只在合法场景下才允许 JSON `null`（`SUCCEEDED` 携带非空错误码仍按不匹配拒绝）。
+   解析不再使用 `asInt/asText` 隐式强转：`version` 必须是整数（字符串 `"1"`、小数 `1.5` 一律拒绝），
+   `requestId`/`adapter`/`action`/`targetDigest`/`startedAt`/`finishedAt`/`status`/`message` 必须是文本，
+   `errorCode` 必须是文本或 `null`；类型错配统一归类为 `LOCAL_ADAPTER_PROTOCOL_ERROR`。
+   `targetDigest` 先按 `[0-9a-f]{64}` 校验格式，再做关联比较。
+2. **封帧：一次请求只允许一个响应文档**：`readFrame` 不再在首个换行处直接返回。
+   终止换行之后的字节只允许 JSON 空白；任何非空白尾部字节（第二个换行分隔的 JSON 对象、
+   `{}`、`JUNK` 等）都失败关闭。终止后使用 `selectNow()` 只消费已缓冲数据，
+   不因对端保持连接而增加时延；同时把尾部空白填充限制在 64 字节以内，
+   避免对端以无限空白流拖住客户端（`MAX_TRAILING_PADDING_BYTES`）。
+   **无需与对端变更契约**：只读核对 ZCode `428b008` 的 `formatReceiptFrame`，其对每次请求
+   只写出 `JSON.stringify(receipt) + '\n'` 一个文档（正常路径不追加任何字节），
+   因此本分支的严格封帧与对端行为一致，不构成双方需要重新冻结的接口变更。
+3. **nonce 与请求记录不变量**：新增 `LocalAutomationSigning.requireValidNonce`，
+   base64url 无填充且解码后 ≥128 位，**内部生成器与注入生成器走同一校验**；
+   `LocalAutomationRequest` 强制固定版本、小写 UUID `requestId`、小写 sha256 hex 的
+   `ownerHash`/`signature`、已注册且互相匹配的通道/动作、符号目标、合法 nonce，
+   以及不倒挂且 ≤60 秒的有效期。
+
+---
+
 ## 3. 已执行命令与结果
 
 | 命令 | 结果 |
 |---|---|
 | `./mvnw -o -Dtest='LocalAutomationSigningTest' test` | **10 项通过**，0 失败 0 错误（含 ZCode 跨端向量） |
 | `./mvnw -o -Dtest='InterfaceFallbackPolicyTest' test` | **9 项通过**，0 失败 0 错误 |
-| `./mvnw -o -Dtest='UnixSocketLocalAutomationClientTest' test` | **20 项通过**，0 失败 0 错误（真实 UDS 桩） |
+| `./mvnw -o -Dtest='UnixSocketLocalAutomationClientTest' test` | **27 项通过**，0 失败 0 错误（真实 UDS 桩；含封帧尾部数据与类型错配） |
+| `./mvnw -o -Dtest='LocalAutomationRequestTest' test` | **9 项通过**，0 失败 0 错误（请求记录冻结格式不变量） |
+| `./mvnw -o -Dtest='LocalAutomationSigningTest,InterfaceFallbackPolicyTest,UnixSocketLocalAutomationClientTest,LocalInterfaceFallbackWorkflowTest,LocalAutomationRequestTest' test` | **64 项通过**，0 失败 0 错误 |
 | `./mvnw -o -Dtest='LocalInterfaceFallbackWorkflowTest' test` | **9 项通过**，0 失败 0 错误（H2 + Spring 治理） |
 | `./mvnw -o -Dtest='AgentToolCoverageTest,AgentToolOutputSchemasTest,AgentToolOutputValidatorTest,AgentToolRegistryTest,AgentToolActionRecoveryTest,AgentToolActionRecoveryRollbackTest' test` | **22 项通过**，0 失败 0 错误 |
-| `./mvnw -o test` | **554 项通过，0 失败 0 错误**，`BUILD SUCCESS`（基线 508 → 新增 46） |
+| `./mvnw -o test` | **570 项通过，0 失败 0 错误**，`BUILD SUCCESS`（基线 508 → 新增 62） |
 | `node scripts/verify-agent-capability-matrix.mjs` | `[SUCCESS] 能力矩阵校验通过！覆盖全部 31 个页面路由与 65 个 Java 工具` |
 | `node --test scripts/verify-agent-capability-matrix.test.mjs` | 门禁自身 **4/4 通过** |
 | `git diff --check` | 无输出（干净）；新文件亦无行尾空白 |
@@ -214,14 +266,24 @@
 - 失败/拒绝不写成功：`failedAndRejectedReceiptsAreNeverRecordedAsSuccess`、`unavailableAdapterFailsHonestlyWithManualRecoveryGuidance`
 - 无业务 API 的合法动作：`everyFrozenIdeActionIsAllowedWhenNoBusinessApiExists`、`acceptsExactlyTheThreeFrozenBrowserActionsWithRegisteredTargets`
 - 跨端字节级对齐：`matchesZcodeDeliveredCrossLanguageVectorsByteForByte`、`targetDigestUsesTheLiteralSlashJoinedForm`
+- **Codex P1 整改**：回执字段缺失/类型错配（`rejectsReceiptsThatOmitTheErrorCodeFieldEntirely`、`rejectsReceiptFieldsWithWrongJsonTypesInsteadOfCoercingThem`）；
+  摘要格式（`rejectsMalformedTargetDigestFormatBeforeComparison`）；封帧尾部数据
+  （`rejectsNonWhitespaceTrailingDataAfterTheReceiptDocument`、`toleratesWhitespaceOnlyFramingPaddingAfterTheReceiptDocument`、
+  `rejectsAnUnboundedWhitespaceFloodAfterTheReceiptDocument`）；
+  nonce 规则（`rejectsInjectedNoncesThatBreakTheFrozenBase64Url128BitRule`）；请求记录不变量（`LocalAutomationRequestTest` 9 项）
 
 ---
 
 ## 4. 明确未实现 / 未验证范围
 
-1. **无真实 Socket 握手联调**。ZCode 的 `local-automation-service` 已交付（`428b008`），本分支只读其
-   源码与固化向量用于字节级对齐，未修改其任何文件，也**没有**启动真实对端进程，因此**没有**声称 `REAL_E2E`。
-   Java 侧行为由真实 UDS 桩与真实 Spring/H2 治理链路验证；跨端一致性见 §5。
+1. **BLOCKED：真实 Java↔TypeScript UDS 握手尚未执行**。该项按 Codex 整改要求应在 ZCode 推送
+   real-adapter remediation 之后执行；但截至本次提交，对端分支 `agent/zcode-task-33-local-adapters`
+   仍停在 `428b008`，且其 `protocol.ts`/`verifier.ts`/`browserAdapter.ts`/`ideaAdapter.ts` 仍是
+   **未提交**的进行中改动。对端当前交付是**纯库**（`index.ts` 仅 `export *`，无启动入口、
+   无环境配置装配、无注入式测试适配器），因此真实的“成功白名单动作”握手必须依赖对端整改产物；
+   本分支不越界替对端编写启动/适配器代码。**本分支因此没有声称 `REAL_E2E`。**
+   Java 侧行为由真实 UDS 桩与真实 Spring/H2 治理链路验证；跨端字节级一致性见 §5；
+   对端整改推送后的最小真实握手计划见 §7。
 2. **未做**真实本机最小验收（打开固定路由、打开临时登记源码、聚焦预登记运行配置、展示既有测试结果）。
    该项需与 ZCode 服务真实联调后由 Codex 组织。
 3. **未修改** `docs/协同开发交接说明.md` 与冻结计划（非本 Agent 所有权）。
@@ -265,6 +327,11 @@ ZCode 已在 `/Users/moxiao/IdeaProjects/project-zcode-task-33`（分支
 （对端示例为 `FILE_SAMPLE`）。Java 侧通过 `studypilot.local-automation.ide-targets` 登记，
 默认空 ⇒ 失败关闭。真实联调时需由 Codex 统一两侧配置值。
 
+**对端整改窗口提醒**：本次读取对端时，其对端工作树存在**未提交**改动
+（`protocol.ts`、`verifier.ts`、`browserAdapter.ts`、`ideaAdapter.ts`、`package.json` 等）。
+本 §5 的对齐结论只基于**已推送的 `428b008`**；若对端整改修改了规范化编码、摘要拼法或回执字段形状，
+两侧必须重新执行 §7 的向量比对与真实握手。
+
 ---
 
 ## 6. 遗留与下一步
@@ -275,3 +342,25 @@ ZCode 已在 `/Users/moxiao/IdeaProjects/project-zcode-task-33`（分支
   如 Codex 认为该无副作用分支不应要求确认，需要修改的是工具风险分级契约，请由 Codex 决定。
 - 下一步（不由本 Agent 执行）：ZCode 交付本地服务后，由 Codex 按“规格 → 安全 → diff → 局部测试 →
   全量测试 → 真实联调 → 文档 → 合并”验收，并在真实最小验收中确认上述字节级约定。
+
+---
+
+## 7. 对端整改推送后的最小真实握手计划（待执行）
+
+对端 `agent/zcode-task-33-local-adapters` 推送 real-adapter remediation 后，按下列步骤执行
+（本分支负责 Java 侧命令与判定，不修改对端任何文件）：
+
+1. **重跑跨端向量比对**：确认 `LocalAutomationSigningTest.matchesZcodeDeliveredCrossLanguageVectorsByteForByte`
+   仍与对端 `tests/vectors.spec.ts` 的固化值一致；若对端改动了规范化的字节编码或摘要拼法，
+   先停下汇报 Codex，不要单方面改动冻结约定。
+2. **真实握手**：以临时目录（`/tmp` 下短路径，Unix socket `sun_path` 上限约 104 字节）启动对端服务，
+   注入对端的**测试适配器**（不触发真实浏览器/IDE 界面）；Java 侧使用真实
+   `UnixSocketLocalAutomationClient`（真实密钥、真实 socket 路径）执行：
+   - 至少一个**成功**的白名单动作（优先浏览器通道 `OPEN_STUDYPILOT_ROUTE` / `ASSISTANT`），
+     断言回执 `SUCCEEDED` 且 `adapter`/`action`/`targetDigest` 与请求一致；
+   - **拒绝**用例：未注册目标、错通道/动作组合、过期/未来时间窗、重放 nonce；
+   - **关联**用例：对端回执的 `requestId`/`targetDigest` 必须与本次请求对齐。
+3. **证据口径**：该步骤最多标记为“真实 Java↔TypeScript UDS 传输与协议一致性”，
+   **不得**标记为 OS 界面 `REAL_E2E`——除非真实观察到浏览器/IDE 界面状态变化。
+4. 把命令、原始输出与关联结果写入本文件，重跑聚焦测试、全量 Java、能力矩阵门禁与
+   `git diff --check`，新增提交并只推送本分支。

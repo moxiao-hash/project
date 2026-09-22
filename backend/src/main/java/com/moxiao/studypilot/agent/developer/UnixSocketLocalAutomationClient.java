@@ -46,13 +46,13 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
     /** 冻结契约：请求与响应均为单行 JSON，最大 16 KiB。 */
     static final int MAX_FRAME_BYTES = 16 * 1024;
     static final int REQUEST_VALIDITY_SECONDS = 60;
+    /** 终止换行之后只允许极少量空白填充，避免对端用空白流拖住客户端。 */
+    static final int MAX_TRAILING_PADDING_BYTES = 64;
 
     private static final Set<String> REQUIRED_RECEIPT_FIELDS = Set.of(
             "version", "requestId", "adapter", "action", "targetDigest",
-            "startedAt", "finishedAt", "status", "message");
-    private static final Set<String> ALLOWED_RECEIPT_FIELDS = Set.of(
-            "version", "requestId", "adapter", "action", "targetDigest",
             "startedAt", "finishedAt", "status", "errorCode", "message");
+    private static final Set<String> ALLOWED_RECEIPT_FIELDS = REQUIRED_RECEIPT_FIELDS;
     private static final String STABLE_CODE = "[A-Z][A-Z0-9_]{0,63}";
     private static final Set<String> FORBIDDEN_MESSAGE_FRAGMENTS = Set.of(
             "http://", "https://", "file://", "javascript:", "data:",
@@ -165,13 +165,14 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
     }
 
     private String nextNonce() {
-        if (nonceSupplier == null) {
-            return LocalAutomationSigning.newNonce(secureRandom);
-        }
-        String nonce = nonceSupplier.get();
-        if (nonce == null || nonce.length() < 22) {
+        String nonce = nonceSupplier == null
+                ? LocalAutomationSigning.newNonce(secureRandom) : nonceSupplier.get();
+        try {
+            LocalAutomationSigning.requireValidNonce(nonce);
+        } catch (IllegalArgumentException exception) {
             throw new LocalAutomationException(ERROR_NOT_CONFIGURED,
-                    "本地界面适配器 nonce 生成不安全；" + MANUAL_RECOVERY);
+                    "本地界面适配器 nonce 不符合冻结的 base64url 128 位规则；" + MANUAL_RECOVERY,
+                    exception);
         }
         return nonce;
     }
@@ -256,26 +257,62 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
         }
     }
 
+    /**
+     * 读取一个且仅一个以换行结束的响应 JSON 文档。
+     *
+     * <p>冻结契约要求“一次请求只产生一个响应文档”，因此在终止换行之后：
+     * 已缓冲的尾随字节只允许 JSON 空白，任何非空白字节（例如第二个换行分隔的 JSON 对象）
+     * 都失败关闭。终止后不再阻塞等待新数据，避免对端保持连接时引入额外时延。</p>
+     */
     private byte[] readFrame(SocketChannel channel, Selector selector) throws IOException {
         ByteArrayOutputStream body = new ByteArrayOutputStream();
         ByteBuffer chunk = ByteBuffer.allocate(1024);
         long deadline = deadline(readTimeoutMillis);
+        boolean terminated = false;
+        int trailingPadding = 0;
         while (true) {
-            if (!awaitReady(selector, SelectionKey.OP_READ, deadline)) {
+            if (terminated) {
+                if (selector.selectNow() == 0) {
+                    return body.toByteArray();
+                }
+            } else if (!awaitReady(selector, SelectionKey.OP_READ, deadline)) {
                 throw timeout("本地界面适配器响应超时");
             }
             chunk.clear();
             int read = channel.read(chunk);
             if (read < 0) {
-                throw new LocalAutomationException(ERROR_PROTOCOL,
-                        "本地界面适配器响应未以换行结束；" + MANUAL_RECOVERY);
+                if (!terminated) {
+                    throw new LocalAutomationException(ERROR_PROTOCOL,
+                            "本地界面适配器响应未以换行结束；" + MANUAL_RECOVERY);
+                }
+                return body.toByteArray();
+            }
+            if (read == 0) {
+                if (terminated) {
+                    return body.toByteArray();
+                }
+                continue;
             }
             byte[] bytes = chunk.array();
             for (int index = 0; index < read; index++) {
-                if (bytes[index] == '\n') {
-                    return body.toByteArray();
+                byte current = bytes[index];
+                if (terminated) {
+                    if (!isJsonWhitespace(current)) {
+                        throw new LocalAutomationException(ERROR_PROTOCOL,
+                                "本地界面适配器响应在终止换行后仍包含非空白尾部数据；"
+                                        + MANUAL_RECOVERY);
+                    }
+                    if (++trailingPadding > MAX_TRAILING_PADDING_BYTES) {
+                        throw new LocalAutomationException(ERROR_PROTOCOL,
+                                "本地界面适配器响应尾部空白填充异常；" + MANUAL_RECOVERY);
+                    }
+                    continue;
                 }
-                body.write(bytes[index]);
+                if (current == '\n') {
+                    terminated = true;
+                    continue;
+                }
+                body.write(current);
                 if (body.size() > MAX_FRAME_BYTES) {
                     throw new LocalAutomationException(ERROR_PROTOCOL,
                             "本地界面适配器响应超过 16 KiB 安全上限；" + MANUAL_RECOVERY);
@@ -284,6 +321,16 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
         }
     }
 
+    private static boolean isJsonWhitespace(byte value) {
+        return value == ' ' || value == '\t' || value == '\n' || value == '\r';
+    }
+
+    /**
+     * 严格解析回执：先校验字段集与精确 JSON 类型，再校验冻结格式，最后才做关联比较。
+     *
+     * <p>禁止使用 {@code asInt/asText} 的隐式强转：字符串 {@code version}、数字
+     * {@code message/status/时间戳}、非字符串标识符等类型错配一律失败关闭。</p>
+     */
     private LocalAutomationReceipt parseReceipt(byte[] body, LocalAutomationRequest request) {
         JsonNode node = parseSingleJsonObject(decodeUtf8(body));
         LinkedHashSet<String> unknown = new LinkedHashSet<>();
@@ -295,46 +342,75 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
         if (!unknown.isEmpty()) {
             throw protocol("本地界面适配器回执包含未允许字段");
         }
+        // 冻结回执形状要求每个命名字段都存在；errorCode 允许 JSON null，但不允许缺失。
         for (String required : REQUIRED_RECEIPT_FIELDS) {
-            if (!node.hasNonNull(required)) {
+            if (!node.has(required)) {
                 throw protocol("本地界面适配器回执缺少字段: " + required);
             }
         }
-        if (node.path("version").asInt() != LocalAutomationRequest.FROZEN_VERSION) {
-            throw mismatch("本地界面适配器回执版本不匹配");
+
+        JsonNode versionNode = node.get("version");
+        if (versionNode == null || !versionNode.isIntegralNumber()) {
+            throw protocol("本地界面适配器回执 version 必须是整数");
         }
-        if (!request.requestId().equals(node.path("requestId").asText())) {
-            throw mismatch("本地界面适配器回执 requestId 与请求不匹配");
-        }
-        if (!request.channel().equals(node.path("adapter").asText())) {
-            throw mismatch("本地界面适配器回执 adapter 与请求不匹配");
-        }
-        if (!request.action().equals(node.path("action").asText())) {
-            throw mismatch("本地界面适配器回执 action 与请求不匹配");
-        }
-        String expectedDigest = LocalAutomationSigning.targetDigest(
-                request.channel(), request.action(), request.targetKey());
-        if (!expectedDigest.equals(node.path("targetDigest").asText())) {
-            throw mismatch("本地界面适配器回执目标摘要不匹配");
+        String requestId = requireText(node, "requestId");
+        String adapter = requireText(node, "adapter");
+        String action = requireText(node, "action");
+        String targetDigest = requireText(node, "targetDigest");
+        String startedAtText = requireText(node, "startedAt");
+        String finishedAtText = requireText(node, "finishedAt");
+        String statusText = requireText(node, "status");
+        String rawMessage = requireText(node, "message");
+        String errorCode = optionalStableCode(node);
+
+        if (!targetDigest.matches(LocalAutomationSigning.LOWER_HEX_64)) {
+            throw protocol("本地界面适配器回执 targetDigest 必须是 64 位小写 hex");
         }
 
         LocalAutomationStatus status;
         try {
-            status = LocalAutomationStatus.valueOf(node.path("status").asText());
+            status = LocalAutomationStatus.valueOf(statusText);
         } catch (IllegalArgumentException exception) {
             throw mismatch("本地界面适配器回执状态不在冻结枚举内");
         }
-        Instant startedAt = parseInstant(node, "startedAt");
-        Instant finishedAt = parseInstant(node, "finishedAt");
+        if (versionNode.asInt() != LocalAutomationRequest.FROZEN_VERSION) {
+            throw mismatch("本地界面适配器回执版本不匹配");
+        }
+        if (!request.requestId().equals(requestId)) {
+            throw mismatch("本地界面适配器回执 requestId 与请求不匹配");
+        }
+        if (!request.channel().equals(adapter)) {
+            throw mismatch("本地界面适配器回执 adapter 与请求不匹配");
+        }
+        if (!request.action().equals(action)) {
+            throw mismatch("本地界面适配器回执 action 与请求不匹配");
+        }
+        String expectedDigest = LocalAutomationSigning.targetDigest(
+                request.channel(), request.action(), request.targetKey());
+        if (!expectedDigest.equals(targetDigest)) {
+            throw mismatch("本地界面适配器回执目标摘要不匹配");
+        }
+        if (status == LocalAutomationStatus.SUCCEEDED && errorCode != null) {
+            throw mismatch("成功的本地界面适配器回执不得携带错误码");
+        }
+        Instant startedAt = parseInstant(startedAtText, "startedAt");
+        Instant finishedAt = parseInstant(finishedAtText, "finishedAt");
         if (finishedAt.isBefore(startedAt)) {
             throw mismatch("本地界面适配器回执时间戳不合法");
         }
-        String errorCode = optionalStableCode(node);
-        String message = sanitizeMessage(node.path("message").asText());
+        String message = sanitizeMessage(rawMessage);
 
         return new LocalAutomationReceipt(LocalAutomationRequest.FROZEN_VERSION,
                 request.requestId(), request.channel(), request.action(), expectedDigest,
                 startedAt, finishedAt, status, errorCode, message);
+    }
+
+    private static String requireText(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+            throw protocol("本地界面适配器回执字段类型或取值不合法: " + field);
+        }
+        return value.asText();
     }
 
     private JsonNode parseSingleJsonObject(String text) {
@@ -364,9 +440,9 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
         }
     }
 
-    private static Instant parseInstant(JsonNode node, String field) {
+    private static Instant parseInstant(String text, String field) {
         try {
-            return Instant.parse(node.path(field).asText());
+            return Instant.parse(text);
         } catch (DateTimeParseException exception) {
             throw mismatch("本地界面适配器回执时间戳不合法: " + field);
         }
@@ -376,6 +452,9 @@ public class UnixSocketLocalAutomationClient implements LocalAutomationClient {
         JsonNode value = node.get("errorCode");
         if (value == null || value.isNull()) {
             return null;
+        }
+        if (!value.isTextual()) {
+            throw protocol("本地界面适配器回执 errorCode 必须是文本或 JSON null");
         }
         String code = value.asText();
         if (!code.matches(STABLE_CODE)) {

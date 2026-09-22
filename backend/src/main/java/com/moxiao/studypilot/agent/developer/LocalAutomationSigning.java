@@ -27,8 +27,14 @@ public final class LocalAutomationSigning {
             "studypilot-local-automation-default-secret-32b";
     public static final int MIN_SECRET_BYTES = 32;
     public static final int NONCE_BYTES = 16;
-    /** 冻结契约：符号目标只能是大小写不敏感的安全标识，绝不是路径、URL 或选择器。 */
+    /** 冻结契约：符号目标只能是安全的大写标识，绝不是路径、URL 或选择器。 */
     public static final String SYMBOLIC_TARGET = "[A-Z][A-Z0-9_]{0,63}";
+    /** 冻结契约：requestId 是小写 UUID；ownerHash/signature/targetDigest 是小写 sha256 hex。 */
+    public static final String LOWER_UUID =
+            "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+    public static final String LOWER_HEX_64 = "[0-9a-f]{64}";
+    private static final String BASE64URL_NO_PADDING = "[A-Za-z0-9_-]+";
+    private static final int MAX_NONCE_CHARS = 128;
 
     private static final String HMAC_SHA256 = "HmacSHA256";
 
@@ -110,6 +116,35 @@ public final class LocalAutomationSigning {
 
     static boolean isSymbolicTarget(String targetKey) {
         return targetKey != null && targetKey.matches(SYMBOLIC_TARGET);
+    }
+
+    /**
+     * 冻结契约的 nonce 规则：base64url 无填充，且解码后不少于 128 位。
+     *
+     * <p>无论 nonce 来自内部 {@link SecureRandom} 还是注入的生成器，都必须通过同一校验，
+     * 避免“测试注入更弱 nonce”成为绕过冻结规则的口子。</p>
+     *
+     * @throws IllegalArgumentException nonce 为空、含填充/非 base64url 字符、过长或不足 128 位
+     */
+    public static void requireValidNonce(String nonce) {
+        if (!isValidNonce(nonce)) {
+            throw new IllegalArgumentException(
+                    "本地界面 nonce 必须是 base64url 无填充且至少 128 位");
+        }
+    }
+
+    public static boolean isValidNonce(String nonce) {
+        if (nonce == null || nonce.isEmpty() || nonce.length() > MAX_NONCE_CHARS) {
+            return false;
+        }
+        if (!nonce.matches(BASE64URL_NO_PADDING)) {
+            return false;
+        }
+        try {
+            return Base64.getUrlDecoder().decode(nonce).length >= NONCE_BYTES;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
     }
 
     private static void append(StringBuilder target, String value) {

@@ -445,6 +445,122 @@ class UnixSocketLocalAutomationClientTest {
     }
 
     @Test
+    void rejectsReceiptsThatOmitTheErrorCodeFieldEntirely() {
+        // 冻结回执形状要求每个命名字段都存在；缺失 errorCode 与值为 null 是两回事。
+        LocalAutomationException exception = exchangeExpectingFailure(request -> {
+            ObjectNode receipt = validReceipt(mapper.readTree(request));
+            receipt.remove("errorCode");
+            return receipt.toString().getBytes(StandardCharsets.UTF_8);
+        });
+
+        assertEquals(LocalAutomationClient.ERROR_PROTOCOL, exception.errorCode());
+    }
+
+    @Test
+    void rejectsReceiptFieldsWithWrongJsonTypesInsteadOfCoercingThem() {
+        record Mistype(String field, java.util.function.Consumer<ObjectNode> tamper) { }
+        List<Mistype> mistypes = List.of(
+                new Mistype("version(string)", receipt -> receipt.put("version", "1")),
+                new Mistype("version(fraction)", receipt -> receipt.put("version", 1.5)),
+                new Mistype("requestId(number)", receipt -> receipt.put("requestId", 123)),
+                new Mistype("adapter(number)", receipt -> receipt.put("adapter", 1)),
+                new Mistype("action(boolean)", receipt -> receipt.put("action", true)),
+                new Mistype("targetDigest(number)", receipt -> receipt.put("targetDigest", 12345)),
+                new Mistype("startedAt(number)", receipt -> receipt.put("startedAt", 20260922)),
+                new Mistype("finishedAt(null)", receipt -> receipt.putNull("finishedAt")),
+                new Mistype("status(number)", receipt -> receipt.put("status", 1)),
+                new Mistype("message(number)", receipt -> receipt.put("message", 42)),
+                new Mistype("errorCode(number)", receipt -> receipt.put("errorCode", 5)));
+
+        for (Mistype mistype : mistypes) {
+            LocalAutomationException exception = exchangeExpectingFailure(request -> {
+                ObjectNode receipt = validReceipt(mapper.readTree(request));
+                mistype.tamper().accept(receipt);
+                return receipt.toString().getBytes(StandardCharsets.UTF_8);
+            });
+            assertEquals(LocalAutomationClient.ERROR_PROTOCOL, exception.errorCode(),
+                    "回执字段类型不合法必须失败关闭而不是强转: " + mistype.field());
+        }
+    }
+
+    @Test
+    void rejectsMalformedTargetDigestFormatBeforeComparison() {
+        for (String digest : new String[]{
+                LocalAutomationSigning.targetDigest("PLAYWRIGHT_DOM", "OPEN_STUDYPILOT_ROUTE",
+                        "ASSISTANT").toUpperCase(),
+                "d".repeat(63),
+                "d".repeat(65),
+                "z".repeat(64),
+                "0x" + "d".repeat(62)}) {
+            LocalAutomationException exception = exchangeExpectingFailure(request -> {
+                ObjectNode receipt = validReceipt(mapper.readTree(request));
+                receipt.put("targetDigest", digest);
+                return receipt.toString().getBytes(StandardCharsets.UTF_8);
+            });
+            assertEquals(LocalAutomationClient.ERROR_PROTOCOL, exception.errorCode(),
+                    "targetDigest 必须是 64 位小写 hex: " + digest);
+        }
+    }
+
+    @Test
+    void rejectsNonWhitespaceTrailingDataAfterTheReceiptDocument() {
+        List<Function<String, String>> trailers = List.of(
+                receipt -> receipt + "\n" + receipt,
+                receipt -> receipt + "\n" + "{}",
+                receipt -> receipt + "\n" + "JUNK",
+                receipt -> receipt + "  {\"version\":1}");
+
+        for (Function<String, String> trailer : trailers) {
+            LocalAutomationException exception = exchangeExpectingFailure(request -> trailer
+                    .apply(validReceipt(mapper.readTree(request)).toString())
+                    .getBytes(StandardCharsets.UTF_8));
+            assertEquals(LocalAutomationClient.ERROR_PROTOCOL, exception.errorCode(),
+                    "一次请求只能产生一个响应 JSON 文档，尾部非空白字节必须失败关闭");
+        }
+    }
+
+    @Test
+    void toleratesWhitespaceOnlyFramingPaddingAfterTheReceiptDocument() {
+        LocalAutomationReceipt receipt = exchange(request -> (validReceipt(mapper.readTree(request))
+                + "\n  \t\n").getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(LocalAutomationStatus.SUCCEEDED, receipt.status());
+    }
+
+    @Test
+    void rejectsAnUnboundedWhitespaceFloodAfterTheReceiptDocument() {
+        LocalAutomationException exception = exchangeExpectingFailure(request ->
+                (validReceipt(mapper.readTree(request)) + "\n" + " ".repeat(4_000))
+                        .getBytes(StandardCharsets.UTF_8));
+
+        assertEquals(LocalAutomationClient.ERROR_PROTOCOL, exception.errorCode());
+    }
+
+    @Test
+    void rejectsInjectedNoncesThatBreakTheFrozenBase64Url128BitRule() {
+        for (String nonce : new String[]{
+                "AAAAAAAAAAAAAAAAAAAAAA==",
+                "AAAA+AAAAA/AAAAAAAAAAAA",
+                "AAAA",
+                "not base64url!!",
+                "###",
+                ""}) {
+            Path socket = socketPath();
+            try (LocalAutomationStubServer server = LocalAutomationStubServer.ownerOnly(
+                    socket, request -> validReceipt(mapper.readTree(request))
+                            .toString().getBytes(StandardCharsets.UTF_8))) {
+                LocalAutomationException exception = assertThrows(LocalAutomationException.class,
+                        () -> new UnixSocketLocalAutomationClient(socket.toString(), SECRET,
+                                1_000, 1_000, mapper, CLOCK, () -> nonce).invoke(
+                                DEFAULT_INVOCATION.channel(), DEFAULT_INVOCATION.action(),
+                                DEFAULT_INVOCATION.targetKey(), OWNER_ID));
+                assertEquals(LocalAutomationClient.ERROR_NOT_CONFIGURED, exception.errorCode(),
+                        "非冻结格式的 nonce 必须失败关闭: " + nonce);
+            }
+        }
+    }
+
+    @Test
     void correlatesTheResponseToTheActualRequestId() throws Exception {
         Path socket = socketPath();
         try (LocalAutomationStubServer server = LocalAutomationStubServer.ownerOnly(
@@ -507,6 +623,8 @@ class UnixSocketLocalAutomationClientTest {
         receipt.put("startedAt", "2026-09-22T00:00:00Z");
         receipt.put("finishedAt", "2026-09-22T00:00:01Z");
         receipt.put("status", "SUCCEEDED");
+        // 冻结回执形状要求所有命名字段都存在，errorCode 以 JSON null 表示“无错误码”。
+        receipt.putNull("errorCode");
         receipt.put("message", "已打开已注册的本地目标");
         return receipt;
     }
