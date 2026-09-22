@@ -13,7 +13,8 @@
 - **首轮证据提交**：`b8b04aee2b79f577ced3c8238a5945f66a52eb3f`（`docs: record task 33 backend local interface verification`）
 - **Codex 独立验收对象**：`b8b04aee2b79f577ced3c8238a5945f66a52eb3f`（验收结论：三项 P1）
 - **P1 整改提交**：`89457c5a4579d1c851fc7588e1e3161d8d8a8e7b`（`fix: close task 33 receipt, framing and nonce protocol gaps`）
-- **本次证据提交**：`docs: record task 33 protocol gap remediation`（本次提交）
+- **P1 整改证据提交**：`132b04f067668dfee26c37de0286745b3d05e57e`（`docs: record task 33 protocol gap remediation`）
+- **真实握手验证提交**：`6cb2dbfca0bc72d5effe3f6acc4fd7214deed502`（`test: verify task 33 handshake against the real local automation service`）
 
 ---
 
