@@ -3,7 +3,10 @@ import path from 'node:path';
 import os from 'node:os';
 import { describe, it, expect, vi } from 'vitest';
 import { PlaywrightBrowserAutomationAdapter } from '../src/browserAdapter.js';
-import { NativeBridgeIdeaAutomationAdapter } from '../src/ideaAdapter.js';
+import {
+  NativeBridgeIdeaAutomationAdapter,
+  PluginBridgeIdeaAutomationAdapter,
+} from '../src/ideaAdapter.js';
 
 describe('False-Success Defenses for Adapters', () => {
   describe('Browser Adapter origin and action verification', () => {
@@ -93,46 +96,33 @@ describe('False-Success Defenses for Adapters', () => {
       expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
     });
 
-    it('executes and verifies actions when a compliant native bridge is supplied', async () => {
-      const verifiedResult = { ok: true, verified: true, code: 'OK', detail: '' };
-      const mockNativeBridge = {
-        probe: vi.fn().mockReturnValue({
-          platform: 'darwin',
-          bridgeVersion: 'test',
-          axApiAvailable: true,
-          axTrusted: true,
-          ideaRunning: true,
-          ideaWindowExposed: true,
-        }),
-        openFile: vi.fn().mockResolvedValue(verifiedResult),
-        focusConfiguration: vi.fn().mockResolvedValue(verifiedResult),
-        showResult: vi.fn().mockResolvedValue(verifiedResult),
+    it('reports success only when the trusted plugin bridge dispatches AND verifies', async () => {
+      const verified = { ok: true, verified: true, code: 'OK', detail: '' };
+      const plugin = {
+        openRegisteredFile: vi.fn().mockResolvedValue(verified),
+        focusRunConfiguration: vi.fn().mockResolvedValue(verified),
+        showTestResult: vi.fn().mockResolvedValue(verified),
       };
+      const adapter = new PluginBridgeIdeaAutomationAdapter(plugin);
 
-      const adapter = new NativeBridgeIdeaAutomationAdapter(mockNativeBridge);
+      expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(true);
+      expect(plugin.openRegisteredFile).toHaveBeenCalledWith('FILE_REGISTERED');
+      expect(await adapter.focusRunConfiguration('RUN_REGISTERED')).toBe(true);
+      expect(await adapter.showTestResult('RESULT_REGISTERED')).toBe(true);
 
-      // The registered path is canonicalised before it reaches the native layer.
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task33-false-success-'));
-      const registered = path.join(tmpDir, 'Registered.java');
-      fs.writeFileSync(registered, 'public class Registered {}', 'utf8');
-
-      try {
-        const resFile = await adapter.openRegisteredFile(registered);
-        expect(resFile).toBe(true);
-        // The adapter forwards the registered path; canonicalisation is the bridge's job
-        // (covered by the dedicated MacAxIdeaBridge test).
-        expect(mockNativeBridge.openFile).toHaveBeenCalledWith(registered, undefined);
-      } finally {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-      }
-
-      const resRun = await adapter.focusRunConfiguration('RUN_APP');
-      expect(resRun).toBe(true);
-      expect(mockNativeBridge.focusConfiguration).toHaveBeenCalledWith('RUN_APP');
-
-      const resTest = await adapter.showTestResult('TEST_RESULTS');
-      expect(resTest).toBe(true);
-      expect(mockNativeBridge.showResult).toHaveBeenCalledWith('TEST_RESULTS');
+      // A dispatched-but-unverified plugin outcome must never become success.
+      const unverified = new PluginBridgeIdeaAutomationAdapter({
+        openRegisteredFile: vi.fn().mockResolvedValue({
+          ok: true,
+          verified: false,
+          code: 'UNVERIFIED_TARGET_STATE',
+          detail: 'post state not proven',
+        }),
+        focusRunConfiguration: vi.fn(),
+        showTestResult: vi.fn(),
+      });
+      expect(await unverified.openRegisteredFile('FILE_REGISTERED')).toBe(false);
+      expect(unverified.getLastFailureCode()).toBe('UNVERIFIED_TARGET_STATE');
     });
   });
 });

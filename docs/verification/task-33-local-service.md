@@ -1,179 +1,265 @@
-# Task 33 验证证据：受控本地界面适配器服务 (TypeScript)
+# Task 33 验证证据：受控本地界面适配器服务 (TypeScript) — 插件桥修订版
 
-- **执行 Agent**：MiniMax Code (Mavis) 临时接管（ZCode 配额阻断；Codex 仍为架构与最终验收负责人）
+- **执行 Agent**：MiniMax Code (Mavis)（ZCode 配额阻断期间临时接管；Codex 仍是架构与最终验收负责人）
 - **测试等级**：`[UNIT_TEST]` / `[STATIC_VALIDATION]` / `[INTEGRATION_TEST]` / `[INTEGRATION_FIXTURE]` / `[LIVE_PROBE]`
 - **执行时间**：2026-09-22 (Asia/Shanghai)
 - **关联分支**：`agent/zcode-task-33-local-adapters`
-- **关联基础提交**：`9f8537115ac3d9c3bd86ddc1a43128db3a58414b`（Task 32 Codex 最终验收基线）
-- **整改提交历史**：`50dc650`（首轮 P0/P1）→ `3ae231a`（删除虚构 HTTP 桥接，**被 Codex 拒绝**）→ `f520800`（严格结构化身份绑定，**被 Codex 以“未按真实 IDE 标定、过度收紧”拒绝**）→ **本轮提交**（按真实 IntelliJ IDEA 2026.1.1 AX 树重新标定）
-- **交付状态**：**BLOCKED — 三项真实 IDEA 动作全部失败关闭；正向验收仍未取得任何成功证据，Task 33 不得声明完成**
+- **关联契约**：`project-main-integration/docs/verification/task-33-frozen-contract.md`（2026-09-22 架构修订版）
+- **起始已验收基线 HEAD**：`2a023416af053dbce2a6bdf424f27d37d8c2de13`
+- **交付状态**：**待 Codex 验收 —— 插件已构建但未安装，真实 IDEA 正向验收仍未执行**
 
 ---
 
-## 1. 本轮起点：Codex 提供的真实 IDE 标定事实
+## 1. 本轮修订的背景与结论
 
-Codex 在 `IntelliJIdea2026.1/idea.properties` 中启用 JetBrains 官方 macOS 设置 `ide.support.screenreaders.enabled=true` 并重启 IDEA 后，运行中的 IntelliJ IDEA 2026.1.1 首次向 AX 暴露窗口，并给出权威实测树（本轮全部实现以该树为准）：
+上一轮用 macOS Accessibility（AX）实现三项 IDEA 动作。真实 IntelliJ IDEA 2026.1.1 验收证明：
 
-| 区域 | 真实结构 |
-| :--- | :--- |
-| 主窗口 | `AXWindow` → `AXGroup desc='根窗格'` |
-| 运行配置 | `AXGroup desc='帧标题'` → 嵌套 `AXGroup` → `AXButton desc='<配置名>'`；同级为 `AXButton desc="运行 '<配置名>'"`、`desc="调试 '<配置名>'"`、`desc='更多操作'`。**不存在 `AXToolbar`/`AXPopUpButton`/`AXComboBox`** |
-| 项目树 | `AXGroup desc='项目 工具窗口'` → `AXScrollArea` → `AXOutline desc='项目结构树'` → **扁平的 `AXRow subrole=AXOutlineRow` 兄弟节点**，嵌套靠 `AXDisclosureLevel`；`.java` 等源码扩展名被省略；文件夹带 `, <类型>` 后缀 |
-| 活动编辑器 | `AXTabGroup desc='TelersWebManagementApplicationTests.java'` + `AXTextArea desc='<文件> 的编辑器'`；**该 build 不提供 `AXDocument`/`AXURL`** |
+- 项目树行的**唯一支持动作是 `AXPress`**（`AXConfirm` 返回 `-25200 kAXErrorActionUnsupported`），而 `AXPress` **只选中、不打开**文件；
+- 运行配置控件接受聚焦请求，但**从不报告 `AXFocused`/`AXSelected`**，窗口也不提供 `AXFocusedUIElement`；
+- 无既有结果视图时无法展示测试结果。
 
-我另外用只读探针（一次性临时工具，非仓库代码）独立复现了上述结构，并补齐了关键细节（见 §2）。
+因此 AX 无法可靠**执行并验证**三项正向动作，Task 33 未通过。按修订后的冻结契约，生产执行路径改为**窄权限 JetBrains 插件**，AX 仅保留为失败关闭的兼容探针。
+
+**保持不变**（外部契约零改动）：Java-facing Unix Domain Socket、六个冻结动作、枚举、16 KiB 单行 JSON 帧、HMAC/时间窗/nonce 语义、浏览器适配器，以及外部 adapter 标识 **`IDEA_ACCESSIBILITY`**。
 
 ---
 
-## 2. 本轮实测发现与根因
-
-### 2.1 关键缺陷：`AXUIElementCopyMultipleAttributeValues` 选项用错，导致所有属性读取失败
-
-SDK 头文件 `AXUIElement.h` 只定义了一个选项：
-
-```c
-typedef CF_OPTIONS(UInt32, AXCopyMultipleAttributeOptions) {
-    kAXCopyMultipleAttributeOptionStopOnError = 0x1
-};
-```
-
-前两轮代码传的是 `1`，即 **StopOnError（遇错即整体放弃）**，因此每个节点只要有一个属性不受支持（例如根节点上的 `AXDisclosureLevel`），整次读取就失败。这正是 `f520800` 报 `AX_SNAPSHOT_TRUNCATED`／“no project-view row proves ...” 的真实原因：快照里 `nodes` 全为空。
-
-**修复**：传 `0`（按头文件语义：`options = 0` 时逐位置返回错误或 CFNull）。修复后同一窗口可稳定读出 **365 个节点（未截断）**、42 个项目树行、帧标题组与编辑器标签组。
-
-### 2.2 项目树是“扁平行 + 缩进级别”，且单子包被压缩
-
-实测项目树行（节选，`level` 即 `AXDisclosureLevel`）：
+## 2. 修订后的架构
 
 ```text
-level=0 desc=[web-ai-project-learning -01<U+2009>~/IdeaProjects/web-ai-project-learning -01, 模块]
-level=1 desc=[telers-web-management, 模块]   level=2 desc=[src]   level=3 desc=[main]
-level=4 desc=[java, 源根]                    level=5 desc=[com.itmoxiao]
-level=6 desc=[controller]                    level=7 desc=[DeptController]
+Java 后端 ──HMAC 域 A──▶ 本地自动化服务 ──HMAC 域 B──▶ 受信 JetBrains 插件 ──▶ IntelliJ Platform API
+                (Java-facing UDS)            (插件私有 UDS)             (EDT + 执行后验证)
+本地自动化服务 ──▶ macOS AX 探针（只读诊断，永不产生 SUCCEEDED）
 ```
 
-同时发现两点必须处理的事实：
+### 2.1 两条 Socket 的强制分离
 
-1. **单子包被压缩**：`com.itmoxiao` 一个行对应磁盘上的 `com/` 与 `itmoxiao/` **两个**目录分量；
-2. **level-0 模块行把名称与真实路径用 U+2009 THIN SPACE 分隔**（字节 `20 e2 80 89`，不是两个 ASCII 空格），ASCII 空格切分会失败。
-
-此外所有 42 行的 `AXSelected` **恒为真**，因此“行被选中”在本 build 中不具区分度（仍按要求校验，但不作为主要证据）。
-
-### 2.3 真实动作语义（实测）
-
-- 项目树行的**唯一支持动作是 `AXPress`**（`AXUIElementCopyActionNames` 返回 1 项）；`AXConfirm` 返回 `-25200`（`kAXErrorActionUnsupported`）。
-- `AXPress` 之后，编辑器 `AXTabGroup` 仍为原先打开的文件；**连续两次 `AXPress` 也不打开文件**。即 IDEA 的 AX `AXPress` 在项目树行上只做“选中”，不执行“打开”。
-- 运行配置按钮接受 `AXUIElementSetAttributeValue(kAXFocusedAttribute, true)` 与 `AXPress`（均返回成功），但之后**从不报告 `AXFocused`/`AXSelected`**；窗口也不提供 `AXFocusedUIElement`。即焦点状态在本 build 不可观测。
-
----
-
-## 3. 按真实树重新实现的窄绑定（`native/idea_ax_bridge.mm` v3.0.0）
-
-### 3.1 三项动作的绑定与成功条件
-
-| 动作 | 唯一注册动作 | 成功必须观测到的 POST 状态 |
+| 维度 | Java-facing Socket | 插件私有 Socket |
 | :--- | :--- | :--- |
-| `OPEN_REGISTERED_FILE` | 对**唯一**经完整路径证明的项目树行执行一次 `AXPress` | ① 该行在 POST 快照中仍被**唯一**证明且 `selected`；② 活动 `AXTabGroup`/`AXTextArea` 的身份**精确等于**注册 basename（或省略已登记源码扩展名后的显示名） |
-| `FOCUS_RUN_CONFIGURATION` | **只请求聚焦**（从不按下，避免打开菜单或改变选择） | POST 快照中同一严格规则定位到的控件**唯一**且报告 `focused` 或 `selected` |
-| `SHOW_TEST_RESULT` | 对唯一由 `AXTabGroup` 容器证明的结果视图 `AXTab` 执行一次 `AXPress` | POST 快照中该视图**选中**且可见（编辑器标签角色被显式排除） |
+| 监听方 | 本地自动化服务 | JetBrains 插件 |
+| 客户端 | 仅 Java 后端 | 仅本地自动化服务 |
+| 密钥 | `STUDYPILOT_AUTOMATION_HMAC_SECRET`（≥32B） | `STUDYPILOT_AUTOMATION_IDEA_PLUGIN_HMAC_SECRET`（≥32B，**必须不同**） |
+| 协议域 | 九字段（含 ownerHash/channel） | 七字段 + 域标记 `studypilot-idea-plugin-v1` |
+| 有效期 | 60 秒 | **15 秒**（更短） |
+| 重放存储 | 服务侧 SQLite | 插件侧持久化 nonce 台账 |
+| 权限 | 0600，父目录 owner-only | 0600，父目录**禁止其他用户写入** |
 
-### 3.2 项目树路径证明（消除同名歧义，处理真实显示名）
+服务侧 `config.ts` 会**显式拒绝**插件 Socket 路径与 Java-facing 路径相同、或两把密钥相同，二者都不允许启动。
 
-1. **候选**：`role=AXRow` 且 `subrole=AXOutlineRow`，其直接父节点必须是 `AXOutline`。
-2. **链构建**：仅用 `AXDisclosureLevel` 与轮廓顺序，从该行回溯到 level 0；任何无法解析的层级跳跃直接失败（不猜测）。
-3. **叶行**：显示名必须**精确等于**注册 basename，或等于“去掉**已登记源码扩展名**（`kOmittedSourceExtensions`）”后的名字；其它任何变换都不接受。
-4. **对齐唯一性**：把整条链分量级对齐到注册规范路径——每行消费 ≥1 个连续分量，且消费分量的 `.` 连接必须**精确等于**该行显示名（因此 `com.itmoxiao` 可消费 `com`+`itmoxiao`）。**必须恰好存在 1 种完整对齐**；0 种视为未证明，≥2 种视为歧义，两者都失败关闭。
-5. **level-0 锚点**：若按名对齐失败，仅当该行描述中内嵌的真实路径（U+2009 分隔，支持 `~` 展开）是注册规范路径的**分量边界前缀**、且**位于受信注册工作区根之内**时才接受。
-6. **唯一性**：整棵轮廓中必须只有一行通过上述证明；否则 `TARGET_AMBIGUOUS`。
+### 2.2 插件请求仅含不透明句柄
 
-### 3.3 其它加固
+请求字段固定为 `version, requestId, action, targetKey, issuedAt, expiresAt, nonce, signature`。路径、运行配置名、自由文本、选择器、IntelliJ Action ID、进程 ID、窗口标题**在结构上不可能出现**：`action` 必须是三个冻结动作之一，`targetKey` 必须匹配 `^[A-Z0-9_]{1,64}$`（服务端客户端在发送前再次校验，路径类字符串直接失败关闭）。
 
-- **修剪编辑器内容子树**（不进入 `AXTextArea` 内部），预算 20000 节点 / 深度 40，超限显式报 `AX_SNAPSHOT_TRUNCATED`（不再把“空快照”误报为截断）。
-- **`CopyVerifiedElement`**：按快照记录的真实子索引回到活元素，并在**派发前**重新读取 role + 身份做精确复核，树变化不会导致按错控件。
-- **读取选项修正**（§2.1）与 **U+2009/非 ASCII 空白感知的裁剪**（`StripSpaceLike`）。
-- 仍然：遍历根必须是受信 bundle id 的**真实 AXWindow**；无应用级/系统级搜索；无 `containsString`；无 shell / AppleScript / 键鼠模拟；AX 调用 2 秒有界。
+插件用自己的**本机可信注册表**（`~/Library/Application Support/StudyPilot/idea-plugin.tsv`，owner-only，制表符分隔）把句柄解析为具体目标、项目根与类型，并在执行时再次校验项目与目标身份。
+
+### 2.3 三项动作的真实语义与执行后验证
+
+| 动作 | 唯一动作 | 执行后必须观测到 |
+| :--- | :--- | :--- |
+| `OPEN_REGISTERED_FILE` | `LocalFileSystem` 解析 → 校验常规文件/非符号链接/规范路径一致/位于注册项目根内/同名兄弟唯一 → `OpenFileDescriptor` | `FileEditorManager.getSelectedFiles()` 含**该规范 VirtualFile**，且 `getSelectedEditor(file) != null` |
+| `FOCUS_RUN_CONFIGURATION` | `RunManager.getAllSettings()` 中**恰好一个**同名既有配置 → `setSelectedConfiguration` | `RunManager.getSelectedConfiguration()` 身份等于注册名；**不运行、不调试、不修改** |
+| `SHOW_TEST_RESULT` | `ToolWindowManager` 取注册工具窗口 → 既有内容**恰好一个** → `activate` + `setSelectedContent` | 该内容仍存在、为 `getSelectedContent()`、工具窗口可见。**从不启动/重跑测试** |
+
+失败关闭条件：零/多目标、项目不匹配、符号链接、IDE disposing、UI 超时、验证 API 不可用、执行后状态无法证明。
+
+### 2.4 安全与线程边界
+
+- 顺序：**签名/版本/时间窗 → 注册表解析 → 持久化 nonce 原子消费 → EDT 执行 → 执行后验证**，全部检查在界面副作用之前；校验失败不消费 nonce。
+- 所有 IDE 操作经 `IdeUiExecutor` 在 **IntelliJ UI 线程**执行并有硬超时（默认 2 秒，250–30000 可配）；超时→`UI_THREAD_TIMEOUT`，disposing→`IDE_DISPOSING`，异常→`INTERNAL_ERROR`。
+- **只有** `dispatched && verified` 才产生 `SUCCEEDED`；已投递但未证实→`FAILED/UNVERIFIED_TARGET_STATE`；校验期拒绝→`REJECTED`。
+- 不使用 Robot、键鼠合成、`ActionManager`/任意 Action ID、`DataContext` 通用动作、`ProcessBuilder`、Shell、AppleScript、反射、TCP/HTTP。
 
 ---
 
-## 4. 真实 IDE 实测结果（本轮核心证据）
+## 3. TDD 证据
 
-真实运行环境：IntelliJ IDEA 2026.1.1（PID 14285），已打开工程 `web-ai-project-learning -01`，辅助功能权限已授予。
+### 3.1 RED（决定性失败，非编译失败）
+
+插件协议/注册表/派发器与自检harness先行。第一版派发器**故意**只按“已投递”判成功、忽略执行后验证、且在副作用之后才消费 nonce：
 
 ```text
-probe : {"platform":"darwin","bridgeVersion":"3.0.0","axApiAvailable":true,
-         "axTrusted":true,"ideaRunning":true,"ideaWindowExposed":true}
-
-op1 OPEN_REGISTERED_FILE(<真实工程内 DeptController.java>, 工作区根)
-  -> {"ok":true,"verified":false,"code":"STATE_NOT_VERIFIED",
-      "detail":"registered file row was activated but the active editor view was not confirmed"}
-
-op1 OPEN_REGISTERED_FILE(<不在该工程内的文件>)
-  -> {"ok":false,"verified":false,"code":"TARGET_NOT_FOUND",
-      "detail":"no project-view row proves the registered canonical path"}
-
-op2 FOCUS_RUN_CONFIGURATION('TelersWebManagementApplication')
-  -> {"ok":true,"verified":false,"code":"STATE_NOT_VERIFIED",
-      "detail":"the run-configuration control did not report the registered configuration as focused after the action"}
-
-op3 SHOW_TEST_RESULT('Run')
-  -> {"ok":false,"verified":false,"code":"RESULT_VIEW_NOT_IDENTIFIED",
-      "detail":"no tool-window result view with the exact registered identity is present"}
+$ javac ... && java -cp ... com.studypilot.automation.idea.PluginSelfTest
+PluginSelfTest: passed=44 failed=16
+  FAILED: dispatch: unverified file open fails      (expected FAILED, actual SUCCEEDED)
+  FAILED: dispatch: unverified file code            (expected UNVERIFIED_TARGET_STATE, actual null)
+  FAILED: dispatch: unverified run focus fails
+  FAILED: dispatch: unverified run code
+  FAILED: replay: same nonce rejected               (second use returned SUCCEEDED)
+  FAILED: replay: rejected after restart
+  FAILED: ui: timeout fails / timeout code
+  FAILED: ui: disposed fails / disposed code
+  FAILED: ui: exception fails / exception code
+  FAILED: dispatch: ui thread used
 ```
 
-**解读（逐条诚实说明）**
+16 项失败全部落在**假成功、重放与 UI 线程**这三类安全规则上。修正派发器后：
 
-- **身份绑定已真正跑通**：`ok:true` 表示唯一目标已被证明并成功派发。项目树路径证明、`AXDisclosureLevel` 链、压缩包对齐、U+2009 解析、唯一性拒绝都已在真实树上验证；工程外文件被正确拒绝（`TARGET_NOT_FOUND`），说明没有 basename/子串兜底。
-- **`OPEN_REGISTERED_FILE` 仍无法取得成功证据**：`AXPress` 已投递到唯一被证明的行，但 IDEA 仅“选中”而不“打开”（§2.3 实测），因此要求的“活动编辑器为该文件”状态不会出现 → `STATE_NOT_VERIFIED`，回执为 `UNVERIFIED_TARGET_STATE`，**绝不写 SUCCEEDED**。
-- **`FOCUS_RUN_CONFIGURATION` 仍无法取得成功证据**：控件身份与 Run/Debug 兄弟绑定均已验证通过且聚焦请求被接受，但本 build 不暴露焦点状态 → `STATE_NOT_VERIFIED`。
-- **`SHOW_TEST_RESULT` 保持失败关闭**：真实树中没有既有测试结果视图，按 Codex 要求不臆造角色。
+```text
+$ bash idea-plugin/build-local.sh
+PluginSelfTest: passed=103 failed=0
+```
 
-**结论**：三条真实动作在**本 IDE build 的可用 AX 能力内均不可达成已证实的成功**。这不是验证被放宽，也不是实现未接通——恰恰相反，本轮把身份绑定做到了可证伪的精确程度；被阻塞的是“IDEA 是否愿意通过 AX 执行并暴露这些状态”这一外部能力。按契约，宁可失败关闭也绝不虚构成功。
+### 3.2 自检覆盖面（`idea-plugin/src/test/java/.../PluginSelfTest.java`）
+
+- **framing**：合法帧、超 16 KiB、内嵌换行、重复键、额外字段、缺字段、版本不符、数组值、路径型句柄、非法 UTF-8；
+- **auth**：正确签名、错签名、短密钥、过期、未来漂移、寿命超 15 秒、**Java 域签名被插件域拒绝**（域分离）；
+- **replay**：同 nonce 二次使用被拒、**新台账实例（进程重启）后仍被拒**；
+- **registry**：未注册句柄、**动作与句柄类型不匹配**（不派发、不降级）、非法句柄注册即拒绝；
+- **三项执行后验证**：三项各自 `verified` 成功、三项各自 `已投递但未证实` 必须 `FAILED`；
+- **无既有结果**：`RESULT_VIEW_NOT_PRESENT` 诚实失败；
+- **项目/唯一性**：`PROJECT_MISMATCH`、`TARGET_AMBIGUOUS` 一律失败；
+- **过期请求零副作用**：注册表/平台调用次数为 0；
+- **UI 线程/处置**：超时、disposing、异常三种失败码；
+- **回执卫生**：requestId/action 关联、单行、≤16 KiB、**不回传路径或 URL**、消息 ≤200 字符；
+- **架构护栏（43 项）**：源码级禁止 TCP/HTTP、通用 Action ID、run/debug/test 执行、Robot/键鼠、反射、Shell，以及 Java-facing Socket 变量名；并**必须存在** `StandardProtocolFamily.UNIX`/`OpenFileDescriptor`/`FileEditorManager`/`RunManager`/`setSelectedConfiguration`/`getSelectedConfiguration`/`ToolWindowManager`/`setSelectedContent`/`getSelectedContent`。
+
+### 3.3 跨语言冻结向量
+
+同一份向量在 **Java 插件自检**与**TypeScript 协议测试**中同时断言，任何一侧改坏规范化载荷都会立刻失败：
+
+```text
+payload    = 25#studypilot-idea-plugin-v1|1#1|36#11111111-2222-4333-8444-555555555555|20#OPEN_REGISTERED_FILE|15#FILE_REGISTERED|20#2026-09-22T10:00:00Z|20#2026-09-22T10:00:10Z|22#abcdefghijklmnopqrstuv|
+signature  = a8fd5b27819a20254c450a7a1eee54609eb8acb334a22f0818600e7643f1060c
+secret     = studypilot-plugin-secret-32-bytes!!
+```
 
 ---
 
-## 5. 测试、构建与门禁
+## 4. 服务侧测试（`tests/ideaPlugin*.spec.ts`、`tests/pluginArchitecture.spec.ts`）
+
+- `tests/ideaPluginProtocol.spec.ts`：冻结向量、域分离、短密钥/超寿命拒绝、请求仅含不透明句柄、响应严格校验（超限/非法 JSON/额外字段/缺字段/多行/未知枚举/动作不匹配）、**只有 SUCCEEDED 才是 verified** 的映射规则；
+- `tests/ideaPluginClient.spec.ts`：**真实 Unix Domain Socket** 集成测试——测试内起一个假插件服务端，独立按文档重算 HMAC 后应答，覆盖成功、已投递未证实、拒绝、超限响应、非法响应、额外字段、关联不匹配、签名不符、超时、socket 不存在、未配置，以及“绝不转发路径/配置名”；
+- `tests/pluginArchitecture.spec.ts`：IDEA 通道必须走插件适配器、AX 适配器**不得**调用 AX 取结果、服务端只转发 `targetKey`、两条 Socket/两把密钥分离校验、插件源码禁令与必备 API、ZIP 构建输入齐备；
+- AX 规则：`NativeBridgeIdeaAutomationAdapter` 三项操作**永远失败关闭**并标记 `AX_DIAGNOSTIC_ONLY`，即使 AX 桥接声称 `ok && verified` 也不得成功（有专门测试，且断言**从未调用** AX 桥接）。
+
+一处真实缺陷修复：`scripts/real-acceptance.ts` 原先三个 await 在数组构造时**全部先执行**，导致打印时三行共用最后一次的诊断。现改为**逐个动作顺序执行并立即捕获该动作自己的 `code` 与 blocker**。
+
+---
+
+## 5. 构建与产物
+
+### 5.1 主路径（可复现 Gradle + IntelliJ Platform）
+
+```text
+$ cd local-automation-service/idea-plugin
+$ ./gradlew buildPlugin        # Gradle wrapper 9.7.1 已随仓库提交
+BUILD SUCCESSFUL
+> Task :compileJava / :jar / :prepareSandbox / :buildPlugin
+```
+
+仓库提交了 `gradlew` 与 `gradle/wrapper/**`（Gradle 9.7.1）以便在任何机器上复现；本项目仅面向 macOS，Windows 的 `gradlew.bat` 未纳入（其 CRLF 行尾会污染 `git diff --check`）。
+
+本机实测（构建用 IDE 自带 JBR 执行）：
+
+```text
+$ /tmp/t33gradle/gradle-9.7.1/bin/gradle buildPlugin --no-daemon \
+    -Dorg.gradle.java.home="/Applications/IntelliJ IDEA.app/Contents/jbr/Contents/Home"
+BUILD SUCCESSFUL in 1m 36s
+11 actionable tasks: 11 executed
+```
+
+- 平台：本机已安装 IntelliJ IDEA `IU-261.23567.138`（2026.1.1），通过 `platformLocalPath` **本地解析**，不下载 IDE 分发。
+- **工具链约束（真实记录）**：本机无预装 Gradle；Gradle **8.13 无法运行**在可用 JVM 上（系统 JDK 26、IDE 自带 JBR 25），报 `What went wrong: 25.0.2`；改用 **Gradle 9.7.1 + IDE JBR 25** 后构建成功。IntelliJ Platform Gradle Plugin 2.5.0 可用，官方提示可升级到 2.19.0（本轮保持已验证版本）。
+
+### 5.2 备选路径（本机离线可用的 javac 打包）
+
+```text
+$ bash idea-plugin/build-local.sh
+build-local: compiling plugin against IntelliJ IDEA.app
+build-local: running self test
+PluginSelfTest: passed=103 failed=0
+build-local: artifact .../distributions/study-pilot-automation-bridge-1.0.0-local.zip
+build-local: sha256 9e856f03ebccecf0a9b4808b63a9d4d8ba0fb5bd4df699f9b3ba7e1376c20f27
+build-local: INSTALLATION IS NOT PERFORMED — Codex review and explicit user confirmation are required first.
+```
+
+### 5.3 产物（可安装 ZIP）
+
+| 来源 | 文件 | SHA-256 | 可复现性 |
+| :--- | :--- | :--- | :--- |
+| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip`（45,878 B） | `973047a5663229727269504aa875d866ecd08cfd005c346e4f2c84d56980156e` | **可复现**：Gradle 归档使用固定时间戳（1980-02-01） |
+| 本机 javac（备选） | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0-local.zip` | 每次构建不同（示例 `b64c41a700a9e7f6f2a894397a2a934a99d4594bc3347f0269c4a2640f973fc6`） | **不可复现**：`jar` 会写入构建时刻时间戳 |
+
+> 审查与安装应以 **Gradle 产物** 为准（校验和固定）；备选产物仅用于本机离线可用性，其校验和随后续构建变化。
+
+ZIP 结构符合 IntelliJ 插件分发包布局，且 `META-INF/plugin.xml` 位于主 jar 内：
+
+```text
+study-pilot-automation-bridge/
+study-pilot-automation-bridge/lib/study-pilot-automation-bridge-1.0.0.jar
+  └── META-INF/plugin.xml, com/studypilot/automation/idea/**
+```
+
+> `idea-plugin/build/` 与 `idea-plugin/.gradle/` 已加入 `.gitignore`；产物本身不提交，由上述命令复现。
+
+---
+
+## 6. 本轮验证结果
 
 ```text
 cd local-automation-service && npm test
- Test Files  15 passed (15)
-      Tests  122 passed | 1 skipped (123)
+ Test Files  18 passed (18)
+      Tests  165 passed | 1 skipped (166)
 
-npm run typecheck  -> tsc --noEmit, 0 errors
-npm run build      -> tsc, dist/ 成功（含 dist/main.js）
-npm run build:native -> 0 errors, 0 warnings（生产产物 + 测试接缝产物）
+npm run typecheck            -> tsc --noEmit, 0 errors
+npm run build                -> tsc, dist/ 成功（含 dist/main.js）
+npm run build:native         -> 0 errors, 0 warnings
+npm run build:plugin         -> PluginSelfTest passed=103 failed=0 + ZIP
+npm run test:plugin          -> 同上（插件自检）
+gradle selfTest              -> PluginSelfTest passed=103 failed=0 (BUILD SUCCESSFUL)
+gradle check buildPlugin     -> BUILD SUCCESSFUL (11 + 16 actionable tasks)
+git diff --check             -> 干净
+npx tsx scripts/real-acceptance.ts -> 见下
 ```
 
-- 唯一 skip 项仍是“附加模块未构建时诚实失败关闭”的负向分支（本机已构建，故按设计跳过）。
-- **`tests/nativeAxSemantics.spec.ts`（31 项）**：夹具直接复刻真实树形状，覆盖压缩包对齐、U+2009 模块行、已登记源码扩展名省略（含 `.txt` **不得**省略的反例）、两个节点证明同一路径 → `TARGET_AMBIGUOUS`、仅选中 basename 不构成编辑器证明、编辑器显示别的文件、部分 basename 不匹配、内嵌根路径锚点及其**受信工作区根**约束、编辑标签角色（AXRadioButton）不得作为结果视图、动作前已可见但未选中 → 失败、动作后消失 → 失败、工具窗口外同标题 → `RESULT_VIEW_NOT_IDENTIFIED`、运行控件必须同时具备精确 Run/Debug 兄弟、运行控件**永不按下**、动作后未聚焦 → 失败等。
-- **`tests/sourceGuard.spec.ts`（6 项）**：除 shell/网络/键鼠门禁外，新增“身份必须结构化”门禁——禁止 `containsString`、`AXUIElementCreateSystemWide`、`AXFocusedUIElementAttribute`、参数化/观察者 API；**必须存在** `RowNameMatchesBasename`/`kOmittedSourceExtensions`/`CountAlignments`/`ProveOutlinePath`/`StripSpaceLike`/`AXDisclosureLevel`/`kSubroleOutlineRow`/`kFrameTitleGroupLabel`/`CopyVerifiedElement`/`TARGET_AMBIGUOUS`/`AX_SNAPSHOT_TRUNCATED`/`kRoleWindow`/`AXUIElementSetMessagingTimeout`（防止“删功能过门禁”）；运行配置动作体内**不得出现 `PerformPress`**；源码中**不得出现**编辑标签角色。
-- **真实 UDS 探针**：Unix Socket + `0600` + 签名请求 `FAILED`（失败关闭）+ `REPLAY_DETECTED` + `INVALID_SIGNATURE` + `TARGET_NOT_REGISTERED`，6/6 PASS；浏览器适配器隔离夹具 4/4 PASS（不代表 Task 34 REAL_E2E）。
-- UDS-only 传输、0600 权限、协议版本、16 KiB 帧、HMAC、60 秒寿命、10 秒漂移、SQLite 原子 nonce 语义**均未改动**。
+真实探针（本机当前状态）：
+
+```text
+--- 1. macOS AX diagnostic probe (not an execution path) ---
+Native AX addon: LOADED (version 3.0.0, platform darwin)
+  axApiAvailable=true axTrusted=true ideaRunning=true ideaWindowExposed=true
+  AX outcome for a registered action: REFUSED
+
+--- 2. IDEA execution path (trusted JetBrains plugin bridge) ---
+Plugin socket configured: no
+  [Real Action] OPEN_REGISTERED_FILE:     BLOCKED (code=PLUGIN_NOT_CONFIGURED)
+  [Real Action] FOCUS_RUN_CONFIGURATION:  BLOCKED (code=PLUGIN_NOT_CONFIGURED)
+  [Real Action] SHOW_TEST_RESULT:         BLOCKED (code=PLUGIN_NOT_CONFIGURED)
+
+--- 3. Production UDS service ---
+Unix socket + 0600 + FAILED(ADAPTER_FAILURE) + REPLAY_DETECTED + INVALID_SIGNATURE + TARGET_NOT_REGISTERED -> 6/6 PASS
+--- 4. StudyPilot loopback service: OFFLINE -> 3 项浏览器真实动作 BLOCKED
+--- 5. [INTEGRATION_FIXTURE] 浏览器适配器夹具 4/4 PASS（不代表 Task 34 REAL_E2E）
+```
 
 ---
 
-## 6. 明确未完成项（BLOCKED 声明）
+## 7. 明确的剩余门禁与限制
 
-1. **三项真实 IDEA 动作均无成功证据**（§4）。Task 33 **不得**标记完成，也不得把本文件当作已验收证据。
-2. **`OPEN_REGISTERED_FILE`**：需要 IDEA 通过 AX 提供“打开/激活”能力（而不只是选中），否则按契约只能失败关闭。
-3. **`FOCUS_RUN_CONFIGURATION`**：需要 AX 暴露该控件（或窗口）的焦点/选中状态；本 build 未提供。
-4. **`SHOW_TEST_RESULT`**：需要真实存在且被 AX 暴露的既有测试结果工具窗口，才能完成角色标定与正向验收。
-5. StudyPilot 服务离线，3 项浏览器真实动作同样 `BLOCKED`。
-6. 未与 Java 端在本机完成真实进程握手（由 Task 33 真实联调阶段进行）。
-7. 未在非 darwin 平台验证（按设计直接失败关闭）。
+1. **插件未安装**：按指令本轮**只构建、不安装、不运行**新插件。Codex 需先审查构建产物；安装必须由用户确认后执行。
+2. **真实 IDEA 正向验收未执行**：由于插件未安装，三项动作目前仍为 `PLUGIN_NOT_CONFIGURED` 失败关闭，**没有任何真实成功证据**，Task 33 不得声明完成。
+3. **插件执行后验证仅在假实现上验证过**：三项 `FileEditorManager` / `RunManager` / `ToolWindowManager` 验证路径的**正向**行为尚未在真实 IDE 中触发；`SHOW_TEST_RESULT` 还要求宿主存在既有的测试结果工具窗口内容。
+4. **需要宿主提供插件注册表与密钥**：`~/Library/Application Support/StudyPilot/idea-plugin.tsv`（socketPath、ledgerPath、projectRoot、句柄行，owner-only）+ 环境变量 `STUDYPILOT_IDEA_PLUGIN_HMAC_SECRET`；缺失即插件不启动、服务失败关闭。
+5. **服务侧需配置** `STUDYPILOT_AUTOMATION_IDEA_PLUGIN_SOCKET_PATH` / `..._HMAC_SECRET`（路径与密钥都必须与 Java-facing 不同，否则服务拒绝启动）。
+6. StudyPilot 服务离线，3 项浏览器真实动作同样 `BLOCKED`；夹具证据不代表 REAL_E2E。
+7. 未与 Java 端在本机完成真实进程握手（属 Task 33 真实联调阶段）。
+8. 未在非 macOS 平台验证（按设计失败关闭）。
 
-### 6.1 真实性边界（本轮未做、也不应做的事）
+### 7.1 真实安装与验收步骤（待用户确认后执行）
 
-- 未为“让动作通过”而放宽验证（未恢复 basename/子串匹配、未恢复全应用搜索、未把“选中”当作“已打开”）；
-- 未新增 shell / `osascript` / AppleScript / 键鼠模拟 / 通用自动化回退；
-- 未修改用户的 IDE 设置或系统权限（`ide.support.screenreaders.enabled=true` 由 Codex 设置）；
-- 未把夹具或探针结果写成真实成功。
+1. Codex 审查 `build/distributions/study-pilot-automation-bridge-1.0.0.zip` 与其 SHA-256（见 §5.3）。
+2. **用户确认后**在 IDEA 中 `Settings → Plugins → ⚙ → Install Plugin from Disk…` 选择该 ZIP，重启 IDE。
+3. 以 owner-only 权限创建 `~/Library/Application Support/StudyPilot/idea-plugin.tsv`（含 `socketPath`、`ledgerPath`、`projectRoot=` 与三个句柄行），并通过环境变量提供 `STUDYPILOT_IDEA_PLUGIN_HMAC_SECRET`（≥32 字节，与 Java-facing 不同）。
+4. 在服务侧设置 `STUDYPILOT_AUTOMATION_IDEA_PLUGIN_SOCKET_PATH` 与 `..._HMAC_SECRET`，重启本地自动化服务。
+5. 复跑 `npx tsx scripts/real-acceptance.ts`：三项动作应各自报告其真实结果；只有三项均 `SUCCEEDED` 才具备正向验收证据。
+6. 全过程不输入文字、不提交表单、不运行命令、不读取隐私内容。
 
 ---
 
-## 7. 本轮改动文件
+## 8. 本轮改动文件
 
-修改：`native/idea_ax_bridge.mm`（v3.0.0，按真实树重标定 + 读取选项根因修复 + 修剪/有界快照）、`src/nativeAxBridge.ts`、`src/ideaAdapter.ts`（规范化真实路径 + 受信工作区根）、`src/types.ts`、`src/actionRegistry.ts`（返回命中的注册工作区根）、`src/service.ts`（传递受信工作区根）、`tests/sourceGuard.spec.ts`、`tests/falseSuccess.spec.ts`、`tests/nativeAxSemantics.spec.ts`（重写为真实树夹具）、本文件。
+新增：`idea-plugin/**`（`build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`、`gradlew` + wrapper、`build-local.sh`、`src/main/java/**` 协议/注册表/派发/平台层、`src/main/resources/META-INF/plugin.xml`、`src/test/java/**` 自检）、`src/ideaPluginProtocol.ts`、`src/ideaPluginClient.ts`、`tests/ideaPluginProtocol.spec.ts`、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
 
-未改动 `src/{protocol,verifier,nonceStore,canonical,server,config,main,browserAdapter}.ts` 的安全语义。
+修改：`src/ideaAdapter.ts`（插件适配器为生产路径；AX 改为仅诊断且拒绝一切 IDEA 结果）、`src/service.ts`（默认装配插件适配器；只转发 `targetKey`）、`src/types.ts`（插件配置字段；`openRegisteredFile(handle)`）、`src/config.ts`（插件 Socket/密钥/超时与两条链路分离校验）、`src/index.ts`、`package.json`（`build:plugin`/`test:plugin`/`build:plugin:gradle`）、`.gitignore`、`scripts/real-acceptance.ts`（逐动作独立诊断）、`tests/{ideaNativeAx,reviewFindings,falseSuccess}.spec.ts`（迁移到新架构）、本文件。
 
-未触碰 `backend/**`、`web/**`、`ai-service/**`、`runner-service/**`；未合并 `main`；未启动 Task 34。
+未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34。

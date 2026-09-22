@@ -6,8 +6,10 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { PlaywrightBrowserAutomationAdapter } from '../src/browserAdapter.js';
 import {
+  PluginBridgeIdeaAutomationAdapter,
   NativeBridgeIdeaAutomationAdapter,
-  createDefaultIdeaBridge,
+  createDefaultIdeaAdapter,
+  createDiagnosticAxBridge,
 } from '../src/ideaAdapter.js';
 import { loadNativeAxAddon, resolveNativeAddonPath } from '../src/nativeAxBridge.js';
 import { parseServiceConfigFromEnv } from '../src/config.js';
@@ -61,103 +63,116 @@ interface SectionResult {
 }
 
 /**
- * Section A — real in-process macOS Accessibility (AX) evidence.
+ * Section A — macOS Accessibility DIAGNOSTIC probe.
  *
- * This is the *only* IDEA control path in the service. There is no HTTP endpoint, no TCP
- * listener, no shell, and no script bridge anywhere: the compiled N-API binding talks to
- * the macOS Accessibility server directly.
+ * The AX binding is retained only as a read-only compatibility probe. Live acceptance proved
+ * that IntelliJ IDEA 2026.1.1 cannot open a file or expose focus verifiably through AX, so the
+ * probe is never a source of a successful IDEA receipt. Nothing here reports an action result.
  */
-async function probeNativeAccessibilityBridge(): Promise<SectionResult> {
-  console.log(`\n--- 1. [LIVE_PROBE] In-process macOS Accessibility bridge ---`);
+async function probeAxDiagnostics(): Promise<SectionResult> {
+  console.log(`\n--- 1. [LIVE_PROBE] macOS Accessibility diagnostic probe (not an execution path) ---`);
   console.log(`Addon path: ${resolveNativeAddonPath()}`);
 
   const nativeModule = loadNativeAxAddon();
   if (!nativeModule) {
     console.log('Native AX addon: NOT LOADED (run `npm run build:native` on macOS)');
-    console.log('  [Real Action 1] OPEN_REGISTERED_FILE:     BLOCKED (addon not built)');
-    console.log('  [Real Action 2] FOCUS_RUN_CONFIGURATION: BLOCKED (addon not built)');
-    console.log('  [Real Action 3] SHOW_TEST_RESULT:         BLOCKED (addon not built)');
-    return { status: 'BLOCKED', detail: 'native AX addon not built on this host' };
+    return { status: 'BLOCKED', detail: 'native AX diagnostic addon not built on this host' };
   }
-
   const probe = nativeModule.probe();
+  console.log(`Native AX addon: LOADED (version ${probe.bridgeVersion}, platform ${probe.platform})`);
+  console.log(`  axApiAvailable=${probe.axApiAvailable} axTrusted=${probe.axTrusted}`);
+  console.log(`  ideaRunning=${probe.ideaRunning} ideaWindowExposed=${probe.ideaWindowExposed}`);
+
+  const axAdapter = new NativeBridgeIdeaAutomationAdapter(createDiagnosticAxBridge());
+  const refusal = await axAdapter.openRegisteredFile('FILE_REGISTERED');
   console.log(
-    `Native AX addon: LOADED (version ${probe.bridgeVersion}, platform ${probe.platform})`
+    `  AX outcome for a registered action: ${refusal ? 'SUCCEEDED (contract violation!)' : 'REFUSED'}`
   );
-  console.log(
-    `  macOS Accessibility API available: ${probe.axApiAvailable}`
-  );
-  console.log(`  macOS Accessibility permission granted to this process: ${probe.axTrusted}`);
-  console.log(`  Trusted IntelliJ IDEA (com.jetbrains.intellij) running: ${probe.ideaRunning}`);
-  console.log(
-    `  IntelliJ IDEA exposes an accessible AXWindow (identity anchor): ${probe.ideaWindowExposed}`
-  );
+  console.log('  Rule enforced: the AX probe can never supply a successful IDEA receipt.');
+  return {
+    status: 'PASS',
+    detail: 'AX binding is loaded for diagnostics only and refuses every IDEA action',
+  };
+}
 
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'studypilot-ax-probe-'));
-  const registeredFile = path.join(workDir, 'RegisteredProbe.java');
-  fs.writeFileSync(registeredFile, 'public class RegisteredProbe {}', 'utf8');
+/**
+ * Section B — the real IDEA execution path (trusted JetBrains plugin bridge).
+ *
+ * Each of the three actions is executed and reported INDIVIDUALLY, capturing that action's own
+ * failure code and blocker reason immediately after its own call. No diagnostic is reused
+ * between actions.
+ */
+async function probeIdeaPluginPath(): Promise<SectionResult> {
+  console.log(`\n--- 2. [LIVE_PROBE] IDEA execution path (trusted JetBrains plugin bridge) ---`);
 
-  const adapter = new NativeBridgeIdeaAutomationAdapter(createDefaultIdeaBridge());
-  const outcomes: string[] = [];
+  const socketPath = process.env.STUDYPILOT_AUTOMATION_IDEA_PLUGIN_SOCKET_PATH ?? '';
+  const secret = process.env.STUDYPILOT_AUTOMATION_IDEA_PLUGIN_HMAC_SECRET ?? '';
+  const timeoutMs = Number(process.env.STUDYPILOT_AUTOMATION_IDEA_PLUGIN_TIMEOUT_MS ?? '3000');
 
-  try {
-    const results: { label: string; ok: boolean }[] = [
-      {
-        label: 'OPEN_REGISTERED_FILE',
-        ok: await adapter.openRegisteredFile(registeredFile),
-      },
-      {
-        label: 'FOCUS_RUN_CONFIGURATION',
-        ok: await adapter.focusRunConfiguration('StudyPilotApplication'),
-      },
-      { label: 'SHOW_TEST_RESULT', ok: await adapter.showTestResult('surefire-reports') },
-    ];
-
-    let index = 1;
-    for (const result of results) {
-      console.log(
-        `  [Real Action ${index}] ${result.label}: ${result.ok ? 'SUCCEEDED (AX state verified)' : 'BLOCKED (fail closed)'}`
-      );
-      console.log(`    Detail: ${adapter.getLastBlockerReason() || 'n/a'}`);
-      outcomes.push(`${result.label}=${result.ok ? 'SUCCEEDED' : 'BLOCKED'}`);
-      index++;
+  console.log(`Plugin socket configured: ${socketPath ? 'yes' : 'no'}`);
+  if (!socketPath || !secret) {
+    console.log(
+      '  BLOCKED: the trusted IDEA plugin bridge is not configured, so the IDEA channel fails closed.'
+    );
+    console.log(
+      '  Prerequisite: build and install the plugin, then set STUDYPILOT_AUTOMATION_IDEA_PLUGIN_SOCKET_PATH'
+    );
+    console.log('  and STUDYPILOT_AUTOMATION_IDEA_PLUGIN_HMAC_SECRET on the service host.');
+    for (const action of ['OPEN_REGISTERED_FILE', 'FOCUS_RUN_CONFIGURATION', 'SHOW_TEST_RESULT']) {
+      console.log(`  [Real Action] ${action}: BLOCKED (code=PLUGIN_NOT_CONFIGURED)`);
     }
-  } finally {
-    fs.rmSync(workDir, { recursive: true, force: true });
+    return { status: 'BLOCKED', detail: 'trusted IDEA plugin bridge is not configured on this host' };
   }
 
-  if (!probe.axTrusted) {
-    console.log('  Prerequisite: grant macOS Accessibility permission to the service host process');
-    return { status: 'BLOCKED', detail: 'macOS Accessibility permission not granted' };
+  const adapter = createDefaultIdeaAdapter({
+    ideaPluginSocketPath: socketPath,
+    ideaPluginSigningSecret: secret,
+    ideaPluginTimeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+  }) as PluginBridgeIdeaAutomationAdapter;
+
+  const actions: { label: string; handle: string; run: () => Promise<boolean> }[] = [
+    {
+      label: 'OPEN_REGISTERED_FILE',
+      handle: 'FILE_REGISTERED',
+      run: () => adapter.openRegisteredFile('FILE_REGISTERED'),
+    },
+    {
+      label: 'FOCUS_RUN_CONFIGURATION',
+      handle: 'RUN_REGISTERED',
+      run: () => adapter.focusRunConfiguration('RUN_REGISTERED'),
+    },
+    {
+      label: 'SHOW_TEST_RESULT',
+      handle: 'RESULT_REGISTERED',
+      run: () => adapter.showTestResult('RESULT_REGISTERED'),
+    },
+  ];
+
+  let succeeded = 0;
+  let blocked = 0;
+  for (const action of actions) {
+    // Sequential on purpose: each action's own diagnostic is captured before the next call.
+    const ok = await action.run();
+    const failureCode = adapter.getLastFailureCode();
+    const reason = adapter.getLastBlockerReason();
+    if (ok) {
+      succeeded++;
+      console.log(`  [Real Action] ${action.label}(${action.handle}): SUCCEEDED (plugin verified the IDE state)`);
+    } else {
+      blocked++;
+      console.log(
+        `  [Real Action] ${action.label}(${action.handle}): BLOCKED (code=${failureCode ?? 'n/a'})`
+      );
+      console.log(`    Detail: ${reason || 'n/a'}`);
+    }
   }
-  if (!probe.ideaRunning) {
-    console.log(
-      '  Prerequisite: IntelliJ IDEA must be running with the registered workspace open'
-    );
-    return {
-      status: 'BLOCKED',
-      detail: 'IntelliJ IDEA is not running; real IDE positive acceptance not executed',
-    };
-  }
-  if (!probe.ideaWindowExposed) {
-    console.log(
-      '  Prerequisite: the running IntelliJ IDEA must expose an accessible AXWindow. It currently'
-    );
-    console.log(
-      '  exposes none, so no identity anchor exists and every registered action fails closed.'
-    );
-    return {
-      status: 'BLOCKED',
-      detail:
-        'IntelliJ IDEA is running but exposes no accessible AXWindow; no identity anchor, actions fail closed',
-    };
-  }
-  if (outcomes.every((entry) => entry.endsWith('SUCCEEDED'))) {
-    return { status: 'PASS', detail: 'all three IDEA actions succeeded with verified AX state' };
+
+  if (succeeded === actions.length) {
+    return { status: 'PASS', detail: 'all three registered IDEA actions were executed and verified by the plugin' };
   }
   return {
     status: 'BLOCKED',
-    detail: 'IntelliJ IDEA exposes a window but the registered AX identity could not be proven',
+    detail: `${blocked}/${actions.length} IDEA actions failed closed with their own diagnostic`,
   };
 }
 
@@ -168,7 +183,7 @@ async function probeNativeAccessibilityBridge(): Promise<SectionResult> {
  * HMAC, timestamp window, nonce consumption, registry whitelist) over a real UDS socket.
  */
 async function probeProductionUdsService(): Promise<SectionResult> {
-  console.log(`\n--- 2. [LIVE_PROBE] Production Unix Domain Socket service ---`);
+  console.log(`\n--- 3. [LIVE_PROBE] Production Unix Domain Socket service ---`);
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'studypilot-uds-probe-'));
   const socketPath = path.join(tmpDir, 'automation.sock');
@@ -263,7 +278,7 @@ async function probeProductionUdsService(): Promise<SectionResult> {
  * Section C — live StudyPilot loopback availability (honest BLOCKED when offline).
  */
 async function probeStudyPilotService(): Promise<SectionResult> {
-  console.log(`\n--- 3. [LIVE_PROBE] StudyPilot loopback service (http://127.0.0.1:8080) ---`);
+  console.log(`\n--- 4. [LIVE_PROBE] StudyPilot loopback service (http://127.0.0.1:8080) ---`);
   let online = false;
   try {
     const res = await fetch('http://127.0.0.1:8080/', { signal: AbortSignal.timeout(1500) });
@@ -291,7 +306,7 @@ async function probeStudyPilotService(): Promise<SectionResult> {
  * an isolated harness. It is explicitly NOT Task 34 REAL_E2E evidence.
  */
 async function probeIntegrationFixture(): Promise<SectionResult> {
-  console.log(`\n--- 4. [INTEGRATION_FIXTURE] Browser adapter mechanics (isolated harness) ---`);
+  console.log(`\n--- 5. [INTEGRATION_FIXTURE] Browser adapter mechanics (isolated harness) ---`);
   console.log('(Does NOT claim Task 34 REAL_E2E; synthetic loopback pages only)\n');
 
   const fixtureServer = http.createServer((req, res) => {
@@ -355,7 +370,8 @@ async function main(): Promise<void> {
   console.log(BANNER);
 
   const sections: [string, SectionResult][] = [];
-  sections.push(['In-process macOS Accessibility bridge', await probeNativeAccessibilityBridge()]);
+  sections.push(['macOS AX diagnostic probe', await probeAxDiagnostics()]);
+  sections.push(['IDEA plugin execution path', await probeIdeaPluginPath()]);
   sections.push(['Production UDS service', await probeProductionUdsService()]);
   sections.push(['Live StudyPilot loopback service', await probeStudyPilotService()]);
   sections.push(['Browser adapter integration fixture', await probeIntegrationFixture()]);

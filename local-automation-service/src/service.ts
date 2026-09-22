@@ -7,7 +7,7 @@ import {
 import { verifyRequestAuthAndTiming } from './verifier.js';
 import { calculateTargetDigest } from './canonical.js';
 import { PlaywrightBrowserAutomationAdapter } from './browserAdapter.js';
-import { NativeBridgeIdeaAutomationAdapter, createDefaultIdeaBridge } from './ideaAdapter.js';
+import { createDefaultIdeaAdapter } from './ideaAdapter.js';
 import type {
   ServiceConfig,
   BrowserAutomationAdapter,
@@ -45,8 +45,10 @@ export class LocalAutomationService {
         trustedLoopbackOrigin: config.loopbackBaseUrl,
       });
 
-    this.ideaAdapter =
-      ideaAdapter || new NativeBridgeIdeaAutomationAdapter(createDefaultIdeaBridge());
+    // Production IDEA execution goes through the trusted JetBrains plugin bridge. The macOS
+    // AX binding is retained only as a fail-closed diagnostic probe and can never produce a
+    // successful IDEA receipt.
+    this.ideaAdapter = ideaAdapter || createDefaultIdeaAdapter(config);
   }
 
   /**
@@ -144,10 +146,8 @@ export class LocalAutomationService {
         }
       } else if (resolution.channel === 'IDEA_ACCESSIBILITY') {
         if (resolution.idea.action === 'OPEN_REGISTERED_FILE') {
-          executionSuccess = await this.ideaAdapter.openRegisteredFile(
-            resolution.idea.resolvedPath!,
-            resolution.idea.resolvedWorkspaceRoot
-          );
+          // Only the opaque registered handle is forwarded; the resolved path stays local.
+          executionSuccess = await this.ideaAdapter.openRegisteredFile(resolution.idea.targetKey);
         } else if (resolution.idea.action === 'FOCUS_RUN_CONFIGURATION') {
           executionSuccess = await this.ideaAdapter.focusRunConfiguration(
             resolution.idea.handle!

@@ -4,8 +4,9 @@ import os from 'node:os';
 import { describe, it, expect, vi } from 'vitest';
 import {
   NativeBridgeIdeaAutomationAdapter,
+  PluginBridgeIdeaAutomationAdapter,
   MacAxIdeaBridge,
-  createDefaultIdeaBridge,
+  createDiagnosticAxBridge,
 } from '../src/ideaAdapter.js';
 import { loadNativeAxAddon, validateNativeAxModuleSurface } from '../src/nativeAxBridge.js';
 import { LocalAutomationService } from '../src/service.js';
@@ -116,141 +117,123 @@ describe('P0 remediation: no invented HTTP control path for IntelliJ IDEA', () =
   });
 });
 
-describe('Exact AX state verification before reporting success', () => {
-  const notVerified: NativeAxResult = {
-    ok: true,
-    verified: false,
-    code: 'STATE_NOT_VERIFIED',
-    detail: 'action dispatched but required accessibility state was not observed',
+describe('The macOS AX probe can never supply a successful IDEA receipt', () => {
+  const bridgeClaimingSuccess = {
+    probe: () => ({
+      platform: 'darwin',
+      bridgeVersion: 'test',
+      axApiAvailable: true,
+      axTrusted: true,
+      ideaRunning: true,
+      ideaWindowExposed: true,
+    }),
+    openFile: vi.fn().mockResolvedValue({ ok: true, verified: true, code: 'OK', detail: '' }),
+    focusConfiguration: vi.fn().mockResolvedValue({ ok: true, verified: true, code: 'OK', detail: '' }),
+    showResult: vi.fn().mockResolvedValue({ ok: true, verified: true, code: 'OK', detail: '' }),
   };
-  const dispatchFailed: NativeAxResult = {
-    ok: false,
-    verified: false,
-    code: 'IDEA_NOT_RUNNING',
-    detail: 'trusted IntelliJ IDEA application is not running',
-  };
-  const verified: NativeAxResult = { ok: true, verified: true, code: 'OK', detail: '' };
 
-  it('never reports success for a dispatched action whose AX state was not verified', async () => {
-    const adapter = new NativeBridgeIdeaAutomationAdapter(
-      makeFakeBridge({ openFile: notVerified, focusConfiguration: notVerified, showResult: notVerified })
-    );
+  it('fails closed for all three actions even when the AX bridge claims verified success', async () => {
+    const adapter = new NativeBridgeIdeaAutomationAdapter(bridgeClaimingSuccess);
 
-    expect(await adapter.openRegisteredFile('/tmp/Registered.java')).toBe(false);
+    expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(false);
+    expect(await adapter.focusRunConfiguration('RUN_REGISTERED')).toBe(false);
+    expect(await adapter.showTestResult('RESULT_REGISTERED')).toBe(false);
+
     expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
-    expect(adapter.getLastFailureCode()).toBe('UNVERIFIED_TARGET_STATE');
-
-    expect(await adapter.focusRunConfiguration('StudyPilotApplication')).toBe(false);
-    expect(adapter.getLastFailureCode()).toBe('UNVERIFIED_TARGET_STATE');
-
-    expect(await adapter.showTestResult('surefire-reports')).toBe(false);
-    expect(adapter.getLastFailureCode()).toBe('UNVERIFIED_TARGET_STATE');
-  });
-
-  it('never reports success when the bridge claimed verification but the action did not run', async () => {
-    const adapter = new NativeBridgeIdeaAutomationAdapter(
-      makeFakeBridge({
-        openFile: { ok: false, verified: true, code: 'PRESS_FAILED', detail: 'accessibility press failed' },
-        focusConfiguration: dispatchFailed,
-        showResult: dispatchFailed,
-      })
-    );
-
-    expect(await adapter.openRegisteredFile('/tmp/Registered.java')).toBe(false);
+    expect(adapter.getLastBlockerReason()).toContain('AX_DIAGNOSTIC_ONLY');
     expect(adapter.getLastFailureCode()).toBe('ADAPTER_FAILURE');
   });
 
-  it('reports success only when both the action ran and the AX state was verified', async () => {
-    const adapter = new NativeBridgeIdeaAutomationAdapter(
-      makeFakeBridge({ openFile: verified, focusConfiguration: verified, showResult: verified })
+  it('never calls into the AX bridge for an outcome', async () => {
+    const adapter = new NativeBridgeIdeaAutomationAdapter(bridgeClaimingSuccess);
+    await adapter.openRegisteredFile('FILE_REGISTERED');
+    expect(bridgeClaimingSuccess.openFile).not.toHaveBeenCalled();
+  });
+});
+
+describe('Plugin bridge success rule (the only IDEA success path)', () => {
+  function pluginStub(results: { ok: boolean; verified: boolean; code: string; detail: string }) {
+    return {
+      openRegisteredFile: vi.fn().mockResolvedValue(results),
+      focusRunConfiguration: vi.fn().mockResolvedValue(results),
+      showTestResult: vi.fn().mockResolvedValue(results),
+    };
+  }
+
+  it('never reports success for a dispatched action whose IDE state was not verified', async () => {
+    const adapter = new PluginBridgeIdeaAutomationAdapter(
+      pluginStub({ ok: true, verified: false, code: 'UNVERIFIED_TARGET_STATE', detail: 'post state not proven' })
     );
 
-    expect(await adapter.openRegisteredFile('/tmp/Registered.java')).toBe(true);
+    expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(false);
+    expect(adapter.getLastFailureCode()).toBe('UNVERIFIED_TARGET_STATE');
+    expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
+
+    expect(await adapter.focusRunConfiguration('RUN_REGISTERED')).toBe(false);
+    expect(await adapter.showTestResult('RESULT_REGISTERED')).toBe(false);
+  });
+
+  it('never reports success when the plugin claimed verification but nothing ran', async () => {
+    const adapter = new PluginBridgeIdeaAutomationAdapter(
+      pluginStub({ ok: false, verified: true, code: 'PRESS_FAILED', detail: 'nothing dispatched' })
+    );
+    expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(false);
+    expect(adapter.getLastFailureCode()).toBe('ADAPTER_FAILURE');
+  });
+
+  it('reports success only when the plugin both ran the action and verified it', async () => {
+    const adapter = new PluginBridgeIdeaAutomationAdapter(
+      pluginStub({ ok: true, verified: true, code: 'OK', detail: '' })
+    );
+    expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(true);
     expect(adapter.getLastFailureCode()).toBeNull();
-    expect(await adapter.focusRunConfiguration('StudyPilotApplication')).toBe(true);
-    expect(await adapter.showTestResult('surefire-reports')).toBe(true);
+    expect(await adapter.focusRunConfiguration('RUN_REGISTERED')).toBe(true);
+    expect(await adapter.showTestResult('RESULT_REGISTERED')).toBe(true);
   });
 
-  it('passes the trusted registered handle/value through to the bridge, never the raw request targetKey', async () => {
-    const bridge = makeFakeBridge({ openFile: verified, focusConfiguration: verified, showResult: verified });
-    const adapter = new NativeBridgeIdeaAutomationAdapter(bridge);
+  it('forwards only the opaque registered handle to the plugin', async () => {
+    const plugin = pluginStub({ ok: true, verified: true, code: 'OK', detail: '' });
+    const adapter = new PluginBridgeIdeaAutomationAdapter(plugin);
 
-    await adapter.focusRunConfiguration('StudyPilotApplication');
-    expect(bridge.focusConfiguration).toHaveBeenCalledWith('StudyPilotApplication');
-
-    await adapter.showTestResult('surefire-reports');
-    expect(bridge.showResult).toHaveBeenCalledWith('surefire-reports');
+    await adapter.openRegisteredFile('FILE_REGISTERED');
+    expect(plugin.openRegisteredFile).toHaveBeenCalledWith('FILE_REGISTERED');
+    await adapter.focusRunConfiguration('RUN_REGISTERED');
+    expect(plugin.focusRunConfiguration).toHaveBeenCalledWith('RUN_REGISTERED');
+    await adapter.showTestResult('RESULT_REGISTERED');
+    expect(plugin.showTestResult).toHaveBeenCalledWith('RESULT_REGISTERED');
   });
 
-  it('fails closed when the bridge throws instead of surfacing a fake success', async () => {
-    const bridge: IdeaAccessibilityBridge = {
-      probe: () => ({
-        platform: 'darwin',
-        bridgeVersion: 'test',
-        axApiAvailable: true,
-        axTrusted: true,
-        ideaRunning: true,
-        ideaWindowExposed: true,
-      }),
-      openFile: vi.fn().mockRejectedValue(new Error('native failure')),
-      focusConfiguration: vi.fn().mockRejectedValue(new Error('native failure')),
-      showResult: vi.fn().mockRejectedValue(new Error('native failure')),
-    };
-    const adapter = new NativeBridgeIdeaAutomationAdapter(bridge);
+  it('refuses a handle that is not an opaque symbolic key', async () => {
+    const plugin = pluginStub({ ok: true, verified: true, code: 'OK', detail: '' });
+    const adapter = new PluginBridgeIdeaAutomationAdapter(plugin);
 
-    expect(await adapter.openRegisteredFile('/tmp/Registered.java')).toBe(false);
-    expect(await adapter.focusRunConfiguration('StudyPilotApplication')).toBe(false);
-    expect(await adapter.showTestResult('surefire-reports')).toBe(false);
+    expect(await adapter.openRegisteredFile('/etc/passwd')).toBe(false);
+    expect(await adapter.openRegisteredFile('study pilot')).toBe(false);
+    expect(plugin.openRegisteredFile).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the plugin bridge throws instead of surfacing a fake success', async () => {
+    const adapter = new PluginBridgeIdeaAutomationAdapter({
+      openRegisteredFile: vi.fn().mockRejectedValue(new Error('plugin failure')),
+      focusRunConfiguration: vi.fn().mockRejectedValue(new Error('plugin failure')),
+      showTestResult: vi.fn().mockRejectedValue(new Error('plugin failure')),
+    });
+
+    expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(false);
+    expect(await adapter.focusRunConfiguration('RUN_REGISTERED')).toBe(false);
+    expect(await adapter.showTestResult('RESULT_REGISTERED')).toBe(false);
     expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
   });
 
-  it('hands the canonical real path to the native layer, never a symlink or display name', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task33-canonical-'));
-    const realFile = path.join(tmpDir, 'Registered.java');
-    fs.writeFileSync(realFile, 'public class Registered {}', 'utf8');
-    const symlink = path.join(tmpDir, 'Link.java');
-    fs.symlinkSync(realFile, symlink);
-
-    const nativeModule = {
-      probe: vi.fn().mockReturnValue({
-        platform: 'darwin',
-        bridgeVersion: 'test',
-        axApiAvailable: true,
-        axTrusted: true,
-        ideaRunning: true,
-        ideaWindowExposed: true,
-      }),
-      openRegisteredFile: vi.fn().mockReturnValue({
-        ok: false,
-        verified: false,
-        code: 'IDEA_NOT_RUNNING',
-        detail: 'stub',
-      }),
-      focusRunConfiguration: vi.fn(),
-      showTestResult: vi.fn(),
-    };
-
-    try {
-      const bridge = new MacAxIdeaBridge(nativeModule);
-      await bridge.openFile(symlink);
-      // fs.realpathSync on macOS resolves /var -> /private/var, so compare canonically.
-      expect(nativeModule.openRegisteredFile).toHaveBeenCalledWith(fs.realpathSync(realFile));
-      expect(nativeModule.openRegisteredFile).not.toHaveBeenCalledWith(symlink);
-    } finally {
-      fs.rmSync(tmpDir, { recursive: true, force: true });
-    }
-  });
-
-  it('fails closed deterministically when no native bridge is available', async () => {
-    const adapter = new NativeBridgeIdeaAutomationAdapter(null);
+  it('fails closed deterministically when no plugin bridge is configured', async () => {
+    const adapter = new PluginBridgeIdeaAutomationAdapter(null);
 
     expect(adapter.isBridgeAvailable()).toBe(false);
-    expect(adapter.isIdeaRunning()).toBe(false);
-    expect(await adapter.openRegisteredFile('/tmp/Registered.java')).toBe(false);
-    expect(await adapter.focusRunConfiguration('StudyPilotApplication')).toBe(false);
-    expect(await adapter.showTestResult('surefire-reports')).toBe(false);
-    expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
+    expect(await adapter.openRegisteredFile('FILE_REGISTERED')).toBe(false);
+    expect(await adapter.focusRunConfiguration('RUN_REGISTERED')).toBe(false);
+    expect(await adapter.showTestResult('RESULT_REGISTERED')).toBe(false);
     expect(adapter.getLastFailureCode()).toBe('ADAPTER_FAILURE');
+    expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
   });
 });
 
@@ -283,31 +266,33 @@ describe('Native addon export surface is narrowly typed', () => {
 });
 
 describe('Default production wiring for the IDEA channel', () => {
-  it('wires the real macOS AX bridge, or fails closed when the addon is not built', () => {
-    const bridge = createDefaultIdeaBridge();
-    const nativeModule = loadNativeAxAddon();
-
-    if (nativeModule) {
-      expect(bridge).not.toBeNull();
+  it('creates the diagnostic AX bridge only for probe purposes', () => {
+    const bridge = createDiagnosticAxBridge();
+    if (bridge) {
       expect(bridge).toBeInstanceOf(MacAxIdeaBridge);
-      expect(bridge!.probe().platform).toBe('darwin');
+      expect(bridge.probe().platform).toBe('darwin');
     } else {
       expect(bridge).toBeNull();
     }
   });
 
-  it('LocalAutomationService default adapter is the real AX adapter, never the removed HTTP bridge', () => {
+  it('wires the IDEA channel to the plugin bridge, never to the AX probe', () => {
     const service = new LocalAutomationService(baseConfig);
-    const ideaAdapter = (service as unknown as { ideaAdapter: NativeBridgeIdeaAutomationAdapter })
-      .ideaAdapter;
+    const ideaAdapter = (service as unknown as { ideaAdapter: unknown }).ideaAdapter;
 
-    expect(ideaAdapter).toBeInstanceOf(NativeBridgeIdeaAutomationAdapter);
-    if (createDefaultIdeaBridge()) {
-      expect(ideaAdapter.isBridgeAvailable()).toBe(true);
-    } else {
-      expect(ideaAdapter.isBridgeAvailable()).toBe(false);
-      expect(ideaAdapter.getLastBlockerReason()).toContain('BLOCKED');
-    }
+    expect(ideaAdapter).toBeInstanceOf(PluginBridgeIdeaAutomationAdapter);
+    // No trusted plugin socket is configured in this test, so the channel fails closed.
+    expect(
+      (ideaAdapter as PluginBridgeIdeaAutomationAdapter).isBridgeAvailable()
+    ).toBe(false);
+    expect((ideaAdapter as PluginBridgeIdeaAutomationAdapter).getLastBlockerReason()).toContain('BLOCKED');
+    service.close();
+  });
+
+  it('is not the AX adapter even when the macOS addon is available', () => {
+    const service = new LocalAutomationService(baseConfig);
+    const ideaAdapter = (service as unknown as { ideaAdapter: unknown }).ideaAdapter;
+    expect(ideaAdapter).not.toBeInstanceOf(NativeBridgeIdeaAutomationAdapter);
     service.close();
   });
 });

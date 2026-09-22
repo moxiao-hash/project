@@ -14,7 +14,10 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "build:native": "bash native/build.sh",
-    "acceptance:real": "tsx scripts/real-acceptance.ts"
+    "acceptance:real": "tsx scripts/real-acceptance.ts",
+    "build:plugin": "bash idea-plugin/build-local.sh",
+    "build:plugin:gradle": "cd idea-plugin && ./gradlew buildPlugin",
+    "test:plugin": "bash idea-plugin/build-local.sh"
   },
   "keywords": [],
   "author": "",

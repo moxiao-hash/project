@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ActionRegistry } from '../src/actionRegistry.js';
 import { LocalAutomationService } from '../src/service.js';
 import { PlaywrightBrowserAutomationAdapter } from '../src/browserAdapter.js';
-import { NativeBridgeIdeaAutomationAdapter, createDefaultIdeaBridge } from '../src/ideaAdapter.js';
+import { NativeBridgeIdeaAutomationAdapter, PluginBridgeIdeaAutomationAdapter } from '../src/ideaAdapter.js';
 import type { ServiceConfig, IdeaAutomationAdapter } from '../src/types.js';
 
 describe('Review Findings: Default Wiring, Independent Actions & Registry Mapping', () => {
@@ -87,21 +87,18 @@ describe('Review Findings: Default Wiring, Independent Actions & Registry Mappin
       service.close();
     });
 
-    it('wires the real in-process macOS Accessibility bridge into the IDEA adapter by default', () => {
+    it('wires the trusted plugin bridge into the IDEA adapter by default and never the AX probe', () => {
       const service = new LocalAutomationService(baseConfig);
-      const ideaAdapter = (service as any).ideaAdapter as NativeBridgeIdeaAutomationAdapter;
+      const ideaAdapter = (service as any).ideaAdapter as PluginBridgeIdeaAutomationAdapter;
 
-      expect(ideaAdapter).toBeInstanceOf(NativeBridgeIdeaAutomationAdapter);
+      expect(ideaAdapter).toBeInstanceOf(PluginBridgeIdeaAutomationAdapter);
+      expect(ideaAdapter).not.toBeInstanceOf(NativeBridgeIdeaAutomationAdapter);
 
-      // Either the compiled native AX binding is present (real bridge wired) or the IDEA
-      // channel fails closed honestly. Invented HTTP control paths are never wired.
-      if (createDefaultIdeaBridge()) {
-        expect(ideaAdapter.isBridgeAvailable()).toBe(true);
-      } else {
-        expect(ideaAdapter.isBridgeAvailable()).toBe(false);
-        expect(ideaAdapter.getLastBlockerReason()).toContain('BLOCKED');
-        expect(ideaAdapter.getLastFailureCode()).toBe('ADAPTER_FAILURE');
-      }
+      // No trusted plugin socket is configured here, so the IDEA channel fails closed
+      // instead of silently degrading to the macOS Accessibility probe.
+      expect(ideaAdapter.isBridgeAvailable()).toBe(false);
+      expect(ideaAdapter.getLastBlockerReason()).toContain('BLOCKED');
+      expect(ideaAdapter.getLastFailureCode()).toBe('ADAPTER_FAILURE');
       service.close();
     });
   });

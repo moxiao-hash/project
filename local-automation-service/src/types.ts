@@ -92,6 +92,14 @@ export interface ServiceConfig {
   registeredFiles: Record<string, string>;
   registeredRunConfigs: Record<string, string>;
   registeredTestResults: Record<string, string>;
+  /**
+   * Trusted JetBrains plugin bridge (the production IDEA execution path). Separate Unix
+   * Domain Socket, separate >=32-byte HMAC key and separate nonce store from the
+   * Java-facing socket. When absent the IDEA channel fails closed.
+   */
+  ideaPluginSocketPath?: string;
+  ideaPluginSigningSecret?: string;
+  ideaPluginTimeoutMs?: number;
 }
 
 /**
@@ -109,7 +117,11 @@ export interface BrowserAutomationAdapter {
  * Must not expose arbitrary file opening, shell, or test running.
  */
 export interface IdeaAutomationAdapter {
-  openRegisteredFile(realFilePath: string, workspaceRoot?: string): Promise<boolean>;
+  /**
+   * The IDEA channel only ever receives the opaque registered handle. Paths, configuration
+   * names, free text and selectors are never forwarded to the execution backend.
+   */
+  openRegisteredFile(handle: string): Promise<boolean>;
   focusRunConfiguration(handle: string): Promise<boolean>;
   showTestResult(handle: string): Promise<boolean>;
 }

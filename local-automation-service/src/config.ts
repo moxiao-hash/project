@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { PLUGIN_MIN_SECRET_BYTES } from './ideaPluginProtocol.js';
 import type { ServiceConfig } from './types.js';
 
 /**
@@ -20,6 +21,9 @@ export const ENV_KEYS = {
   registeredFiles: 'STUDYPILOT_AUTOMATION_REGISTERED_FILES',
   registeredRunConfigs: 'STUDYPILOT_AUTOMATION_REGISTERED_RUN_CONFIGS',
   registeredTestResults: 'STUDYPILOT_AUTOMATION_REGISTERED_TEST_RESULTS',
+  ideaPluginSocketPath: 'STUDYPILOT_AUTOMATION_IDEA_PLUGIN_SOCKET_PATH',
+  ideaPluginSigningSecret: 'STUDYPILOT_AUTOMATION_IDEA_PLUGIN_HMAC_SECRET',
+  ideaPluginTimeoutMs: 'STUDYPILOT_AUTOMATION_IDEA_PLUGIN_TIMEOUT_MS',
 } as const;
 
 /** Registry handles must be opaque symbolic keys, never paths, URLs, or free text. */
@@ -110,6 +114,66 @@ function assertLoopbackBaseUrl(raw: string): string {
   return parsed.origin;
 }
 
+const MIN_PLUGIN_TIMEOUT_MS = 250;
+const MAX_PLUGIN_TIMEOUT_MS = 30_000;
+
+/**
+ * Resolves the trusted JetBrains plugin bridge settings.
+ *
+ * The plugin link must be genuinely separate from the Java-facing socket: its own socket
+ * path, its own >=32-byte key and its own risk surface. Any attempt to reuse the
+ * Java-facing socket path or signing key is rejected outright.
+ */
+function resolveIdeaPluginConfig(
+  env: NodeJS.ProcessEnv,
+  javaFacingSocketPath: string,
+  javaFacingSecret: string
+): Pick<ServiceConfig, 'ideaPluginSocketPath' | 'ideaPluginSigningSecret' | 'ideaPluginTimeoutMs'> {
+  const rawSocket = env[ENV_KEYS.ideaPluginSocketPath];
+  const rawSecret = env[ENV_KEYS.ideaPluginSigningSecret];
+
+  if ((rawSocket === undefined || rawSocket.trim() === '') && (rawSecret === undefined || rawSecret.trim() === '')) {
+    return {};
+  }
+  if (rawSocket === undefined || rawSocket.trim() === '') {
+    throw new Error(`${ENV_KEYS.ideaPluginSocketPath} is required when a plugin key is configured`);
+  }
+  if (rawSecret === undefined || rawSecret.trim() === '') {
+    throw new Error(`${ENV_KEYS.ideaPluginSigningSecret} is required when a plugin socket is configured`);
+  }
+
+  const socketPath = requireAbsolutePath(rawSocket, ENV_KEYS.ideaPluginSocketPath);
+  if (socketPath === javaFacingSocketPath) {
+    throw new Error(`${ENV_KEYS.ideaPluginSocketPath} must differ from the Java-facing socket path`);
+  }
+  if (Buffer.byteLength(rawSecret, 'utf8') < PLUGIN_MIN_SECRET_BYTES) {
+    throw new Error(
+      `${ENV_KEYS.ideaPluginSigningSecret} must contain at least ${PLUGIN_MIN_SECRET_BYTES} bytes`
+    );
+  }
+  if (rawSecret === javaFacingSecret) {
+    throw new Error(`${ENV_KEYS.ideaPluginSigningSecret} must differ from the Java-facing signing key`);
+  }
+
+  let timeoutMs = 3000;
+  const rawTimeout = env[ENV_KEYS.ideaPluginTimeoutMs];
+  if (rawTimeout !== undefined && rawTimeout.trim() !== '') {
+    const parsed = Number(rawTimeout);
+    if (
+      !Number.isInteger(parsed) ||
+      parsed < MIN_PLUGIN_TIMEOUT_MS ||
+      parsed > MAX_PLUGIN_TIMEOUT_MS
+    ) {
+      throw new Error(
+        `${ENV_KEYS.ideaPluginTimeoutMs} must be an integer between ${MIN_PLUGIN_TIMEOUT_MS} and ${MAX_PLUGIN_TIMEOUT_MS}`
+      );
+    }
+    timeoutMs = parsed;
+  }
+
+  return { ideaPluginSocketPath: socketPath, ideaPluginSigningSecret: rawSecret, ideaPluginTimeoutMs: timeoutMs };
+}
+
 /**
  * Builds the frozen ServiceConfig from the local host environment.
  *
@@ -140,6 +204,7 @@ export function parseServiceConfigFromEnv(env: NodeJS.ProcessEnv = process.env):
     socketPath,
     nonceDbPath,
     loopbackBaseUrl,
+    ...resolveIdeaPluginConfig(env, socketPath, signingSecret),
     workspaceRoots: parseWorkspaceRoots(env),
     registeredFiles: parseRegistry(env, ENV_KEYS.registeredFiles, (value, handle) =>
       requireAbsolutePath(value, `${ENV_KEYS.registeredFiles}[${handle}]`)

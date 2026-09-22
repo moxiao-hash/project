@@ -1,0 +1,21 @@
+<idea-plugin>
+  <id>com.studypilot.automation.idea</id>
+  <name>StudyPilot Local Automation Bridge</name>
+  <vendor>StudyPilot</vendor>
+  <idea-version since-build="261" until-build="263.*" />
+  <description><![CDATA[
+    Narrow, owner-only local bridge for the three registered StudyPilot IDE recovery actions:
+    open a registered file, focus a registered run configuration, and reveal an existing test
+    result view. It exposes a private owner-only Unix Domain Socket for the local automation
+    service only. It never opens a TCP or HTTP listener, never runs or debugs tests, never
+    executes a generic IntelliJ Action, and never accepts a path, configuration name, free
+    text or selector from a caller.
+  ]]></description>
+  <depends>com.intellij.modules.platform</depends>
+  <extensions defaultExtensionNs="com.intellij">
+    <applicationService
+        serviceImplementation="com.studypilot.automation.idea.platform.StudyPilotAutomationService" />
+    <postStartupActivity
+        implementation="com.studypilot.automation.idea.platform.PluginStartupActivity" />
+  </extensions>
+</idea-plugin>

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import type { IdeaAutomationAdapter } from './types.js';
+import { IdeaPluginClient } from './ideaPluginClient.js';
 import {
   loadNativeAxAddon,
   type NativeAxModule,
@@ -142,18 +143,25 @@ export class MacAxIdeaBridge implements IdeaAccessibilityBridge {
 }
 
 /**
- * Creates the default production bridge.
+ * Creates the macOS Accessibility bridge for DIAGNOSTICS ONLY.
  *
- * Returns null when the in-process native AX binding is unavailable (non-macOS host,
- * addon not built, load failure, or an inadmissible export surface). In that case the
- * IDEA channel must fail closed with an honest BLOCKED reason.
+ * Returns null when the in-process native AX binding is unavailable (non-macOS host, addon
+ * not built, load failure, or an inadmissible export surface). The result is used by probe()
+ * and by the acceptance script; it can never supply a successful IDEA receipt.
  */
-export function createDefaultIdeaBridge(): IdeaAccessibilityBridge | null {
+export function createDiagnosticAxBridge(): IdeaAccessibilityBridge | null {
   const nativeModule = loadNativeAxAddon();
   if (!nativeModule) {
     return null;
   }
   return new MacAxIdeaBridge(nativeModule);
+}
+
+/** Narrow capability surface of the trusted JetBrains plugin bridge. */
+export interface IdeaPluginBridge {
+  openRegisteredFile(handle: string): Promise<NativeAxResult>;
+  focusRunConfiguration(handle: string): Promise<NativeAxResult>;
+  showTestResult(handle: string): Promise<NativeAxResult>;
 }
 
 /**
@@ -167,7 +175,7 @@ export class NativeBridgeIdeaAutomationAdapter implements IdeaAutomationAdapter 
   private lastBlockerReason: string;
   private lastFailureCode: IdeaFailureCode | null = null;
 
-  constructor(bridge: IdeaAccessibilityBridge | null = createDefaultIdeaBridge()) {
+  constructor(bridge: IdeaAccessibilityBridge | null = createDiagnosticAxBridge()) {
     this.bridge = bridge;
     this.lastBlockerReason = bridge ? '' : UNAVAILABLE_BLOCKER;
     this.lastFailureCode = bridge ? null : 'ADAPTER_FAILURE';
@@ -197,22 +205,33 @@ export class NativeBridgeIdeaAutomationAdapter implements IdeaAutomationAdapter 
     }
   }
 
-  public async openRegisteredFile(realFilePath: string, workspaceRoot?: string): Promise<boolean> {
-    return this.run('OPEN_REGISTERED_FILE', () =>
-      this.bridge ? this.bridge.openFile(realFilePath, workspaceRoot) : Promise.resolve(null)
-    );
+  /**
+   * The macOS AX binding is DIAGNOSTIC ONLY.
+   *
+   * Live acceptance proved that IntelliJ IDEA 2026.1.1 cannot open a file or expose focus
+   * through the AX surface in a verifiable way, so AX must never supply a successful IDEA
+   * receipt. All three operations therefore fail closed here, and production execution goes
+   * through the trusted JetBrains plugin bridge.
+   */
+  public async openRegisteredFile(_handle: string): Promise<boolean> {
+    return this.refuseDiagnosticsOnly('OPEN_REGISTERED_FILE');
   }
 
-  public async focusRunConfiguration(handle: string): Promise<boolean> {
-    return this.run('FOCUS_RUN_CONFIGURATION', () =>
-      this.bridge ? this.bridge.focusConfiguration(handle) : Promise.resolve(null)
-    );
+  public async focusRunConfiguration(_handle: string): Promise<boolean> {
+    return this.refuseDiagnosticsOnly('FOCUS_RUN_CONFIGURATION');
   }
 
-  public async showTestResult(handle: string): Promise<boolean> {
-    return this.run('SHOW_TEST_RESULT', () =>
-      this.bridge ? this.bridge.showResult(handle) : Promise.resolve(null)
+  public async showTestResult(_handle: string): Promise<boolean> {
+    return this.refuseDiagnosticsOnly('SHOW_TEST_RESULT');
+  }
+
+  private refuseDiagnosticsOnly(operation: string): false {
+    this.lastFailureCode = 'ADAPTER_FAILURE';
+    this.lastBlockerReason = unavailableReason(
+      'AX_DIAGNOSTIC_ONLY',
+      `the macOS Accessibility probe is diagnostic only and cannot execute ${operation}`
     );
+    return false;
   }
 
   /**
@@ -271,3 +290,126 @@ export class NativeBridgeIdeaAutomationAdapter implements IdeaAutomationAdapter 
 /** Backward-compatible aliases used across tests and the acceptance script. */
 export const MacAccessibilityIdeaAutomationAdapter = NativeBridgeIdeaAutomationAdapter;
 export const DefaultIdeaAutomationAdapter = NativeBridgeIdeaAutomationAdapter;
+
+/**
+ * Production IDEA automation adapter.
+ *
+ * Every operation is executed by the trusted JetBrains plugin over its own private Unix
+ * Domain Socket. Success requires the plugin to report that it both dispatched the registered
+ * action and observed the required IDE state (`ok && verified`). There is no fallback: when
+ * the plugin bridge is absent or unreachable the IDEA channel fails closed, and the macOS AX
+ * probe is never consulted for an outcome.
+ */
+export class PluginBridgeIdeaAutomationAdapter implements IdeaAutomationAdapter {
+  private plugin: IdeaPluginBridge | null;
+  private lastBlockerReason: string;
+  private lastFailureCode: IdeaFailureCode | null = null;
+
+  constructor(plugin: IdeaPluginBridge | null) {
+    this.plugin = plugin;
+    this.lastBlockerReason = plugin
+      ? ''
+      : 'BLOCKED: no trusted IDEA plugin bridge is configured for this host';
+    this.lastFailureCode = plugin ? null : 'ADAPTER_FAILURE';
+  }
+
+  public getLastBlockerReason(): string {
+    return this.lastBlockerReason;
+  }
+
+  public getLastFailureCode(): IdeaFailureCode | null {
+    return this.lastFailureCode;
+  }
+
+  public isBridgeAvailable(): boolean {
+    return this.plugin !== null;
+  }
+
+  public async openRegisteredFile(handle: string): Promise<boolean> {
+    return this.run('OPEN_REGISTERED_FILE', handle, () =>
+      this.plugin ? this.plugin.openRegisteredFile(handle) : Promise.resolve(null)
+    );
+  }
+
+  public async focusRunConfiguration(handle: string): Promise<boolean> {
+    return this.run('FOCUS_RUN_CONFIGURATION', handle, () =>
+      this.plugin ? this.plugin.focusRunConfiguration(handle) : Promise.resolve(null)
+    );
+  }
+
+  public async showTestResult(handle: string): Promise<boolean> {
+    return this.run('SHOW_TEST_RESULT', handle, () =>
+      this.plugin ? this.plugin.showTestResult(handle) : Promise.resolve(null)
+    );
+  }
+
+  private async run(
+    operation: string,
+    handle: string,
+    invoke: () => Promise<NativeAxResult | null>
+  ): Promise<boolean> {
+    if (!this.plugin) {
+      this.lastFailureCode = 'ADAPTER_FAILURE';
+      this.lastBlockerReason = 'BLOCKED: no trusted IDEA plugin bridge is configured for this host';
+      return false;
+    }
+    if (typeof handle !== 'string' || !/^[A-Z0-9_]{1,64}$/.test(handle)) {
+      this.lastFailureCode = 'ADAPTER_FAILURE';
+      this.lastBlockerReason = unavailableReason(
+        'INVALID_TARGET_HANDLE',
+        `no opaque registered handle was available for ${operation}`
+      );
+      return false;
+    }
+
+    let result: NativeAxResult | null;
+    try {
+      result = await invoke();
+    } catch {
+      this.lastFailureCode = 'ADAPTER_FAILURE';
+      this.lastBlockerReason = unavailableReason(
+        'PLUGIN_BRIDGE_FAILURE',
+        `the IDEA plugin bridge failed during ${operation}`
+      );
+      return false;
+    }
+    if (!result) {
+      this.lastFailureCode = 'ADAPTER_FAILURE';
+      this.lastBlockerReason = unavailableReason('PLUGIN_BRIDGE_UNAVAILABLE', `no plugin result for ${operation}`);
+      return false;
+    }
+
+    if (result.ok === true && result.verified === true) {
+      this.lastFailureCode = null;
+      this.lastBlockerReason = '';
+      return true;
+    }
+    this.lastFailureCode = result.ok === true ? 'UNVERIFIED_TARGET_STATE' : 'ADAPTER_FAILURE';
+    this.lastBlockerReason = unavailableReason(result.code, result.detail);
+    return false;
+  }
+}
+
+/**
+ * Production wiring.
+ *
+ * The IDEA channel is only usable when the trusted plugin socket and its separate >=32-byte
+ * key are configured. Otherwise it fails closed with an honest BLOCKED reason; the AX probe
+ * is never substituted.
+ */
+export function createDefaultIdeaAdapter(config: {
+  ideaPluginSocketPath?: string;
+  ideaPluginSigningSecret?: string;
+  ideaPluginTimeoutMs?: number;
+}): IdeaAutomationAdapter {
+  if (!config.ideaPluginSocketPath || !config.ideaPluginSigningSecret) {
+    return new PluginBridgeIdeaAutomationAdapter(null);
+  }
+  return new PluginBridgeIdeaAutomationAdapter(
+    new IdeaPluginClient({
+      socketPath: config.ideaPluginSocketPath,
+      secret: config.ideaPluginSigningSecret,
+      timeoutMs: config.ideaPluginTimeoutMs,
+    })
+  );
+}
