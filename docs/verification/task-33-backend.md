@@ -242,9 +242,10 @@ Codex 对 `b8b04aee2b79f577ced3c8238a5945f66a52eb3f` 的独立验收提出三项
 | `./mvnw -o -Dtest='LocalAutomationSigningTest,InterfaceFallbackPolicyTest,UnixSocketLocalAutomationClientTest,LocalInterfaceFallbackWorkflowTest,LocalAutomationRequestTest' test` | **64 项通过**，0 失败 0 错误 |
 | `./mvnw -o -Dtest='LocalInterfaceFallbackWorkflowTest' test` | **9 项通过**，0 失败 0 错误（H2 + Spring 治理） |
 | `./mvnw -o -Dtest='AgentToolCoverageTest,AgentToolOutputSchemasTest,AgentToolOutputValidatorTest,AgentToolRegistryTest,AgentToolActionRecoveryTest,AgentToolActionRecoveryRollbackTest' test` | **22 项通过**，0 失败 0 错误 |
-| `./mvnw -o test` | **570 项通过，0 失败 0 错误**，`BUILD SUCCESS`（基线 508 → 新增 62） |
+| `./mvnw -o test` | **577 项，0 失败 0 错误，7 跳过**，`BUILD SUCCESS`（基线 508 → 新增 62 通过 + 7 跳过）。7 项跳过即 §7 的可选真实握手用例，未配置系统属性时自动跳过 |
 | `node scripts/verify-agent-capability-matrix.mjs` | `[SUCCESS] 能力矩阵校验通过！覆盖全部 31 个页面路由与 65 个 Java 工具` |
 | `node --test scripts/verify-agent-capability-matrix.test.mjs` | 门禁自身 **4/4 通过** |
+| `./mvnw -o -Dtest='LocalAutomationRealHandshakeTest' -Dspl.handshake.enabled=true -Dspl.handshake.socket=/tmp/spl33-hs.sock -Dspl.handshake.secret=<32B> test` | **7 项通过**，0 失败 0 错误（对端真实 `50dc650` 服务，见 §7） |
 | `git diff --check` | 无输出（干净）；新文件亦无行尾空白 |
 | 生产文件 grep（`ProcessBuilder`/`Runtime.exec`/`InetSocketAddress`/`HttpClient`/AppleScript/Robot） | 仅命中“禁止”注释，无实际调用 |
 
@@ -277,14 +278,9 @@ Codex 对 `b8b04aee2b79f577ced3c8238a5945f66a52eb3f` 的独立验收提出三项
 
 ## 4. 明确未实现 / 未验证范围
 
-1. **BLOCKED：真实 Java↔TypeScript UDS 握手尚未执行**。该项按 Codex 整改要求应在 ZCode 推送
-   real-adapter remediation 之后执行；但截至本次提交，对端分支 `agent/zcode-task-33-local-adapters`
-   仍停在 `428b008`，且其 `protocol.ts`/`verifier.ts`/`browserAdapter.ts`/`ideaAdapter.ts` 仍是
-   **未提交**的进行中改动。对端当前交付是**纯库**（`index.ts` 仅 `export *`，无启动入口、
-   无环境配置装配、无注入式测试适配器），因此真实的“成功白名单动作”握手必须依赖对端整改产物；
-   本分支不越界替对端编写启动/适配器代码。**本分支因此没有声称 `REAL_E2E`。**
-   Java 侧行为由真实 UDS 桩与真实 Spring/H2 治理链路验证；跨端字节级一致性见 §5；
-   对端整改推送后的最小真实握手计划见 §7。
+1. **真实 Java↔TypeScript UDS 握手已执行**（对端整改 `50dc650`，详见 §7）；
+   但其中界面适配器是**注入的测试替身**，因此只证明跨语言传输/签名/白名单/nonce/封帧/回执关联一致，
+   **未观察真实浏览器或 IDE 界面状态，不构成 OS 界面 `REAL_E2E`**。
 2. **未做**真实本机最小验收（打开固定路由、打开临时登记源码、聚焦预登记运行配置、展示既有测试结果）。
    该项需与 ZCode 服务真实联调后由 Codex 组织。
 3. **未修改** `docs/协同开发交接说明.md` 与冻结计划（非本 Agent 所有权）。
@@ -298,7 +294,9 @@ Codex 对 `b8b04aee2b79f577ced3c8238a5945f66a52eb3f` 的独立验收提出三项
 ## 5. 与 ZCode 已交付本地服务的跨端字节级对齐（真实对端证据）
 
 ZCode 已在 `/Users/moxiao/IdeaProjects/project-zcode-task-33`（分支
-`agent/zcode-task-33-local-adapters`，HEAD `428b008`）交付本地服务，并固化了跨语言确定性向量。
+`agent/zcode-task-33-local-adapters`）交付本地服务并固化跨语言确定性向量；当前复审修订为
+`50dc650fd41298c8cb64fe085a578bd37a2f24e8`（首轮交付 `428b008`）。该整改**未改动** `canonical.ts`，
+因此下表的规范化与摘要对齐结论继续成立。
 **本分支只读取对端文件用于对齐，未修改其任何文件**（`git status` 无 `local-automation-service/**`）。
 
 对齐结论（对端来源：`local-automation-service/src/canonical.ts`、`tests/vectors.spec.ts`、
@@ -328,10 +326,12 @@ ZCode 已在 `/Users/moxiao/IdeaProjects/project-zcode-task-33`（分支
 （对端示例为 `FILE_SAMPLE`）。Java 侧通过 `studypilot.local-automation.ide-targets` 登记，
 默认空 ⇒ 失败关闭。真实联调时需由 Codex 统一两侧配置值。
 
-**对端整改窗口提醒**：本次读取对端时，其对端工作树存在**未提交**改动
-（`protocol.ts`、`verifier.ts`、`browserAdapter.ts`、`ideaAdapter.ts`、`package.json` 等）。
-本 §5 的对齐结论只基于**已推送的 `428b008`**；若对端整改修改了规范化编码、摘要拼法或回执字段形状，
-两侧必须重新执行 §7 的向量比对与真实握手。
+**对端修订与时间戳加固（已核对，兼容）**：`50dc650` 新增 `isValidUtcIsoInstant`，
+要求 `issuedAt`/`expiresAt` 是**以 `Z` 结尾的规范 UTC ISO-8601**（允许 1–9 位小数秒），
+并新增“`expiresAt` 早于 `issuedAt` 拒绝”。本分支请求使用 `Instant.truncatedTo(SECONDS).toString()`，
+输出形如 `2026-09-22T08:00:00Z`，与之兼容；真实握手 7/7 通过即为实测证明。
+对端工作树仍有**未提交**的后续改动（`actionRegistry.ts`、`browserAdapter.ts`、`ideaAdapter.ts` 等），
+本文件的结论只针对**已推送的 `50dc650`**。
 
 ---
 
@@ -341,27 +341,96 @@ ZCode 已在 `/Users/moxiao/IdeaProjects/project-zcode-task-33`（分支
   因此“业务 API 优先”分支（不产生任何本地副作用）同样需要一次专用确认。
   这是失败关闭的选择——宁可多一次确认，也不允许该工具在无确认下进入执行路径。
   如 Codex 认为该无副作用分支不应要求确认，需要修改的是工具风险分级契约，请由 Codex 决定。
-- 下一步（不由本 Agent 执行）：ZCode 交付本地服务后，由 Codex 按“规格 → 安全 → diff → 局部测试 →
-  全量测试 → 真实联调 → 文档 → 合并”验收，并在真实最小验收中确认上述字节级约定。
+- 已完成：三项 P1 整改（§2.6）、真实 Java↔TypeScript UDS 握手（§7）、
+  跨端字节级对齐复核（§5）。
+- 仍待 Codex 决定 / 组织：
+  1. **OS 界面真实验收**：真实浏览器路由/输入聚焦/结果面板与真实 IDE 动作需要真实界面证据，
+     本分支只能提供协议与传输证据，不得替代。
+  2. **IDE 符号键统一**：两侧需配置同一组 IDE 符号句柄（本分支默认空 ⇒ 失败关闭）。
+  3. `docs/协同开发交接说明.md` 中“64 个 Java 工具”需更新为 65（非本 Agent 所有权）。
+  4. 上述 HIGH 风险无副作用分支是否仍需确认（工具风险分级契约，由 Codex 决定）。
 
 ---
 
-## 7. 对端整改推送后的最小真实握手计划（待执行）
+## 7. 真实 Java↔TypeScript UDS 握手（已执行，对端 `50dc650`）
 
-对端 `agent/zcode-task-33-local-adapters` 推送 real-adapter remediation 后，按下列步骤执行
-（本分支负责 Java 侧命令与判定，不修改对端任何文件）：
+ZCode 已推送整改 `50dc650fd41298c8cb64fe085a578bd37a2f24e8`
+（`fix: remediate local automation service P0 and P1 blocking issues`）。本分支据此执行了真实握手。
 
-1. **重跑跨端向量比对**：确认 `LocalAutomationSigningTest.matchesZcodeDeliveredCrossLanguageVectorsByteForByte`
-   仍与对端 `tests/vectors.spec.ts` 的固化值一致；若对端改动了规范化的字节编码或摘要拼法，
-   先停下汇报 Codex，不要单方面改动冻结约定。
-2. **真实握手**：以临时目录（`/tmp` 下短路径，Unix socket `sun_path` 上限约 104 字节）启动对端服务，
-   注入对端的**测试适配器**（不触发真实浏览器/IDE 界面）；Java 侧使用真实
-   `UnixSocketLocalAutomationClient`（真实密钥、真实 socket 路径）执行：
-   - 至少一个**成功**的白名单动作（优先浏览器通道 `OPEN_STUDYPILOT_ROUTE` / `ASSISTANT`），
-     断言回执 `SUCCEEDED` 且 `adapter`/`action`/`targetDigest` 与请求一致；
-   - **拒绝**用例：未注册目标、错通道/动作组合、过期/未来时间窗、重放 nonce；
-   - **关联**用例：对端回执的 `requestId`/`targetDigest` 必须与本次请求对齐。
-3. **证据口径**：该步骤最多标记为“真实 Java↔TypeScript UDS 传输与协议一致性”，
-   **不得**标记为 OS 界面 `REAL_E2E`——除非真实观察到浏览器/IDE 界面状态变化。
-4. 把命令、原始输出与关联结果写入本文件，重跑聚焦测试、全量 Java、能力矩阵门禁与
-   `git diff --check`，新增提交并只推送本分支。
+### 7.1 方法（不改动对端任何文件）
+
+1. 用 `git archive 50dc650 local-automation-service` 把对端**已提交**源码导出到
+   `/tmp/spl33-hs-1`（不写入对端工作树，不受对端未提交 WIP 影响），软链其 `node_modules` 并用
+   对端自带 `tsc` 构建出 `dist`。
+2. 用本分支测试支撑脚本 `backend/src/test/resources/local-automation/handshake-server.mjs`
+   启动对端**真实** `LocalAutomationServer`，只注入**测试适配器**（记录调用并返回布尔结果，
+   不触碰任何真实界面）；Socket 为 `/tmp/spl33-hs.sock`、nonce 库为 `/tmp/spl33-hs-nonce.db`。
+3. Java 侧用**真实** `UnixSocketLocalAutomationClient`（真实密钥与 socket 路径）执行
+   `LocalAutomationRealHandshakeTest`（7 项，未配置系统属性时自动跳过，因此常规全量测试不受影响）。
+
+```
+LOCAL_AUTOMATION_SERVICE_DIST=/tmp/spl33-hs-1/local-automation-service/dist \
+HANDSHAKE_SECRET=task-33-real-handshake-secret-key-32b \
+HANDSHAKE_SOCKET=/tmp/spl33-hs.sock HANDSHAKE_NONCE_DB=/tmp/spl33-hs-nonce.db \
+HANDSHAKE_BASE_URL=http://127.0.0.1:8099 \
+node backend/src/test/resources/local-automation/handshake-server.mjs
+# 另开终端
+./mvnw -o -Dtest='LocalAutomationRealHandshakeTest' -Dspl.handshake.enabled=true \
+  -Dspl.handshake.socket=/tmp/spl33-hs.sock \
+  -Dspl.handshake.secret=task-33-real-handshake-secret-key-32b test
+```
+
+结论：`Tests run: 7, Failures: 0, Errors: 0, Skipped: 0`（0.5 s）。
+对端 Socket 文件实际权限为 `srw-------`（0600），满足 Java 侧所有者权限校验。
+
+### 7.2 覆盖内容
+
+| 类别 | 用例 | 结果 |
+|---|---|---|
+| 成功（浏览器） | `OPEN_STUDYPILOT_ROUTE`/`ASSISTANT`、`FOCUS_AGENT_INPUT`/`ASSISTANT_INPUT`、`OPEN_RESULT_PANEL`/`WORKSPACE_RESULTS` | 全部 `SUCCEEDED` |
+| 成功（IDE） | `OPEN_REGISTERED_FILE`/`SOURCE_PRIMARY`、`FOCUS_RUN_CONFIGURATION`/`RUN_DEFAULT`、`SHOW_TEST_RESULT`/`TEST_LATEST` | 全部 `SUCCEEDED` |
+| 拒绝 | 未注册目标、动作与目标不匹配、未注册 IDE 句柄 | `REJECTED` 且带稳定错误码 |
+| 重放 | 同一 nonce 第二次请求 | `REJECTED`（对端持久化 nonce 生效） |
+| 时间窗 | 客户端时钟回拨 600 s（过期请求） | `REJECTED` |
+| 签名 | 使用不同密钥签发的请求 | `REJECTED` |
+| 关联 | 每个回执的 `requestId`/`adapter`/`action`/`targetDigest` | 与本次请求三元组逐项一致 |
+| 客户端前置 | 通道/动作不匹配、路径型目标 | 本地即拒绝，未发出请求 |
+
+### 7.3 对端适配器调用日志（证明只执行了窄动作，且拒绝路径零副作用）
+
+```
+HANDSHAKE_ADAPTER_CALLS [
+ {"adapter":"browser","method":"focusAgentInput"},
+ {"adapter":"browser","method":"openResultPanel"},
+ {"adapter":"browser","method":"openRoute","route":"http://127.0.0.1:8099/"},
+ {"adapter":"browser","method":"openRoute","route":"http://127.0.0.1:8099/"},
+ {"adapter":"idea","method":"openRegisteredFile",
+  "filePath":"/private/var/folders/.../spl33-ws-ZnUUpz/Prima.java"},
+ {"adapter":"idea","method":"focusRunConfiguration","handle":"RUN_DEFAULT"},
+ {"adapter":"idea","method":"showTestResult","handle":"TEST_LATEST"}]
+```
+
+要点：驱动全部来自对端**受信回环配置**解析出的 `http://127.0.0.1:8099/`，而不是请求报文里的任意 URL；
+拒绝用例（未注册目标、重放、过期、错密钥）**没有产生任何适配器调用**，符合“验签或校验失败不得产生界面副作用”。
+
+### 7.4 证据口径（诚实声明）
+
+- 本项可标记为：**真实 Java↔TypeScript Unix Domain Socket 传输与协议一致性**。
+- **不得**标记为 OS 界面 `REAL_E2E`：界面适配器是注入的测试替身，未观察真实浏览器/IDE 状态变化。
+- 真实桌面浏览器的 `real-acceptance.ts`（对端 Playwright headless 脚本）与真实 IDE 原生桥
+  （对端明确 `BLOCKED`，宿主未装合规桥）都未在本分支验证。
+
+### 7.5 可重复性与 nonce 持久化（本次自查修正的真实缺陷）
+
+首版握手用例使用**固定 nonce** 验证重放，导致对端 nonce 库已消费该值后**第二次运行必然失败**——
+这会让证据不可重复复现。已改为每次运行生成全新随机 nonce（仍用于同一 nonce 的两次调用），
+并在**同一个长驻真实服务 + 同一持久化 nonce 库**上连续运行两次：
+
+```
+run #1: Tests run: 7, Failures: 0, Errors: 0, Skipped: 0  (0.740 s)
+run #2: Tests run: 7, Failures: 0, Errors: 0, Skipped: 0  (0.392 s)
+```
+
+两次运行的对端适配器日志合计正好 14 次调用（2 × 7），全部是窄动作；
+重放/过期/错密钥/未注册目标等拒绝用例在两次运行中都**没有**产生任何适配器调用，
+说明对端 nonce 持久化在服务重启与重复运行后仍然有效，且拒绝路径始终零界面副作用。
