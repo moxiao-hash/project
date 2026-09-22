@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { calculateCanonicalPayload } from './canonical.js';
 import { validateNonceFormat } from './nonceStore.js';
+import { isValidUtcIsoInstant } from './protocol.js';
 import type { AutomationRequest, ErrorCode } from './types.js';
 
 export const MIN_SECRET_LENGTH = 32;
@@ -38,6 +39,15 @@ export function verifyRequestAuthAndTiming(
     };
   }
 
+  // Validate strict canonical UTC ISO-8601 instant format
+  if (!isValidUtcIsoInstant(request.issuedAt) || !isValidUtcIsoInstant(request.expiresAt)) {
+    return {
+      valid: false,
+      errorCode: 'INVALID_TIMESTAMP',
+      message: 'Timestamps must be valid canonical UTC ISO-8601 instants ending in Z',
+    };
+  }
+
   // Parse and validate timestamps
   const issuedAtMs = Date.parse(request.issuedAt);
   const expiresAtMs = Date.parse(request.expiresAt);
@@ -47,6 +57,15 @@ export function verifyRequestAuthAndTiming(
       valid: false,
       errorCode: 'INVALID_TIMESTAMP',
       message: 'Invalid ISO-8601 timestamp in request',
+    };
+  }
+
+  // Reject expiresAt earlier than issuedAt
+  if (expiresAtMs < issuedAtMs) {
+    return {
+      valid: false,
+      errorCode: 'INVALID_TIMESTAMP',
+      message: 'expiresAt cannot be earlier than issuedAt',
     };
   }
 

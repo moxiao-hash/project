@@ -64,6 +64,19 @@ describe('Verifier: Auth & Timing Verification', () => {
     }
   });
 
+  it('rejects expiresAt earlier than issuedAt', () => {
+    const now = Date.now();
+    const { request, secret } = createSignedRequest({
+      issuedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now - 5000).toISOString(), // expiresAt earlier than issuedAt
+    });
+    const result = verifyRequestAuthAndTiming(request, secret, now);
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.errorCode).toBe('INVALID_TIMESTAMP');
+    }
+  });
+
   it('rejects expired request (now >= expiresAt)', () => {
     const now = Date.now();
     const { request, secret } = createSignedRequest({

@@ -112,7 +112,12 @@ describe('LocalAutomationService Pipeline', () => {
   });
 
   it('does NOT consume nonce when verification or signature fails', async () => {
-    const service = new LocalAutomationService(config);
+    const mockBrowser: BrowserAutomationAdapter = {
+      openRoute: vi.fn().mockResolvedValue(true),
+      focusAgentInput: vi.fn().mockResolvedValue(true),
+      openResultPanel: vi.fn().mockResolvedValue(true),
+    };
+    const service = new LocalAutomationService(config, mockBrowser);
     const request = createSignedRequest();
     // Tamper signature
     const tamperedRequest = { ...request, signature: '0'.repeat(64) };

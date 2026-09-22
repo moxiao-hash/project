@@ -86,7 +86,12 @@ describe('LocalAutomationServer (Unix Domain Socket)', () => {
   }
 
   it('creates Unix Domain Socket with owner-only permissions and serves requests', async () => {
-    const server = new LocalAutomationServer(config);
+    const mockBrowser = {
+      openRoute: async () => true,
+      focusAgentInput: async () => true,
+      openResultPanel: async () => true,
+    };
+    const server = new LocalAutomationServer(config, mockBrowser);
     await server.start();
 
     expect(fs.existsSync(socketPath)).toBe(true);
@@ -128,7 +133,12 @@ describe('LocalAutomationServer (Unix Domain Socket)', () => {
   });
 
   it('rejects replayed requests across the socket', async () => {
-    const server = new LocalAutomationServer(config);
+    const mockBrowser = {
+      openRoute: async () => true,
+      focusAgentInput: async () => true,
+      openResultPanel: async () => true,
+    };
+    const server = new LocalAutomationServer(config, mockBrowser);
     await server.start();
 
     const request = createSignedRequest();

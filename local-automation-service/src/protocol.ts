@@ -37,6 +37,22 @@ const ALLOWED_ACTIONS = new Set<Action>([
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const OWNER_HASH_REGEX = /^[0-9a-f]{64}$/;
 const SIGNATURE_REGEX = /^[0-9a-f]{64}$/;
+const UTC_ISO_8601_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/;
+
+/**
+ * Validates that an input is a strict canonical UTC ISO-8601 instant ending with Z.
+ * Rejects timezone offsets, informal date formats, and out-of-range dates.
+ */
+export function isValidUtcIsoInstant(ts: unknown): boolean {
+  if (typeof ts !== 'string' || !UTC_ISO_8601_REGEX.test(ts)) {
+    return false;
+  }
+  const ms = Date.parse(ts);
+  if (Number.isNaN(ms)) {
+    return false;
+  }
+  return true;
+}
 
 export type ParseResult =
   | { success: true; request: AutomationRequest }
@@ -245,20 +261,20 @@ export function parseAndValidateRequestFrame(rawInput: Buffer | string): ParseRe
   }
 
   // Validate issuedAt
-  if (typeof obj.issuedAt !== 'string' || Number.isNaN(Date.parse(obj.issuedAt))) {
+  if (!isValidUtcIsoInstant(obj.issuedAt)) {
     return {
       success: false,
       errorCode: 'INVALID_TIMESTAMP',
-      message: 'issuedAt must be a valid ISO-8601 timestamp string',
+      message: 'issuedAt must be a valid canonical UTC ISO-8601 instant string ending in Z',
     };
   }
 
   // Validate expiresAt
-  if (typeof obj.expiresAt !== 'string' || Number.isNaN(Date.parse(obj.expiresAt))) {
+  if (!isValidUtcIsoInstant(obj.expiresAt)) {
     return {
       success: false,
       errorCode: 'INVALID_TIMESTAMP',
-      message: 'expiresAt must be a valid ISO-8601 timestamp string',
+      message: 'expiresAt must be a valid canonical UTC ISO-8601 instant string ending in Z',
     };
   }
 

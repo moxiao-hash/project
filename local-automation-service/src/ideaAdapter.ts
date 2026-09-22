@@ -1,56 +1,116 @@
-import fs from 'node:fs';
 import type { IdeaAutomationAdapter } from './types.js';
 
+export interface IdeaBridgeResult {
+  success: boolean;
+  verified: boolean;
+  error?: string;
+}
+
 /**
- * Default narrow IDE adapter.
- * Verifies target state without shell execution, process spawning, or test running.
+ * Narrow, typed Accessibility bridge interface for IntelliJ IDEA.
+ * Must perform and verify exactly the three registered actions without generic desktop automation.
  */
-export class DefaultIdeaAutomationAdapter implements IdeaAutomationAdapter {
-  private targetState = {
-    openedFiles: new Set<string>(),
-    focusedRunConfigs: new Set<string>(),
-    shownTestResults: new Set<string>(),
-  };
+export interface IdeaAccessibilityBridge {
+  openFile(realFilePath: string): Promise<IdeaBridgeResult>;
+  focusConfiguration(configName: string): Promise<IdeaBridgeResult>;
+  showResult(resultHandle: string): Promise<IdeaBridgeResult>;
+}
+
+/**
+ * Concrete IDEA Automation Adapter.
+ * Uses a strictly typed native Accessibility bridge.
+ * If no compliant native bridge is available on this host, defaults to FAILED and records BLOCKED.
+ */
+export class NativeBridgeIdeaAutomationAdapter implements IdeaAutomationAdapter {
+  private bridge: IdeaAccessibilityBridge | null;
+  private lastBlockerReason = '';
+
+  constructor(bridge?: IdeaAccessibilityBridge) {
+    this.bridge = bridge || null;
+    if (!this.bridge) {
+      this.lastBlockerReason =
+        'BLOCKED: No compliant native IDEA accessibility bridge available on host';
+    }
+  }
+
+  public getLastBlockerReason(): string {
+    return this.lastBlockerReason;
+  }
+
+  public isBridgeAvailable(): boolean {
+    return this.bridge !== null;
+  }
+
+  public isIdeaRunning(): boolean {
+    return this.isBridgeAvailable();
+  }
 
   public async openRegisteredFile(realFilePath: string): Promise<boolean> {
+    if (!this.bridge) {
+      this.lastBlockerReason =
+        'BLOCKED: No compliant native IDEA accessibility bridge available on host';
+      return false; // Fail closed
+    }
+
     try {
-      if (!fs.existsSync(realFilePath)) {
+      const result = await this.bridge.openFile(realFilePath);
+      if (!result.success || !result.verified) {
+        this.lastBlockerReason = result.error || 'Failed to verify file open state in IDEA';
         return false;
       }
-      const stat = fs.statSync(realFilePath);
-      if (!stat.isFile()) {
-        return false;
-      }
-      this.targetState.openedFiles.add(realFilePath);
-      // Target state verified: file is registered and openable
-      return this.targetState.openedFiles.has(realFilePath);
-    } catch {
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.lastBlockerReason = `Native bridge failure: ${msg}`;
       return false;
     }
   }
 
   public async focusRunConfiguration(handle: string): Promise<boolean> {
-    if (!handle || handle.trim().length === 0) {
+    if (!this.bridge) {
+      this.lastBlockerReason =
+        'BLOCKED: No compliant native IDEA accessibility bridge available on host';
+      return false; // Fail closed
+    }
+
+    try {
+      const result = await this.bridge.focusConfiguration(handle);
+      if (!result.success || !result.verified) {
+        this.lastBlockerReason = result.error || 'Failed to verify run configuration focus state in IDEA';
+        return false;
+      }
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.lastBlockerReason = `Native bridge failure: ${msg}`;
       return false;
     }
-    this.targetState.focusedRunConfigs.add(handle);
-    return this.targetState.focusedRunConfigs.has(handle);
   }
 
   public async showTestResult(handle: string): Promise<boolean> {
-    if (!handle || handle.trim().length === 0) {
+    if (!this.bridge) {
+      this.lastBlockerReason =
+        'BLOCKED: No compliant native IDEA accessibility bridge available on host';
+      return false; // Fail closed
+    }
+
+    try {
+      const result = await this.bridge.showResult(handle);
+      if (!result.success || !result.verified) {
+        this.lastBlockerReason = result.error || 'Failed to verify test result display state in IDEA';
+        return false;
+      }
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.lastBlockerReason = `Native bridge failure: ${msg}`;
       return false;
     }
-    // Only displays existing result, never executes new tests
-    this.targetState.shownTestResults.add(handle);
-    return this.targetState.shownTestResults.has(handle);
-  }
-
-  public getTargetState() {
-    return {
-      openedFiles: Array.from(this.targetState.openedFiles),
-      focusedRunConfigs: Array.from(this.targetState.focusedRunConfigs),
-      shownTestResults: Array.from(this.targetState.shownTestResults),
-    };
   }
 }
+
+/**
+ * Aliases for compatibility.
+ */
+export const MacAccessibilityIdeaAutomationAdapter = NativeBridgeIdeaAutomationAdapter;
+export const DefaultIdeaAutomationAdapter = NativeBridgeIdeaAutomationAdapter;

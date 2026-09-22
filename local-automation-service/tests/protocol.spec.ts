@@ -90,6 +90,34 @@ describe('Protocol Framing & Validation', () => {
     }
   });
 
+  it('rejects non-UTC timestamps, timezone offsets, and informal date formats', () => {
+    const invalidTimestamps = [
+      '2026-09-22T08:00:00+08:00', // offset +08:00 forbidden (must be Z)
+      '2026-09-22T08:00:00-05:00', // offset -05:00 forbidden
+      '2026-09-22T08:00:00', // missing Z suffix
+      '2026/09/22 08:00:00', // informal slash format
+      'Tue, 22 Sep 2026 08:00:00 GMT', // RFC 2822 format
+      '2026-13-45T99:99:99Z', // invalid date numbers
+      'now',
+    ];
+
+    for (const ts of invalidTimestamps) {
+      // test on issuedAt
+      const resIssued = parseAndValidateRequestFrame(JSON.stringify({ ...validRequest, issuedAt: ts }));
+      expect(resIssued.success).toBe(false);
+      if (!resIssued.success) {
+        expect(resIssued.errorCode).toBe('INVALID_TIMESTAMP');
+      }
+
+      // test on expiresAt
+      const resExpires = parseAndValidateRequestFrame(JSON.stringify({ ...validRequest, expiresAt: ts }));
+      expect(resExpires.success).toBe(false);
+      if (!resExpires.success) {
+        expect(resExpires.errorCode).toBe('INVALID_TIMESTAMP');
+      }
+    }
+  });
+
   it('rejects missing required fields', () => {
     const requiredKeys = Object.keys(validRequest) as (keyof AutomationRequest)[];
     for (const key of requiredKeys) {
