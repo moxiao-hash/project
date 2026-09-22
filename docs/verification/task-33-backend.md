@@ -12,7 +12,8 @@
 - **首轮交付提交**：`1c5723bc3b9573fa7431c7682c9ac12b91dffb1c`（`feat: execute allowlisted local interface fallbacks`）
 - **首轮证据提交**：`b8b04aee2b79f577ced3c8238a5945f66a52eb3f`（`docs: record task 33 backend local interface verification`）
 - **Codex 独立验收对象**：`b8b04aee2b79f577ced3c8238a5945f66a52eb3f`（验收结论：三项 P1）
-- **P1 整改提交**：`fix: close task 33 receipt, framing and nonce protocol gaps`（本次提交）
+- **P1 整改提交**：`89457c5a4579d1c851fc7588e1e3161d8d8a8e7b`（`fix: close task 33 receipt, framing and nonce protocol gaps`）
+- **本次证据提交**：`docs: record task 33 protocol gap remediation`（本次提交）
 
 ---
 
