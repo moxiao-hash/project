@@ -4,11 +4,17 @@
   "description": "StudyPilot Task 33 Local Automation Service",
   "main": "dist/index.js",
   "type": "module",
+  "bin": {
+    "studypilot-local-automation-service": "dist/main.js"
+  },
   "scripts": {
+    "start": "node dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "build:native": "bash native/build.sh",
+    "acceptance:real": "tsx scripts/real-acceptance.ts"
   },
   "keywords": [],
   "author": "",

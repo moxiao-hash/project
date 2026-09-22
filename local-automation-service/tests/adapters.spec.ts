@@ -47,11 +47,12 @@ describe('Real Adapters & Fail-Closed State Verification', () => {
 
   describe('MacAccessibilityIdeaAutomationAdapter', () => {
     it('fails closed when no compliant native IDEA accessibility bridge is available on host', async () => {
-      const adapter = new MacAccessibilityIdeaAutomationAdapter();
+      const adapter = new MacAccessibilityIdeaAutomationAdapter(null);
 
-      // If no compliant native bridge is present, actions must return false (never fake success)
+      // With no admissible native bridge, actions must return false (never fake success)
       const isRunning = adapter.isIdeaRunning();
       expect(isRunning).toBe(false);
+      expect(adapter.isBridgeAvailable()).toBe(false);
 
       const openRes = await adapter.openRegisteredFile(testFile);
       expect(openRes).toBe(false);
@@ -66,7 +67,7 @@ describe('Real Adapters & Fail-Closed State Verification', () => {
     });
 
     it('rejects non-existent or invalid files', async () => {
-      const adapter = new MacAccessibilityIdeaAutomationAdapter();
+      const adapter = new MacAccessibilityIdeaAutomationAdapter(null);
       const nonExistent = path.join(tmpDir, 'NoSuchFile.java');
       const res = await adapter.openRegisteredFile(nonExistent);
       expect(res).toBe(false);

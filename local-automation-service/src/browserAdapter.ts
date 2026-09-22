@@ -4,7 +4,7 @@ import type { BrowserAutomationAdapter } from './types.js';
 export interface BrowserAdapterConfig {
   cdpEndpoint?: string;
   channel?: string;
-  headless?: boolean; // Defaults to false for trusted user-visible recovery session
+  headless?: boolean; // Defaults to false for user-visible recovery session
   executablePath?: string;
   trustedLoopbackOrigin?: string; // e.g. http://127.0.0.1:8080 or http://localhost:5173
 }
@@ -12,7 +12,7 @@ export interface BrowserAdapterConfig {
 /**
  * Concrete Playwright Browser Adapter.
  * Performs only the three fixed registered browser actions and verifies the resulting state.
- * User-visible recovery must use a trusted visible browser session.
+ * Each action is completely independent and does not require prior openRoute calls.
  * Fails closed without simulating success when browser or endpoint is unavailable.
  */
 export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdapter {
@@ -26,7 +26,11 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
   constructor(config?: BrowserAdapterConfig) {
     this.config = config;
     if (config?.trustedLoopbackOrigin) {
-      this.trustedOrigin = new URL(config.trustedLoopbackOrigin).origin;
+      try {
+        this.trustedOrigin = new URL(config.trustedLoopbackOrigin).origin;
+      } catch {
+        this.trustedOrigin = null;
+      }
     }
   }
 
@@ -77,8 +81,17 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         return false;
       }
 
-      // Track registered trusted origin
-      this.trustedOrigin = url.origin;
+      // The trusted base address may only come from local configuration. A route URL that
+      // does not match the configured loopback origin is rejected outright, so this method
+      // can never establish trust from a caller-supplied origin.
+      if (!this.trustedOrigin) {
+        this.lastBlockerReason = 'No trusted StudyPilot loopback origin configured';
+        return false;
+      }
+      if (url.origin !== this.trustedOrigin) {
+        this.lastBlockerReason = `Route origin (${url.origin}) does not match the configured StudyPilot origin`;
+        return false;
+      }
 
       const page = await this.getOrCreatePage();
       if (!page) {
@@ -114,19 +127,38 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         return false; // Fail closed
       }
 
-      // Verify page is on the registered StudyPilot origin before interacting
+      // Independent action requirement:
+      // If page is not on the trusted origin or on an unrelated origin, navigate to the fixed Assistant page first
       const currentUrl = page.url();
       let currentOrigin = '';
       try {
         currentOrigin = new URL(currentUrl).origin;
       } catch {
-        this.lastBlockerReason = 'Target page does not have a valid URL';
+        currentOrigin = '';
+      }
+
+      if (!this.trustedOrigin) {
+        this.lastBlockerReason = 'No trusted StudyPilot loopback origin configured';
         return false;
       }
 
-      if (this.trustedOrigin && currentOrigin !== this.trustedOrigin) {
-        this.lastBlockerReason = `Target page origin (${currentOrigin}) does not match registered StudyPilot origin (${this.trustedOrigin})`;
-        return false; // Fail closed: reject untrusted origin
+      const assistantPageUrl = `${this.trustedOrigin}/`;
+      if (currentOrigin !== this.trustedOrigin || new URL(currentUrl).pathname !== '/') {
+        const navRes = await page.goto(assistantPageUrl, {
+          timeout: 6000,
+          waitUntil: 'domcontentloaded',
+        });
+        if (navRes && navRes.status() >= 400) {
+          this.lastBlockerReason = `Failed to navigate to Assistant page: HTTP ${navRes.status()}`;
+          return false;
+        }
+      }
+
+      // Verify page is on the registered StudyPilot origin
+      const verifiedOrigin = new URL(page.url()).origin;
+      if (verifiedOrigin !== this.trustedOrigin) {
+        this.lastBlockerReason = `Target page origin (${verifiedOrigin}) does not match registered StudyPilot origin (${this.trustedOrigin})`;
+        return false;
       }
 
       // Fixed in-source locator
@@ -158,19 +190,38 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         return false; // Fail closed
       }
 
-      // Verify page is on the registered StudyPilot origin
+      if (!this.trustedOrigin) {
+        this.lastBlockerReason = 'No trusted StudyPilot loopback origin configured';
+        return false;
+      }
+
+      // Independent action requirement:
+      // If page is not on the Workspaces page on the trusted origin, navigate there first
       const currentUrl = page.url();
       let currentOrigin = '';
       try {
         currentOrigin = new URL(currentUrl).origin;
       } catch {
-        this.lastBlockerReason = 'Target page does not have a valid URL';
-        return false;
+        currentOrigin = '';
       }
 
-      if (this.trustedOrigin && currentOrigin !== this.trustedOrigin) {
-        this.lastBlockerReason = `Target page origin (${currentOrigin}) does not match registered StudyPilot origin (${this.trustedOrigin})`;
-        return false; // Fail closed
+      const workspacesPageUrl = `${this.trustedOrigin}/workspaces`;
+      if (currentOrigin !== this.trustedOrigin || new URL(currentUrl).pathname !== '/workspaces') {
+        const navRes = await page.goto(workspacesPageUrl, {
+          timeout: 6000,
+          waitUntil: 'domcontentloaded',
+        });
+        if (navRes && navRes.status() >= 400) {
+          this.lastBlockerReason = `Failed to navigate to Workspaces page: HTTP ${navRes.status()}`;
+          return false;
+        }
+      }
+
+      // Verify page is on the registered StudyPilot origin
+      const verifiedOrigin = new URL(page.url()).origin;
+      if (verifiedOrigin !== this.trustedOrigin) {
+        this.lastBlockerReason = `Target page origin (${verifiedOrigin}) does not match registered StudyPilot origin (${this.trustedOrigin})`;
+        return false;
       }
 
       // Perform fixed source-registered open trigger action rather than merely observing

@@ -5,6 +5,8 @@ export * from './nonceStore.js';
 export * from './verifier.js';
 export * from './actionRegistry.js';
 export * from './browserAdapter.js';
+export * from './nativeAxBridge.js';
 export * from './ideaAdapter.js';
 export * from './service.js';
 export * from './server.js';
+export * from './config.js';

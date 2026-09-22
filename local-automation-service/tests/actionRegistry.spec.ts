@@ -143,13 +143,13 @@ describe('ActionRegistry & Security Boundaries', () => {
     const runConfig = registry.resolveIdeaAction('FOCUS_RUN_CONFIGURATION', 'RUN_CONFIG_DEFAULT');
     expect(runConfig.valid).toBe(true);
     if (runConfig.valid) {
-      expect(runConfig.handle).toBe('RUN_CONFIG_DEFAULT');
+      expect(runConfig.handle).toBe('StudyPilotApplication');
     }
 
     const testResult = registry.resolveIdeaAction('SHOW_TEST_RESULT', 'TEST_RESULT_SUMMARY');
     expect(testResult.valid).toBe(true);
     if (testResult.valid) {
-      expect(testResult.handle).toBe('TEST_RESULT_SUMMARY');
+      expect(testResult.handle).toBe('target/surefire-reports');
     }
 
     // Unregistered handles

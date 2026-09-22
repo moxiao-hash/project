@@ -236,7 +236,7 @@ export class ActionRegistry {
           valid: true,
           action,
           targetKey,
-          handle: targetKey,
+          handle: configuredConfig,
         };
       }
 
@@ -253,7 +253,7 @@ export class ActionRegistry {
           valid: true,
           action,
           targetKey,
-          handle: targetKey,
+          handle: configuredResult,
         };
       }
 

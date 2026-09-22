@@ -13,6 +13,7 @@ describe('False-Success Defenses for Adapters', () => {
       const fakePage = {
         isClosed: () => false,
         url: () => 'https://untrusted-external-site.com/some-page',
+        goto: vi.fn().mockImplementation(async () => ({ status: () => 200 })),
         locator: vi.fn(),
         evaluate: vi.fn(),
       };
@@ -59,11 +60,22 @@ describe('False-Success Defenses for Adapters', () => {
       expect(fakeTrigger.click).toHaveBeenCalled();
       expect(fakePanel.isVisible).toHaveBeenCalled();
     });
+    it('rejects an openRoute target whose origin is not the configured trusted loopback origin', async () => {
+      const adapter = new PlaywrightBrowserAutomationAdapter({
+        trustedLoopbackOrigin: 'http://127.0.0.1:8080',
+      });
+
+      // Same allowlisted pathname, attacker-controlled origin: must never establish trust.
+      const res = await adapter.openRoute('http://evil.example.com/');
+      expect(res).toBe(false);
+      expect((adapter as any).trustedOrigin).toBe('http://127.0.0.1:8080');
+      expect(adapter.getLastBlockerReason()).toContain('origin');
+    });
   });
 
   describe('IDEA Adapter native bridge requirement', () => {
     it('fails closed when no compliant native bridge is configured on host', async () => {
-      const adapter = new NativeBridgeIdeaAutomationAdapter(); // no bridge provided
+      const adapter = new NativeBridgeIdeaAutomationAdapter(null); // no bridge provided
 
       const resFile = await adapter.openRegisteredFile('/some/real/file.java');
       expect(resFile).toBe(false);
@@ -79,10 +91,18 @@ describe('False-Success Defenses for Adapters', () => {
     });
 
     it('executes and verifies actions when a compliant native bridge is supplied', async () => {
+      const verifiedResult = { ok: true, verified: true, code: 'OK', detail: '' };
       const mockNativeBridge = {
-        openFile: vi.fn().mockResolvedValue({ success: true, verified: true }),
-        focusConfiguration: vi.fn().mockResolvedValue({ success: true, verified: true }),
-        showResult: vi.fn().mockResolvedValue({ success: true, verified: true }),
+        probe: vi.fn().mockReturnValue({
+          platform: 'darwin',
+          bridgeVersion: 'test',
+          axApiAvailable: true,
+          axTrusted: true,
+          ideaRunning: true,
+        }),
+        openFile: vi.fn().mockResolvedValue(verifiedResult),
+        focusConfiguration: vi.fn().mockResolvedValue(verifiedResult),
+        showResult: vi.fn().mockResolvedValue(verifiedResult),
       };
 
       const adapter = new NativeBridgeIdeaAutomationAdapter(mockNativeBridge);

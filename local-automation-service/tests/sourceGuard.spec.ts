@@ -76,4 +76,44 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
 
     expect(violations).toEqual([]);
   });
+
+  it('native Accessibility addon never shells out, opens a port, or drives the desktop generically', () => {
+    const nativeSource = path.resolve(__dirname, '../native/idea_ax_bridge.mm');
+    expect(fs.existsSync(nativeSource)).toBe(true);
+    const content = fs.readFileSync(nativeSource, 'utf8');
+
+    const forbidden = [
+      /\bosascript\b/,
+      /\bAppleScript\b/,
+      /\bJXA\b/,
+      /child_process/,
+      /\bspawn\w*\b/,
+      /\bexec[lv]p?e?\b/,
+      /\bsystem\s*\(/,
+      /\bpopen\s*\(/,
+      /\bfork\s*\(/,
+      /\bNSTask\b/,
+      /\bopenURL\b/,
+      /\bopen\s+-a\b/,
+      /\bCGEventCreate\w*/,
+      /\bAXUIElementCreateSystemWide\b/,
+      /https?:\/\//,
+      /\b127\.0\.0\.1\b/,
+      /\blocalhost\b/,
+      /\b63342\b/,
+      /\bport\b/i,
+    ];
+
+    const violations: string[] = [];
+    for (const pattern of forbidden) {
+      if (pattern.test(content)) {
+        violations.push(`native/idea_ax_bridge.mm: ${pattern}`);
+      }
+    }
+    expect(violations).toEqual([]);
+
+    // The bundle identifier is the only application selector, and it is trusted/in-source.
+    expect(content).toContain('com.jetbrains.intellij');
+    expect(content).toContain('kAXPressAction');
+  });
 });

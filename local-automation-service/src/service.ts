@@ -6,8 +6,8 @@ import {
 } from './protocol.js';
 import { verifyRequestAuthAndTiming } from './verifier.js';
 import { calculateTargetDigest } from './canonical.js';
-import { DefaultBrowserAutomationAdapter } from './browserAdapter.js';
-import { DefaultIdeaAutomationAdapter } from './ideaAdapter.js';
+import { PlaywrightBrowserAutomationAdapter } from './browserAdapter.js';
+import { NativeBridgeIdeaAutomationAdapter, createDefaultIdeaBridge } from './ideaAdapter.js';
 import type {
   ServiceConfig,
   BrowserAutomationAdapter,
@@ -33,8 +33,20 @@ export class LocalAutomationService {
     this.config = config;
     this.actionRegistry = new ActionRegistry(config);
     this.nonceStore = new NonceStore(config.nonceDbPath);
-    this.browserAdapter = browserAdapter || new DefaultBrowserAutomationAdapter();
-    this.ideaAdapter = ideaAdapter || new DefaultIdeaAutomationAdapter();
+
+    // Default production wiring:
+    // - browser adapter wired with trustedLoopbackOrigin from config.loopbackBaseUrl
+    // - idea adapter wired with the in-process macOS Accessibility bridge; when that
+    //   binding is unavailable the IDEA channel fails closed with an honest BLOCKED reason
+    //   (there is no HTTP, TCP, shell, or generic automation fallback).
+    this.browserAdapter =
+      browserAdapter ||
+      new PlaywrightBrowserAutomationAdapter({
+        trustedLoopbackOrigin: config.loopbackBaseUrl,
+      });
+
+    this.ideaAdapter =
+      ideaAdapter || new NativeBridgeIdeaAutomationAdapter(createDefaultIdeaBridge());
   }
 
   /**
@@ -119,6 +131,7 @@ export class LocalAutomationService {
     }
 
     // 5. Execute narrow adapter and verify target state
+    // Note: Passes trusted internal configured mapping value (handle) to the bridge, never raw targetKey
     let executionSuccess = false;
     try {
       if (resolution.channel === 'PLAYWRIGHT_DOM') {
@@ -163,6 +176,10 @@ export class LocalAutomationService {
       };
       return formatReceiptFrame(receipt);
     } else {
+      const failureCode: ErrorCode =
+        resolution.channel === 'IDEA_ACCESSIBILITY'
+          ? this.resolveIdeaFailureCode()
+          : 'UNVERIFIED_TARGET_STATE';
       const receipt: AutomationReceipt = {
         version: 1,
         requestId: request.requestId,
@@ -172,11 +189,32 @@ export class LocalAutomationService {
         startedAt,
         finishedAt,
         status: 'FAILED',
-        errorCode: 'UNVERIFIED_TARGET_STATE',
-        message: 'Action execution or target state verification failed',
+        errorCode: failureCode,
+        message:
+          failureCode === 'ADAPTER_FAILURE'
+            ? 'Registered interface adapter is unavailable or the action could not be dispatched'
+            : 'Action execution or target state verification failed',
       };
       return formatReceiptFrame(receipt);
     }
+  }
+
+  /**
+   * Distinguishes "the adapter could not run" from "the action ran but the required
+   * interface state was not verified". Uses only the frozen receipt error codes and never
+   * reports success.
+   */
+  private resolveIdeaFailureCode(): ErrorCode {
+    const adapter = this.ideaAdapter as IdeaAutomationAdapter & {
+      getLastFailureCode?: () => string | null;
+    };
+    if (typeof adapter.getLastFailureCode === 'function') {
+      const code = adapter.getLastFailureCode();
+      if (code === 'ADAPTER_FAILURE') {
+        return 'ADAPTER_FAILURE';
+      }
+    }
+    return 'UNVERIFIED_TARGET_STATE';
   }
 
   private buildRejectedReceipt(
