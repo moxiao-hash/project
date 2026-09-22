@@ -66,7 +66,7 @@
 
 ---
 
-## 3. Java 类型化工具目录与能力映射（全量 64 个已注册工具）
+## 3. Java 类型化工具目录与能力映射（全量 65 个已注册工具）
 
 ### 3.1 查询与无副作用预览工具（43 个）
 1. `learning.context.get` - 获取用户全局学习上下文、未完成节点与当天任务概要（EFFECT: READ, RISK: NONE）。
@@ -113,7 +113,7 @@
 42. `learning.tasks.list` - 按可选日期查询用户学习任务（EFFECT: READ, RISK: NONE）。
 43. `assessment.wrong_questions.summary` - 查询待重做、已掌握和章节聚合统计（EFFECT: READ, RISK: NONE）。
 
-### 3.2 写入与本地执行工具（20 个）
+### 3.2 写入与本地执行工具（21 个）
 1. `roadmap.enroll` - 加入或绑定发布版路线（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
 2. `roadmap.upgrade` - 升级当前路线版本（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
 3. `learning.goal.create` - 创建结构化学习目标（EFFECT: WRITE, RISK: HIGH, 需专用确认）。
@@ -134,6 +134,7 @@
 18. `developer.git.commit` - 独立执行安全 Git commit（EFFECT: LOCAL, RISK: HIGH, 需专用确认）。
 19. `developer.git.push` - 独立执行受限 Git push 至 `origin`（EFFECT: LOCAL, RISK: HIGH, 需独立专用确认）。
 20. `assessment.node_quiz.retry` - 为节点重新生成一组测验，保留历史作答（EFFECT: WRITE, RISK: LOW）。
+21. `developer.interface_fallback.execute` - 执行冻结白名单内的受控本地界面兜底动作；目标只能来自 Java 静态注册表，业务 API 可用时只返回 `BUSINESS_API`（EFFECT: LOCAL, RISK: HIGH, 需专用确认）。
 
 ### 3.3 导航解析工具（1 个）
 

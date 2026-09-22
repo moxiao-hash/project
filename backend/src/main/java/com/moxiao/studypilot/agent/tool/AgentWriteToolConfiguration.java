@@ -442,6 +442,36 @@ public class AgentWriteToolConfiguration {
                 arguments.path("timeoutSeconds").asInt(0));
     }
 
+    /**
+     * Task 33：受控本地界面兜底动作。
+     *
+     * <p>目标只能来自 Java 静态注册表；HIGH 风险必须专用确认，重复确认不重复动作，
+     * 失败或拒绝回执绝不写成成功。</p>
+     */
+    @Bean
+    AgentToolHandler developerInterfaceFallbackExecuteTool(
+            ObjectMapper mapper,
+            com.moxiao.studypilot.agent.developer.LocalInterfaceFallbackService service
+    ) {
+        return writeValidated(mapper, "developer.interface_fallback.execute", "DEVELOPER",
+                AgentToolRiskLevel.HIGH, "DEVELOPER_MANAGEMENT",
+                ExecutionType.LOCAL_INTERFACE_AUTOMATION,
+                Map.of("businessApiAvailable", "boolean", "channel", "string",
+                        "actionKey", "string", "targetKey", "string"),
+                Set.of("businessApiAvailable", "channel", "actionKey", "targetKey"),
+                arguments -> "执行已注册的本地界面动作 " + text(arguments, "actionKey")
+                        + " -> " + text(arguments, "targetKey"),
+                (context, arguments) -> service.validate(
+                        arguments.path("businessApiAvailable").asBoolean(),
+                        text(arguments, "channel"), text(arguments, "actionKey"),
+                        text(arguments, "targetKey")),
+                (context, arguments) -> service.execute(
+                        context.ownerId(),
+                        arguments.path("businessApiAvailable").asBoolean(),
+                        text(arguments, "channel"), text(arguments, "actionKey"),
+                        text(arguments, "targetKey")));
+    }
+
     private static com.moxiao.studypilot.agent.developer.ApplyCodePatchRequest patchRequest(
             AgentToolRequestValidator validator, JsonNode arguments
     ) {

@@ -318,7 +318,13 @@ public final class AgentToolOutputSchemas {
             "expectedHead", str(), "expectedRemoteRef", str(), "expectedRemoteRefCommit", str(),
             "aheadCount", integer(), "timeoutSeconds", integer());
     private static final Spec INTERFACE_FALLBACK = object(
-            "channel", str(), "actionKey", str(), "fallbackRequired", bool(), "reason", str());
+            "channel", str(), "actionKey", str(), "targetKey", str(),
+            "fallbackRequired", bool(), "reason", str());
+    /** Task 33：本地界面兜底动作的真实执行结果，失败路径不产生该结构。 */
+    private static final Spec LOCAL_INTERFACE_EXECUTION = object(
+            "channel", str(), "actionKey", str(), "targetKey", str(),
+            "localAdapterInvoked", bool(), "adapter", strN(), "targetDigest", strN(),
+            "receiptStatus", strN(), "startedAt", strN(), "finishedAt", strN(), "message", str());
     private static final Spec COMMIT_RESULT = object(
             "workspaceId", str(), "commitId", str(), "message", str(),
             "paths", array(str()), "committedAt", str());
@@ -406,6 +412,7 @@ public final class AgentToolOutputSchemas {
         object("developer.patch.apply", PATCH_PREVIEW);
         object("developer.git.commit", COMMIT_RESULT);
         object("developer.git.push", PUSH_RESULT);
+        object("developer.interface_fallback.execute", LOCAL_INTERFACE_EXECUTION);
         object("assessment.node_quiz.retry", NODE_QUIZ);
 
         // 导航解析工具（1）

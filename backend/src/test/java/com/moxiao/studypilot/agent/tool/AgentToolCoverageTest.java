@@ -71,7 +71,7 @@ class AgentToolCoverageTest {
             "assessment.wrong_questions.summary"
     );
 
-    /** Task 27 矩阵 §3.2 的 20 个写入/本地执行工具。 */
+    /** Task 27/33 矩阵 §3.2 的 21 个写入/本地执行工具。 */
     private static final Set<String> WRITE_TOOLS = Set.of(
             "roadmap.enroll",
             "roadmap.upgrade",
@@ -92,7 +92,8 @@ class AgentToolCoverageTest {
             "developer.patch.apply",
             "developer.git.commit",
             "developer.git.push",
-            "assessment.node_quiz.retry"
+            "assessment.node_quiz.retry",
+            "developer.interface_fallback.execute"
     );
 
     /** 页面能力矩阵 §2 声明的风险级别（HIGH 必须专用确认）。 */
@@ -107,6 +108,7 @@ class AgentToolCoverageTest {
             Map.entry("developer.patch.apply", AgentToolRiskLevel.HIGH),
             Map.entry("developer.git.commit", AgentToolRiskLevel.HIGH),
             Map.entry("developer.git.push", AgentToolRiskLevel.HIGH),
+            Map.entry("developer.interface_fallback.execute", AgentToolRiskLevel.HIGH),
             Map.entry("learning.goal.create", AgentToolRiskLevel.LOW),
             Map.entry("learning.plan.create", AgentToolRiskLevel.LOW),
             Map.entry("schedule.refresh", AgentToolRiskLevel.LOW),
@@ -138,9 +140,9 @@ class AgentToolCoverageTest {
 
     @Test
     void frozenCatalogContainsEveryProductionToolExactlyOnce() {
-        assertEquals(64, registry.catalog().size());
-        assertEquals(64, names().size());
-        assertEquals(64, READ_TOOLS.size() + WRITE_TOOLS.size() + 1);
+        assertEquals(65, registry.catalog().size());
+        assertEquals(65, names().size());
+        assertEquals(65, READ_TOOLS.size() + WRITE_TOOLS.size() + 1);
         assertTrue(names().contains("navigation.resolve"));
     }
 

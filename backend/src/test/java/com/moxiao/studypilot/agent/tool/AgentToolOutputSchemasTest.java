@@ -102,7 +102,7 @@ class AgentToolOutputSchemasTest {
 
     @Test
     void everyRegisteredSchemaIsStrictlyClosedWithRequiredKeysAndTypedItems() {
-        assertTrue(AgentToolOutputSchemas.registeredTools().size() == 64,
+        assertTrue(AgentToolOutputSchemas.registeredTools().size() == 65,
                 "登记输出契约的工具数必须与冻结目录一致");
         for (String tool : AgentToolOutputSchemas.registeredTools()) {
             assertStrictObject(tool, AgentToolOutputSchemas.schemaFor(tool, mapper), true);

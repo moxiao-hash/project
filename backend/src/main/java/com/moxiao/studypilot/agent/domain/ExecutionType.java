@@ -16,5 +16,7 @@ public enum ExecutionType {
     RUNNER_EXECUTION,
     CODE_PATCH_APPLICATION,
     GIT_COMMIT,
-    GIT_PUSH
+    GIT_PUSH,
+    /** Task 33：受控本地界面兜底动作（可审计的本机副作用）。 */
+    LOCAL_INTERFACE_AUTOMATION
 }
