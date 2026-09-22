@@ -84,9 +84,14 @@ async function probeNativeAccessibilityBridge(): Promise<SectionResult> {
   console.log(
     `Native AX addon: LOADED (version ${probe.bridgeVersion}, platform ${probe.platform})`
   );
-  console.log(`  macOS Accessibility API available: ${probe.axApiAvailable}`);
+  console.log(
+    `  macOS Accessibility API available: ${probe.axApiAvailable}`
+  );
   console.log(`  macOS Accessibility permission granted to this process: ${probe.axTrusted}`);
   console.log(`  Trusted IntelliJ IDEA (com.jetbrains.intellij) running: ${probe.ideaRunning}`);
+  console.log(
+    `  IntelliJ IDEA exposes an accessible AXWindow (identity anchor): ${probe.ideaWindowExposed}`
+  );
 
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'studypilot-ax-probe-'));
   const registeredFile = path.join(workDir, 'RegisteredProbe.java');
@@ -134,12 +139,25 @@ async function probeNativeAccessibilityBridge(): Promise<SectionResult> {
       detail: 'IntelliJ IDEA is not running; real IDE positive acceptance not executed',
     };
   }
+  if (!probe.ideaWindowExposed) {
+    console.log(
+      '  Prerequisite: the running IntelliJ IDEA must expose an accessible AXWindow. It currently'
+    );
+    console.log(
+      '  exposes none, so no identity anchor exists and every registered action fails closed.'
+    );
+    return {
+      status: 'BLOCKED',
+      detail:
+        'IntelliJ IDEA is running but exposes no accessible AXWindow; no identity anchor, actions fail closed',
+    };
+  }
   if (outcomes.every((entry) => entry.endsWith('SUCCEEDED'))) {
     return { status: 'PASS', detail: 'all three IDEA actions succeeded with verified AX state' };
   }
   return {
     status: 'BLOCKED',
-    detail: 'IntelliJ IDEA running but registered AX state could not be verified',
+    detail: 'IntelliJ IDEA exposes a window but the registered AX identity could not be proven',
   };
 }
 

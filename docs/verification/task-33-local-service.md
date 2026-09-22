@@ -5,228 +5,209 @@
 - **执行时间**：2026-09-22 (Asia/Shanghai)
 - **关联分支**：`agent/zcode-task-33-local-adapters`
 - **关联基础提交**：`9f8537115ac3d9c3bd86ddc1a43128db3a58414b`（Task 32 Codex 最终验收基线）
-- **前次整改提交**：`50dc65003c2bb0234cf7b561c28c863a34a81b29`
-- **交付状态**：**BLOCKED — 真实 IDEA 正向验收未执行**（P0/P1 代码缺陷已按契约实际整改并具备静态/单元/集成/真实 UDS 证据；缺少真实运行的 IntelliJ IDEA 环境，3 项 IDE 正向动作未取得真实成功证据）
+- **一轮整改提交**：`50dc65003c2bb0234cf7b561c28c863a34a81b29`（P0/P1 首轮整改）
+- **二轮整改提交**：`3ae231ae2967d04935fc86e75724eae5ec8c684f`（删除虚构 HTTP 桥接，改为进程内 AX 绑定；**被 Codex 拒绝**）
+- **三轮整改提交**：本文件所属提交（严格结构化身份绑定；SHA 见交接与最终报告）
+- **交付状态**：**BLOCKED — 真实 IDEA 正向验收未执行，且真实 IDE 未暴露可绑定身份**
 
 ---
 
-## 1. P0 缺陷整改：移除虚构的 127.0.0.1:63342 HTTP 控制通道
+## 1. 本轮（三轮整改）背景：Codex 拒绝 `3ae231a` 的三条 P0 假成功路径
 
-### 1.1 原缺陷
+Codex 独立复审认为 `3ae231a` 的静态/单元/集成/UDS 证据通过，但**真实 AX 语义不满足契约**，存在三条可产生假成功的路径：
 
-前次整改提交 `50dc650` 新增 `DirectLocalIdeaBridge`，其行为违反冻结契约：
-
-1. 虚构了 IntelliJ IDEA 的“本地 API”端点 `http://127.0.0.1:63342`——端口 63342 不是可用的 Accessibility 控制 API；
-2. 只要 HTTP 响应为 2xx 即返回 `{ success: true, verified: true }`，把网络可达误判为界面状态已验证；
-3. 引入了 TCP/HTTP 控制路径，而冻结契约第 2 节明确要求本地服务“不开放 TCP/HTTP 端口”，第 6 节禁止任何 Shell/AppleScript/非受控回退。
-
-### 1.2 整改结果：彻底删除，改为进程内真实 macOS Accessibility 集成
-
-| 项目 | 整改前 | 整改后 |
+| # | 缺陷 | 后果 |
 | :--- | :--- | :--- |
-| IDEA 控制通道 | `fetch('http://127.0.0.1:63342/api/...')` | 进程内 N-API Objective-C++ 附加模块，直接调用 ApplicationServices AX API |
-| 成功判定 | HTTP 2xx 即 `verified: true` | `ok`（动作已投递）与 `verified`（已观测到目标 AX 状态）分离，二者同时为真才可能 `SUCCEEDED` |
-| 网络面 | 出站 TCP 到 63342 | 零网络调用；`src/**` 已无 `fetch(`、`node:http`、`node:https`、URL 字面量 |
-| 失败语义 | 服务离线时返回 HTTP 错误信息 | 返回稳定错误码 `IDEA_NOT_RUNNING` / `AX_NOT_TRUSTED` / `AX_API_DISABLED` / `TARGET_NOT_FOUND` / `STATE_NOT_VERIFIED` / `ACTION_NOT_DISPATCHED` |
+| 1 | `OPEN_REGISTERED_FILE` 把受信路径降级为 `lastPathComponent`，取“第一个同名可见元素”按下，且 `VerifyActiveEditorFile` 接受任何“标题/值**包含** basename”的选中/聚焦元素 | 同名不同目录的两个文件可打开/验证错文件并返回 `SUCCEEDED`；注释声称“exactly one”，但 `FindByExactTitle` 只返回首个匹配、从不校验唯一性 |
+| 2 | `FOCUS_RUN_CONFIGURATION` 在**整个应用**内搜索任意同标题可见元素，按下/聚焦后仅回读该任意元素自身的标题/焦点 | 与运行配置同名的编辑器标签或无关控件可返回 `SUCCEEDED` |
+| 3 | `SHOW_TEST_RESULT` 接受“精确或包含标题”的任意匹配；在动作**之前**读取可见性，并可调用 `FocusElement`，从而对“本就可见的任意同文本标签”返回 `SUCCEEDED` | 预置可见标签被当作“已展示既有测试结果” |
 
-已删除并锁死：`DirectLocalIdeaBridge`、`DirectIdeaBridgeConfig`、`ServiceConfig.ideaLocalApiBaseUrl`，以及生产源码中任何 `63342` / `http(s)://` / `127.0.0.1` 引用。
+本轮整改目标：**彻底移除这三条假成功路径**，并把身份判定改为可证伪的结构化约束。
 
 ---
 
-## 2. 真实、窄类型的 macOS Accessibility 集成（`native/idea_ax_bridge.mm`）
+## 2. 整改后的身份绑定不变量（`native/idea_ax_bridge.mm`，版本 2.0.0）
 
-### 2.1 性质
+1. **遍历根必须是真实 AXWindow**：只接受受信 bundle id `com.jetbrains.intellij` 应用中 role 恰为 `AXWindow` 的焦点/主/首个窗口。**没有应用级或系统级搜索**（源码门禁禁止 `AXUIElementCreateSystemWide`、`kAXFocusedUIElementAttribute`）。
+2. **目标必须唯一**：先枚举全部候选，命中 0 个 → `TARGET_NOT_FOUND`；命中 ≥2 个 → `TARGET_AMBIGUOUS`，**都不派发动作**。
+3. **身份比较一律精确相等**：源码门禁禁止 `containsString`；不接受 basename 或标题子串作为任何证明。
+4. **每个动作有独立的 role 白名单 + 祖先容器证明**：
+   - 项目树文件节点：role ∈ {`AXCell`,`AXStaticText`,`AXRow`}，且祖先含 {`AXOutline`,`AXTable`,`AXList`,`AXTree`}；
+   - 运行配置选择器：role ∈ {`AXPopUpButton`,`AXComboBox`}，且祖先含 `AXToolbar`；
+   - 测试结果视图：role ∈ {`AXTab`,`AXRadioButton`}，且祖先含 `AXTabGroup`。
+5. **派发前复验身份**：从快照恢复活元素后，再次读取实际 role/标题并精确比对（`ReverifyLiveIdentity`），不一致 → `IDENTITY_CHANGED_BEFORE_ACTION`。快照与动作之间的树变化不会导致按错控件。
+6. **验证只在动作后的快照上进行**：每个动作都取 PRE 快照定位目标 → 执行唯一动作 → 取 POST 快照复验。**动作前的状态永远不能充当动作效果**。
+7. **AX 调用有界**：`AXUIElementSetMessagingTimeout` 2 秒 + 快照上限 2000 节点/深度 30；超出即标记截断并失败关闭，忙碌的 IDE 不能挂死服务。
 
-- **真实原生绑定**：Objective-C++ N-API 模块，直接链接 `ApplicationServices` / `AppKit` / `Foundation`，通过 `AXUIElementCopyAttributeValue`、`AXUIElementPerformAction`、`AXUIElementSetAttributeValue`、`AXIsProcessTrusted` 等 AX API 与 macOS 辅助功能服务器通信。
-- **无任何被禁通道**：不使用 shell、`child_process`、`osascript`、AppleScript、JXA、`open` 命令、`NSTask`、`NSWorkspace openURL`、`system()`、`popen()`、`fork()`、`CGEventCreate*`（通用键鼠模拟）或 `AXUIElementCreateSystemWide`（全系统通用元素）。
-- **进程内**：不监听任何网络套接字，不产生子进程。
-- **应用定位唯一来源**：受信在源码内写死的 bundle identifier `com.jetbrains.intellij`，经 `NSRunningApplication` 解析 PID。不接受请求方提供的进程 ID、窗口标题、路径或选择器。
+### 2.1 三条动作的精确证明
 
-### 2.2 唯一暴露的四个导出
+| 动作 | 唯一注册动作 | 成功必须观测到的 POST 状态 |
+| :--- | :--- | :--- |
+| `OPEN_REGISTERED_FILE` | 对**唯一**由完整祖先标题链证明为受信规范路径的项目树节点执行一次 `AXPress` | 存在**未隐藏**元素，其 `AXDocument` 或 `AXURL` 规范化为**与规范真实路径完全相等**（`file://` 前缀与百分号解码后逐字节比较）。标题、basename、选中态一律不作为证明 |
+| `FOCUS_RUN_CONFIGURATION` | **只请求聚焦**该选择器控件（不按下，故不打开菜单、不改变选择） | POST 快照中同一严格规则定位到的选择器控件 `focused` 或 `selected` 为真，**且**其 `AXValue` 或标题**精确等于**受信句柄，且可见 |
+| `SHOW_TEST_RESULT` | 对唯一由 `AXTabGroup` 容器证明的结果视图标签执行一次 `AXPress` | POST 快照中被重新严格定位的同一视图 `selected` 为真、可见，且标题精确等于受信句柄。**不读取动作前可见性**，**不以通用聚焦作为证明** |
 
-`probe()`、`openRegisteredFile(realFilePath)`、`focusRunConfiguration(configHandle)`、`showTestResult(resultHandle)`。
+### 2.2 规范路径证明（消除同名文件歧义）
 
-导出面由 `src/nativeAxBridge.ts::validateNativeAxModuleSurface` 结构校验：四个导出必须全部存在且为函数，且不得存在任何额外导出；否则模块不可采用（失败关闭）。测试已覆盖 `clickAt` / `typeText` / `pressKey` / `runShell` / `openPath` / `osascript` 等被夹带能力的拒绝。
+- 证明由两部分同时成立构成：
+  1. 候选元素自身标题**精确等于**规范真实路径的 basename；
+  2. 其**祖先标题链**（自遍历根之下的最外层祖先到候选元素，`/` 连接）必须是规范真实路径**目录部分**的**完整路径分量后缀**（`canonicalDir.endsWith("/" + chain)`，带前导 `/` 保证分量边界）。
+- 因此“另一个目录下的同名文件”不满足后缀条件，而“同一目录同名节点重复出现”会命中 ≥2 个 → `TARGET_AMBIGUOUS`。
+- 交由原生层的路径始终是 `fs.realpathSync` 规范化后的真实路径（`MacAxIdeaBridge.openFile` 内完成，测试断言传入的是规范路径而非符号链接/显示名）。
 
-### 2.3 三个动作及真实 AX 状态核验
+---
 
-| 动作 | 输入来源 | 执行的唯一注册动作 | 返回成功前必须观测到的 AX 状态 |
-| :--- | :--- | :--- | :--- |
-| `OPEN_REGISTERED_FILE` | 注册表解析后的真实、位于登记工作区内、无符号链接的常规文件绝对路径 | 对标题等于该文件名的 AX 元素执行一次 `AXPress`（失败时先 `AXSelected=true` 再按父行） | 存在被选中/聚焦且标题或值匹配该文件名的可见元素，或当前聚焦元素的 `AXDocument`/标题匹配该文件名 |
-| `FOCUS_RUN_CONFIGURATION` | 预注册运行配置句柄（符号键映射的受信值） | 定位标题精确等于该句柄的可见 AX 元素并请求聚焦 | 回读该元素 `AXFocused` 为真，且标题/值与受信句柄一致，且元素可见 |
-| `SHOW_TEST_RESULT` | 预注册测试结果句柄（仅展示既有结果） | 仅激活标题匹配该句柄的既有结果视图元素 | 该元素可见且处于选中/聚焦状态 |
+## 3. 可测性：测试接缝（同一源码、仅测试构建含接缝）
 
-三者的共同不变量：**只激活由受信注册值命名的单一元素**；不启动测试、不运行命令、不输入文本、不确认对话框、不读取页面正文。
+生产附加模块只暴露四个操作且会驱动真实桌面，无法直接单元测试。因此构建产出**两个**由**同一份源码**编译的产物：
 
-### 2.4 原生构建产物
+| 产物 | 构建方式 | 导出面 |
+| :--- | :--- | :--- |
+| `native/build/idea_ax_bridge.node` | `npm run build:native`（生产） | 恰好 `probe` / `openRegisteredFile` / `focusRunConfiguration` / `showTestResult` |
+| `native/build/idea_ax_bridge.test.node` | 同上，附加 `-DAX_BRIDGE_TEST_SEAM=1` | 上述四个 + `__testEvaluate` |
 
-执行命令：`npm run build:native`（构建期脚本 `native/build.sh`；运行时服务从不调用它）
+- `__testEvaluate(op, arg, preFixture, postFixture)` 运行与生产路径**完全相同**的定位、唯一性、容器/角色约束与 POST 验证函数，只是数据源换成夹具树；此外它只测试**决断逻辑**，不触碰桌面。
+- 夹具格式（每行一个节点，深度优先）：`depth|role|subrole|identifier|title|document|url|value|flags|size`；`flags` 取 `s`(selected)/`f`(focused)/`h`(hidden)，`size` 为 `WxH`。
+- **接缝绝不能进入生产**：`src/nativeAxBridge.ts` 的导出面白名单只允许四个名字，多出任何导出（含 `__testEvaluate`）即拒绝采用。测试同时断言：生产产物恰好四个导出并通过校验，而测试产物含 `__testEvaluate` 且被该白名单**拒绝**。
+
+---
+
+## 4. TDD 证据
+
+### 4.1 RED（新门禁在旧源码上失败）
+
+本轮新增的源码门禁与语义夹具**在上一轮提交 `3ae231a` 的源码上确实失败**（用 `git show HEAD:...` 提取旧源码校验）：
 
 ```text
-clang++ -std=c++20 -fobjc-arc -fblocks -O2 -Wall -DNODE_GYP_MODULE_NAME=idea_ax_bridge \
-  -bundle -undefined dynamic_lookup -I<node headers> \
-  -framework AppKit -framework ApplicationServices -framework Foundation \
-  -o native/build/idea_ax_bridge.node native/idea_ax_bridge.mm
-
-build:native OK -> .../native/build/idea_ax_bridge.node
-（0 errors, 0 warnings）
+--- RED: forbidden weak patterns present in previously committed source ---
+  VIOLATION /containsString/
+--- RED: required strict markers absent in previously committed source ---
+  MISSING CanonicalDirname / ReverifyLiveIdentity / TARGET_AMBIGUOUS / LocateUnique
+  MISSING kAXWindowRole / AXToolbar / AXTabGroup / AXUIElementSetMessagingTimeout / AxSnapshot
+--- old weak-identity evidence ---
+  lastPathComponent used for identity: true
+  VerifyActiveEditorFile accepted selected/focused title-or-value: true
 ```
 
-真实加载与探针（`node -e`，实测输出）：
+### 4.2 GREEN：对抗性夹具语义测试（`tests/nativeAxSemantics.spec.ts`，23 项）
 
-```json
-exports: focusRunConfiguration,openRegisteredFile,probe,showTestResult
-probe: {"platform":"darwin","bridgeVersion":"1.0.0","axApiAvailable":true,"axTrusted":true,"ideaRunning":false}
-nonexistent path: {"ok":false,"verified":false,"code":"INVALID_REGISTERED_PATH","detail":"registered path is not an existing regular file"}
-relative path:    {"ok":false,"verified":false,"code":"INVALID_REGISTERED_PATH","detail":"registered path must be absolute"}
-focus cfg:        {"ok":false,"verified":false,"code":"IDEA_NOT_RUNNING","detail":"trusted IntelliJ IDEA application is not running"}
-test result:      {"ok":false,"verified":false,"code":"IDEA_NOT_RUNNING","detail":"trusted IntelliJ IDEA application is not running"}
-```
+| 场景 | 期望 | 结果 |
+| :--- | :--- | :--- |
+| 同名不同目录文件（basename 相同） | 不派发动作（`TARGET_NOT_FOUND`） | PASS |
+| 完整祖先链证明规范路径 | `ok && verified` | PASS |
+| 两个节点证明同一路径 | `TARGET_AMBIGUOUS`，不派发 | PASS |
+| POST 树仅有“被选中的项目树 basename”（旧假证明） | `STATE_NOT_VERIFIED` | PASS |
+| 文档路径相近但不等（`other.json` / 父目录） | `STATE_NOT_VERIFIED` | PASS |
+| 文档为普通绝对路径（无 `file://`） | `verified` | PASS |
+| 隐藏编辑器 | 不构成证明 | PASS |
+| 同标题编辑器标签（非工具栏） | `TARGET_NOT_FOUND` | PASS |
+| 工具栏内同标题静态标签 | `TARGET_NOT_FOUND` | PASS |
+| 选择器未聚焦 | `STATE_NOT_VERIFIED` | PASS |
+| 选择器聚焦且值等于受信句柄 | `ok && verified` | PASS |
+| 选择器报告了**另一个**配置 | `STATE_NOT_VERIFIED` | PASS |
+| 两个选择器候选 | `TARGET_AMBIGUOUS` | PASS |
+| 工具窗口组外的同标题标签 | `TARGET_NOT_FOUND` | PASS |
+| 动作前已可见的同标题标签 | `STATE_NOT_VERIFIED` | PASS |
+| 动作前选中、动作后消失 | `STATE_NOT_VERIFIED` | PASS |
+| POST 选中且可见的结果视图 | `ok && verified` | PASS |
+| 部分标题匹配（`surefire-reports-summary`） | `TARGET_NOT_FOUND` | PASS |
+| 未知操作（如 `EXECUTE_SHELL_COMMAND`） | `INVALID_ACTION` | PASS |
 
-宿主实测：本进程已获得 macOS“辅助功能”权限（`axTrusted: true`），AX API 可用（`axApiAvailable: true`）；IntelliJ IDEA 当前未运行，因此三项 IDEA 动作全部确定性失败关闭。
+### 4.3 源码门禁（`tests/sourceGuard.spec.ts`，6 项）
 
----
-
-## 3. 生产 UDS 服务入口与配置
-
-新增 `src/config.ts`（环境变量 → 冻结 `ServiceConfig`）与 `src/main.ts`（生产入口，`npm start` → `node dist/main.js`）：
-
-- 传输**仍然只允许 Unix Domain Socket**：入口只构造 `LocalAutomationServer`，不创建 TCP/HTTP 监听；socket 文件权限强制 `0600`（`0o077` 位必须为 0，否则启动失败）。
-- 协议版本（`version: 1`）、16 KiB 单行 JSON 帧、≥32 字节独立 HMAC-SHA256、严格 UTC ISO-8601、60 秒寿命、10 秒未来漂移、SQLite 原子 nonce 消费等语义**未做任何改动**。
-- 配置校验失败即拒绝启动（失败关闭，不降级）：缺失或过短密钥、非回环基础地址、相对 socket/DB 路径、非不透明符号句柄、非绝对注册文件路径。
-- 密钥只从本机环境注入，不写日志、不进模型、不提交仓库；启动诊断行仅输出传输性质与协议版本。
-
----
-
-## 4. 保留并复核的既有整改（逐 diff 审查结论）
-
-| 前次整改项 | 审查结论 |
-| :--- | :--- |
-| ActionRegistry 保护并传递受信映射值（`FOCUS_RUN_CONFIGURATION` / `SHOW_TEST_RESULT` 返回受控值而非原始 `targetKey`） | **正确，保留**。`resolveIdeaAction` 返回 `configuredRunConfigs[targetKey]` / `registeredTestResults[targetKey]`，服务把它作为句柄传给桥接；请求仍只允许不透明 `targetKey`。 |
-| 浏览器动作可独立乱序调用、校验来源、触发前置展开 | **正确，保留**。`focusAgentInput` / `openResultPanel` 在不在目标路由时先导航到 `${trustedOrigin}/` 或 `${trustedOrigin}/workspaces`，随后校验 origin 并核对 `document.activeElement` / 面板可见性。 |
-| `openRoute` 的来源信任 | **追加纵深加固**：原实现会在未配置时用入参 URL 的 origin 反向建立信任。现已改为“未配置受信回环来源即拒绝；URL origin 与受信来源不一致即拒绝”，并新增 RED 测试锁定。 |
-| 严格 UTC ISO-8601 即时时间戳、脚本性质诚实标记 | **保留**（本次未改动）。 |
-| `real-acceptance.ts` 的 63342 HTTP 探测 | **已删除并重写**为“真实原生 AX 探测 + 真实 UDS 端到端探测 + 回环服务可用性探测 + 集成夹具”。 |
-
-### 4.1 回执诚实性增强
-
-服务在 IDEA 通道失败时按适配器提供的稳定码区分：
-
-- `ADAPTER_FAILURE` —— 适配器不可用或动作未能投递（如 IDEA 未运行、AX 权限缺失）；
-- `UNVERIFIED_TARGET_STATE` —— 动作已投递但未观测到目标 AX 状态。
-
-两者都不会写成 `SUCCEEDED`；浏览器通道失败语义保持不变。
+1. 生产 `src/**` 禁止 `child_process`/spawn/exec/shell/osascript 等；
+2. 生产 `src/**` 禁止通用点击/输入/按键/鼠标/任意脚本能力；
+3. `.mm` 禁止起子进程、脚本桥、网络传输、URL、`127.0.0.1`、`localhost:<port>`、`63342`、`port`；
+4. `.mm` 禁止子串身份与全应用/全系统遍历，并**必须**存在 `CanonicalDirname`/`CanonicalBasename`/`kAXDocumentAttribute`/`ReverifyLiveIdentity`/`TARGET_AMBIGUOUS`/`kAXWindowRole`/`AXToolbar`/`AXTabGroup`/`AXUIElementSetMessagingTimeout`/`LocateUnique`（防止“删功能过门禁”）；
+5. 结果视图验证函数必须读 POST 的 `selected` 与可见性，且不得出现通用聚焦能力；
+6. `FOCUS_RUN_CONFIGURATION` 体内**不得出现 `PerformPress`**（保持“只聚焦”语义），且必须使用 `kAXFocusedAttribute`。
 
 ---
 
-## 5. TDD 证据（先 RED 后 GREEN）
-
-新增测试先以模块缺失/行为缺失失败（`Cannot find module '../src/config.js'`、`'../src/nativeAxBridge.js'`，以及 `DirectLocalIdeaBridge` 仍被导出），实现后转绿。覆盖点：
-
-1. 生产源码不得出现 `63342` / `ideaLocalApiBaseUrl` / `DirectLocalIdeaBridge`；
-2. 生产源码不得出现 `node:http`、`node:https`、`fetch(`、`XMLHttpRequest`；
-3. IDEA 适配器表面不得出现 HTTP 响应式或 2xx 判定（`res.ok`、`response.ok`、`status()`、`statusCode`、URL 字面量、`127.0.0.1`、`localhost`）；
-4. **精确状态核验**：`ok:true, verified:false` 一律失败（`UNVERIFIED_TARGET_STATE`）；`ok:false, verified:true` 一律失败（`ADAPTER_FAILURE`）；仅 `ok:true && verified:true` 才成功；桥接抛错失败关闭；
-5. 原生模块导出面白名单校验（含夹带通用能力时拒绝）；
-6. 默认装配使用真实 AX 桥接，附加模块缺失时诚实失败关闭；
-7. 生产入口与配置解析：环境变量校验、UDS-only 结构断言、`npm start` 入口存在；
-8. 真实 UDS 上的签名/重放/篡改/未注册目标行为。
-
----
-
-## 6. 全量测试、类型检查与构建
-
-执行命令：`cd local-automation-service && npm test`
+## 5. 全量验证
 
 ```text
- Test Files  14 passed (14)
-      Tests  87 passed | 1 skipped (88)
-   Duration  ~0.6s
+cd local-automation-service && npm test
+ Test Files  15 passed (15)
+      Tests  114 passed | 1 skipped (115)
+
+npm run typecheck   -> tsc --noEmit, 0 errors
+npm run build       -> tsc, dist/ 生成成功（含 dist/main.js）
+npm run build:native-> 0 errors, 0 warnings（生产产物 + 测试接缝产物）
 ```
 
-说明：唯一 skip 项为“附加模块未构建时诚实失败关闭”的负向分支——本机模块已构建，故该分支按设计跳过；其正向对应分支（真实模块可用时报告真实 AX 能力）已执行通过。
+唯一 skip 项为“附加模块未构建时诚实失败关闭”的负向分支——本机模块已构建，故按设计跳过；其正向分支（真实模块可用时报告真实 AX 能力）已执行通过。
 
-`npm run typecheck`（`tsc --noEmit`）：0 errors。
-`npm run build`（`tsc`）：成功输出 `dist/`，含 `dist/main.js` 生产入口。
-
----
-
-## 7. 生产源门禁
-
-执行命令：`npx vitest run tests/sourceGuard.spec.ts`
+### 5.1 原生构建与真实探针
 
 ```text
- ✓ tests/sourceGuard.spec.ts (3 tests)
-   ✓ strictly forbids child_process, spawn, exec, and shell in production src/**
-   ✓ strictly forbids generic desktop control or arbitrary click/type/keyboard/mouse capabilities
-   ✓ native Accessibility addon never shells out, opens a port, or drives the desktop generically
+probe: {"platform":"darwin","bridgeVersion":"2.0.0","axApiAvailable":true,
+        "axTrusted":true,"ideaRunning":true,"ideaWindowExposed":false}
+
+OPEN_REGISTERED_FILE     -> NO_ACTIVE_WINDOW（失败关闭）
+FOCUS_RUN_CONFIGURATION  -> NO_ACTIVE_WINDOW（失败关闭）
+SHOW_TEST_RESULT         -> NO_ACTIVE_WINDOW（失败关闭）
 ```
 
-第三项门禁直接扫描 `native/idea_ax_bridge.mm`，禁止 `osascript`/`AppleScript`/`JXA`/`child_process`/spawn/exec/`system(`/`popen(`/`fork(`/`NSTask`/`openURL`/`open -a`/`CGEventCreate*`/`AXUIElementCreateSystemWide`/任何 URL、`127.0.0.1`、`localhost`、`63342`、`port`，并要求 bundle identifier 与 `kAXPressAction` 存在于源码中。
-
----
-
-## 8. 真实探针与集成夹具实测
-
-执行命令：`cd local-automation-service && npx tsx scripts/real-acceptance.ts`
+### 5.2 真实 UDS 探针（`scripts/real-acceptance.ts`）
 
 ```text
---- 1. [LIVE_PROBE] In-process macOS Accessibility bridge ---
-Native AX addon: LOADED (version 1.0.0, platform darwin)
-  macOS Accessibility API available: true
-  macOS Accessibility permission granted to this process: true
-  Trusted IntelliJ IDEA (com.jetbrains.intellij) running: false
-  [Real Action 1] OPEN_REGISTERED_FILE:     BLOCKED (fail closed)  BLOCKED: IDEA_NOT_RUNNING
-  [Real Action 2] FOCUS_RUN_CONFIGURATION:  BLOCKED (fail closed)  BLOCKED: IDEA_NOT_RUNNING
-  [Real Action 3] SHOW_TEST_RESULT:         BLOCKED (fail closed)  BLOCKED: IDEA_NOT_RUNNING
-
---- 2. [LIVE_PROBE] Production Unix Domain Socket service ---
 Socket is a Unix domain socket: true
 Socket permissions: 600 (owner-only: true)
-Signed IDEA request over UDS     -> status=FAILED   errorCode=ADAPTER_FAILURE
-Replayed request over UDS        -> status=REJECTED errorCode=REPLAY_DETECTED
-Tampered signature over UDS      -> status=REJECTED errorCode=INVALID_SIGNATURE
-Unregistered target over UDS     -> status=REJECTED errorCode=TARGET_NOT_REGISTERED
-  [PASS] socket is a Unix domain socket
-  [PASS] socket permissions are owner-only
-  [PASS] no adapter ever reports SUCCEEDED while IDEA is unavailable
-  [PASS] replay rejected
-  [PASS] tampered signature rejected
-  [PASS] unregistered target rejected
-
---- 3. [LIVE_PROBE] StudyPilot loopback service (http://127.0.0.1:8080) ---
-Live StudyPilot Status: OFFLINE -> 3 项浏览器真实动作 BLOCKED
-
---- 4. [INTEGRATION_FIXTURE] Browser adapter mechanics (isolated harness) ---
-  [Fixture] OPEN_STUDYPILOT_ROUTE (ASSISTANT -> /):                       PASS
-  [Fixture] FOCUS_AGENT_INPUT (origin + activeElement verified):          PASS
-  [Fixture] OPEN_STUDYPILOT_ROUTE (WORKSPACE_ARTIFACTS -> /workspaces):   PASS
-  [Fixture] OPEN_RESULT_PANEL (trigger clicked, visibility verified):     PASS
+Signed IDEA request over UDS -> status=FAILED   errorCode=ADAPTER_FAILURE
+Replayed request over UDS    -> status=REJECTED errorCode=REPLAY_DETECTED
+Tampered signature over UDS  -> status=REJECTED errorCode=INVALID_SIGNATURE
+Unregistered target over UDS -> status=REJECTED errorCode=TARGET_NOT_REGISTERED
+[PASS] × 6
+浏览器适配器隔离夹具 4/4 PASS（不代表 Task 34 REAL_E2E）
 ```
 
----
-
-## 9. 诚实边界与未完成项（BLOCKED 声明）
-
-1. **真实 IDEA 正向验收未执行（BLOCKED）**：本机未运行 IntelliJ IDEA，三项 IDE 动作只取得“确定性失败关闭”的真实证据，**未取得任何真实成功证据**。因此本任务**不能**声明完成，也不能把本文件标记为已验收。
-2. **未对真实 IDE 的 AX 树做正向标定（已知限制）**：动作成功所依赖的具体 AX 属性（编辑器标签/聚焦文档的标题与 `AXDocument`、运行配置选择器的 `AXFocused`、结果视图的可见性）在真实 IntelliJ IDEA（2026.1.1）上的实际暴露情况**尚未标定**。若真实 IDE 不暴露所需属性，实现会返回 `TARGET_NOT_FOUND` / `STATE_NOT_VERIFIED` 并失败关闭——即“诚实失败”，绝不虚构成功；但这意味着正向路径可能仍需在真实环境中调整。
-3. **未执行 `[REAL_E2E]`**：本文件所有夹具证据均为 `[INTEGRATION_FIXTURE]` 或 `[LIVE_PROBE]`，不代表也不替代 Task 34 的真实全栈验收。
-4. **StudyPilot 前端/服务离线**：3 项浏览器真实动作同样为 `BLOCKED`（前置条件缺失），仅有隔离夹具的力学验证。
-5. **其他未覆盖项**：未在 Windows/Linux 上验证（非 darwin 平台按设计直接失败关闭）；未验证 IDE 侧真实运行配置/测试结果数据；未与 Java 端在本机完成真实进程握手（由 Task 33 真实联调阶段进行）。
-
-### 9.1 复现正向验收所需前置条件
-
-- macOS 上安装并**运行** IntelliJ IDEA（bundle id `com.jetbrains.intellij`），打开包含已登记工作区与已登记文件的工程；
-- 为运行本地自动化服务的宿主进程授予“系统设置 → 隐私与安全性 → 辅助功能”权限；
-- 该工程中存在已登记的运行配置与已有测试结果视图；
-- 先执行 `npm run build:native`，再执行 `npx tsx scripts/real-acceptance.ts`。
+Unix Socket 传输、0600 权限、协议版本、HMAC、时间窗与 nonce 语义**未改动**。
 
 ---
 
-## 10. 本轮改动文件
+## 6. 真实 IDE 标定证据（本轮新增，关键）
 
-新增：`native/idea_ax_bridge.mm`、`native/build.sh`、`src/nativeAxBridge.ts`、`src/config.ts`、`src/main.ts`、`tests/ideaNativeAx.spec.ts`、`tests/entrypoint.spec.ts`。
+Codex 已启动本机已安装的 IntelliJ IDEA（`com.jetbrains.intellij`，2026.1.1，PID 14285）并尝试打开 `/Users/moxiao/IdeaProjects/project-zcode-task-33`。
 
-修改：`src/ideaAdapter.ts`（删除虚构 HTTP 桥接，改为真实 AX 适配器）、`src/service.ts`（默认装配 + 失败码）、`src/types.ts`（移除 `ideaLocalApiBaseUrl`）、`src/browserAdapter.ts`（来源纵深加固）、`src/index.ts`、`package.json`、`.gitignore`、`scripts/real-acceptance.ts`、`tests/sourceGuard.spec.ts`、`tests/falseSuccess.spec.ts`、`tests/adapters.spec.ts`、`tests/reviewFindings.spec.ts`、本文件。
+- **实测：该 IDEA 进程不向 macOS Accessibility 暴露任何窗口。** 只读探针（独立临时工具，非仓库代码）在 ~4 分钟内按 8 秒间隔轮询 31 次，`AXWindows` **始终为 0**，`AXFocusedWindow`/`AXMainWindow` 均不存在，应用唯一子节点是 `AXMenuBar`：
+
+  ```text
+  == app role=AXApplication ==
+  AXWindows present=1 count=0
+  AXFocusedWindow present=0
+  AXMainWindow present=0
+  app AXChildren count=1
+    app.child[0] role=AXMenuBar title=(null)
+  [poll 0..30] windows=0
+  ```
+
+- **IDE 侧日志佐证**（`~/Library/Logs/JetBrains/IntelliJIdea2026.1/idea.log`）：14:02:23 以 **text editor processor** 异步打开该工程（`Using processor text editor to open the project ...`），此后日志未见窗口/帧创建或任何 accessibility 相关记录；同时存在 `https.proxyHost=127.0.0.1` 的代理告警。也就是说工程仍处于异步打开/索引阶段，且 JBR 未把窗口桥接到 AX。
+- **结论（诚实）**：当前环境下不存在可绑定的身份锚点（无 AXWindow ⇒ 无项目树、无编辑器、无运行配置选择器、无工具窗口层级）。因此**三项 IDEA 动作全部失败关闭**，返回稳定码 `NO_ACTIVE_WINDOW`，**没有任何真实成功证据**。
+- **未做的事**：没有为了“让它通过”而放宽验证（例如退回全应用同标题搜索或 basename 匹配）；没有修改用户 IDE 设置或权限；没有降级到 Shell/AppleScript/键鼠模拟。
+
+### 6.1 明确仍未解除的阻塞
+
+1. **真实 IDEA 正向验收仍未执行（BLOCKED）**：`ideaWindowExposed=false`，三动作只有失败关闭证据。
+2. **真实 AX 树标定未完成**：动作成功所依赖的具体 AX 属性（项目树容器/单元格 role、选择器的 `AXToolbar` 祖先与 `AXValue`、工具窗口标签的 `AXTabGroup` 祖先与 `AXSelected`、编辑器的 `AXDocument`/`AXURL`）在真实 IntelliJ IDEA 2026.1.1 上的实际暴露情况**尚未观测到**。若真实 IDE 不暴露这些结构，实现会继续失败关闭（诚实失败），但正向路径可能需要按真实树调整 role/容器名单——这是**标定**问题，不是放宽验证的理由。
+3. **尚未确认的日历环境前置**：需确认 IDEA 是否需要在设置中启用“屏幕阅读器支持/辅助功能”，或使用 `-Dide.a11y.force.enabled=true` 之类的 JBR 选项，才会把窗口桥接到 AX。本轮未修改任何用户设置。
+4. **浏览器通道**：StudyPilot 服务离线，3 项浏览器真实动作同样 `BLOCKED`；夹具证据仍仅为 `[INTEGRATION_FIXTURE]`，不代表 Task 34 `[REAL_E2E]`。
+
+### 6.2 复现正向验收的前置条件
+
+1. macOS 上运行 IntelliJ IDEA（bundle id `com.jetbrains.intellij`），并使其**确实向 Accessibility 暴露窗口**（先运行 `npx tsx scripts/real-acceptance.ts`，确认 `ideaWindowExposed: true`）；
+2. 打开含已登记工作区/已登记文件的工程，工程内存在已登记运行配置与已有测试结果视图；
+3. 宿主进程已获“系统设置 → 隐私与安全性 → 辅助功能”权限；
+4. `npm run build:native && npx tsx scripts/real-acceptance.ts`。
+
+---
+
+## 7. 本轮改动文件
+
+修改：`native/idea_ax_bridge.mm`（重写为版本 2.0.0 的严格结构化身份绑定 + 测试接缝）、`native/build.sh`（同源构建生产 + 接缝两个产物）、`src/nativeAxBridge.ts`（`ideaWindowExposed`）、`src/ideaAdapter.ts`（规范化真实路径后再交原生层）、`scripts/real-acceptance.ts`（新增身份锚点探测与诚实前置说明）、`tests/sourceGuard.spec.ts`、`tests/ideaNativeAx.spec.ts`、`tests/falseSuccess.spec.ts`、本文件。
+
+新增：`tests/nativeAxSemantics.spec.ts`（23 项对抗性夹具语义测试）。
+
+未改动：`src/{protocol,verifier,nonceStore,canonical,server,service,config,main,actionRegistry,browserAdapter}.ts` 的安全语义（UDS-only、0600、协议版本、HMAC、nonce、注册表白名单、独立浏览器动作与来源校验保持不变）。
 
 未触碰 `backend/**`、`web/**`、`ai-service/**`、`runner-service/**`；未合并 `main`；未启动 Task 34。

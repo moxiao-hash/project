@@ -20,6 +20,12 @@ export interface NativeAxProbe {
   axApiAvailable: boolean;
   axTrusted: boolean;
   ideaRunning: boolean;
+  /**
+   * Whether the trusted IntelliJ IDEA process currently exposes an accessible AXWindow.
+   * Without an exposed window there is no identity anchor, so every registered action
+   * fails closed instead of matching somewhere in the application.
+   */
+  ideaWindowExposed: boolean;
 }
 
 export interface NativeAxResult {

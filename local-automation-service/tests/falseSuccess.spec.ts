@@ -99,6 +99,7 @@ describe('False-Success Defenses for Adapters', () => {
           axApiAvailable: true,
           axTrusted: true,
           ideaRunning: true,
+          ideaWindowExposed: true,
         }),
         openFile: vi.fn().mockResolvedValue(verifiedResult),
         focusConfiguration: vi.fn().mockResolvedValue(verifiedResult),

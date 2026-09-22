@@ -63,6 +63,7 @@ export class MacAxIdeaBridge implements IdeaAccessibilityBridge {
         axApiAvailable: false,
         axTrusted: false,
         ideaRunning: false,
+        ideaWindowExposed: false,
       };
     }
   }
@@ -76,7 +77,21 @@ export class MacAxIdeaBridge implements IdeaAccessibilityBridge {
         detail: 'registered path must be an absolute path',
       };
     }
-    if (!isExistingRegularFile(realFilePath)) {
+
+    // The native layer proves the registered file through its canonical path, so the path
+    // handed over is always the fully resolved real path (never a display name).
+    let canonicalPath: string;
+    try {
+      canonicalPath = fs.realpathSync(realFilePath);
+    } catch {
+      return {
+        ok: false,
+        verified: false,
+        code: 'INVALID_REGISTERED_PATH',
+        detail: 'registered path could not be resolved to a canonical real path',
+      };
+    }
+    if (!isExistingRegularFile(canonicalPath)) {
       return {
         ok: false,
         verified: false,
@@ -84,7 +99,7 @@ export class MacAxIdeaBridge implements IdeaAccessibilityBridge {
         detail: 'registered path is not an existing regular file',
       };
     }
-    return this.native.openRegisteredFile(realFilePath);
+    return this.native.openRegisteredFile(canonicalPath);
   }
 
   public async focusConfiguration(configHandle: string): Promise<NativeAxResult> {

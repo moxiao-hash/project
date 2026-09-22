@@ -1,21 +1,27 @@
 // StudyPilot Task 33 — IntelliJ IDEA Accessibility (AX) bridge.
 //
-// This is a real, narrowly typed, in-process native binding. It talks directly to the
-// macOS Accessibility server through the ApplicationServices AX APIs. It never starts a
-// child process, never uses a shell, never uses a script-automation bridge, never listens
-// on a network socket, and never synthesises keyboard or mouse events.
+// Real, narrowly typed, in-process native binding. It talks directly to the macOS
+// Accessibility server through the ApplicationServices AX APIs. It never starts a child
+// process, never uses a shell, never uses a script-automation bridge, never listens on a
+// network socket, and never synthesises keyboard or mouse events.
 //
-// It is bound to the single trusted bundle identifier below and exposes exactly four
-// entry points:
-//   probe()                  — honest, side-effect-free capability report
-//   openRegisteredFile(path) — open one trusted registered file and verify the AX state
-//   focusRunConfiguration(n) — focus one pre-registered run configuration and verify it
-//   showTestResult(handle)   — reveal one pre-registered existing test result and verify it
+// Identity binding rules (these exist to make false success impossible):
+//   * The traversal root is a real AXWindow of the trusted bundle identifier, never the
+//     whole application. There is no application-wide or system-wide search.
+//   * A target is only admissible when its AX role is in the per-operation allowlist, its
+//     ancestor chain proves the required container, and it is the UNIQUE such element.
+//     Zero candidates and two-or-more candidates both fail closed.
+//   * Identity comparisons are always exact equality. A basename or a title substring is
+//     never accepted as proof of anything.
+//   * Actuation selects the target from a pre-action snapshot. Verification re-locates the
+//     target in a snapshot taken AFTER the action, so pre-existing state can never be
+//     mistaken for the effect of the action.
 //
-// Every operation reports `ok` (the accessibility action was dispatched) separately from
-// `verified` (the required accessibility state was actually observed afterwards). Callers
-// must treat success as `ok === true && verified === true`. Nothing here ever fabricates a
-// verified state.
+// Exports depend on the build:
+//   production       probe, openRegisteredFile, focusRunConfiguration, showTestResult
+//   AX_BRIDGE_TEST_SEAM adds __testEvaluate, which runs the SAME decision functions over
+//                      fixture trees. The production artifact never contains it, and the
+//                      TypeScript export-surface guard rejects any extra export.
 
 #include <node_api.h>
 
@@ -23,6 +29,7 @@
 #import <AppKit/AppKit.h>
 #import <ApplicationServices/ApplicationServices.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -31,24 +38,34 @@
 // ---------------------------------------------------------------------------
 
 static NSString *const kIdeaBundleIdentifier = @"com.jetbrains.intellij";
-static NSString *const kBridgeVersion = @"1.0.0";
+static const char *kBridgeVersion = "2.0.0";
 
-static const int kMaxTraversalNodes = 6000;
-static const int kMaxTraversalDepth = 48;
+static const int kMaxSnapshotNodes = 2000;
+static const int kMaxSnapshotDepth = 30;
 static const size_t kMaxArgumentBytes = 4096;
+static const size_t kMaxFieldBytes = 512;
+static const float kAxMessagingTimeoutSeconds = 2.0f;
+
+// Per-operation structural allowlists. A candidate must match one of these roles AND the
+// required container role somewhere in its ancestor chain.
+static const char *kProjectTreeContainerRoles[] = {"AXOutline", "AXTable", "AXList", "AXTree"};
+static const char *kProjectTreeLeafRoles[] = {"AXCell", "AXStaticText", "AXRow"};
+static const char *kRunSelectorContainerRoles[] = {"AXToolbar"};
+static const char *kRunSelectorRoles[] = {"AXPopUpButton", "AXComboBox"};
+static const char *kToolWindowContainerRoles[] = {"AXTabGroup"};
+static const char *kToolWindowTabRoles[] = {"AXTab", "AXRadioButton"};
 
 // ---------------------------------------------------------------------------
-// N-API value helpers
+// N-API helpers
 // ---------------------------------------------------------------------------
 
 static void SetNamed(napi_env env, napi_value obj, const char *name, napi_value value) {
   napi_set_named_property(env, obj, name, value);
 }
 
-static napi_value MakeString(napi_env env, NSString *value) {
+static napi_value MakeString(napi_env env, const std::string &value) {
   napi_value out = nullptr;
-  const char *utf8 = value ? [value UTF8String] : "";
-  napi_create_string_utf8(env, utf8 ? utf8 : "", NAPI_AUTO_LENGTH, &out);
+  napi_create_string_utf8(env, value.c_str(), value.size(), &out);
   return out;
 }
 
@@ -58,15 +75,12 @@ static napi_value MakeBool(napi_env env, bool value) {
   return out;
 }
 
-/**
- * Canonical operation result. `ok` describes dispatch, `verified` describes observed state.
- */
 static napi_value MakeResult(
     napi_env env,
     bool ok,
     bool verified,
-    NSString *code,
-    NSString *detail
+    const char *code,
+    const char *detail
 ) {
   napi_value obj = nullptr;
   napi_create_object(env, &obj);
@@ -77,7 +91,7 @@ static napi_value MakeResult(
   return obj;
 }
 
-static bool ReadStringArgument(napi_env env, napi_value value, NSString **out) {
+static bool ReadStringArgument(napi_env env, napi_value value, std::string *out) {
   napi_valuetype type = napi_undefined;
   if (napi_typeof(env, value, &type) != napi_ok || type != napi_string) {
     return false;
@@ -93,11 +107,7 @@ static bool ReadStringArgument(napi_env env, napi_value value, NSString **out) {
   if (napi_get_value_string_utf8(env, value, buffer.data(), buffer.size(), &length) != napi_ok) {
     return false;
   }
-  NSString *str = [NSString stringWithUTF8String:buffer.data()];
-  if (str == nil) {
-    return false;
-  }
-  *out = str;
+  out->assign(buffer.data(), length);
   return true;
 }
 
@@ -107,265 +117,535 @@ static bool ReadStringArgument(napi_env env, napi_value value, NSString **out) {
 
 static CFTypeRef CopyAttribute(AXUIElementRef element, CFStringRef attribute) {
   CFTypeRef value = nullptr;
-  AXError error = AXUIElementCopyAttributeValue(element, attribute, &value);
-  if (error != kAXErrorSuccess) {
+  if (AXUIElementCopyAttributeValue(element, attribute, &value) != kAXErrorSuccess) {
     return nullptr;
   }
   return value;
 }
 
-static bool IsHidden(AXUIElementRef element) {
-  CFTypeRef value = CopyAttribute(element, kAXHiddenAttribute);
-  if (value == nullptr) {
-    return false;
+static std::string ToStd(NSString *value, size_t maxBytes) {
+  if (value == nil) {
+    return std::string();
   }
+  const char *utf8 = [value UTF8String];
+  if (utf8 == nullptr) {
+    return std::string();
+  }
+  std::string text(utf8);
+  if (text.size() > maxBytes) {
+    text.resize(maxBytes);
+  }
+  return text;
+}
+
+struct RawAttributes {
+  std::string role;
+  std::string subrole;
+  std::string identifier;
+  std::string title;
+  std::string description;
+  std::string document;
+  std::string url;
+  std::string value;
+  bool selected = false;
+  bool focused = false;
   bool hidden = false;
-  if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
-    hidden = CFBooleanGetValue((CFBooleanRef)value);
-  }
-  CFRelease(value);
-  return hidden;
-}
+  bool hasSize = false;
+  double width = 0.0;
+  double height = 0.0;
+};
 
-static bool CopyBoolAttribute(AXUIElementRef element, CFStringRef attribute, bool fallback) {
-  CFTypeRef value = CopyAttribute(element, attribute);
-  if (value == nullptr) {
-    return fallback;
-  }
-  bool result = fallback;
-  CFTypeID type = CFGetTypeID(value);
-  if (type == CFBooleanGetTypeID()) {
-    result = CFBooleanGetValue((CFBooleanRef)value);
-  } else if (type == CFNumberGetTypeID()) {
-    int number = 0;
-    if (CFNumberGetValue((CFNumberRef)value, kCFNumberIntType, &number)) {
-      result = number != 0;
-    }
-  } else if (type == CFStringGetTypeID()) {
-    result = [(__bridge NSString *)value boolValue];
-  }
-  CFRelease(value);
-  return result;
-}
-
-/** Reads a string-valued attribute verbatim. Returns nil when the attribute is absent. */
-static NSString *CopyStringAttribute(AXUIElementRef element, CFStringRef attribute) {
-  CFTypeRef value = CopyAttribute(element, attribute);
-  if (value == nullptr) {
-    return nil;
-  }
-  NSString *result = nil;
-  CFTypeID type = CFGetTypeID(value);
-  if (type == CFStringGetTypeID()) {
-    result = [(__bridge NSString *)value copy];
-  } else if (type == CFNumberGetTypeID() || type == CFBooleanGetTypeID()) {
-    result = [(__bridge id)value description];
-  }
-  CFRelease(value);
-  return result;
-}
-
+enum AttributeIndex {
+  kIdxRole = 0,
+  kIdxSubrole,
+  kIdxIdentifier,
+  kIdxTitle,
+  kIdxDescription,
+  kIdxDocument,
+  kIdxUrl,
+  kIdxValue,
+  kIdxSelected,
+  kIdxFocused,
+  kIdxHidden,
+  kIdxSize,
+  kAttributeCount
+};
 
 /**
- * Resolves a human-readable identity for an element. Accessibility titles are the primary
- * identity signal; the description is only a fallback.
+ * Reads every attribute the decision functions need in a single IPC round trip.
+ * Long values are bounded; nothing here is ever surfaced in a receipt.
  */
-static NSString *CopyElementTitle(AXUIElementRef element) {
-  NSString *title = CopyStringAttribute(element, kAXTitleAttribute);
-  if (title.length > 0) {
-    return title;
+static bool ReadAttributes(AXUIElementRef element, RawAttributes *out) {
+  CFStringRef names[kAttributeCount] = {
+      kAXRoleAttribute,
+      kAXSubroleAttribute,
+      kAXIdentifierAttribute,
+      kAXTitleAttribute,
+      kAXDescriptionAttribute,
+      kAXDocumentAttribute,
+      kAXURLAttribute,
+      kAXValueAttribute,
+      kAXSelectedAttribute,
+      kAXFocusedAttribute,
+      kAXHiddenAttribute,
+      kAXSizeAttribute,
+  };
+  CFArrayRef attributeArray =
+      CFArrayCreate(nullptr, (const void **)names, kAttributeCount, &kCFTypeArrayCallBacks);
+  if (attributeArray == nullptr) {
+    return false;
   }
-  return CopyStringAttribute(element, kAXDescriptionAttribute);
-}
 
-static bool IsElementVisible(AXUIElementRef element) {
-  AXUIElementRef current = element;
-  bool releaseCurrent = false;
-  for (int depth = 0; depth < kMaxTraversalDepth; depth++) {
-    if (current == nullptr) {
-      break;
+  CFArrayRef values = nullptr;
+  AXError error = AXUIElementCopyMultipleAttributeValues(
+      element, attributeArray, (AXCopyMultipleAttributeOptions)1, &values);
+  CFRelease(attributeArray);
+  if (error != kAXErrorSuccess || values == nullptr) {
+    return false;
+  }
+
+  auto readString = [&](int index) -> std::string {
+    CFTypeRef value = CFArrayGetValueAtIndex(values, index);
+    if (value == nullptr || CFGetTypeID(value) != CFStringGetTypeID()) {
+      return std::string();
     }
-    if (IsHidden(current)) {
-      if (releaseCurrent) CFRelease(current);
+    return ToStd((__bridge NSString *)value, kMaxFieldBytes);
+  };
+  auto readFlag = [&](int index) -> bool {
+    CFTypeRef value = CFArrayGetValueAtIndex(values, index);
+    if (value == nullptr) {
       return false;
     }
-    CFTypeRef parentValue = CopyAttribute(current, kAXParentAttribute);
-    AXUIElementRef parent = nullptr;
-    if (parentValue != nullptr) {
-      if (CFGetTypeID(parentValue) == AXUIElementGetTypeID()) {
-        parent = (AXUIElementRef)parentValue;
-      } else {
-        CFRelease(parentValue);
+    if (CFGetTypeID(value) == CFBooleanGetTypeID()) {
+      return CFBooleanGetValue((CFBooleanRef)value);
+    }
+    if (CFGetTypeID(value) == CFStringGetTypeID()) {
+      return [(__bridge NSString *)value boolValue];
+    }
+    if (CFGetTypeID(value) == CFNumberGetTypeID()) {
+      int number = 0;
+      if (CFNumberGetValue((CFNumberRef)value, kCFNumberIntType, &number)) {
+        return number != 0;
       }
     }
-    if (releaseCurrent) {
-      CFRelease(current);
-    }
-    current = parent;
-    releaseCurrent = (parent != nullptr);
-    if (parent == nullptr) {
-      break;
-    }
-  }
-  if (releaseCurrent && current != nullptr) {
-    CFRelease(current);
-  }
-
-  CFTypeRef sizeValue = CopyAttribute(element, kAXSizeAttribute);
-  if (sizeValue == nullptr) {
-    return true;
-  }
-  CGSize size = CGSizeZero;
-  bool hasSize =
-      CFGetTypeID(sizeValue) == AXValueGetTypeID() &&
-      AXValueGetValue((AXValueRef)sizeValue, (AXValueType)kAXValueCGSizeType, &size);
-  CFRelease(sizeValue);
-  if (!hasSize) {
-    return true;
-  }
-  return size.width > 0.0 && size.height > 0.0;
-}
-
-typedef bool (*AxMatcher)(AXUIElementRef element, int depth, const void *context);
-
-/**
- * Depth-limited, budget-limited depth-first search over the AX tree.
- * Returns a retained element (caller releases) or nullptr.
- */
-static AXUIElementRef FindElement(
-    AXUIElementRef element,
-    int depth,
-    int *budget,
-    AxMatcher matcher,
-    const void *context
-) {
-  if (element == nullptr || *budget <= 0) {
-    return nullptr;
-  }
-  (*budget)--;
-
-  if (matcher(element, depth, context)) {
-    CFRetain(element);
-    return element;
-  }
-  if (depth >= kMaxTraversalDepth) {
-    return nullptr;
-  }
-
-  CFTypeRef childrenValue = CopyAttribute(element, kAXChildrenAttribute);
-  if (childrenValue == nullptr) {
-    return nullptr;
-  }
-  if (CFGetTypeID(childrenValue) != CFArrayGetTypeID()) {
-    CFRelease(childrenValue);
-    return nullptr;
-  }
-
-  AXUIElementRef found = nullptr;
-  CFArrayRef children = (CFArrayRef)childrenValue;
-  CFIndex count = CFArrayGetCount(children);
-  for (CFIndex i = 0; i < count && found == nullptr; i++) {
-    CFTypeRef child = CFArrayGetValueAtIndex(children, i);
-    if (child == nullptr || CFGetTypeID(child) != AXUIElementGetTypeID()) {
-      continue;
-    }
-    found = FindElement((AXUIElementRef)child, depth + 1, budget, matcher, context);
-  }
-  CFRelease(childrenValue);
-  return found;
-}
-
-static bool TitleMatches(NSString *candidate, NSString *wanted, bool exact) {
-  if (candidate == nil || wanted == nil || wanted.length == 0) {
     return false;
-  }
-  return exact ? [candidate isEqualToString:wanted] : [candidate containsString:wanted];
-}
+  };
 
-// ---------------------------------------------------------------------------
-// Matchers
-// ---------------------------------------------------------------------------
+  out->role = readString(kIdxRole);
+  out->subrole = readString(kIdxSubrole);
+  out->identifier = readString(kIdxIdentifier);
+  out->title = readString(kIdxTitle);
+  out->description = readString(kIdxDescription);
+  out->document = readString(kIdxDocument);
+  out->url = readString(kIdxUrl);
+  out->value = readString(kIdxValue);
+  out->selected = readFlag(kIdxSelected);
+  out->focused = readFlag(kIdxFocused);
+  out->hidden = readFlag(kIdxHidden);
 
-struct ExactTitleContext {
-  NSString *wanted;
-  bool requireVisible;
-};
+  CFTypeRef sizeValue = CFArrayGetValueAtIndex(values, kIdxSize);
+  if (sizeValue != nullptr && CFGetTypeID(sizeValue) == AXValueGetTypeID()) {
+    CGSize size = CGSizeZero;
+    if (AXValueGetValue((AXValueRef)sizeValue, (AXValueType)kAXValueCGSizeType, &size)) {
+      out->hasSize = true;
+      out->width = size.width;
+      out->height = size.height;
+    }
+  }
 
-static bool MatchExactTitle(AXUIElementRef element, int depth, const void *context) {
-  const ExactTitleContext *ctx = (const ExactTitleContext *)context;
-  NSString *title = CopyElementTitle(element);
-  if (!TitleMatches(title, ctx->wanted, true)) {
-    return false;
-  }
-  if (ctx->requireVisible && !IsElementVisible(element)) {
-    return false;
-  }
+  CFRelease(values);
   return true;
 }
 
-struct ContainsTitleContext {
-  NSString *wanted;
-  bool requireVisible;
-};
-
-static bool MatchContainsTitle(AXUIElementRef element, int depth, const void *context) {
-  const ContainsTitleContext *ctx = (const ContainsTitleContext *)context;
-  NSString *title = CopyElementTitle(element);
-  if (!TitleMatches(title, ctx->wanted, false)) {
-    return false;
+static CFTypeRef CopyChildElements(AXUIElementRef element) {
+  CFTypeRef children = CopyAttribute(element, kAXChildrenAttribute);
+  if (children == nullptr) {
+    return nullptr;
   }
-  if (ctx->requireVisible && !IsElementVisible(element)) {
-    return false;
+  if (CFGetTypeID(children) != CFArrayGetTypeID()) {
+    CFRelease(children);
+    return nullptr;
   }
-  return true;
+  return children;
 }
 
-/** Matches the element that is currently focused and whose identity mentions a title. */
-struct FocusedDocumentContext {
-  NSString *wanted;
+// ---------------------------------------------------------------------------
+// Snapshot model — plain data, so the decision functions are pure and testable.
+// ---------------------------------------------------------------------------
+
+typedef int AxNode;
+static const AxNode kNoNode = 0;
+
+struct AxNodeData {
+  std::string role;
+  std::string subrole;
+  std::string identifier;
+  std::string title;
+  std::string document;
+  std::string url;
+  std::string value;
+  bool selected = false;
+  bool focused = false;
+  bool hidden = false;
+  bool hasSize = false;
+  double width = 0.0;
+  double height = 0.0;
+  AxNode parent = kNoNode;
+  int liveChildIndex = -1;
+  std::vector<AxNode> children;
 };
 
-static bool MatchFocusedDocument(AXUIElementRef element, int depth, const void *context) {
-  const FocusedDocumentContext *ctx = (const FocusedDocumentContext *)context;
-  bool focused = CopyBoolAttribute(element, kAXFocusedAttribute, false);
-  if (!focused) {
-    return false;
+struct AxSnapshot {
+  std::vector<AxNodeData> nodes;  // AxNode n maps to nodes[n - 1]
+  AxNode root = kNoNode;
+  bool truncated = false;
+
+  AxNode Add() {
+    nodes.push_back(AxNodeData());
+    return (AxNode)nodes.size();
   }
-  if (TitleMatches(CopyElementTitle(element), ctx->wanted, false)) {
-    return true;
+  const AxNodeData *At(AxNode node) const {
+    if (node <= 0 || node > (AxNode)nodes.size()) {
+      return nullptr;
+    }
+    return &nodes[node - 1];
   }
-  if (TitleMatches(CopyStringAttribute(element, kAXDocumentAttribute), ctx->wanted, false)) {
-    return true;
+  bool Truncated() const { return truncated; }
+};
+
+static bool RoleInList(const std::string &role, const char *const *roles, size_t count) {
+  for (size_t i = 0; i < count; i++) {
+    if (role == roles[i]) {
+      return true;
+    }
   }
   return false;
 }
 
-struct SelectedTitleContext {
-  NSString *wanted;
-};
+static bool HasAncestorRole(
+    const AxSnapshot &snapshot,
+    AxNode node,
+    const char *const *roles,
+    size_t count
+) {
+  const AxNodeData *current = snapshot.At(node);
+  while (current != nullptr && current->parent != kNoNode) {
+    const AxNodeData *parent = snapshot.At(current->parent);
+    if (parent == nullptr) {
+      return false;
+    }
+    if (RoleInList(parent->role, roles, count)) {
+      return true;
+    }
+    current = parent;
+  }
+  return false;
+}
 
-static bool MatchSelectedTitle(AXUIElementRef element, int depth, const void *context) {
-  const SelectedTitleContext *ctx = (const SelectedTitleContext *)context;
-  if (!CopyBoolAttribute(element, kAXSelectedAttribute, false)) {
+/**
+ * Chain of ancestor titles from the outermost node below the traversal root down to (and
+ * excluding) the candidate, joined with '/'. Used to prove a project-tree path.
+ */
+static std::string AncestorTitleChain(const AxSnapshot &snapshot, AxNode node) {
+  std::vector<std::string> titles;
+  const AxNodeData *current = snapshot.At(node);
+  if (current == nullptr) {
+    return std::string();
+  }
+  AxNode parent = current->parent;
+  while (parent != kNoNode && parent != snapshot.root) {
+    const AxNodeData *data = snapshot.At(parent);
+    if (data == nullptr || data->title.empty()) {
+      return std::string();
+    }
+    titles.push_back(data->title);
+    parent = data->parent;
+  }
+  std::reverse(titles.begin(), titles.end());
+  std::string chain;
+  for (size_t i = 0; i < titles.size(); i++) {
+    if (i > 0) {
+      chain += "/";
+    }
+    chain += titles[i];
+  }
+  return chain;
+}
+
+static bool IsVisible(const AxSnapshot &snapshot, AxNode node) {
+  const AxNodeData *current = snapshot.At(node);
+  while (current != nullptr) {
+    if (current->hidden) {
+      return false;
+    }
+    if (current->parent == kNoNode) {
+      break;
+    }
+    current = snapshot.At(current->parent);
+  }
+  const AxNodeData *data = snapshot.At(node);
+  if (data != nullptr && data->hasSize && (data->width <= 0.0 || data->height <= 0.0)) {
     return false;
   }
-  return TitleMatches(CopyElementTitle(element), ctx->wanted, false) ||
-         TitleMatches(CopyStringAttribute(element, kAXValueAttribute), ctx->wanted, false);
+  return true;
+}
+
+static std::string CanonicalBasename(const std::string &path) {
+  size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) {
+    return path;
+  }
+  return path.substr(slash + 1);
+}
+
+static std::string CanonicalDirname(const std::string &path) {
+  size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos) {
+    return std::string();
+  }
+  if (slash == 0) {
+    return "/";
+  }
+  return path.substr(0, slash);
+}
+
+/**
+ * Normalises an AX document or URL value into an absolute filesystem path.
+ * Returns an empty string when the value cannot be proven to be a local file path.
+ */
+static std::string NormaliseFileReference(std::string value) {
+  if (value.empty()) {
+    return std::string();
+  }
+  const std::string prefix = "file://";
+  if (value.compare(0, prefix.size(), prefix) == 0) {
+    std::string rest = value.substr(prefix.size());
+    if (rest.compare(0, 9, "localhost") == 0) {
+      rest = rest.substr(9);
+    }
+    // Percent-decode the small subset that appears in file URLs.
+    std::string decoded;
+    decoded.reserve(rest.size());
+    for (size_t i = 0; i < rest.size(); i++) {
+      if (rest[i] == '%' && i + 2 < rest.size()) {
+        auto hex = [](char c) -> int {
+          if (c >= '0' && c <= '9') return c - '0';
+          if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+          if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+          return -1;
+        };
+        int hi = hex(rest[i + 1]);
+        int lo = hex(rest[i + 2]);
+        if (hi >= 0 && lo >= 0) {
+          decoded.push_back((char)((hi << 4) | lo));
+          i += 2;
+          continue;
+        }
+      }
+      decoded.push_back(rest[i]);
+    }
+    return decoded;
+  }
+  if (!value.empty() && value[0] == '/') {
+    return value;
+  }
+  return std::string();
+}
+
+enum class LocateStatus { kFound, kNotFound, kAmbiguous, kTruncated };
+
+struct MatchSpec {
+  const char *const *nodeRoles = nullptr;
+  size_t nodeRoleCount = 0;
+  const char *const *containerRoles = nullptr;
+  size_t containerRoleCount = 0;
+  std::string exactTitle;
+  bool requireExactTitle = false;
+  bool requirePathProof = false;
+  std::string canonicalPath;
+  std::string canonicalDir;
+  bool requireVisible = true;
+};
+
+static bool MatchesSpec(
+    const AxSnapshot &snapshot,
+    AxNode node,
+    const MatchSpec &spec,
+    const std::string &canonicalBasename
+) {
+  const AxNodeData *data = snapshot.At(node);
+  if (data == nullptr) {
+    return false;
+  }
+  if (!RoleInList(data->role, spec.nodeRoles, spec.nodeRoleCount)) {
+    return false;
+  }
+  if (spec.containerRoleCount > 0 &&
+      !HasAncestorRole(snapshot, node, spec.containerRoles, spec.containerRoleCount)) {
+    return false;
+  }
+  if (spec.requireExactTitle && data->title != spec.exactTitle) {
+    return false;
+  }
+  if (spec.requirePathProof) {
+    // The candidate's own title must be exactly the canonical basename, and the chain of
+    // ancestor titles must be a whole-component suffix of the canonical path's directory.
+    if (canonicalBasename.empty() || data->title != canonicalBasename) {
+      return false;
+    }
+    std::string chain = AncestorTitleChain(snapshot, node);
+    if (chain.empty()) {
+      return false;
+    }
+    std::string suffix = "/" + chain;
+    if (spec.canonicalDir.size() < suffix.size()) {
+      return false;
+    }
+    if (spec.canonicalDir.compare(spec.canonicalDir.size() - suffix.size(), suffix.size(), suffix) != 0) {
+      return false;
+    }
+  }
+  if (spec.requireVisible && !IsVisible(snapshot, node)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Locates the unique admissible target. Ambiguity is a hard failure: when two structurally
+ * admissible elements exist, no action is dispatched.
+ */
+static LocateStatus LocateUnique(
+    const AxSnapshot &snapshot,
+    const MatchSpec &spec,
+    const std::string &canonicalBasename,
+    AxNode *out
+) {
+  if (snapshot.nodes.empty() || snapshot.Truncated()) {
+    return LocateStatus::kTruncated;
+  }
+  AxNode found = kNoNode;
+  int matches = 0;
+  for (int i = 1; i <= (int)snapshot.nodes.size(); i++) {
+    AxNode node = (AxNode)i;
+    if (MatchesSpec(snapshot, node, spec, canonicalBasename)) {
+      if (matches == 0) {
+        found = node;
+      }
+      matches++;
+      if (matches > 1) {
+        return LocateStatus::kAmbiguous;
+      }
+    }
+  }
+  if (matches == 0) {
+    return LocateStatus::kNotFound;
+  }
+  *out = found;
+  return LocateStatus::kFound;
+}
+
+const char *LocateStatusCode(LocateStatus status) {
+  switch (status) {
+    case LocateStatus::kFound:
+      return "OK";
+    case LocateStatus::kNotFound:
+      return "TARGET_NOT_FOUND";
+    case LocateStatus::kAmbiguous:
+      return "TARGET_AMBIGUOUS";
+    case LocateStatus::kTruncated:
+      return "AX_SNAPSHOT_TRUNCATED";
+  }
+  return "TARGET_NOT_FOUND";
 }
 
 // ---------------------------------------------------------------------------
-// Application discovery (trusted bundle identifier only)
+// Verification predicates — evaluated only on the post-action snapshot.
+// ---------------------------------------------------------------------------
+
+/**
+ * OPEN_REGISTERED_FILE proof: some element must carry an AX document or URL that resolves
+ * to exactly the canonical registered path. Titles, basenames and selections are never used.
+ */
+static bool VerifyCanonicalDocumentPresent(const AxSnapshot &post, const std::string &canonicalPath) {
+  for (int i = 1; i <= (int)post.nodes.size(); i++) {
+    const AxNodeData *data = post.At((AxNode)i);
+    if (data == nullptr || data->hidden) {
+      continue;
+    }
+    if (NormaliseFileReference(data->document) == canonicalPath) {
+      return true;
+    }
+    if (NormaliseFileReference(data->url) == canonicalPath) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * FOCUS_RUN_CONFIGURATION proof: the run-configuration selector control (re-located on the
+ * post-action snapshot by the same strict rule) must be focused and must now report the
+ * registered configuration value itself.
+ */
+static bool VerifyRunSelectorState(
+    const AxSnapshot &post,
+    const MatchSpec &spec,
+    const std::string &handle
+) {
+  AxNode node = kNoNode;
+  if (LocateUnique(post, spec, std::string(), &node) != LocateStatus::kFound) {
+    return false;
+  }
+  const AxNodeData *data = post.At(node);
+  if (data == nullptr) {
+    return false;
+  }
+  if (!IsVisible(post, node)) {
+    return false;
+  }
+  bool showsHandle = (data->value == handle) || (data->title == handle);
+  if (!showsHandle) {
+    return false;
+  }
+  return data->focused || data->selected;
+}
+
+/**
+ * SHOW_TEST_RESULT proof: the registered existing results view must, AFTER the action,
+ * be the selected tab of its tool-window group and be visible. Pre-action visibility is
+ * never consulted, and generic focus is never accepted as proof.
+ */
+static bool VerifyResultViewSelected(
+    const AxSnapshot &post,
+    const MatchSpec &spec,
+    const std::string &handle
+) {
+  AxNode node = kNoNode;
+  if (LocateUnique(post, spec, std::string(), &node) != LocateStatus::kFound) {
+    return false;
+  }
+  const AxNodeData *data = post.At(node);
+  if (data == nullptr) {
+    return false;
+  }
+  if (!data->selected) {
+    return false;
+  }
+  return IsVisible(post, node) && data->title == handle;
+}
+
+// ---------------------------------------------------------------------------
+// Target application discovery (trusted bundle identifier only)
 // ---------------------------------------------------------------------------
 
 struct IdeaApplication {
-  pid_t pid;
-  bool running;
+  pid_t pid = 0;
+  bool running = false;
 };
 
 static IdeaApplication ResolveIdeaApplication() {
   IdeaApplication app;
-  app.pid = 0;
-  app.running = false;
   NSArray<NSRunningApplication *> *matches =
       [NSRunningApplication runningApplicationsWithBundleIdentifier:kIdeaBundleIdentifier];
   if (matches.count == 0) {
@@ -376,377 +656,504 @@ static IdeaApplication ResolveIdeaApplication() {
   return app;
 }
 
-static AXUIElementRef CopyApplicationElement(pid_t pid) {
-  return AXUIElementCreateApplication(pid);
-}
+/** Only a real AXWindow of the trusted application is accepted as a traversal root. */
+static AXUIElementRef CopyTrustedWindow(AXUIElementRef application) {
+  CFTypeRef candidates[3] = {nullptr, nullptr, nullptr};
+  candidates[0] = CopyAttribute(application, kAXFocusedWindowAttribute);
+  candidates[1] = CopyAttribute(application, kAXMainWindowAttribute);
 
-static AXUIElementRef CopyTargetWindow(AXUIElementRef application) {
-  CFTypeRef window = CopyAttribute(application, kAXFocusedWindowAttribute);
-  if (window == nullptr) {
-    window = CopyAttribute(application, kAXMainWindowAttribute);
-  }
-  if (window == nullptr) {
-    CFTypeRef windows = CopyAttribute(application, kAXWindowsAttribute);
-    if (windows != nullptr) {
-      if (CFGetTypeID(windows) == CFArrayGetTypeID() && CFArrayGetCount((CFArrayRef)windows) > 0) {
-        CFTypeRef first = CFArrayGetValueAtIndex((CFArrayRef)windows, 0);
-        if (first != nullptr && CFGetTypeID(first) == AXUIElementGetTypeID()) {
-          window = CFRetain(first);
-        }
+  CFTypeRef windows = CopyAttribute(application, kAXWindowsAttribute);
+  if (windows != nullptr) {
+    if (CFGetTypeID(windows) == CFArrayGetTypeID() && CFArrayGetCount((CFArrayRef)windows) > 0) {
+      CFTypeRef first = CFArrayGetValueAtIndex((CFArrayRef)windows, 0);
+      if (first != nullptr && CFGetTypeID(first) == AXUIElementGetTypeID()) {
+        candidates[2] = CFRetain(first);
       }
-      CFRelease(windows);
     }
+    CFRelease(windows);
   }
-  if (window != nullptr && CFGetTypeID(window) != AXUIElementGetTypeID()) {
-    CFRelease(window);
-    return nullptr;
+
+  AXUIElementRef result = nullptr;
+  for (int i = 0; i < 3; i++) {
+    CFTypeRef candidate = candidates[i];
+    if (candidate == nullptr) {
+      continue;
+    }
+    bool usable = false;
+    if (CFGetTypeID(candidate) == AXUIElementGetTypeID()) {
+      CFTypeRef role = CopyAttribute((AXUIElementRef)candidate, kAXRoleAttribute);
+      if (role != nullptr) {
+        if (CFGetTypeID(role) == CFStringGetTypeID()) {
+          usable = [(__bridge NSString *)role isEqualToString:(__bridge NSString *)kAXWindowRole];
+        }
+        CFRelease(role);
+      }
+    }
+    if (usable && result == nullptr) {
+      result = (AXUIElementRef)CFRetain(candidate);
+    }
+    CFRelease(candidate);
   }
-  return (AXUIElementRef)window;
+  return result;
 }
 
-/**
- * Shared precondition gate. Reports the exact reason the bridge is unavailable so the
- * caller can fail closed honestly.
- */
-static bool ResolveEnvironment(NSString **code, NSString **detail, IdeaApplication *outApp) {
-  if (!AXIsProcessTrusted()) {
-    *code = @"AX_NOT_TRUSTED";
-    *detail = @"macOS Accessibility permission has not been granted to this process";
-    return false;
-  }
-  IdeaApplication app = ResolveIdeaApplication();
-  if (!app.running) {
-    *code = @"IDEA_NOT_RUNNING";
-    *detail = @"trusted IntelliJ IDEA application is not running";
-    return false;
-  }
-  *outApp = app;
-  return true;
-}
+/** Builds a bounded snapshot of the trusted window's accessibility subtree. */
+static void BuildSnapshot(AXUIElementRef window, AxSnapshot *out) {
+  struct Pending {
+    AXUIElementRef element;  // owned by the stack
+    int depth;
+    AxNode parent;
+    int liveChildIndex;
+  };
+  std::vector<Pending> stack;
+  AXUIElementRef root = (AXUIElementRef)CFRetain(window);
+  stack.push_back(Pending{root, 0, kNoNode, -1});
 
-/** Returns true when the accessibility server refuses the request (e.g. API disabled). */
-static bool IsAccessibilityApiDisabled(AXUIElementRef application) {
-  CFTypeRef role = nullptr;
-  AXError error = AXUIElementCopyAttributeValue(application, kAXRoleAttribute, &role);
-  if (role != nullptr) {
-    CFRelease(role);
-  }
-  return error == kAXErrorAPIDisabled;
-}
+  while (!stack.empty()) {
+    Pending current = stack.back();
+    stack.pop_back();
 
-// ---------------------------------------------------------------------------
-// Registered action primitives
-// ---------------------------------------------------------------------------
+    if ((int)out->nodes.size() >= kMaxSnapshotNodes) {
+      out->truncated = true;
+      CFRelease(current.element);
+      continue;
+    }
+
+    RawAttributes attributes;
+    AxNode node = kNoNode;
+    if (ReadAttributes(current.element, &attributes)) {
+      node = out->Add();
+      AxNodeData *data = &out->nodes[node - 1];
+      data->role = attributes.role;
+      data->subrole = attributes.subrole;
+      data->identifier = attributes.identifier;
+      data->title = attributes.title;
+      data->document = attributes.document;
+      data->url = attributes.url;
+      data->value = attributes.value;
+      data->selected = attributes.selected;
+      data->focused = attributes.focused;
+      data->hidden = attributes.hidden;
+      data->hasSize = attributes.hasSize;
+      data->width = attributes.width;
+      data->height = attributes.height;
+      data->parent = current.parent;
+      data->liveChildIndex = current.liveChildIndex;
+      if (current.parent != kNoNode) {
+        out->nodes[current.parent - 1].children.push_back(node);
+      }
+      if (out->root == kNoNode) {
+        out->root = node;
+      }
+    }
+
+    if (node != kNoNode && current.depth < kMaxSnapshotDepth) {
+      CFTypeRef children = CopyChildElements(current.element);
+      if (children != nullptr) {
+        CFIndex count = CFArrayGetCount((CFArrayRef)children);
+        for (CFIndex i = 0; i < count; i++) {
+          CFTypeRef child = CFArrayGetValueAtIndex((CFArrayRef)children, i);
+          if (child != nullptr && CFGetTypeID(child) == AXUIElementGetTypeID()) {
+            stack.push_back(Pending{(AXUIElementRef)CFRetain(child), current.depth + 1, node,
+                                    (int)i});
+          }
+        }
+        CFRelease(children);
+      }
+    }
+    CFRelease(current.element);
+  }
+}
 
 static bool PerformPress(AXUIElementRef element) {
   return AXUIElementPerformAction(element, kAXPressAction) == kAXErrorSuccess;
 }
 
-/** Attempts to focus an element and reports whether the focus actually took effect. */
-static bool FocusElement(AXUIElementRef element) {
-  AXUIElementSetAttributeValue(element, kAXFocusedAttribute, kCFBooleanTrue);
-  return CopyBoolAttribute(element, kAXFocusedAttribute, false);
-}
+// ---------------------------------------------------------------------------
+// Shared operation driver
+// ---------------------------------------------------------------------------
 
-struct OperationContext {
-  AXUIElementRef application;
-  AXUIElementRef window;
+struct OperationOutcome {
+  bool ok = false;
+  bool verified = false;
+  const char *code = "INTERNAL_ERROR";
+  const char *detail = "unexpected bridge state";
 };
 
-static AXUIElementRef FindByExactTitle(OperationContext *ctx, NSString *wanted, bool requireVisible) {
-  ExactTitleContext matchCtx{wanted, requireVisible};
-  int budget = kMaxTraversalNodes;
-  AXUIElementRef found = FindElement(ctx->window, 0, &budget, MatchExactTitle, &matchCtx);
-  if (found != nullptr) {
-    return found;
+/** Resolves the trusted window or reports the precise fail-closed reason. */
+static bool OpenTrustedWindow(
+    OperationOutcome *outcome,
+    AXUIElementRef *application,
+    AXUIElementRef *window
+) {
+  if (!AXIsProcessTrusted()) {
+    outcome->code = "AX_NOT_TRUSTED";
+    outcome->detail = "macOS Accessibility permission has not been granted to this process";
+    return false;
   }
-  budget = kMaxTraversalNodes;
-  return FindElement(ctx->application, 0, &budget, MatchExactTitle, &matchCtx);
-}
+  IdeaApplication app = ResolveIdeaApplication();
+  if (!app.running) {
+    outcome->code = "IDEA_NOT_RUNNING";
+    outcome->detail = "trusted IntelliJ IDEA application is not running";
+    return false;
+  }
+  AXUIElementRef element = AXUIElementCreateApplication(app.pid);
+  if (element == nullptr) {
+    outcome->code = "AX_QUERY_FAILED";
+    outcome->detail = "could not create an accessibility application element";
+    return false;
+  }
+  // Bounded messaging: a busy IDE must never hang the service.
+  AXUIElementSetMessagingTimeout(element, kAxMessagingTimeoutSeconds);
 
-static AXUIElementRef FindByContainsTitle(OperationContext *ctx, NSString *wanted) {
-  ContainsTitleContext matchCtx{wanted, false};
-  int budget = kMaxTraversalNodes;
-  AXUIElementRef found = FindElement(ctx->window, 0, &budget, MatchContainsTitle, &matchCtx);
-  if (found != nullptr) {
-    return found;
+  *window = CopyTrustedWindow(element);
+  if (*window == nullptr) {
+    CFRelease(element);
+    outcome->code = "NO_ACTIVE_WINDOW";
+    outcome->detail =
+        "trusted IntelliJ IDEA exposes no accessible window element to bind identity against";
+    return false;
   }
-  budget = kMaxTraversalNodes;
-  return FindElement(ctx->application, 0, &budget, MatchContainsTitle, &matchCtx);
+  AXUIElementSetMessagingTimeout(*window, kAxMessagingTimeoutSeconds);
+  *application = element;
+  return true;
 }
 
 /**
- * OPEN_REGISTERED_FILE verification.
- *
- * Requires a real accessibility observation that the trusted registered file is now the
- * active editor content. Accepted signals (all read back from the live AX tree):
- *   1. a selected or focused element whose identity matches the registered file name
- *   2. a selected element whose value matches the registered file name
- *   3. the focused UI element's document/title matching the registered file name
+ * Recovers the live accessibility element for a snapshot node by re-walking the recorded
+ * live child indices. Indices are recorded during the snapshot build, so a node whose
+ * attributes could not be read can never shift the mapping onto a different element.
  */
-static bool VerifyActiveEditorFile(OperationContext *ctx, NSString *fileName) {
-  SelectedTitleContext selectedCtx{fileName};
-  int budget = kMaxTraversalNodes;
-  AXUIElementRef selected = FindElement(ctx->window, 0, &budget, MatchSelectedTitle, &selectedCtx);
-  if (selected != nullptr) {
-    bool visible = IsElementVisible(selected);
-    CFRelease(selected);
-    if (visible) {
-      return true;
+static AXUIElementRef CopyNodeElement(AXUIElementRef window, const AxSnapshot &snapshot, AxNode node) {
+  if (node == kNoNode) {
+    return nullptr;
+  }
+  std::vector<int> offsets;
+  AxNode current = node;
+  while (current != kNoNode && current != snapshot.root) {
+    const AxNodeData *data = snapshot.At(current);
+    if (data == nullptr || data->parent == kNoNode || data->liveChildIndex < 0) {
+      return nullptr;
     }
+    offsets.push_back(data->liveChildIndex);
+    current = data->parent;
+  }
+  if (current != snapshot.root) {
+    return nullptr;
   }
 
-  FocusedDocumentContext focusedCtx{fileName};
-  budget = kMaxTraversalNodes;
-  AXUIElementRef focused = FindElement(ctx->application, 0, &budget, MatchFocusedDocument, &focusedCtx);
-  if (focused == nullptr) {
-    budget = kMaxTraversalNodes;
-    focused = FindElement(ctx->window, 0, &budget, MatchFocusedDocument, &focusedCtx);
+  AXUIElementRef element = (AXUIElementRef)CFRetain(window);
+  for (std::vector<int>::reverse_iterator it = offsets.rbegin(); it != offsets.rend(); ++it) {
+    CFTypeRef children = CopyChildElements(element);
+    CFRelease(element);
+    if (children == nullptr) {
+      return nullptr;
+    }
+    CFIndex count = CFArrayGetCount((CFArrayRef)children);
+    if (*it < 0 || *it >= count) {
+      CFRelease(children);
+      return nullptr;
+    }
+    CFTypeRef child = CFArrayGetValueAtIndex((CFArrayRef)children, *it);
+    if (child == nullptr || CFGetTypeID(child) != AXUIElementGetTypeID()) {
+      CFRelease(children);
+      return nullptr;
+    }
+    element = (AXUIElementRef)CFRetain(child);
+    CFRelease(children);
   }
-  if (focused != nullptr) {
-    CFRelease(focused);
-    return true;
-  }
-  return false;
+  return element;
 }
+
+/**
+ * Re-checks the live element's identity immediately before dispatching, so a tree change
+ * between snapshot and action can never cause a different control to be activated.
+ */
+static bool ReverifyLiveIdentity(
+    AXUIElementRef element,
+    const std::string &expectedRole,
+    const std::string &expectedTitle
+) {
+  RawAttributes attributes;
+  if (!ReadAttributes(element, &attributes)) {
+    return false;
+  }
+  return attributes.role == expectedRole && attributes.title == expectedTitle &&
+         !attributes.hidden;
+}
+
+// ---------------------------------------------------------------------------
+// Registered operations
+// ---------------------------------------------------------------------------
 
 static napi_value OpenRegisteredFile(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
 
-  NSString *realPath = nil;
-  if (argc < 1 || !ReadStringArgument(env, argv[0], &realPath)) {
-    return MakeResult(env, false, false, @"INVALID_ARGUMENT", @"registered path argument is not a bounded string");
+  std::string canonicalPath;
+  if (argc < 1 || !ReadStringArgument(env, argv[0], &canonicalPath)) {
+    return MakeResult(env, false, false, "INVALID_ARGUMENT",
+                      "registered path argument is not a bounded string");
   }
-  if (![realPath isAbsolutePath]) {
-    return MakeResult(env, false, false, @"INVALID_REGISTERED_PATH", @"registered path must be absolute");
+  if (canonicalPath.empty() || canonicalPath[0] != '/') {
+    return MakeResult(env, false, false, "INVALID_REGISTERED_PATH",
+                      "registered path must be an absolute canonical path");
   }
-
+  NSString *pathString = [NSString stringWithUTF8String:canonicalPath.c_str()];
+  if (pathString == nil) {
+    return MakeResult(env, false, false, "INVALID_REGISTERED_PATH",
+                      "registered path is not valid UTF-8");
+  }
   BOOL isDirectory = NO;
-  BOOL exists = [[NSFileManager defaultManager] fileExistsAtPath:realPath isDirectory:&isDirectory];
-  if (!exists || isDirectory) {
-    return MakeResult(env, false, false, @"INVALID_REGISTERED_PATH", @"registered path is not an existing regular file");
+  if (![[NSFileManager defaultManager] fileExistsAtPath:pathString isDirectory:&isDirectory] ||
+      isDirectory) {
+    return MakeResult(env, false, false, "INVALID_REGISTERED_PATH",
+                      "registered path is not an existing regular file");
   }
 
-  NSString *fileName = [realPath lastPathComponent];
-  if (fileName.length == 0) {
-    return MakeResult(env, false, false, @"INVALID_REGISTERED_PATH", @"registered path has no file name");
+  OperationOutcome outcome;
+  AXUIElementRef application = nullptr;
+  AXUIElementRef window = nullptr;
+  if (!OpenTrustedWindow(&outcome, &application, &window)) {
+    return MakeResult(env, false, false, outcome.code, outcome.detail);
   }
 
-  NSString *code = nil;
-  NSString *detail = nil;
-  IdeaApplication app;
-  if (!ResolveEnvironment(&code, &detail, &app)) {
-    return MakeResult(env, false, false, code, detail);
-  }
+  std::string basename = CanonicalBasename(canonicalPath);
 
-  AXUIElementRef application = CopyApplicationElement(app.pid);
-  if (application == nullptr) {
-    return MakeResult(env, false, false, @"AX_QUERY_FAILED", @"could not create an accessibility application element");
-  }
-  if (IsAccessibilityApiDisabled(application)) {
-    CFRelease(application);
-    return MakeResult(env, false, false, @"AX_API_DISABLED", @"macOS Accessibility API is disabled for this process");
-  }
+  MatchSpec spec;
+  spec.nodeRoles = kProjectTreeLeafRoles;
+  spec.nodeRoleCount = sizeof(kProjectTreeLeafRoles) / sizeof(const char *);
+  spec.containerRoles = kProjectTreeContainerRoles;
+  spec.containerRoleCount = sizeof(kProjectTreeContainerRoles) / sizeof(const char *);
+  spec.requirePathProof = true;
+  spec.canonicalPath = canonicalPath;
+  spec.canonicalDir = CanonicalDirname(canonicalPath);
+  spec.requireVisible = true;
 
-  AXUIElementRef window = CopyTargetWindow(application);
-  if (window == nullptr) {
-    CFRelease(application);
-    return MakeResult(env, false, false, @"NO_ACTIVE_WINDOW", @"IntelliJ IDEA has no accessible active window");
-  }
+  AxSnapshot pre;
+  BuildSnapshot(window, &pre);
 
-  OperationContext ctx{application, window};
-
-  // Locate exactly one accessibility element whose title is the registered file name.
-  AXUIElementRef target = FindByExactTitle(&ctx, fileName, true);
-  if (target == nullptr) {
+  AxNode target = kNoNode;
+  LocateStatus located = LocateUnique(pre, spec, basename, &target);
+  if (located != LocateStatus::kFound) {
     CFRelease(window);
     CFRelease(application);
-    return MakeResult(env, false, false, @"TARGET_NOT_FOUND",
-                      @"registered file is not present in the accessible IntelliJ IDEA project tree");
+    return MakeResult(env, false, false, LocateStatusCode(located),
+                      located == LocateStatus::kAmbiguous
+                          ? "more than one accessible project-tree node proves the registered path"
+                          : "no accessible project-tree node proves the registered canonical path");
   }
 
-  bool dispatched = PerformPress(target);
+  AXUIElementRef targetElement = CopyNodeElement(window, pre, target);
+  if (targetElement == nullptr) {
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "ACTION_NOT_DISPATCHED",
+                      "could not resolve the accessibility element for the registered file");
+  }
+  const AxNodeData *targetData = pre.At(target);
+  bool identityHolds = targetData != nullptr &&
+                       ReverifyLiveIdentity(targetElement, targetData->role, targetData->title);
+  if (!identityHolds) {
+    CFRelease(targetElement);
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "IDENTITY_CHANGED_BEFORE_ACTION",
+                      "the registered path proof no longer holds on the live accessibility element");
+  }
+  bool dispatched = PerformPress(targetElement);
+  CFRelease(targetElement);
+
   if (!dispatched) {
-    // A project-tree cell may not accept AXPress directly; select it and press its row.
-    AXUIElementSetAttributeValue(target, kAXSelectedAttribute, kCFBooleanTrue);
-    CFTypeRef parentValue = CopyAttribute(target, kAXParentAttribute);
-    if (parentValue != nullptr && CFGetTypeID(parentValue) == AXUIElementGetTypeID()) {
-      dispatched = PerformPress((AXUIElementRef)parentValue);
-      CFRelease(parentValue);
-    } else if (parentValue != nullptr) {
-      CFRelease(parentValue);
-    }
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "ACTION_NOT_DISPATCHED",
+                      "accessibility could not activate the registered project-tree node");
   }
 
-  bool verified = dispatched && VerifyActiveEditorFile(&ctx, fileName);
+  AxSnapshot post;
+  BuildSnapshot(window, &post);
+  bool verified = VerifyCanonicalDocumentPresent(post, canonicalPath);
 
-  CFRelease(target);
   CFRelease(window);
   CFRelease(application);
 
-  if (!dispatched) {
-    return MakeResult(env, false, false, @"ACTION_NOT_DISPATCHED",
-                      @"accessibility could not activate the registered file");
-  }
   if (!verified) {
-    return MakeResult(env, true, false, @"STATE_NOT_VERIFIED",
-                      @"registered file was activated but the active editor file was not confirmed");
+    return MakeResult(env, true, false, "STATE_NOT_VERIFIED",
+                      "no accessible document or URL proves the canonical registered path is open");
   }
-  return MakeResult(env, true, true, @"OK", @"registered file opened and active editor verified");
+  return MakeResult(env, true, true, "OK",
+                    "registered file opened and its canonical path verified through accessibility");
 }
 
-/**
- * FOCUS_RUN_CONFIGURATION verification.
- *
- * Locates the accessibility element that the trusted run-configuration handle names,
- * requests real keyboard focus, and then reads the focus back from the accessibility
- * server. Success requires the focus flag to be true on the named element.
- */
 static napi_value FocusRunConfiguration(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
 
-  NSString *configName = nil;
-  if (argc < 1 || !ReadStringArgument(env, argv[0], &configName)) {
-    return MakeResult(env, false, false, @"INVALID_ARGUMENT", @"run configuration handle argument is not a bounded string");
+  std::string handle;
+  if (argc < 1 || !ReadStringArgument(env, argv[0], &handle)) {
+    return MakeResult(env, false, false, "INVALID_ARGUMENT",
+                      "run configuration handle argument is not a bounded string");
   }
 
-  NSString *code = nil;
-  NSString *detail = nil;
-  IdeaApplication app;
-  if (!ResolveEnvironment(&code, &detail, &app)) {
-    return MakeResult(env, false, false, code, detail);
+  OperationOutcome outcome;
+  AXUIElementRef application = nullptr;
+  AXUIElementRef window = nullptr;
+  if (!OpenTrustedWindow(&outcome, &application, &window)) {
+    return MakeResult(env, false, false, outcome.code, outcome.detail);
   }
 
-  AXUIElementRef application = CopyApplicationElement(app.pid);
-  if (application == nullptr) {
-    return MakeResult(env, false, false, @"AX_QUERY_FAILED", @"could not create an accessibility application element");
-  }
-  if (IsAccessibilityApiDisabled(application)) {
-    CFRelease(application);
-    return MakeResult(env, false, false, @"AX_API_DISABLED", @"macOS Accessibility API is disabled for this process");
-  }
+  MatchSpec spec;
+  spec.nodeRoles = kRunSelectorRoles;
+  spec.nodeRoleCount = sizeof(kRunSelectorRoles) / sizeof(const char *);
+  spec.containerRoles = kRunSelectorContainerRoles;
+  spec.containerRoleCount = sizeof(kRunSelectorContainerRoles) / sizeof(const char *);
+  spec.exactTitle = handle;
+  spec.requireExactTitle = true;
+  spec.requireVisible = true;
 
-  AXUIElementRef window = CopyTargetWindow(application);
-  if (window == nullptr) {
-    CFRelease(application);
-    return MakeResult(env, false, false, @"NO_ACTIVE_WINDOW", @"IntelliJ IDEA has no accessible active window");
-  }
+  AxSnapshot pre;
+  BuildSnapshot(window, &pre);
 
-  OperationContext ctx{application, window};
-  AXUIElementRef target = FindByExactTitle(&ctx, configName, true);
-  if (target == nullptr) {
+  AxNode target = kNoNode;
+  LocateStatus located = LocateUnique(pre, spec, std::string(), &target);
+  if (located != LocateStatus::kFound) {
     CFRelease(window);
     CFRelease(application);
-    return MakeResult(env, false, false, @"TARGET_NOT_FOUND",
-                      @"registered run configuration is not present in the accessible IntelliJ IDEA window");
+    return MakeResult(env, false, false,
+                      located == LocateStatus::kAmbiguous ? "TARGET_AMBIGUOUS"
+                                                          : "SELECTOR_NOT_IDENTIFIED",
+                      "no unique run-configuration selector control could be identified in the window toolbar");
   }
 
-  bool dispatched = PerformPress(target);
-  bool focused = FocusElement(target);
-  bool identityMatches =
-      TitleMatches(CopyElementTitle(target), configName, true) ||
-      TitleMatches(CopyStringAttribute(target, kAXValueAttribute), configName, true);
-  bool visible = IsElementVisible(target);
+  AXUIElementRef targetElement = CopyNodeElement(window, pre, target);
+  if (targetElement == nullptr) {
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "ACTION_NOT_DISPATCHED",
+                      "could not resolve the accessibility element for the run configuration selector");
+  }
+  const AxNodeData *targetData = pre.At(target);
+  if (targetData == nullptr ||
+      !ReverifyLiveIdentity(targetElement, targetData->role, targetData->title)) {
+    CFRelease(targetElement);
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "IDENTITY_CHANGED_BEFORE_ACTION",
+                      "the run configuration selector identity no longer holds on the live element");
+  }
+  // The registered action is FOCUS only. The selector is never pressed, so no menu is
+  // opened and no configuration is changed: the control must already show the registered
+  // configuration, and this operation only moves focus to it.
+  bool dispatched =
+      AXUIElementSetAttributeValue(targetElement, kAXFocusedAttribute, kCFBooleanTrue) ==
+      kAXErrorSuccess;
+  CFRelease(targetElement);
 
-  CFRelease(target);
+  if (!dispatched) {
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "ACTION_NOT_DISPATCHED",
+                      "accessibility could not focus the run configuration selector");
+  }
+
+  AxSnapshot post;
+  BuildSnapshot(window, &post);
+  bool verified = VerifyRunSelectorState(post, spec, handle);
+
   CFRelease(window);
   CFRelease(application);
 
-  if (!dispatched && !focused) {
-    return MakeResult(env, false, false, @"ACTION_NOT_DISPATCHED",
-                      @"accessibility could not focus the registered run configuration");
+  if (!verified) {
+    return MakeResult(env, true, false, "STATE_NOT_VERIFIED",
+                      "the run configuration selector did not report the registered configuration as focused");
   }
-  if (!focused || !identityMatches || !visible) {
-    return MakeResult(env, true, false, @"STATE_NOT_VERIFIED",
-                      @"registered run configuration was activated but its focus was not confirmed");
-  }
-  return MakeResult(env, true, true, @"OK", @"registered run configuration focused and verified");
+  return MakeResult(env, true, true, "OK",
+                    "registered run configuration focused and verified on the selector control");
 }
 
-/**
- * SHOW_TEST_RESULT verification.
- *
- * Reveals a pre-registered, already existing test-result view. This operation only ever
- * activates the element named by the trusted handle — it never starts, re-runs, or
- * executes a test. Success requires the named result view to be visible afterwards.
- */
 static napi_value ShowTestResult(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value argv[1];
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
 
-  NSString *handle = nil;
+  std::string handle;
   if (argc < 1 || !ReadStringArgument(env, argv[0], &handle)) {
-    return MakeResult(env, false, false, @"INVALID_ARGUMENT", @"test result handle argument is not a bounded string");
+    return MakeResult(env, false, false, "INVALID_ARGUMENT",
+                      "test result handle argument is not a bounded string");
   }
 
-  NSString *code = nil;
-  NSString *detail = nil;
-  IdeaApplication app;
-  if (!ResolveEnvironment(&code, &detail, &app)) {
-    return MakeResult(env, false, false, code, detail);
+  OperationOutcome outcome;
+  AXUIElementRef application = nullptr;
+  AXUIElementRef window = nullptr;
+  if (!OpenTrustedWindow(&outcome, &application, &window)) {
+    return MakeResult(env, false, false, outcome.code, outcome.detail);
   }
 
-  AXUIElementRef application = CopyApplicationElement(app.pid);
-  if (application == nullptr) {
-    return MakeResult(env, false, false, @"AX_QUERY_FAILED", @"could not create an accessibility application element");
-  }
-  if (IsAccessibilityApiDisabled(application)) {
-    CFRelease(application);
-    return MakeResult(env, false, false, @"AX_API_DISABLED", @"macOS Accessibility API is disabled for this process");
-  }
+  MatchSpec spec;
+  spec.nodeRoles = kToolWindowTabRoles;
+  spec.nodeRoleCount = sizeof(kToolWindowTabRoles) / sizeof(const char *);
+  spec.containerRoles = kToolWindowContainerRoles;
+  spec.containerRoleCount = sizeof(kToolWindowContainerRoles) / sizeof(const char *);
+  spec.exactTitle = handle;
+  spec.requireExactTitle = true;
+  spec.requireVisible = true;
 
-  AXUIElementRef window = CopyTargetWindow(application);
-  if (window == nullptr) {
-    CFRelease(application);
-    return MakeResult(env, false, false, @"NO_ACTIVE_WINDOW", @"IntelliJ IDEA has no accessible active window");
-  }
+  AxSnapshot pre;
+  BuildSnapshot(window, &pre);
 
-  OperationContext ctx{application, window};
-
-  // The registered handle names an existing results view. Try the exact accessibility
-  // title first, then the trailing component of a registered relative handle.
-  AXUIElementRef target = FindByExactTitle(&ctx, handle, true);
-  if (target == nullptr) {
-    NSString *trailing = [handle lastPathComponent];
-    if (trailing.length > 0 && ![trailing isEqualToString:handle]) {
-      target = FindByExactTitle(&ctx, trailing, true);
-    }
-  }
-  if (target == nullptr) {
-    target = FindByContainsTitle(&ctx, handle);
-  }
-  if (target == nullptr) {
+  AxNode target = kNoNode;
+  LocateStatus located = LocateUnique(pre, spec, std::string(), &target);
+  if (located != LocateStatus::kFound) {
     CFRelease(window);
     CFRelease(application);
-    return MakeResult(env, false, false, @"TARGET_NOT_FOUND",
-                      @"registered test result view is not present in the accessible IntelliJ IDEA window");
+    return MakeResult(env, false, false,
+                      located == LocateStatus::kAmbiguous ? "TARGET_AMBIGUOUS"
+                                                          : "RESULT_VIEW_NOT_IDENTIFIED",
+                      "no unique test-result tool-window view matched the registered handle");
   }
 
-  bool dispatched = PerformPress(target);
-  bool visible = IsElementVisible(target);
-  bool asserted =
-      CopyBoolAttribute(target, kAXSelectedAttribute, false) ||
-      CopyBoolAttribute(target, kAXFocusedAttribute, false) ||
-      FocusElement(target);
+  AXUIElementRef targetElement = CopyNodeElement(window, pre, target);
+  if (targetElement == nullptr) {
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "ACTION_NOT_DISPATCHED",
+                      "could not resolve the accessibility element for the test result view");
+  }
+  const AxNodeData *targetData = pre.At(target);
+  if (targetData == nullptr ||
+      !ReverifyLiveIdentity(targetElement, targetData->role, targetData->title)) {
+    CFRelease(targetElement);
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "IDENTITY_CHANGED_BEFORE_ACTION",
+                      "the test result view identity no longer holds on the live element");
+  }
+  bool dispatched = PerformPress(targetElement);
+  CFRelease(targetElement);
 
-  CFRelease(target);
+  if (!dispatched) {
+    CFRelease(window);
+    CFRelease(application);
+    return MakeResult(env, false, false, "ACTION_NOT_DISPATCHED",
+                      "accessibility could not activate the registered test result view");
+  }
+
+  AxSnapshot post;
+  BuildSnapshot(window, &post);
+  bool verified = VerifyResultViewSelected(post, spec, handle);
+
   CFRelease(window);
   CFRelease(application);
 
-  if (!dispatched && !asserted) {
-    return MakeResult(env, false, false, @"ACTION_NOT_DISPATCHED",
-                      @"accessibility could not reveal the registered test result view");
+  if (!verified) {
+    return MakeResult(env, true, false, "STATE_NOT_VERIFIED",
+                      "the registered test-result view is not the selected visible tool-window view after the action");
   }
-  if (!visible || !asserted) {
-    return MakeResult(env, true, false, @"STATE_NOT_VERIFIED",
-                      @"registered test result view was activated but is not confirmed visible");
-  }
-  return MakeResult(env, true, true, @"OK", @"existing test result view revealed and verified");
+  return MakeResult(env, true, true, "OK",
+                    "existing test result view selected and verified after the action");
 }
 
 // ---------------------------------------------------------------------------
@@ -758,10 +1165,21 @@ static napi_value Probe(napi_env env, napi_callback_info info) {
   IdeaApplication app = ResolveIdeaApplication();
 
   bool apiAvailable = trusted;
+  bool windowExposed = false;
   if (trusted && app.running) {
-    AXUIElementRef application = CopyApplicationElement(app.pid);
+    AXUIElementRef application = AXUIElementCreateApplication(app.pid);
     if (application != nullptr) {
-      apiAvailable = !IsAccessibilityApiDisabled(application);
+      AXUIElementSetMessagingTimeout(application, kAxMessagingTimeoutSeconds);
+      CFTypeRef role = CopyAttribute(application, kAXRoleAttribute);
+      apiAvailable = role != nullptr;
+      if (role != nullptr) {
+        CFRelease(role);
+      }
+      AXUIElementRef window = CopyTrustedWindow(application);
+      windowExposed = window != nullptr;
+      if (window != nullptr) {
+        CFRelease(window);
+      }
       CFRelease(application);
     } else {
       apiAvailable = false;
@@ -770,16 +1188,191 @@ static napi_value Probe(napi_env env, napi_callback_info info) {
 
   napi_value obj = nullptr;
   napi_create_object(env, &obj);
-  SetNamed(env, obj, "platform", MakeString(env, @"darwin"));
+  SetNamed(env, obj, "platform", MakeString(env, "darwin"));
   SetNamed(env, obj, "bridgeVersion", MakeString(env, kBridgeVersion));
   SetNamed(env, obj, "axApiAvailable", MakeBool(env, apiAvailable));
   SetNamed(env, obj, "axTrusted", MakeBool(env, trusted));
   SetNamed(env, obj, "ideaRunning", MakeBool(env, app.running));
+  SetNamed(env, obj, "ideaWindowExposed", MakeBool(env, windowExposed));
   return obj;
 }
 
 // ---------------------------------------------------------------------------
-// Module registration — exactly four exported functions.
+// Test seam — same decision functions, fixture trees. Never present in production.
+// ---------------------------------------------------------------------------
+
+#ifdef AX_BRIDGE_TEST_SEAM
+
+static std::string Trim(const std::string &value) {
+  size_t start = value.find_first_not_of(" \t\r\n");
+  if (start == std::string::npos) {
+    return std::string();
+  }
+  size_t end = value.find_last_not_of(" \t\r\n");
+  return value.substr(start, end - start + 1);
+}
+
+static std::vector<std::string> Split(const std::string &value, char separator) {
+  std::vector<std::string> parts;
+  std::string current;
+  for (size_t i = 0; i < value.size(); i++) {
+    if (value[i] == separator) {
+      parts.push_back(current);
+      current.clear();
+    } else {
+      current.push_back(value[i]);
+    }
+  }
+  parts.push_back(current);
+  return parts;
+}
+
+/**
+ * Fixture format, one node per line, in depth-first order:
+ *   depth|role|subrole|identifier|title|document|url|value|flags|size
+ * flags: subset of "s" (selected), "f" (focused), "h" (hidden). size: "WxH" or empty.
+ * depth 0 is the traversal root (the window).
+ */
+static bool ParseFixture(const std::string &text, AxSnapshot *out) {
+  std::vector<AxNode> stack;  // most recent node per depth
+  for (const std::string &rawLine : Split(text, '\n')) {
+    std::string line = Trim(rawLine);
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+    std::vector<std::string> fields = Split(line, '|');
+    if (fields.size() < 10) {
+      return false;
+    }
+    int depth = atoi(Trim(fields[0]).c_str());
+    if (depth < 0 || depth > kMaxSnapshotDepth) {
+      return false;
+    }
+    if ((int)out->nodes.size() >= kMaxSnapshotNodes) {
+      return false;
+    }
+    AxNode parent = kNoNode;
+    if (depth > 0) {
+      if (stack.size() < (size_t)depth) {
+        return false;
+      }
+      parent = stack[(size_t)depth - 1];
+    }
+    AxNode node = out->Add();
+    AxNodeData *data = &out->nodes[node - 1];
+    data->role = Trim(fields[1]);
+    data->subrole = Trim(fields[2]);
+    data->identifier = Trim(fields[3]);
+    data->title = Trim(fields[4]);
+    data->document = Trim(fields[5]);
+    data->url = Trim(fields[6]);
+    data->value = Trim(fields[7]);
+    std::string flags = Trim(fields[8]);
+    data->selected = flags.find('s') != std::string::npos;
+    data->focused = flags.find('f') != std::string::npos;
+    data->hidden = flags.find('h') != std::string::npos;
+    std::string size = Trim(fields[9]);
+    if (!size.empty()) {
+      size_t x = size.find('x');
+      if (x != std::string::npos) {
+        data->hasSize = true;
+        data->width = atof(size.substr(0, x).c_str());
+        data->height = atof(size.substr(x + 1).c_str());
+      }
+    }
+    data->parent = parent;
+    if (parent != kNoNode) {
+      out->nodes[parent - 1].children.push_back(node);
+    }
+    if (out->root == kNoNode) {
+      out->root = node;
+    }
+    stack.resize((size_t)depth);
+    stack.push_back(node);
+  }
+  return !out->nodes.empty();
+}
+
+static napi_value TestEvaluate(napi_env env, napi_callback_info info) {
+  size_t argc = 4;
+  napi_value argv[4];
+  napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+
+  std::string operation;
+  std::string argument;
+  std::string preText;
+  std::string postText;
+  if (argc < 4 || !ReadStringArgument(env, argv[0], &operation) ||
+      !ReadStringArgument(env, argv[1], &argument) || !ReadStringArgument(env, argv[2], &preText) ||
+      !ReadStringArgument(env, argv[3], &postText)) {
+    return MakeResult(env, false, false, "INVALID_ARGUMENT", "invalid test seam arguments");
+  }
+
+  AxSnapshot pre;
+  AxSnapshot post;
+  if (!ParseFixture(preText, &pre) || !ParseFixture(postText, &post)) {
+    return MakeResult(env, false, false, "INVALID_FIXTURE", "fixture could not be parsed");
+  }
+
+  MatchSpec spec;
+  std::string basename;
+  if (operation == "OPEN_REGISTERED_FILE") {
+    spec.nodeRoles = kProjectTreeLeafRoles;
+    spec.nodeRoleCount = sizeof(kProjectTreeLeafRoles) / sizeof(const char *);
+    spec.containerRoles = kProjectTreeContainerRoles;
+    spec.containerRoleCount = sizeof(kProjectTreeContainerRoles) / sizeof(const char *);
+    spec.requirePathProof = true;
+    spec.canonicalPath = argument;
+    spec.canonicalDir = CanonicalDirname(argument);
+    spec.requireVisible = true;
+    basename = CanonicalBasename(argument);
+  } else if (operation == "FOCUS_RUN_CONFIGURATION") {
+    spec.nodeRoles = kRunSelectorRoles;
+    spec.nodeRoleCount = sizeof(kRunSelectorRoles) / sizeof(const char *);
+    spec.containerRoles = kRunSelectorContainerRoles;
+    spec.containerRoleCount = sizeof(kRunSelectorContainerRoles) / sizeof(const char *);
+    spec.exactTitle = argument;
+    spec.requireExactTitle = true;
+    spec.requireVisible = true;
+  } else if (operation == "SHOW_TEST_RESULT") {
+    spec.nodeRoles = kToolWindowTabRoles;
+    spec.nodeRoleCount = sizeof(kToolWindowTabRoles) / sizeof(const char *);
+    spec.containerRoles = kToolWindowContainerRoles;
+    spec.containerRoleCount = sizeof(kToolWindowContainerRoles) / sizeof(const char *);
+    spec.exactTitle = argument;
+    spec.requireExactTitle = true;
+    spec.requireVisible = true;
+  } else {
+    return MakeResult(env, false, false, "INVALID_ACTION", "unknown operation for the test seam");
+  }
+
+  AxNode target = kNoNode;
+  LocateStatus located = LocateUnique(pre, spec, basename, &target);
+  if (located != LocateStatus::kFound) {
+    return MakeResult(env, false, false, LocateStatusCode(located),
+                      "actuation target was not uniquely proven on the pre-action snapshot");
+  }
+
+  bool verified = false;
+  if (operation == "OPEN_REGISTERED_FILE") {
+    verified = VerifyCanonicalDocumentPresent(post, argument);
+  } else if (operation == "FOCUS_RUN_CONFIGURATION") {
+    verified = VerifyRunSelectorState(post, spec, argument);
+  } else {
+    verified = VerifyResultViewSelected(post, spec, argument);
+  }
+
+  if (!verified) {
+    return MakeResult(env, true, false, "STATE_NOT_VERIFIED",
+                      "the required accessibility state was not observed after the action");
+  }
+  return MakeResult(env, true, true, "OK", "state verified after the action");
+}
+
+#endif  // AX_BRIDGE_TEST_SEAM
+
+// ---------------------------------------------------------------------------
+// Module registration
 // ---------------------------------------------------------------------------
 
 static napi_value Init(napi_env env, napi_value exports) {
@@ -791,11 +1384,17 @@ static napi_value Init(napi_env env, napi_value exports) {
   napi_create_function(env, "openRegisteredFile", NAPI_AUTO_LENGTH, OpenRegisteredFile, nullptr, &fn);
   SetNamed(env, exports, "openRegisteredFile", fn);
 
-  napi_create_function(env, "focusRunConfiguration", NAPI_AUTO_LENGTH, FocusRunConfiguration, nullptr, &fn);
+  napi_create_function(env, "focusRunConfiguration", NAPI_AUTO_LENGTH, FocusRunConfiguration, nullptr,
+                       &fn);
   SetNamed(env, exports, "focusRunConfiguration", fn);
 
   napi_create_function(env, "showTestResult", NAPI_AUTO_LENGTH, ShowTestResult, nullptr, &fn);
   SetNamed(env, exports, "showTestResult", fn);
+
+#ifdef AX_BRIDGE_TEST_SEAM
+  napi_create_function(env, "__testEvaluate", NAPI_AUTO_LENGTH, TestEvaluate, nullptr, &fn);
+  SetNamed(env, exports, "__testEvaluate", fn);
+#endif
 
   return exports;
 }

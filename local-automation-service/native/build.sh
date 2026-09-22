@@ -6,16 +6,20 @@
 # never invokes a shell, a child process, osascript, AppleScript, JXA, or `open`; it only
 # loads the compiled .node binding in-process.
 #
+# Two artifacts are produced from the same single source of truth:
+#   native/build/idea_ax_bridge.node       production   (exactly four exports)
+#   native/build/idea_ax_bridge.test.node  test seam     (four exports + __testEvaluate)
+#
+# The production artifact never contains the test seam, and the TypeScript export-surface
+# guard rejects any module that exposes an extra export.
+#
 # Usage: bash native/build.sh
-# Output: native/build/idea_ax_bridge.node
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SOURCE="${SCRIPT_DIR}/idea_ax_bridge.mm"
 OUT_DIR="${SCRIPT_DIR}/build"
-OUTPUT="${OUT_DIR}/idea_ax_bridge.node"
 
 NODE_BIN="${NODE:-$(command -v node || true)}"
 if [[ -z "${NODE_BIN}" ]]; then
@@ -36,20 +40,32 @@ fi
 
 mkdir -p "${OUT_DIR}"
 
-clang++ \
-  -std=c++20 \
-  -fobjc-arc \
-  -fblocks \
-  -O2 \
-  -Wall \
+COMMON_FLAGS=(
+  -std=c++20
+  -fobjc-arc
+  -fblocks
+  -O2
+  -Wall
+  -bundle
+  -undefined dynamic_lookup
+  -I"${NODE_INCLUDE}"
+  -framework AppKit
+  -framework ApplicationServices
+  -framework Foundation
+)
+
+echo "build:native -> production artifact"
+clang++ "${COMMON_FLAGS[@]}" \
   -DNODE_GYP_MODULE_NAME=idea_ax_bridge \
-  -bundle \
-  -undefined dynamic_lookup \
-  -I"${NODE_INCLUDE}" \
-  -framework AppKit \
-  -framework ApplicationServices \
-  -framework Foundation \
-  -o "${OUTPUT}" \
+  -o "${OUT_DIR}/idea_ax_bridge.node" \
   "${SOURCE}"
 
-echo "build:native OK -> ${OUTPUT}"
+echo "build:native -> test-seam artifact"
+clang++ "${COMMON_FLAGS[@]}" \
+  -DAX_BRIDGE_TEST_SEAM=1 \
+  -DNODE_GYP_MODULE_NAME=idea_ax_bridge \
+  -o "${OUT_DIR}/idea_ax_bridge.test.node" \
+  "${SOURCE}"
+
+echo "build:native OK -> ${OUT_DIR}/idea_ax_bridge.node"
+echo "build:native OK -> ${OUT_DIR}/idea_ax_bridge.test.node"

@@ -53,6 +53,7 @@ function makeFakeBridge(results: {
       axApiAvailable: true,
       axTrusted: true,
       ideaRunning: true,
+      ideaWindowExposed: true,
     }),
     openFile: vi.fn().mockResolvedValue(results.openFile),
     focusConfiguration: vi.fn().mockResolvedValue(results.focusConfiguration),
@@ -189,6 +190,7 @@ describe('Exact AX state verification before reporting success', () => {
         axApiAvailable: true,
         axTrusted: true,
         ideaRunning: true,
+        ideaWindowExposed: true,
       }),
       openFile: vi.fn().mockRejectedValue(new Error('native failure')),
       focusConfiguration: vi.fn().mockRejectedValue(new Error('native failure')),
@@ -200,6 +202,43 @@ describe('Exact AX state verification before reporting success', () => {
     expect(await adapter.focusRunConfiguration('StudyPilotApplication')).toBe(false);
     expect(await adapter.showTestResult('surefire-reports')).toBe(false);
     expect(adapter.getLastBlockerReason()).toContain('BLOCKED');
+  });
+
+  it('hands the canonical real path to the native layer, never a symlink or display name', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task33-canonical-'));
+    const realFile = path.join(tmpDir, 'Registered.java');
+    fs.writeFileSync(realFile, 'public class Registered {}', 'utf8');
+    const symlink = path.join(tmpDir, 'Link.java');
+    fs.symlinkSync(realFile, symlink);
+
+    const nativeModule = {
+      probe: vi.fn().mockReturnValue({
+        platform: 'darwin',
+        bridgeVersion: 'test',
+        axApiAvailable: true,
+        axTrusted: true,
+        ideaRunning: true,
+        ideaWindowExposed: true,
+      }),
+      openRegisteredFile: vi.fn().mockReturnValue({
+        ok: false,
+        verified: false,
+        code: 'IDEA_NOT_RUNNING',
+        detail: 'stub',
+      }),
+      focusRunConfiguration: vi.fn(),
+      showTestResult: vi.fn(),
+    };
+
+    try {
+      const bridge = new MacAxIdeaBridge(nativeModule);
+      await bridge.openFile(symlink);
+      // fs.realpathSync on macOS resolves /var -> /private/var, so compare canonically.
+      expect(nativeModule.openRegisteredFile).toHaveBeenCalledWith(fs.realpathSync(realFile));
+      expect(nativeModule.openRegisteredFile).not.toHaveBeenCalledWith(symlink);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it('fails closed deterministically when no native bridge is available', async () => {
@@ -291,6 +330,7 @@ describe('Real native macOS Accessibility bridge (environment aware)', () => {
     expect(typeof probe.axTrusted).toBe('boolean');
     expect(typeof probe.axApiAvailable).toBe('boolean');
     expect(typeof probe.ideaRunning).toBe('boolean');
+    expect(typeof probe.ideaWindowExposed).toBe('boolean');
     expect(typeof probe.bridgeVersion).toBe('string');
 
     const bridge = new MacAxIdeaBridge(nativeModule!);
