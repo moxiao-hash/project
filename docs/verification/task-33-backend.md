@@ -9,7 +9,8 @@
 - **工作树**：`/Users/moxiao/IdeaProjects/project-minimax-task-33`
 - **共同基线**：`9f8537115ac3d9c3bd86ddc1a43128db3a58414b`（Task 32 验收提交，与派发一致，开工时工作树干净）
 - **冻结契约**：`project-main-integration/docs/verification/task-33-frozen-contract.md`（本次未修改任何冻结字段、枚举、传输或所有权边界）
-- **交付提交**：`feat: execute allowlisted local interface fallbacks`（本次提交）
+- **交付提交**：`1c5723bc3b9573fa7431c7682c9ac12b91dffb1c`（`feat: execute allowlisted local interface fallbacks`）
+- **本验证文档提交**：`docs: record task 33 backend local interface verification`（本次提交）
 
 ---
 
