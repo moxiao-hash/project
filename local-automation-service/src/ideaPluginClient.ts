@@ -21,6 +21,12 @@ export interface PluginTransport {
   (frame: string, socketPath: string, timeoutMs: number): Promise<string>;
 }
 
+/**
+ * Raised when the plugin's reply is not exactly one well-formed single-line frame within
+ * 16 KiB. Distinct from a transport failure so the caller reports a precise stable code.
+ */
+export class PluginResponseInvalidError extends Error {}
+
 export interface IdeaPluginClientConfig {
   socketPath: string;
   secret: string;
@@ -57,17 +63,36 @@ export const unixSocketPluginTransport: PluginTransport = (frame, socketPath, ti
     socket.on('data', (chunk: Buffer) => {
       received += chunk.toString('utf8');
       if (Buffer.byteLength(received, 'utf8') > PLUGIN_MAX_FRAME_BYTES) {
-        finish(new Error('plugin socket response exceeded the 16 KiB frame limit'));
+        finish(
+          new PluginResponseInvalidError('plugin response exceeded the 16 KiB frame limit')
+        );
         return;
       }
       const newline = received.indexOf('\n');
       if (newline >= 0) {
+        // The reply must be EXACTLY one newline-terminated frame. Any trailing byte — a
+        // second frame or stray data — is a protocol violation, never a valid answer.
+        const trailing = received.slice(newline + 1);
+        if (trailing.length > 0) {
+          finish(
+            new PluginResponseInvalidError(
+              'plugin response must be exactly one single-line frame'
+            )
+          );
+          return;
+        }
+        // Guard against a second frame that is only flushed on the next read.
+        socket.pause();
         finish(null, received.slice(0, newline));
       }
     });
     socket.on('error', (error: Error) => finish(error));
     socket.on('close', () => {
       if (!settled) {
+        if (received.trim().length === 0) {
+          finish(new Error('plugin closed the connection without a response'));
+          return;
+        }
         finish(null, received);
       }
     });
@@ -147,6 +172,14 @@ export class IdeaPluginClient {
         this.config.timeoutMs ?? DEFAULT_TIMEOUT_MS
       );
     } catch (error) {
+      if (error instanceof PluginResponseInvalidError) {
+        return {
+          ok: false,
+          verified: false,
+          code: 'PLUGIN_RESPONSE_INVALID',
+          detail: error.message,
+        };
+      }
       const detail = error instanceof Error ? error.message : 'plugin socket failure';
       return {
         ok: false,

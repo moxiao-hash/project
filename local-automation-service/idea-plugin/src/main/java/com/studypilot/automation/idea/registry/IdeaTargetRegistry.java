@@ -26,21 +26,36 @@ public final class IdeaTargetRegistry {
   public static final class RegisteredTarget {
     public final String handle;
     public final Kind kind;
+    /** FILE: canonical path. RUN_CONFIGURATION: configuration name. TEST_RESULT: tool window id. */
     public final String value;
+    /** TEST_RESULT only: the exact existing content display name bound to this handle. */
+    public final String contentName;
     public final String projectRoot;
 
-    RegisteredTarget(String handle, Kind kind, String value, String projectRoot) {
+    RegisteredTarget(String handle, Kind kind, String value, String contentName, String projectRoot) {
       this.handle = handle;
       this.kind = kind;
       this.value = value;
+      this.contentName = contentName;
       this.projectRoot = projectRoot;
     }
   }
 
   private final java.util.Map<String, RegisteredTarget> targets = new java.util.LinkedHashMap<>();
 
-  /** Registers a handle. Throws when the handle or value would violate the trust boundary. */
+  /** Registers a handle without a secondary identity. Not valid for TEST_RESULT. */
   public void register(String handle, Kind kind, String value, String projectRoot) {
+    register(handle, kind, value, null, projectRoot);
+  }
+
+  /**
+   * Registers a handle. Throws when the handle, value or secondary identity would violate the
+   * trust boundary.
+   *
+   * A TEST_RESULT handle MUST bind both the result tool window and the exact existing content
+   * display name, so an unrelated single content can never satisfy the request.
+   */
+  public void register(String handle, Kind kind, String value, String contentName, String projectRoot) {
     if (handle == null || !SYMBOLIC.matcher(handle).matches()) {
       throw new IllegalArgumentException("handle must be a symbolic key");
     }
@@ -56,10 +71,18 @@ public final class IdeaTargetRegistry {
     if (projectRoot == null || projectRoot.trim().isEmpty()) {
       throw new IllegalArgumentException("projectRoot is required");
     }
+    if (kind == Kind.TEST_RESULT) {
+      if (contentName == null || contentName.trim().isEmpty() || contentName.length() > MAX_VALUE_LENGTH) {
+        throw new IllegalArgumentException(
+            "TEST_RESULT must bind an exact existing content display name");
+      }
+    } else if (contentName != null) {
+      throw new IllegalArgumentException("only TEST_RESULT targets carry a content identity");
+    }
     if (targets.containsKey(handle)) {
       throw new IllegalArgumentException("duplicate handle");
     }
-    targets.put(handle, new RegisteredTarget(handle, kind, value, projectRoot));
+    targets.put(handle, new RegisteredTarget(handle, kind, value, contentName, projectRoot));
   }
 
   /** Resolves a handle for an expected kind. A kind mismatch is a rejection, not a fallback. */

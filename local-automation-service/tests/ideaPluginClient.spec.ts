@@ -27,6 +27,7 @@ type ServerBehaviour =
   | { kind: 'oversize' }
   | { kind: 'malformed' }
   | { kind: 'silent' }
+  | { kind: 'respondThenTrailing' }
   | { kind: 'rejectSignature' };
 
 let behaviour: ServerBehaviour = { kind: 'respond', status: 'SUCCEEDED', errorCode: null };
@@ -78,6 +79,21 @@ function startFakePluginServer(): Promise<void> {
             return;
           case 'malformed':
             socket.write('{ this is not json }\n');
+            return;
+          case 'respondThenTrailing':
+            // A valid frame followed by extra bytes in the SAME write must be rejected: a
+            // response must be exactly one newline-terminated frame.
+            socket.write(
+              `${JSON.stringify({
+                version: 1,
+                requestId: request.requestId,
+                action: request.action,
+                status: 'SUCCEEDED',
+                errorCode: null,
+                message: 'ok',
+                finishedAt: new Date().toISOString(),
+              })}\n{"second":"frame"}\n`
+            );
             return;
           case 'rejectSignature':
             socket.write(
@@ -169,7 +185,24 @@ describe('IdeaPluginClient over a real Unix Domain Socket', () => {
     await startFakePluginServer();
     const outcome = await client().openRegisteredFile('FILE_REGISTERED');
     expect(outcome.ok).toBe(false);
-    expect(outcome.code).toBe('PLUGIN_UNAVAILABLE');
+    expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
+  });
+
+  it('rejects a valid frame followed by trailing bytes in the same write', async () => {
+    behaviour = { kind: 'respondThenTrailing' };
+    await startFakePluginServer();
+    const outcome = await client().openRegisteredFile('FILE_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.verified).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
+  });
+
+  it('rejects a valid frame followed by a second complete frame', async () => {
+    behaviour = { kind: 'respondThenTrailing' };
+    await startFakePluginServer();
+    const outcome = await client().showTestResult('RESULT_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
   });
 
   it('rejects a malformed response frame', async () => {

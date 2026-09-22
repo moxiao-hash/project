@@ -174,7 +174,7 @@ describe('Plugin source guards', () => {
     expect(violations.map((file) => file.rel)).toEqual([]);
   });
 
-  it('uses the trustworthful IntelliJ verification APIs', () => {
+  it('uses the supported IntelliJ verification APIs and canonical path containment', () => {
     const platform = fs.readFileSync(
       path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/IdeaPlatformOperations.java'),
       'utf8'
@@ -187,7 +187,69 @@ describe('Plugin source guards', () => {
     expect(platform).toContain('ToolWindowManager');
     expect(platform).toContain('setSelectedContent');
     expect(platform).toContain('getSelectedContent');
-    expect(platform).toContain('VfsUtilCore.isAncestor');
+    // Containment is decided on canonical Paths, never on raw string prefixes or VFS paths.
+    expect(platform).toContain('PathBinding.contains');
+    expect(platform).toContain('PathBinding.canonical');
+    expect(platform).not.toContain('VfsUtilCore.isAncestor');
+    expect(platform).not.toContain('startsWith(basePath');
+    // The registered root must EQUAL the open project's canonical base path.
+    expect(platform).toContain('candidate.equals(registeredRoot)');
+  });
+
+  it('binds a test-result handle to one exact existing content identity', () => {
+    const platform = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/IdeaPlatformOperations.java'),
+      'utf8'
+    );
+    const registry = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/registry/IdeaTargetRegistry.java'),
+      'utf8'
+    );
+    const matcher = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/TestResultContentMatcher.java'),
+      'utf8'
+    );
+
+    expect(registry).toContain('contentName');
+    expect(registry).toContain('TEST_RESULT must bind an exact existing content display name');
+    expect(platform).toContain('TestResultContentMatcher.match');
+    expect(matcher).toContain('com.intellij.execution.testframework');
+    expect(matcher).toContain('AMBIGUOUS');
+    // No "the only content" fallback anywhere.
+    expect(platform).not.toContain('contents.get(0)');
+    expect(platform).not.toContain('existing.get(0)');
+  });
+
+  it('enforces exactly one frame in both directions', () => {
+    const server = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/PluginSocketServer.java'),
+      'utf8'
+    );
+    const client = fs.readFileSync(path.join(packageRoot, 'src/ideaPluginClient.ts'), 'utf8');
+
+    expect(server).toContain('exactly one single-line frame');
+    expect(server).toContain('refusing to replace a non-socket object');
+    expect(client).toContain('PluginResponseInvalidError');
+    expect(client).toContain('PLUGIN_RESPONSE_INVALID');
+    expect(client).toContain('exactly one single-line frame');
+  });
+
+  it('binds every trusted path canonically and rejects symlinked components', () => {
+    const pathBinding = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/PathBinding.java'),
+      'utf8'
+    );
+    const config = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/PluginConfig.java'),
+      'utf8'
+    );
+    expect(pathBinding).toContain('rejectSymlinkComponents');
+    expect(pathBinding).toContain('PLATFORM_SYSTEM_LINKS');
+    expect(pathBinding).toContain('requireRegularFile');
+    expect(config).toContain('PathBinding.canonical');
+    expect(config).toContain('duplicate configuration key rejected');
+    expect(config).toContain('unknown configuration key rejected');
+    expect(config).toContain('configuration file must be valid UTF-8');
   });
 
   it('declares only the platform module and no executor or test-runner extension', () => {

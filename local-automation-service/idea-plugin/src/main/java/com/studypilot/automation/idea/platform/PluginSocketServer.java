@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.EnumSet;
 import java.util.Set;
@@ -29,9 +30,15 @@ import java.util.function.Consumer;
  * listens on the Java-facing socket, and never opens a TCP or HTTP listener (only
  * {@link StandardProtocolFamily#UNIX} is used).
  *
- * Hardening: parent directory must not be writable by other users, the socket file is
- * forced to 0600, frames are single-line UTF-8 JSON capped at 16 KiB, and every request is
- * authenticated, replayed-protected and dispatched with a read deadline.
+ * Hardening:
+ *   * the parent directory must exist without symlinked components and must not be writable by
+ *     other users;
+ *   * a pre-existing object at the socket path is accepted only when it really is a socket —
+ *     a regular file or directory is refused and never deleted;
+ *   * the socket file is forced to 0600;
+ *   * a request must be EXACTLY ONE newline-terminated single-line UTF-8 JSON frame capped at
+ *     16 KiB. Trailing data after the newline (a second frame, or any extra bytes) is rejected
+ *     as INVALID_FRAME before any effect.
  */
 public final class PluginSocketServer {
 
@@ -46,6 +53,8 @@ public final class PluginSocketServer {
   private volatile boolean running;
   private ServerSocketChannel serverChannel;
   private Thread acceptThread;
+  /** True only once WE bound the socket file, so stop() never deletes a foreign object. */
+  private boolean boundSocketFile;
 
   public PluginSocketServer(
       PluginConfig config, PluginProtocol protocol, IdeActionDispatcher dispatcher, Consumer<String> log) {
@@ -64,24 +73,32 @@ public final class PluginSocketServer {
     if (parent == null) {
       throw new IOException("socket path must have a parent directory");
     }
-    if (!Files.exists(parent)) {
+    if (!Files.exists(parent, LinkOption.NOFOLLOW_LINKS)) {
       Files.createDirectories(parent);
       NonceLedger.setOwnerOnlyDirectory(parent);
     }
-    if (Files.isSymbolicLink(parent)) {
-      throw new IOException("socket parent directory must not be a symlink");
-    }
+    // No component of the socket path may be a symlink, and the parent must be owner-only.
+    PathBinding.rejectSymlinkComponents(parent);
+    PathBinding.requireDirectory(parent);
     requireNotOtherWritable(parent);
+    PathBinding.rejectSymlinkComponents(socketPath);
 
     if (Files.exists(socketPath, LinkOption.NOFOLLOW_LINKS)) {
       if (Files.isSymbolicLink(socketPath)) {
         throw new IOException("refusing to replace a symlinked socket path");
+      }
+      BasicFileAttributes attributes =
+          Files.readAttributes(socketPath, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+      if (!attributes.isOther()) {
+        // A regular file or directory is never deleted; the operator must resolve it.
+        throw new IOException("refusing to replace a non-socket object at the socket path");
       }
       Files.delete(socketPath);
     }
 
     serverChannel = ServerSocketChannel.open(StandardProtocolFamily.UNIX);
     serverChannel.bind(UnixDomainSocketAddress.of(socketPath), 16);
+    boundSocketFile = true;
     Files.setPosixFilePermissions(
         socketPath, EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
     requireOwnerOnly(socketPath);
@@ -107,10 +124,13 @@ public final class PluginSocketServer {
       acceptThread.interrupt();
       acceptThread = null;
     }
-    try {
-      Files.deleteIfExists(config.socketPath);
-    } catch (IOException ignored) {
-      // best effort
+    if (boundSocketFile) {
+      try {
+        Files.deleteIfExists(config.socketPath);
+      } catch (IOException ignored) {
+        // best effort
+      }
+      boundSocketFile = false;
     }
   }
 
@@ -143,17 +163,17 @@ public final class PluginSocketServer {
   }
 
   private void handle(SocketChannel client) throws IOException {
-    byte[] frame = readFrame(client);
-    if (frame == null) {
+    FrameRead frame = readFrame(client);
+    if (frame.errorCode != null) {
+      writeFrame(client, rejectFrame(frame.errorCode, frame.errorMessage));
+      return;
+    }
+    if (frame.bytes == null || frame.bytes.length == 0) {
       writeFrame(client, rejectFrame("INVALID_FRAME", "no complete single-line frame was received"));
       return;
     }
-    if (frame.length == 0) {
-      writeFrame(client, rejectFrame("INVALID_FRAME", "empty request frame"));
-      return;
-    }
 
-    PluginProtocol.Result<PluginRequest> parsed = protocol.parse(frame);
+    PluginProtocol.Result<PluginRequest> parsed = protocol.parse(frame.bytes);
     if (!parsed.ok) {
       writeFrame(client, rejectFrame(parsed.errorCode, parsed.message));
       return;
@@ -163,8 +183,34 @@ public final class PluginSocketServer {
     writeFrame(client, protocol.format(response));
   }
 
-  /** Reads one newline-terminated frame with a deadline. Returns null on timeout/EOF. */
-  private byte[] readFrame(SocketChannel client) throws IOException {
+  private static final class FrameRead {
+    final byte[] bytes;
+    final String errorCode;
+    final String errorMessage;
+
+    private FrameRead(byte[] bytes, String errorCode, String errorMessage) {
+      this.bytes = bytes;
+      this.errorCode = errorCode;
+      this.errorMessage = errorMessage;
+    }
+
+    static FrameRead ok(byte[] bytes) {
+      return new FrameRead(bytes, null, null);
+    }
+
+    static FrameRead error(String code, String message) {
+      return new FrameRead(null, code, message);
+    }
+  }
+
+  /**
+   * Reads exactly one newline-terminated frame with a deadline.
+   *
+   * Any byte after the terminating newline — including a second JSON frame delivered in the
+   * same write — makes the request invalid, so a caller can never smuggle extra operations
+   * past the single-frame contract.
+   */
+  private FrameRead readFrame(SocketChannel client) throws IOException {
     client.configureBlocking(false);
     ByteArrayOutputStream buffer = new ByteArrayOutputStream(512);
     ByteBuffer chunk = ByteBuffer.allocate(4096);
@@ -179,29 +225,40 @@ public final class PluginSocketServer {
         buffer.write(bytes);
         if (buffer.size() > PluginProtocol.MAX_FRAME_BYTES) {
           client.configureBlocking(true);
-          return new byte[PluginProtocol.MAX_FRAME_BYTES + 1];
+          return FrameRead.error("OVERSIZE_FRAME", "frame exceeds 16 KiB");
         }
         byte[] current = buffer.toByteArray();
-        if (indexOfNewline(current) >= 0) {
+        int newline = indexOfNewline(current);
+        if (newline >= 0) {
+          if (newline != current.length - 1) {
+            client.configureBlocking(true);
+            return FrameRead.error("INVALID_FRAME", "request must be exactly one single-line frame");
+          }
+          // A second frame may already be pending in the socket buffer; drain it defensively.
+          ByteBuffer extra = ByteBuffer.allocate(1);
+          if (client.read(extra) > 0) {
+            client.configureBlocking(true);
+            return FrameRead.error("INVALID_FRAME", "request must be exactly one single-line frame");
+          }
           client.configureBlocking(true);
-          byte[] line = new byte[indexOfNewline(current)];
-          System.arraycopy(current, 0, line, 0, line.length);
-          return line;
+          byte[] line = new byte[newline];
+          System.arraycopy(current, 0, line, 0, newline);
+          return FrameRead.ok(line);
         }
       } else if (read < 0) {
         client.configureBlocking(true);
-        return null;
+        return FrameRead.error("INVALID_FRAME", "connection closed before a complete frame arrived");
       } else {
         try {
           Thread.sleep(READ_POLL_MS);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
-          return null;
+          return FrameRead.error("INVALID_FRAME", "interrupted while reading the frame");
         }
       }
     }
     client.configureBlocking(true);
-    return null;
+    return FrameRead.error("INVALID_FRAME", "no complete single-line frame was received");
   }
 
   private static int indexOfNewline(byte[] bytes) {

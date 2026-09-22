@@ -96,7 +96,7 @@ PluginSelfTest: passed=44 failed=16
 
 ```text
 $ bash idea-plugin/build-local.sh
-PluginSelfTest: passed=103 failed=0
+PluginSelfTest: passed=110 failed=0
 ```
 
 ### 3.2 自检覆盖面（`idea-plugin/src/test/java/.../PluginSelfTest.java`）
@@ -111,7 +111,7 @@ PluginSelfTest: passed=103 failed=0
 - **过期请求零副作用**：注册表/平台调用次数为 0；
 - **UI 线程/处置**：超时、disposing、异常三种失败码；
 - **回执卫生**：requestId/action 关联、单行、≤16 KiB、**不回传路径或 URL**、消息 ≤200 字符；
-- **架构护栏（43 项）**：源码级禁止 TCP/HTTP、通用 Action ID、run/debug/test 执行、Robot/键鼠、反射、Shell，以及 Java-facing Socket 变量名；并**必须存在** `StandardProtocolFamily.UNIX`/`OpenFileDescriptor`/`FileEditorManager`/`RunManager`/`setSelectedConfiguration`/`getSelectedConfiguration`/`ToolWindowManager`/`setSelectedContent`/`getSelectedContent`。
+- **架构护栏（50 项）**：源码级禁止 TCP/HTTP、通用 Action ID、run/debug/test 执行、Robot/键鼠、反射、Shell，以及 Java-facing Socket 变量名；并**必须存在** `StandardProtocolFamily.UNIX`/`OpenFileDescriptor`/`FileEditorManager`/`RunManager`/`setSelectedConfiguration`/`getSelectedConfiguration`/`ToolWindowManager`/`setSelectedContent`/`getSelectedContent`。
 
 ### 3.3 跨语言冻结向量
 
@@ -167,7 +167,7 @@ BUILD SUCCESSFUL in 1m 36s
 $ bash idea-plugin/build-local.sh
 build-local: compiling plugin against IntelliJ IDEA.app
 build-local: running self test
-PluginSelfTest: passed=103 failed=0
+PluginSelfTest: passed=110 failed=0
 build-local: artifact .../distributions/study-pilot-automation-bridge-1.0.0-local.zip
 build-local: sha256 9e856f03ebccecf0a9b4808b63a9d4d8ba0fb5bd4df699f9b3ba7e1376c20f27
 build-local: INSTALLATION IS NOT PERFORMED — Codex review and explicit user confirmation are required first.
@@ -177,8 +177,8 @@ build-local: INSTALLATION IS NOT PERFORMED — Codex review and explicit user co
 
 | 来源 | 文件 | SHA-256 | 可复现性 |
 | :--- | :--- | :--- | :--- |
-| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip`（45,878 B） | `973047a5663229727269504aa875d866ecd08cfd005c346e4f2c84d56980156e` | **可复现**：Gradle 归档使用固定时间戳（1980-02-01） |
-| 本机 javac（备选） | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0-local.zip` | 每次构建不同（示例 `b64c41a700a9e7f6f2a894397a2a934a99d4594bc3347f0269c4a2640f973fc6`） | **不可复现**：`jar` 会写入构建时刻时间戳 |
+| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `73a9f20bf3f22cf6482524d9a364819d6f9659077e2f493cdee41653e4b7e2ac` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
+| 本机 javac（备选） | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0-local.zip` | 每次构建不同（示例 `95babc42db204beb39b7320b4580fb183c7fdb8c76a0afad4224ca20c38b138a`） | **不可复现**：`jar` 写入构建时刻时间戳 |
 
 > 审查与安装应以 **Gradle 产物** 为准（校验和固定）；备选产物仅用于本机离线可用性，其校验和随后续构建变化。
 
@@ -199,15 +199,14 @@ study-pilot-automation-bridge/lib/study-pilot-automation-bridge-1.0.0.jar
 ```text
 cd local-automation-service && npm test
  Test Files  18 passed (18)
-      Tests  165 passed | 1 skipped (166)
+      Tests  170 passed | 1 skipped (171)
 
 npm run typecheck            -> tsc --noEmit, 0 errors
 npm run build                -> tsc, dist/ 成功（含 dist/main.js）
 npm run build:native         -> 0 errors, 0 warnings
-npm run build:plugin         -> PluginSelfTest passed=103 failed=0 + ZIP
-npm run test:plugin          -> 同上（插件自检）
-gradle selfTest              -> PluginSelfTest passed=103 failed=0 (BUILD SUCCESSFUL)
-gradle check buildPlugin     -> BUILD SUCCESSFUL (11 + 16 actionable tasks)
+npm run test:plugin          -> PluginSelfTest 110/110 + PluginHardeningSelfTest 50/50
+gradle selfTest / check      -> 两个 harness 全绿, BUILD SUCCESSFUL
+gradle buildPlugin           -> BUILD SUCCESSFUL；产物校验和两次一致
 git diff --check             -> 干净
 npx tsx scripts/real-acceptance.ts -> 见下
 ```
@@ -256,10 +255,94 @@ Unix socket + 0600 + FAILED(ADAPTER_FAILURE) + REPLAY_DETECTED + INVALID_SIGNATU
 
 ---
 
-## 8. 本轮改动文件
+## 8. Codex 安装前审查（`4dcdbd45`）四项阻断的整改
 
-新增：`idea-plugin/**`（`build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`、`gradlew` + wrapper、`build-local.sh`、`src/main/java/**` 协议/注册表/派发/平台层、`src/main/resources/META-INF/plugin.xml`、`src/test/java/**` 自检）、`src/ideaPluginProtocol.ts`、`src/ideaPluginClient.ts`、`tests/ideaPluginProtocol.spec.ts`、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
+### 8.1 阻断 1：`PluginConfig.load` 对任何真实注册表都不可用
 
-修改：`src/ideaAdapter.ts`（插件适配器为生产路径；AX 改为仅诊断且拒绝一切 IDEA 结果）、`src/service.ts`（默认装配插件适配器；只转发 `targetKey`）、`src/types.ts`（插件配置字段；`openRegisteredFile(handle)`）、`src/config.ts`（插件 Socket/密钥/超时与两条链路分离校验）、`src/index.ts`、`package.json`（`build:plugin`/`test:plugin`/`build:plugin:gradle`）、`.gitignore`、`scripts/real-acceptance.ts`（逐动作独立诊断）、`tests/{ideaNativeAx,reviewFindings,falseSuccess}.spec.ts`（迁移到新架构）、本文件。
+**RED（实测）**：写一份含目标行的真实配置并调用 `PluginConfig.load`：
 
-未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34。
+```text
+RED blocker 1: load a real config that HAS target rows
+  load FAILED -> java.io.IOException: projectRoot must be declared before target rows
+```
+
+根因：第一遍解析时 `projectRootValue` 仍为 `null`，任何三列目标行都会先抛错。
+
+**整改**：改为严格两阶段解析——先做严格 UTF-8 解码与框架校验、收集并校验标量（`socketPath`/`ledgerPath`/`projectRoot`/`uiTimeoutMs`/`secretFile`），建立**规范化**项目根之后才注册目标行，因此**行序无关**。新增拒绝项：重复标量键、未知标量键、重复句柄、列数不符、非法 UTF-8、缺失 `projectRoot`。
+
+**GREEN**：0 非 0 通过——含三类目标（FILE/RUN_CONFIGURATION/TEST_RESULT）的真实配置可加载并逐一解析；行序颠倒同样加载；上述非法情形全部按配置错误拒绝。
+
+### 8.2 阻断 2：`SHOW_TEST_RESULT` 的身份缺口（假成功）
+
+原实现把 TEST_RESULT 句柄只当作工具窗口 ID，然后接受“恰好存在的那一个内容”，因此任何单个无关内容都能成功。
+
+**整改**：
+- 注册表要求 TEST_RESULT 必须**同时**绑定固定的结果工具窗口与**精确的内容显示名**（4 列：`handle / TEST_RESULT / 工具窗口ID / 精确内容名`），缺失或多余列即配置错误；
+- 新增纯判定类 `TestResultContentMatcher`：只接受 `valid` 且组件类名属于**受支持的测试框架 UI 包** `com.intellij.execution.testframework` 的内容；**精确**显示名匹配（非子串）；0 个 → `NOT_FOUND`，≥2 个 → `AMBIGUOUS`，同名但非测试组件 → `NOT_A_TEST_RESULT`，注册身份为空或超长 → `INVALID_REGISTRATION`。**没有“唯一内容即接受”的兜底**；
+- 执行前解析出**唯一**内容对象，`setSelectedContent` 后校验**同一个对象**仍然存在、仍是 `getSelectedContent()`、工具窗口可见且身份不变。
+
+**RED 说明（诚实）**：该阻断的 RED 以“缺失类/缺失身份绑定”编译失败与旧实现的“唯一内容即接受”设计缺口体现，未能在旧代码上跑出运行时断言失败；整改后 12 项对抗性用例全绿——唯一命中、零命中、同名重复（歧义）、**无关单内容**、同名的 console 内容、同名的编辑器内容、无效内容、无效+有效重复、空/超长注册身份、部分标题不匹配。
+
+### 8.3 阻断 3：单帧强制不完整（双向）
+
+**RED（实测，真正的假成功）**：假插件服务端在**同一次写入**中返回“合法帧 + 尾随字节/第二个完整帧”：
+
+```text
+FAIL rejects a valid frame followed by trailing bytes in the same write
+AssertionError: expected true to be false        <-- 修复前返回了成功
+FAIL rejects a valid frame followed by a second complete frame
+AssertionError: expected true to be false        <-- 修复前返回了成功
+```
+
+**整改**：
+- 服务侧 transport：新帧后仍有任何尾随字节 → `PluginResponseInvalidError` → `PLUGIN_RESPONSE_INVALID`；超限响应同样归入该码；并暂停 socket 防止下一段帧被忽略；
+- 插件侧 `PluginSocketServer.readFrame`：终止换行之后不得有任何字节（**同一次写入**或**socket 缓冲中已就绪**的第二个帧都会判 `INVALID_FRAME`），请求必须是**恰好一个**换行结束的单行帧；16 KiB 上限与严格 UTF-8 保持不变。
+
+**GREEN**：真实 UDS 上“合法帧 + 尾随 JSON”与“合法帧 + 第二个帧”均返回 `INVALID_FRAME`（插件侧）/`PLUGIN_RESPONSE_INVALID`（服务侧），而单个合法帧仍正常应答（证明不是一刀切拒绝）。
+
+### 8.4 阻断 4：安装前的规范化文件系统绑定
+
+**整改**：
+- 新增 `PathBinding`：`canonical()` 先拒绝**任何用户符号链接分量**再做完全解析（`toRealPath`），使 macOS 自带的 `/var`、`/tmp`、`/etc` 系统链接在两侧得到同一规范形式（该例外以精确绝对路径白名单声明）；`contains()` 在**规范化 Path** 上按分量边界判定（`/work/project2` 不属于 `/work/project`）；`requireRegularFile`/`requireDirectory` 拒绝符号链接与非常规文件；
+- `PluginConfig` 对配置文件本身、`projectRoot`、socket/ledger 父目录与 FILE 目标全部规范化，FILE 目标还必须位于注册项目根内；
+- `IdeaPlatformOperations` 改用 `PathBinding.contains`（不再用字符串前缀或原始 VFS 路径），并要求注册根**等于**打开工程的**规范基础路径**（嵌套在别的工程之下属于不匹配）；
+- `PluginSocketServer.start()` 在 socket 路径上遇到**非 socket 对象（常规文件/目录）时拒绝且绝不删除**，`stop()` 也只在**自己绑定过**该路径时才删除。
+
+**RED/GREEN 与发现的两个真实缺陷**：新增的加固自检在实现过程中确实抓到两处真实缺陷并促使修复——
+
+1. 配置里重复句柄原本抛出 `IllegalArgumentException` 而非配置级错误 → 现在统一转为 `IOException`（`invalid target row rejected`）；
+2. `stop()` 会删除 socket 路径上的**既有对象**（即使 `start()` 已因“非 socket”而拒绝）→ 现在以 `boundSocketFile` 标记只在成功绑定后删除。
+
+对抗性用例：父目录符号链接、点段（`/./sub/..`）、前缀兄弟目录（`project2`）、不相关根、非常规/符号链接 FILE 目标、symlink 配置文件、socket 父目录其他用户可写、socket 路径上的常规文件（**并断言其未被删除**）、真实 socket 的 0600 权限。
+
+---
+
+## 9. 修订后的插件配置格式
+
+制表符分隔、`#` 注释；标量行 2 列、目标行 3/4 列，**行序无关**：
+
+```text
+socketPath      /abs/path/plugin.sock
+ledgerPath      /abs/path/plugin.ledger
+projectRoot     /abs/path/of/the/open/project
+uiTimeoutMs     2000                       # 可选，250..30000
+secretFile      /abs/path/secret           # 可选；否则用环境变量
+
+FILE_REGISTERED      FILE              /abs/path/inside/project/App.java
+RUN_REGISTERED       RUN_CONFIGURATION StudyPilotApplication
+RESULT_REGISTERED    TEST_RESULT       Run   surefire-reports
+```
+
+密钥优先取环境变量 `STUDYPILOT_IDEA_PLUGIN_HMAC_SECRET`（与 Java-facing 密钥不同，≥32 字节）。
+
+---
+
+## 10. 本轮改动文件
+
+新增：`idea-plugin/**`（`build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`、`gradlew` + wrapper、`build-local.sh`、`src/main/java/**` 协议/注册表/派发/平台层、`src/main/resources/META-INF/plugin.xml`、`src/test/java/**` 两个自检 harness）、`src/ideaPluginProtocol.ts`、`src/ideaPluginClient.ts`、`tests/ideaPluginProtocol.spec.ts`、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
+
+审查整改轮新增：`idea-plugin/src/main/java/.../platform/PathBinding.java`、`.../platform/TestResultContentMatcher.java`、`idea-plugin/src/test/java/.../PluginHardeningSelfTest.java`、`idea-plugin/src/test/java/.../PluginTestFrames.java`。
+
+修改：`src/ideaAdapter.ts`（插件适配器为生产路径；AX 改为仅诊断且拒绝一切 IDEA 结果）、`src/service.ts`（默认装配插件适配器；只转发 `targetKey`）、`src/types.ts`（插件配置字段；`openRegisteredFile(handle)`）、`src/config.ts`（插件 Socket/密钥/超时与两条链路分离校验）、`src/index.ts`、`package.json`（`build:plugin`/`test:plugin`/`build:plugin:gradle`）、`.gitignore`、`scripts/real-acceptance.ts`（逐动作独立诊断）、`src/ideaPluginClient.ts`（单帧强制）、`tests/{ideaNativeAx,reviewFindings,falseSuccess}.spec.ts`（迁移到新架构）、`tests/{ideaPluginClient,pluginArchitecture}.spec.ts`（新增用例与护栏）、`idea-plugin/**` 的 `PluginConfig`/`PluginSocketServer`/`IdeaPlatformOperations`/`IdeaTargetRegistry`/`IdePlatform`/`IdeActionDispatcher`/`build-local.sh`/`build.gradle.kts`/`PluginSelfTest`、本文件。
+
+未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34；未安装插件。

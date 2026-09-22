@@ -127,7 +127,7 @@ public final class IdeActionDispatcher {
       case RUN_CONFIGURATION:
         return platform.focusRunConfiguration(target.value, target.projectRoot);
       case TEST_RESULT:
-        return platform.showTestResult(target.value, target.projectRoot);
+        return platform.showTestResult(target.value, target.contentName, target.projectRoot);
       default:
         return IdeOutcome.refused("INVALID_ACTION", "unsupported target kind");
     }

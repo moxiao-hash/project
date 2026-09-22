@@ -53,11 +53,13 @@ TEST_SOURCES="$(find src/test/java -name '*.java' | sort | tr '\n' ' ')"
 # shellcheck disable=SC2086
 "${JAVAC}" --release 21 -nowarn -cp "${CLASSES}:${CLASSPATH}" -d "${TEST_CLASSES}" ${TEST_SOURCES}
 
-echo "build-local: running self test"
-java -Dstudypilot.plugin.source="${PLUGIN_DIR}/src/main/java" \
-     -Dstudypilot.plugin.resources="${PLUGIN_DIR}/src/main/resources" \
-     -cp "${TEST_CLASSES}:${CLASSES}:${CLASSPATH}" \
-     com.studypilot.automation.idea.PluginSelfTest
+echo "build-local: running self tests"
+for HARNESS in PluginSelfTest PluginHardeningSelfTest; do
+  java -Dstudypilot.plugin.source="${PLUGIN_DIR}/src/main/java" \
+       -Dstudypilot.plugin.resources="${PLUGIN_DIR}/src/main/resources" \
+       -cp "${TEST_CLASSES}:${CLASSES}:${CLASSPATH}" \
+       "com.studypilot.automation.idea.${HARNESS}"
+done
 
 echo "build-local: packaging"
 cp -R src/main/resources/. "${CLASSES}/"

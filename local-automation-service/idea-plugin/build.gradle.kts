@@ -43,23 +43,43 @@ intellijPlatform {
     buildSearchableOptions = false
 }
 
-// The plugin deliberately has no JUnit dependency, so the self test is a plain executable.
-val selfTest by tasks.registering(JavaExec::class) {
+// The plugin deliberately has no JUnit dependency, so the self tests are plain executables.
+val selfTestHarnesses =
+    listOf(
+        "com.studypilot.automation.idea.PluginSelfTest",
+        "com.studypilot.automation.idea.PluginHardeningSelfTest"
+    )
+
+// Aggregate task; each harness runs as its own JavaExec task (selfTest, selfTest1, ...).
+val selfTests by tasks.registering {
     group = "verification"
-    description = "Runs the dependency-free plugin self test and architecture guards."
-    classpath = sourceSets["test"].runtimeClasspath
-    mainClass = "com.studypilot.automation.idea.PluginSelfTest"
-    systemProperty(
-        "studypilot.plugin.source",
-        layout.projectDirectory.dir("src/main/java").asFile.absolutePath
-    )
-    systemProperty(
-        "studypilot.plugin.resources",
-        layout.projectDirectory.dir("src/main/resources").asFile.absolutePath
-    )
+    description = "Runs the dependency-free plugin self tests and architecture guards."
 }
 
-tasks.named("check") { dependsOn(selfTest) }
+selfTestHarnesses.forEachIndexed { index, harness ->
+    val taskName = if (index == 0) "selfTest" else "selfTest${index}"
+    tasks.register<JavaExec>(taskName) {
+        group = "verification"
+        description = "Runs $harness"
+        classpath = sourceSets["test"].runtimeClasspath
+        mainClass.set(harness)
+        systemProperty(
+            "studypilot.plugin.source",
+            layout.projectDirectory.dir("src/main/java").asFile.absolutePath
+        )
+        systemProperty(
+            "studypilot.plugin.resources",
+            layout.projectDirectory.dir("src/main/resources").asFile.absolutePath
+        )
+    }
+}
+
+selfTestHarnesses.forEachIndexed { index, _ ->
+    val taskName = if (index == 0) "selfTest" else "selfTest$index"
+    selfTests.configure { dependsOn(taskName) }
+}
+
+tasks.named("check") { dependsOn(selfTests) }
 
 tasks.withType<Test>().configureEach {
     // No framework-based tests are present by design.

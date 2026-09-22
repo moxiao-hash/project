@@ -151,9 +151,9 @@ public final class PluginSelfTest {
     }
 
     @Override
-    public IdeOutcome showTestResult(String resultContentName, String projectRoot) {
+    public IdeOutcome showTestResult(String toolWindowId, String contentDisplayName, String projectRoot) {
       resultCalls++;
-      lastResult = resultContentName;
+      lastResult = toolWindowId + "/" + contentDisplayName;
       return resultOutcome;
     }
   }
@@ -190,7 +190,8 @@ public final class PluginSelfTest {
     IdeaTargetRegistry registry = new IdeaTargetRegistry();
     registry.register(FILE_HANDLE, IdeaTargetRegistry.Kind.FILE, "/work/project/src/App.java", PROJECT_ROOT);
     registry.register(RUN_HANDLE, IdeaTargetRegistry.Kind.RUN_CONFIGURATION, "StudyPilotApplication", PROJECT_ROOT);
-    registry.register(RESULT_HANDLE, IdeaTargetRegistry.Kind.TEST_RESULT, "surefire-reports", PROJECT_ROOT);
+    registry.register(
+        RESULT_HANDLE, IdeaTargetRegistry.Kind.TEST_RESULT, "Run", "surefire-reports", PROJECT_ROOT);
     return registry;
   }
 
@@ -409,7 +410,7 @@ public final class PluginSelfTest {
         dispatcher(protocol, registry, new NonceLedger(tempDir.resolve("n-d5.ledger")), platform, new FakeUi())
             .dispatch(protocol.parse(frame(protocol, "SHOW_TEST_RESULT", RESULT_HANDLE, NOW - 1000, NOW + 5000, nonce(44))).value, NOW);
     checkEquals("dispatch: verified result reveal succeeds", "SUCCEEDED", okResult.status);
-    checkEquals("dispatch: platform received the registered result content", "surefire-reports", platform.lastResult);
+    checkEquals("dispatch: platform received the registered result identity", "Run/surefire-reports", platform.lastResult);
 
     // 6. SHOW_TEST_RESULT with no existing result view -> honest failure.
     FakePlatform missingResult = new FakePlatform();
@@ -565,10 +566,22 @@ public final class PluginSelfTest {
       "setSelectedContent",
       "getSelectedContent",
       "LocalFileSystem",
-      "VfsUtilCore"
+      // Containment must be decided on canonical Paths, not on raw VFS paths or strings.
+      "PathBinding",
+      "PathBinding.contains",
+      "PathBinding.canonical",
+      // The registered root must EQUAL the open project's canonical base path.
+      "candidate.equals(registeredRoot)",
+      // The result view must be matched by exact identity, never "the only content".
+      "TestResultContentMatcher"
     };
     for (String token : required) {
       check("guards: plugin must contain '" + token + "'", code.contains(token));
+    }
+
+    // Raw string-prefix containment and "the only content" fallbacks are forbidden.
+    for (String token : new String[] {"startsWith(basePath", "existing.get(0)", "contents.get(0)"}) {
+      check("guards: plugin must not contain '" + token + "'", !code.contains(token));
     }
 
     // The plugin must never reach the Java-facing socket configuration.

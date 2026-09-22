@@ -16,6 +16,12 @@ public interface IdePlatform {
   /** Focus the one existing matching RunConfiguration without running or editing it. */
   IdeOutcome focusRunConfiguration(String configurationName, String projectRoot);
 
-  /** Reveal the already existing, registered test-result content; never start tests. */
-  IdeOutcome showTestResult(String resultContentName, String projectRoot);
+  /**
+   * Reveal the already existing, registered test-result content; never start tests.
+   *
+   * {@code toolWindowId} and {@code contentDisplayName} together are the registered identity
+   * of ONE exact existing content. Implementations must resolve exactly one matching content,
+   * reject zero or multiple, and verify the same object afterwards.
+   */
+  IdeOutcome showTestResult(String toolWindowId, String contentDisplayName, String projectRoot);
 }
