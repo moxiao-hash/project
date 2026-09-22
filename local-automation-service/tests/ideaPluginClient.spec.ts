@@ -21,6 +21,8 @@ const SECRET = 'studypilot-plugin-secret-32-bytes!!';
 let tmpDir: string;
 let socketPath: string;
 let server: net.Server | null = null;
+const liveSockets = new Set<net.Socket>();
+let sawClientHalfClose = false;
 
 type ServerBehaviour =
   | { kind: 'respond'; status: string; errorCode: string | null; message?: string; requestIdOverride?: string; extraField?: boolean }
@@ -28,18 +30,39 @@ type ServerBehaviour =
   | { kind: 'malformed' }
   | { kind: 'silent' }
   | { kind: 'respondThenTrailing' }
+  | { kind: 'respondThenTrailingLater' }
+  | { kind: 'respondThenSecondFrameLater' }
   | { kind: 'rejectSignature' };
 
 let behaviour: ServerBehaviour = { kind: 'respond', status: 'SUCCEEDED', errorCode: null };
 
+function okResponse(request: PluginRequest): Record<string, unknown> {
+  return {
+    version: 1,
+    requestId: request.requestId,
+    action: request.action,
+    status: 'SUCCEEDED',
+    errorCode: null,
+    message: 'ok',
+    finishedAt: new Date().toISOString(),
+  };
+}
+
 function startFakePluginServer(): Promise<void> {
   return new Promise((resolve) => {
-    const created = net.createServer((socket) => {
-      let buffer = '';
-      socket.on('data', (chunk: Buffer) => {
-        buffer += chunk.toString('utf8');
+    // allowHalfOpen: the service half-closes after the request, and the plugin must still be
+    // able to write its reply afterwards.
+    const created = net.createServer({ allowHalfOpen: true }, (socket) => {
+      // The service half-closes its write side after the request, so the server reads through
+      // EOF and only then answers. No timing assumptions are involved.
+      const chunks: Buffer[] = [];
+      socket.on('data', (chunk: Buffer) => chunks.push(chunk));
+      socket.on('end', () => {
+        sawClientHalfClose = true;
+        const buffer = Buffer.concat(chunks).toString('utf8');
         const newline = buffer.indexOf('\n');
         if (newline < 0) {
+          socket.end();
           return;
         }
         const frame = buffer.slice(0, newline);
@@ -47,7 +70,7 @@ function startFakePluginServer(): Promise<void> {
         try {
           request = JSON.parse(frame) as PluginRequest;
         } catch {
-          socket.write('{malformed');
+          socket.end('{malformed');
           return;
         }
 
@@ -57,7 +80,7 @@ function startFakePluginServer(): Promise<void> {
           .update(calculatePluginCanonicalPayload(request), 'utf8')
           .digest('hex');
         if (expected !== request.signature) {
-          socket.write(
+          socket.end(
             `${JSON.stringify({
               version: 1,
               requestId: request.requestId,
@@ -75,15 +98,15 @@ function startFakePluginServer(): Promise<void> {
           case 'silent':
             return;
           case 'oversize':
-            socket.write(`${'x'.repeat(20000)}\n`);
+            socket.end(`${'x'.repeat(20000)}\n`);
             return;
           case 'malformed':
-            socket.write('{ this is not json }\n');
+            socket.end('{ this is not json }\n');
             return;
           case 'respondThenTrailing':
             // A valid frame followed by extra bytes in the SAME write must be rejected: a
             // response must be exactly one newline-terminated frame.
-            socket.write(
+            socket.end(
               `${JSON.stringify({
                 version: 1,
                 requestId: request.requestId,
@@ -96,7 +119,7 @@ function startFakePluginServer(): Promise<void> {
             );
             return;
           case 'rejectSignature':
-            socket.write(
+            socket.end(
               `${JSON.stringify({
                 version: 1,
                 requestId: request.requestId,
@@ -108,6 +131,24 @@ function startFakePluginServer(): Promise<void> {
               })}\n`
             );
             return;
+          case 'respondThenTrailingLater': {
+            // The trailing second frame arrives in a LATER write/chunk, so only a client that
+            // buffers through EOF can reject it deterministically.
+            socket.write(`${JSON.stringify(okResponse(request))}\n`);
+            setTimeout(() => {
+              socket.write('{"second":"frame"}\n');
+              socket.end();
+            }, 120);
+            return;
+          }
+          case 'respondThenSecondFrameLater': {
+            socket.write(`${JSON.stringify(okResponse(request))}\n`);
+            setTimeout(() => {
+              socket.write(`${JSON.stringify(okResponse(request))}\n`);
+              socket.end();
+            }, 120);
+            return;
+          }
           case 'respond': {
             const payload: Record<string, unknown> = {
               version: 1,
@@ -121,13 +162,17 @@ function startFakePluginServer(): Promise<void> {
             if (behaviour.extraField) {
               payload['path'] = '/etc/passwd';
             }
-            socket.write(`${JSON.stringify(payload)}\n`);
+            socket.end(`${JSON.stringify(payload)}\n`);
             return;
           }
         }
       });
     });
     server = created;
+    created.on('connection', (socket: net.Socket) => {
+      liveSockets.add(socket);
+      socket.on('close', () => liveSockets.delete(socket));
+    });
     created.listen(socketPath, () => {
       fs.chmodSync(socketPath, 0o600);
       resolve();
@@ -143,9 +188,16 @@ beforeEach(async () => {
   tmpDir = fs.mkdtempSync(path.join('/tmp', 't33-plugin-client-'));
   socketPath = path.join(tmpDir, 'p.sock');
   behaviour = { kind: 'respond', status: 'SUCCEEDED', errorCode: null };
+  sawClientHalfClose = false;
 });
 
 afterEach(async () => {
+  // Tear down deliberately-silent connections first, otherwise server.close() would wait for
+  // a connection the silent scenario never ends.
+  for (const socket of liveSockets) {
+    socket.destroy();
+  }
+  liveSockets.clear();
   if (server) {
     await new Promise<void>((resolve) => server?.close(() => resolve()));
     server = null;
@@ -205,6 +257,52 @@ describe('IdeaPluginClient over a real Unix Domain Socket', () => {
     expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
   });
 
+  it('rejects trailing bytes that only arrive in a LATER chunk', async () => {
+    // Deterministic: the client buffers through EOF, so a late second frame can never be
+    // mistaken for a valid single-frame response.
+    behaviour = { kind: 'respondThenTrailingLater' };
+    await startFakePluginServer();
+    const outcome = await client().openRegisteredFile('FILE_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.verified).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
+  });
+
+  it('rejects a second response frame that only arrives in a LATER chunk', async () => {
+    behaviour = { kind: 'respondThenSecondFrameLater' };
+    await startFakePluginServer();
+    const outcome = await client().focusRunConfiguration('RUN_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
+  });
+
+  it('half-closes its write side after the request so the server can read to EOF', async () => {
+    await startFakePluginServer();
+    const outcome = await client().openRegisteredFile('FILE_REGISTERED');
+    expect(sawClientHalfClose).toBe(true);
+    expect(outcome.ok).toBe(true);
+  });
+
+  it('times out and fails closed when the plugin never answers', async () => {
+    behaviour = { kind: 'silent' };
+    await startFakePluginServer();
+    const outcome = await client(400).openRegisteredFile('FILE_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_TIMEOUT');
+  });
+
+  it('fails closed when the plugin socket does not exist', async () => {
+    const outcome = await client(500).openRegisteredFile('FILE_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_UNAVAILABLE');
+  });
+
+  it('fails closed when no plugin socket is configured', async () => {
+    const outcome = await new IdeaPluginClient({ socketPath: '', secret: SECRET }).openRegisteredFile('FILE');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_NOT_CONFIGURED');
+  });
+
   it('rejects a malformed response frame', async () => {
     behaviour = { kind: 'malformed' };
     await startFakePluginServer();
@@ -240,26 +338,6 @@ describe('IdeaPluginClient over a real Unix Domain Socket', () => {
     const outcome = await client().openRegisteredFile('FILE_REGISTERED');
     expect(outcome.ok).toBe(false);
     expect(outcome.code).toBe('INVALID_SIGNATURE');
-  });
-
-  it('times out and fails closed when the plugin never answers', async () => {
-    behaviour = { kind: 'silent' };
-    await startFakePluginServer();
-    const outcome = await client(400).openRegisteredFile('FILE_REGISTERED');
-    expect(outcome.ok).toBe(false);
-    expect(outcome.code).toBe('PLUGIN_TIMEOUT');
-  });
-
-  it('fails closed when the plugin socket does not exist', async () => {
-    const outcome = await client(500).openRegisteredFile('FILE_REGISTERED');
-    expect(outcome.ok).toBe(false);
-    expect(outcome.code).toBe('PLUGIN_UNAVAILABLE');
-  });
-
-  it('fails closed when no plugin socket is configured', async () => {
-    const outcome = await new IdeaPluginClient({ socketPath: '', secret: SECRET }).openRegisteredFile('FILE');
-    expect(outcome.ok).toBe(false);
-    expect(outcome.code).toBe('PLUGIN_NOT_CONFIGURED');
   });
 
   it('never forwards a path or configuration name', async () => {

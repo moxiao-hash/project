@@ -204,17 +204,20 @@ public final class PluginSocketServer {
   }
 
   /**
-   * Reads exactly one newline-terminated frame with a deadline.
+   * Reads the whole request through EOF, then requires EXACTLY one newline-terminated frame.
    *
-   * Any byte after the terminating newline — including a second JSON frame delivered in the
-   * same write — makes the request invalid, so a caller can never smuggle extra operations
-   * past the single-frame contract.
+   * The service half-closes its write side after sending the request, so EOF is the
+   * deterministic end of the request. Reading through EOF means a trailing byte or a second
+   * frame can never be missed because it happened to arrive in a later write: the request is
+   * rejected before any effect unless the payload is exactly one newline-terminated frame.
    */
   private FrameRead readFrame(SocketChannel client) throws IOException {
     client.configureBlocking(false);
     ByteArrayOutputStream buffer = new ByteArrayOutputStream(512);
     ByteBuffer chunk = ByteBuffer.allocate(4096);
     long deadline = System.currentTimeMillis() + READ_DEADLINE_MS;
+    boolean eof = false;
+
     while (System.currentTimeMillis() < deadline) {
       chunk.clear();
       int read = client.read(chunk);
@@ -227,47 +230,43 @@ public final class PluginSocketServer {
           client.configureBlocking(true);
           return FrameRead.error("OVERSIZE_FRAME", "frame exceeds 16 KiB");
         }
-        byte[] current = buffer.toByteArray();
-        int newline = indexOfNewline(current);
-        if (newline >= 0) {
-          if (newline != current.length - 1) {
-            client.configureBlocking(true);
-            return FrameRead.error("INVALID_FRAME", "request must be exactly one single-line frame");
-          }
-          // A second frame may already be pending in the socket buffer; drain it defensively.
-          ByteBuffer extra = ByteBuffer.allocate(1);
-          if (client.read(extra) > 0) {
-            client.configureBlocking(true);
-            return FrameRead.error("INVALID_FRAME", "request must be exactly one single-line frame");
-          }
-          client.configureBlocking(true);
-          byte[] line = new byte[newline];
-          System.arraycopy(current, 0, line, 0, newline);
-          return FrameRead.ok(line);
-        }
       } else if (read < 0) {
-        client.configureBlocking(true);
-        return FrameRead.error("INVALID_FRAME", "connection closed before a complete frame arrived");
+        eof = true;
+        break;
       } else {
         try {
           Thread.sleep(READ_POLL_MS);
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
+          client.configureBlocking(true);
           return FrameRead.error("INVALID_FRAME", "interrupted while reading the frame");
         }
       }
     }
-    client.configureBlocking(true);
-    return FrameRead.error("INVALID_FRAME", "no complete single-line frame was received");
-  }
 
-  private static int indexOfNewline(byte[] bytes) {
-    for (int i = 0; i < bytes.length; i++) {
-      if (bytes[i] == '\n') {
-        return i;
+    client.configureBlocking(true);
+    if (!eof) {
+      return FrameRead.error(
+          "INVALID_FRAME", "the request did not close before the frame deadline");
+    }
+
+    byte[] payload = buffer.toByteArray();
+    if (payload.length == 0) {
+      return FrameRead.error("INVALID_FRAME", "empty request frame");
+    }
+    int newlines = 0;
+    for (byte value : payload) {
+      if (value == '\n') {
+        newlines++;
       }
     }
-    return -1;
+    if (newlines != 1 || payload[payload.length - 1] != '\n') {
+      return FrameRead.error(
+          "INVALID_FRAME", "request must be exactly one newline-terminated single-line frame");
+    }
+    byte[] line = new byte[payload.length - 1];
+    System.arraycopy(payload, 0, line, 0, line.length);
+    return FrameRead.ok(line);
   }
 
   private void writeFrame(SocketChannel client, String frame) throws IOException {

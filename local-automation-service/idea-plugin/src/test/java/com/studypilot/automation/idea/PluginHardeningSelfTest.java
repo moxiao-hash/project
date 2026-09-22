@@ -348,6 +348,17 @@ public final class PluginHardeningSelfTest {
   }
 
   private static String readResponse(Path socketPath, byte[] payload) throws IOException {
+    return readResponse(socketPath, payload, -1);
+  }
+
+  /**
+   * Writes the payload, optionally writes a delayed trailing byte after a pause, then
+   * half-closes the write side so the plugin can read through EOF. The reply is read until
+   * the plugin closes its side. No timing assumption is required for correctness: the plugin
+   * accepts a request only when the bytes it read are exactly one newline-terminated frame.
+   */
+  private static String readResponse(Path socketPath, byte[] payload, long delayedTrailingAfterMs)
+      throws IOException {
     try (SocketChannel client = SocketChannel.open(StandardProtocolFamily.UNIX)) {
       client.connect(UnixDomainSocketAddress.of(socketPath));
       client.configureBlocking(true);
@@ -355,6 +366,18 @@ public final class PluginHardeningSelfTest {
       while (out.hasRemaining()) {
         client.write(out);
       }
+      if (delayedTrailingAfterMs >= 0) {
+        try {
+          Thread.sleep(delayedTrailingAfterMs);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
+        ByteBuffer trailing = ByteBuffer.wrap("{\"late\":true}\n".getBytes(StandardCharsets.UTF_8));
+        while (trailing.hasRemaining()) {
+          client.write(trailing);
+        }
+      }
+      client.shutdownOutput();
       ByteBuffer in = ByteBuffer.allocate(65536);
       StringBuilder response = new StringBuilder();
       long deadline = System.currentTimeMillis() + 5000;
@@ -385,8 +408,9 @@ public final class PluginHardeningSelfTest {
     Path projectRoot = Files.createDirectories(tempRoot.resolve("sock-project"));
 
     PluginConfig config = socketConfig(socketPath, ledgerPath, projectRoot);
+    NoopPlatform platform = new NoopPlatform();
     PluginSocketServer server = new PluginSocketServer(
-        config, new PluginProtocol(config.secret), dispatcherFor(config), message -> {});
+        config, new PluginProtocol(config.secret), dispatcherFor(config, platform), message -> {});
     server.start();
     try {
       check("frame: socket file created", Files.exists(socketPath));
@@ -406,10 +430,32 @@ public final class PluginHardeningSelfTest {
           trailingResponse.contains("INVALID_FRAME"));
 
       // A valid single frame must still be accepted (proving the check is not blanket).
+      int callsBefore = platform.calls;
       String goodResponse = readResponse(socketPath, validFrame);
       check(
           "frame: single valid frame still answered: " + goodResponse.trim(),
           goodResponse.contains("\"status\""));
+      check("frame: single valid frame produced an effect", platform.calls == callsBefore + 1);
+
+      // Trailing data that only arrives in a LATER write must still be rejected, with no
+      // effect at all: enforcement must not depend on write timing.
+      int callsBeforeLate = platform.calls;
+      String lateTrailingResponse = readResponse(socketPath, PluginTestFrames.validRunFrame(config), 150L);
+      check(
+          "frame: delayed trailing bytes rejected: " + lateTrailingResponse.trim(),
+          lateTrailingResponse.contains("INVALID_FRAME"));
+      check("frame: delayed trailing bytes produced no effect", platform.calls == callsBeforeLate);
+
+      // A second whole frame arriving later is rejected the same way.
+      int callsBeforeSecond = platform.calls;
+      byte[] twoFrames = new byte[validFrame.length + validFrame.length];
+      System.arraycopy(validFrame, 0, twoFrames, 0, validFrame.length);
+      System.arraycopy(validFrame, 0, twoFrames, validFrame.length, validFrame.length);
+      String secondFrameResponse = readResponse(socketPath, twoFrames);
+      check(
+          "frame: second frame rejected: " + secondFrameResponse.trim(),
+          secondFrameResponse.contains("INVALID_FRAME"));
+      check("frame: second frame produced no effect", platform.calls == callsBeforeSecond);
 
       // Oversize frame keeps its own code.
       byte[] oversize = new byte[PluginProtocol.MAX_FRAME_BYTES + 64];
@@ -474,29 +520,38 @@ public final class PluginHardeningSelfTest {
   }
 
   private static IdeActionDispatcher dispatcherFor(PluginConfig config) {
+    return dispatcherFor(config, new NoopPlatform());
+  }
+
+  private static IdeActionDispatcher dispatcherFor(PluginConfig config, IdePlatform platform) {
     return new IdeActionDispatcher(
         new PluginProtocol(config.secret),
         config.registry,
         new NonceLedger(config.ledgerPath),
-        new NoopPlatform(),
+        platform,
         new ImmediateUi(),
         System::currentTimeMillis,
         2000L);
   }
 
   private static final class NoopPlatform implements IdePlatform {
+    volatile int calls = 0;
+
     @Override
     public IdeOutcome openRegisteredFile(String canonicalPath, String projectRoot) {
+      calls++;
       return IdeOutcome.verified();
     }
 
     @Override
     public IdeOutcome focusRunConfiguration(String configurationName, String projectRoot) {
+      calls++;
       return IdeOutcome.verified();
     }
 
     @Override
     public IdeOutcome showTestResult(String toolWindowId, String contentName, String projectRoot) {
+      calls++;
       return IdeOutcome.verified();
     }
   }

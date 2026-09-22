@@ -227,11 +227,64 @@ describe('Plugin source guards', () => {
     );
     const client = fs.readFileSync(path.join(packageRoot, 'src/ideaPluginClient.ts'), 'utf8');
 
-    expect(server).toContain('exactly one single-line frame');
+    expect(server).toContain('exactly one newline-terminated single-line frame');
     expect(server).toContain('refusing to replace a non-socket object');
     expect(client).toContain('PluginResponseInvalidError');
     expect(client).toContain('PLUGIN_RESPONSE_INVALID');
     expect(client).toContain('exactly one single-line frame');
+  });
+
+  it('declares every tool its npm scripts invoke', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8')) as {
+      scripts?: Record<string, string>;
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    const declared = new Set([
+      ...Object.keys(pkg.dependencies ?? {}),
+      ...Object.keys(pkg.devDependencies ?? {}),
+    ]);
+    const scripts = Object.values(pkg.scripts ?? {});
+    const toolToPackage: Record<string, string> = {
+      tsx: 'tsx',
+      vitest: 'vitest',
+      tsc: 'typescript',
+      node: 'none',
+    };
+    const violations: string[] = [];
+    for (const [tool, packageName] of Object.entries(toolToPackage)) {
+      if (packageName === 'none') {
+        continue;
+      }
+      const invoked = scripts.some((script) =>
+        new RegExp(`(^|[\\s&|;(])${tool}([\\s&|;)]|$)`).test(script)
+      );
+      if (invoked && !declared.has(packageName)) {
+        violations.push(`${tool} is invoked by a script but ${packageName} is not declared`);
+      }
+    }
+    expect(violations).toEqual([]);
+    // The probe runner must be pinned so verification is reproducible without downloading.
+    expect(pkg.devDependencies?.tsx).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('enforces exactly one frame deterministically, independent of write timing', () => {
+    const server = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/PluginSocketServer.java'),
+      'utf8'
+    );
+    const client = fs.readFileSync(path.join(packageRoot, 'src/ideaPluginClient.ts'), 'utf8');
+
+    // The plugin reads the request through EOF before dispatching (the service half-closes).
+    expect(server).toContain('did not close before the frame deadline');
+    expect(server).toContain('exactly one newline-terminated single-line frame');
+    // No one-shot drain heuristic may be used to satisfy the single-frame rule.
+    expect(server).not.toContain('ByteBuffer.allocate(1)');
+
+    // The service half-closes and validates the whole reply after close, decoding strictly.
+    expect(client).toContain('socket.end(Buffer.from(frame');
+    expect(client).toContain("new TextDecoder('utf-8', { fatal: true })");
+    expect(client).toContain('newline-terminated frame');
   });
 
   it('binds every trusted path canonically and rejects symlinked components', () => {

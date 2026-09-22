@@ -37,11 +37,23 @@ export interface IdeaPluginClientConfig {
 
 const DEFAULT_TIMEOUT_MS = 3000;
 
-/** Default transport: a single request/response exchange over the plugin's Unix socket. */
+/**
+ * Default transport: one request/response exchange over the plugin's Unix socket.
+ *
+ * The exchange is deterministic and timing independent:
+ *   * the service HALF-CLOSES its write side right after the request, so the plugin can read
+ *     through EOF and can never act on a partially delivered request;
+ *   * the reply is buffered until the plugin closes its side, and only then is the whole
+ *     payload validated as EXACTLY one newline-terminated single-line frame. A second frame or
+ *     any trailing byte is rejected no matter which chunk it arrives in;
+ *   * UTF-8 is decoded strictly across chunk boundaries.
+ */
 export const unixSocketPluginTransport: PluginTransport = (frame, socketPath, timeoutMs) =>
   new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let receivedBytes = 0;
     let settled = false;
-    let received = '';
+
     const finish = (error: Error | null, value?: string): void => {
       if (settled) {
         return;
@@ -59,42 +71,54 @@ export const unixSocketPluginTransport: PluginTransport = (frame, socketPath, ti
     const socket = net.createConnection(socketPath);
     const timer = setTimeout(() => finish(new Error('plugin socket response timed out')), timeoutMs);
 
-    socket.on('connect', () => socket.write(frame));
+    socket.on('connect', () => {
+      // Half-close the write side: the plugin reads to EOF, then answers and closes.
+      socket.end(Buffer.from(frame, 'utf8'));
+    });
+
     socket.on('data', (chunk: Buffer) => {
-      received += chunk.toString('utf8');
-      if (Buffer.byteLength(received, 'utf8') > PLUGIN_MAX_FRAME_BYTES) {
+      chunks.push(chunk);
+      receivedBytes += chunk.length;
+      if (receivedBytes > PLUGIN_MAX_FRAME_BYTES) {
         finish(
           new PluginResponseInvalidError('plugin response exceeded the 16 KiB frame limit')
         );
-        return;
-      }
-      const newline = received.indexOf('\n');
-      if (newline >= 0) {
-        // The reply must be EXACTLY one newline-terminated frame. Any trailing byte — a
-        // second frame or stray data — is a protocol violation, never a valid answer.
-        const trailing = received.slice(newline + 1);
-        if (trailing.length > 0) {
-          finish(
-            new PluginResponseInvalidError(
-              'plugin response must be exactly one single-line frame'
-            )
-          );
-          return;
-        }
-        // Guard against a second frame that is only flushed on the next read.
-        socket.pause();
-        finish(null, received.slice(0, newline));
       }
     });
+
     socket.on('error', (error: Error) => finish(error));
+
     socket.on('close', () => {
-      if (!settled) {
-        if (received.trim().length === 0) {
-          finish(new Error('plugin closed the connection without a response'));
-          return;
-        }
-        finish(null, received);
+      if (settled) {
+        return;
       }
+      let text: string;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+      } catch {
+        finish(new PluginResponseInvalidError('plugin response is not valid UTF-8'));
+        return;
+      }
+      if (!text.endsWith('\n')) {
+        finish(
+          new PluginResponseInvalidError(
+            'plugin response must be exactly one newline-terminated frame'
+          )
+        );
+        return;
+      }
+      const body = text.slice(0, -1);
+      if (body.length === 0) {
+        finish(new PluginResponseInvalidError('plugin returned an empty frame'));
+        return;
+      }
+      if (body.includes('\n') || body.includes('\r')) {
+        finish(
+          new PluginResponseInvalidError('plugin response must be exactly one single-line frame')
+        );
+        return;
+      }
+      finish(null, body);
     });
   });
 

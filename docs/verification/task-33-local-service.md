@@ -177,7 +177,7 @@ build-local: INSTALLATION IS NOT PERFORMED — Codex review and explicit user co
 
 | 来源 | 文件 | SHA-256 | 可复现性 |
 | :--- | :--- | :--- | :--- |
-| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `73a9f20bf3f22cf6482524d9a364819d6f9659077e2f493cdee41653e4b7e2ac` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
+| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `409cf9da779e82940137cc28b777e56b9850e39a476eb2431e36a641da1a175a` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
 | 本机 javac（备选） | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0-local.zip` | 每次构建不同（示例 `95babc42db204beb39b7320b4580fb183c7fdb8c76a0afad4224ca20c38b138a`） | **不可复现**：`jar` 写入构建时刻时间戳 |
 
 > 审查与安装应以 **Gradle 产物** 为准（校验和固定）；备选产物仅用于本机离线可用性，其校验和随后续构建变化。
@@ -199,12 +199,12 @@ study-pilot-automation-bridge/lib/study-pilot-automation-bridge-1.0.0.jar
 ```text
 cd local-automation-service && npm test
  Test Files  18 passed (18)
-      Tests  170 passed | 1 skipped (171)
+      Tests  175 passed | 1 skipped (176)
 
 npm run typecheck            -> tsc --noEmit, 0 errors
 npm run build                -> tsc, dist/ 成功（含 dist/main.js）
 npm run build:native         -> 0 errors, 0 warnings
-npm run test:plugin          -> PluginSelfTest 110/110 + PluginHardeningSelfTest 50/50
+npm run test:plugin          -> PluginSelfTest 110/110 + PluginHardeningSelfTest 55/55
 gradle selfTest / check      -> 两个 harness 全绿, BUILD SUCCESSFUL
 gradle buildPlugin           -> BUILD SUCCESSFUL；产物校验和两次一致
 git diff --check             -> 干净
@@ -317,7 +317,67 @@ AssertionError: expected true to be false        <-- 修复前返回了成功
 
 ---
 
-## 9. 修订后的插件配置格式
+## 9. Codex 复核（`e2eaf2c`）两项最终阻断的整改
+
+### 9.1 阻断 A：`npm run acceptance:real` 在干净环境不可用
+
+**RED（实测）**：
+
+```text
+$ npm run acceptance:real
+> tsx scripts/real-acceptance.ts
+sh: tsx: command not found          # 退出码 127；tsx 未在 package.json / package-lock.json 中声明
+```
+
+**整改**：将 `tsx` 作为**精确固定**的 devDependency 声明并更新锁文件：
+
+```text
+package.json  devDependencies.tsx = "4.23.15"
+package-lock.json  packages[""].devDependencies.tsx = "4.23.15"，node_modules/tsx 已锁定
+```
+
+**GREEN（仓库内验证命令，无需 npx 下载未声明工具）**：
+
+```text
+$ npm run acceptance:real
+  [Real Action] OPEN_REGISTERED_FILE:     BLOCKED (code=PLUGIN_NOT_CONFIGURED)
+  [Real Action] FOCUS_RUN_CONFIGURATION:  BLOCKED (code=PLUGIN_NOT_CONFIGURED)
+  [Real Action] SHOW_TEST_RESULT:         BLOCKED (code=PLUGIN_NOT_CONFIGURED)
+  [Real Action 4..6] 浏览器动作 BLOCKED（服务离线）
+  退出码 0
+```
+
+**新增护栏测试**：解析 `package.json`，凡脚本中调用的工具（`tsx`/`vitest`/`tsc`）必须在 `dependencies`/`devDependencies` 中声明，且 `tsx` 必须为精确版本号；否则测试失败。
+
+### 9.2 阻断 B：单帧强制仍依赖写入时序
+
+原实现的问题：插件在“看到换行”后立即受理，且只做一次非阻塞的 1 字节探测；服务端在“看到第一个换行”后立刻 `pause` 并接受响应。因此**后一次写入**才到达的尾随字节/第二个帧可能被漏检，从而在额外数据到达前就产生一次动作。
+
+**RED（实测）**：把假插件服务端改为“读到 EOF 再应答”后，客户端**全部 17 项用例失败**（每项都等到超时），因为旧客户端从不半关闭写端——这直接证明旧协议依赖时序、且服务端无法确定请求已结束。
+
+**整改（确定性，非 sleep、非一次性探测）**：
+
+- **服务侧客户端**：发送请求后**半关闭写端**（`socket.end(frame)`），随后**缓冲到对端关闭**，只在关闭后校验整段负载——必须以**恰好一个换行结尾**、正文内不得再有换行/回车、长度 ≤16 KiB，并跨分块用 `TextDecoder('utf-8', {fatal:true})` **严格解码**；任何尾随字节（无论落在哪个分块）都判 `PLUGIN_RESPONSE_INVALID`。
+- **插件侧服务端**：`readFrame` **读到 EOF** 才受理；要求负载中**恰好一个换行且位于最后一个字节**，否则 `INVALID_FRAME`；超 16 KiB 仍为 `OVERSIZE_FRAME`。读取有 2 秒上限，未在期限内关闭即 `INVALID_FRAME`（客户端不半关闭时确定性失败，而不是猜测）。
+- **无副作用保证**：加固自检对“合法帧 + 延迟写入的尾随字节”“合法帧 + 第二个完整帧”两类用例，除断言错误码外还断言**假平台调用次数未增加**——即在验证失败路径上绝不产生界面副作用。
+
+**GREEN（真实 UDS）**：
+
+```text
+PluginHardeningSelfTest: passed=55 failed=0
+  frame: single valid frame still answered            (对照，证明不是一刀切拒绝)
+  frame: single valid frame produced an effect        (假平台调用 +1)
+  frame: delayed trailing bytes rejected              INVALID_FRAME
+  frame: delayed trailing bytes produced no effect    调用次数不变
+  frame: second frame rejected                        INVALID_FRAME
+  frame: second frame produced no effect              调用次数不变
+```
+
+服务侧同样覆盖“同一次写入的尾随字节/第二个帧”与“**后续分块**才到达的尾随字节/第二个帧”，并新增一个用例断言客户端确实**半关闭了写端**（由假服务端在对端 `end` 事件观测）。
+
+---
+
+## 10. 修订后的插件配置格式
 
 制表符分隔、`#` 注释；标量行 2 列、目标行 3/4 列，**行序无关**：
 
@@ -337,12 +397,12 @@ RESULT_REGISTERED    TEST_RESULT       Run   surefire-reports
 
 ---
 
-## 10. 本轮改动文件
+## 11. 本轮改动文件
 
 新增：`idea-plugin/**`（`build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`、`gradlew` + wrapper、`build-local.sh`、`src/main/java/**` 协议/注册表/派发/平台层、`src/main/resources/META-INF/plugin.xml`、`src/test/java/**` 两个自检 harness）、`src/ideaPluginProtocol.ts`、`src/ideaPluginClient.ts`、`tests/ideaPluginProtocol.spec.ts`、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
 
 审查整改轮新增：`idea-plugin/src/main/java/.../platform/PathBinding.java`、`.../platform/TestResultContentMatcher.java`、`idea-plugin/src/test/java/.../PluginHardeningSelfTest.java`、`idea-plugin/src/test/java/.../PluginTestFrames.java`。
 
-修改：`src/ideaAdapter.ts`（插件适配器为生产路径；AX 改为仅诊断且拒绝一切 IDEA 结果）、`src/service.ts`（默认装配插件适配器；只转发 `targetKey`）、`src/types.ts`（插件配置字段；`openRegisteredFile(handle)`）、`src/config.ts`（插件 Socket/密钥/超时与两条链路分离校验）、`src/index.ts`、`package.json`（`build:plugin`/`test:plugin`/`build:plugin:gradle`）、`.gitignore`、`scripts/real-acceptance.ts`（逐动作独立诊断）、`src/ideaPluginClient.ts`（单帧强制）、`tests/{ideaNativeAx,reviewFindings,falseSuccess}.spec.ts`（迁移到新架构）、`tests/{ideaPluginClient,pluginArchitecture}.spec.ts`（新增用例与护栏）、`idea-plugin/**` 的 `PluginConfig`/`PluginSocketServer`/`IdeaPlatformOperations`/`IdeaTargetRegistry`/`IdePlatform`/`IdeActionDispatcher`/`build-local.sh`/`build.gradle.kts`/`PluginSelfTest`、本文件。
+复核整改轮修改：`package.json` + `package-lock.json`（声明并锁定 `tsx@4.23.15`）、`src/ideaPluginClient.ts`（半关闭写端 + 缓冲到 EOF + 严格 UTF-8 + 恰好一帧）、`idea-plugin/.../PluginSocketServer.java`（读到 EOF + 恰好一个末尾换行）、`idea-plugin/src/test/java/.../PluginHardeningSelfTest.java`（延迟尾随字节/第二帧 + 无副作用断言）、`tests/ideaPluginClient.spec.ts`（延迟分块用例 + 半关闭断言）、`tests/pluginArchitecture.spec.ts`（脚本依赖护栏 + 确定性单帧护栏）、本文件。
 
 未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34；未安装插件。
