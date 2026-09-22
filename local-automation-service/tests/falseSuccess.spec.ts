@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { describe, it, expect, vi } from 'vitest';
 import { PlaywrightBrowserAutomationAdapter } from '../src/browserAdapter.js';
 import { NativeBridgeIdeaAutomationAdapter } from '../src/ideaAdapter.js';
@@ -108,9 +111,20 @@ describe('False-Success Defenses for Adapters', () => {
 
       const adapter = new NativeBridgeIdeaAutomationAdapter(mockNativeBridge);
 
-      const resFile = await adapter.openRegisteredFile('/valid/path.java');
-      expect(resFile).toBe(true);
-      expect(mockNativeBridge.openFile).toHaveBeenCalledWith('/valid/path.java');
+      // The registered path is canonicalised before it reaches the native layer.
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'task33-false-success-'));
+      const registered = path.join(tmpDir, 'Registered.java');
+      fs.writeFileSync(registered, 'public class Registered {}', 'utf8');
+
+      try {
+        const resFile = await adapter.openRegisteredFile(registered);
+        expect(resFile).toBe(true);
+        // The adapter forwards the registered path; canonicalisation is the bridge's job
+        // (covered by the dedicated MacAxIdeaBridge test).
+        expect(mockNativeBridge.openFile).toHaveBeenCalledWith(registered, undefined);
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
 
       const resRun = await adapter.focusRunConfiguration('RUN_APP');
       expect(resRun).toBe(true);

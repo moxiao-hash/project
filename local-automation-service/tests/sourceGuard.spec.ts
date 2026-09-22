@@ -2,24 +2,36 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, it, expect } from 'vitest';
 
-describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
-  const srcDir = path.resolve(__dirname, '../src');
+const packageRoot = path.resolve(__dirname, '..');
+const srcDir = path.join(packageRoot, 'src');
+const nativeSource = path.join(packageRoot, 'native/idea_ax_bridge.mm');
 
-  function getProductionTsFiles(dir: string): string[] {
-    const results: string[] = [];
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        results.push(...getProductionTsFiles(fullPath));
-      } else if (entry.isFile() && entry.name.endsWith('.ts')) {
-        results.push(fullPath);
-      }
+function getProductionTsFiles(dir: string): string[] {
+  const results: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      results.push(...getProductionTsFiles(fullPath));
+    } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      results.push(fullPath);
     }
-    return results;
   }
+  return results;
+}
 
-  const productionFiles = getProductionTsFiles(srcDir);
+const productionFiles = getProductionTsFiles(srcDir);
+const native = fs.readFileSync(nativeSource, 'utf8');
 
+/** Body of a named top-level C function, from its signature to the closing brace. */
+function functionBody(source: string, signature: string, nextSignature: string): string {
+  const start = source.indexOf(signature);
+  const end = source.indexOf(nextSignature);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+}
+
+describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
   it('strictly forbids child_process, spawn, exec, and shell in production src/**', () => {
     const forbiddenPatterns = [
       /child_process/,
@@ -35,15 +47,13 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
     ];
 
     const violations: { file: string; line: number; matched: string }[] = [];
-
     for (const file of productionFiles) {
       const content = fs.readFileSync(file, 'utf8');
-      const lines = content.split('\n');
-      lines.forEach((lineText, idx) => {
+      content.split('\n').forEach((lineText, idx) => {
         for (const pattern of forbiddenPatterns) {
           if (pattern.test(lineText)) {
             violations.push({
-              file: path.relative(path.resolve(__dirname, '..'), file),
+              file: path.relative(packageRoot, file),
               line: idx + 1,
               matched: lineText.trim(),
             });
@@ -51,7 +61,6 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
         }
       });
     }
-
     expect(violations).toEqual([]);
   });
 
@@ -62,6 +71,7 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
       /\bpressKey\b/,
       /\bmouseMove\b/,
       /\barbitraryScript\b/,
+      /\bPerformFocus\b/,
     ];
 
     const violations: string[] = [];
@@ -73,15 +83,10 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
         }
       }
     }
-
     expect(violations).toEqual([]);
   });
 
-  it('native Accessibility addon never shells out, opens a port, or drives the desktop generically', () => {
-    const nativeSource = path.resolve(__dirname, '../native/idea_ax_bridge.mm');
-    expect(fs.existsSync(nativeSource)).toBe(true);
-    const content = fs.readFileSync(nativeSource, 'utf8');
-
+  it('native addon never shells out, links a network transport, or drives the desktop generically', () => {
     const forbidden = [
       /\bosascript\b/,
       /\bAppleScript\b/,
@@ -97,13 +102,12 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
       /\bopen\s+-a\b/,
       /\bCGEventCreate\w*/,
       /\bAXUIElementCreateSystemWide\b/,
+      /\bAXObserverCreate\w*/,
       /https?:\/\//,
       /\b127\.0\.0\.1\b/,
       /\blocalhost:\d+/,
       /\b63342\b/,
       /\bport\b/i,
-      // No network transport of any kind may be linked into the bridge. (`file://localhost/`
-      // appears only when normalising a file URL authority to a filesystem path.)
       /\bNSURLSession\b/,
       /\bNSURLConnection\b/,
       /\bCFSocketCreate\w*/,
@@ -111,82 +115,82 @@ describe('Production Source Guards (Contract Forbidden Fallbacks)', () => {
       /\bsocket\s*\(/,
     ];
 
-    const violations: string[] = [];
-    for (const pattern of forbidden) {
-      if (pattern.test(content)) {
-        violations.push(`native/idea_ax_bridge.mm: ${pattern}`);
-      }
-    }
-    expect(violations).toEqual([]);
-
-    // The bundle identifier is the only application selector, and it is trusted/in-source.
-    expect(content).toContain('com.jetbrains.intellij');
-    expect(content).toContain('kAXPressAction');
-  });
-
-  it('native identity binding stays structural: no substring identity, no app-wide search', () => {
-    const nativeSource = path.resolve(__dirname, '../native/idea_ax_bridge.mm');
-    const content = fs.readFileSync(nativeSource, 'utf8');
-
-    // Substring matching, whole-application or whole-system traversal, and unbounded AX
-    // calls are all forbidden: identity must be an exact, structurally proven match.
-    const forbidden = [
-      /containsString/,
-      /AXUIElementCreateSystemWide/,
-      /kAXFocusedUIElementAttribute/,
-      /AXUIElementCopyParameterized/,
-      /AXObserverCreate/,
-    ];
     const violations = forbidden
-      .filter((pattern) => pattern.test(content))
+      .filter((pattern) => pattern.test(native))
       .map((pattern) => `native/idea_ax_bridge.mm: ${pattern}`);
     expect(violations).toEqual([]);
 
-    // The strict identity machinery must actually be present, so the guards above cannot
-    // pass by the feature simply being deleted.
+    // The bundle identifier is the only application selector, and it is trusted/in-source.
+    expect(native).toContain('com.jetbrains.intellij');
+    expect(native).toContain('kAXPressAction');
+  });
+
+  it('native identity binding stays structural: exact names, unique targets, outline path proof', () => {
+    // Substring matching, application-wide search, and unbounded AX calls are forbidden:
+    // identity must be an exact, structurally proven match.
+    const forbidden = [
+      /containsString/,
+      /kAXFocusedUIElementAttribute/,
+      /AXUIElementCopyParameterized/,
+    ];
+    const violations = forbidden
+      .filter((pattern) => pattern.test(native))
+      .map((pattern) => `native/idea_ax_bridge.mm: ${pattern}`);
+    expect(violations).toEqual([]);
+
+    // The strict machinery must actually be present, so the guards above cannot pass by a
+    // feature simply having been deleted.
     const requiredMarkers = [
-      'CanonicalDirname', // canonical path proof for actuation
-      'CanonicalBasename',
-      'kAXDocumentAttribute', // exact document/URL proof for the active editor
-      'ReverifyLiveIdentity', // re-check identity immediately before dispatch
+      'RowNameMatchesBasename', // exact basename, only source extensions may be omitted
+      'kOmittedSourceExtensions', // the recognised source extension allowlist
+      'CountAlignments', // component alignment incl. compacted packages
+      'ProveOutlinePath', // REJECTS ambiguity (returns false when >1 alignment)
+      'StripSpaceLike', // thin-space / non-ASCII whitespace aware
+      'AXDisclosureLevel', // outline nesting level
+      'kSubroleOutlineRow', // project-view row subrole
+      'kFrameTitleGroupLabel', // run-configuration container
+      'CopyVerifiedElement', // live identity re-check immediately before dispatch
       'TARGET_AMBIGUOUS', // uniqueness is mandatory
-      'kAXWindowRole', // traversal root must be a real window
-      'AXToolbar', // run-configuration selector container
-      'AXTabGroup', // test-result tool-window container
+      'AX_SNAPSHOT_TRUNCATED', // bounded traversal reports truncation
+      'kRoleWindow', // traversal root must be a real window
       'AXUIElementSetMessagingTimeout', // bounded AX calls
-      'LocateUnique',
     ];
     for (const marker of requiredMarkers) {
-      expect(content).toContain(marker);
+      expect(native).toContain(marker);
     }
   });
 
-  it('verification predicates never read pre-action state and never accept generic focus as proof', () => {
-    const nativeSource = path.resolve(__dirname, '../native/idea_ax_bridge.mm');
-    const content = fs.readFileSync(nativeSource, 'utf8');
-
-    // The results view must be proven selected on the POST-action snapshot.
-    const resultVerifier = content.slice(content.indexOf('static bool VerifyResultViewSelected'));
-    const body = resultVerifier.slice(0, resultVerifier.indexOf('\n}\n'));
-    expect(body).toContain('data->selected');
-    expect(body).toContain('IsVisible');
-    expect(body).not.toContain('PerformFocus');
-    expect(body).not.toContain('kAXFocusedAttribute');
-
-    // There is no generic focus capability anywhere in the bridge.
-    expect(content).not.toContain('PerformFocus');
-  });
-
-  it('FOCUS_RUN_CONFIGURATION only moves focus and never presses the selector', () => {
-    const nativeSource = path.resolve(__dirname, '../native/idea_ax_bridge.mm');
-    const content = fs.readFileSync(nativeSource, 'utf8');
-
-    const operation = content.slice(content.indexOf('static napi_value FocusRunConfiguration'));
-    const body = operation.slice(0, operation.indexOf('\nstatic napi_value ShowTestResult'));
-    expect(body.length).toBeGreaterThan(0);
-    // Pressing a run-configuration selector opens a menu and can change configuration
-    // selection; the registered action is focus only, so no press is permitted here.
+  it('FOCUS_RUN_CONFIGURATION only moves focus and never presses the control', () => {
+    const body = functionBody(
+      native,
+      'static napi_value FocusRunConfiguration',
+      'static napi_value ShowTestResult'
+    );
+    // Pressing a run-configuration control opens a menu and can change the selected
+    // configuration; the registered action is focus only.
     expect(body).not.toContain('PerformPress');
     expect(body).toContain('kAXFocusedAttribute');
+    expect(body).toContain('runLabel');
+    expect(body).toContain('debugLabel');
+  });
+
+  it('every operation verifies only on the post-action snapshot and never invents roles', () => {
+    // OPEN_REGISTERED_FILE re-proves the row and requires the active editor identity
+    // AFTER the action; a selected tree row alone is never accepted.
+    expect(native).toContain('rowStillUnique');
+    expect(native).toContain('rowSelected');
+    expect(native).toContain('editorIdentified');
+
+    const resultBody = functionBody(
+      native,
+      'static napi_value ShowTestResult',
+      '// ---------------------------------------------------------------------------\n// Diagnostic probe'
+    );
+    expect(resultBody).toContain('data->selected');
+    expect(resultBody).toContain('IsVisible');
+    expect(resultBody).not.toContain('PerformFocus');
+
+    // The editor tab role (AXRadioButton) must never be an admissible result view.
+    expect(native).not.toContain('AXRadioButton');
   });
 });

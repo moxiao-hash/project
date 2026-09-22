@@ -145,7 +145,8 @@ export class LocalAutomationService {
       } else if (resolution.channel === 'IDEA_ACCESSIBILITY') {
         if (resolution.idea.action === 'OPEN_REGISTERED_FILE') {
           executionSuccess = await this.ideaAdapter.openRegisteredFile(
-            resolution.idea.resolvedPath!
+            resolution.idea.resolvedPath!,
+            resolution.idea.resolvedWorkspaceRoot
           );
         } else if (resolution.idea.action === 'FOCUS_RUN_CONFIGURATION') {
           executionSuccess = await this.ideaAdapter.focusRunConfiguration(

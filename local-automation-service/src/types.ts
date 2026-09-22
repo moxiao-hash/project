@@ -109,7 +109,7 @@ export interface BrowserAutomationAdapter {
  * Must not expose arbitrary file opening, shell, or test running.
  */
 export interface IdeaAutomationAdapter {
-  openRegisteredFile(realFilePath: string): Promise<boolean>;
+  openRegisteredFile(realFilePath: string, workspaceRoot?: string): Promise<boolean>;
   focusRunConfiguration(handle: string): Promise<boolean>;
   showTestResult(handle: string): Promise<boolean>;
 }

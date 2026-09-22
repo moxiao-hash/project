@@ -26,6 +26,7 @@ export type IdeaResolutionResult =
       action: IdeaAction;
       targetKey: string;
       resolvedPath?: string;
+      resolvedWorkspaceRoot?: string;
       handle?: string;
     }
   | { valid: false; errorCode: ErrorCode; message: string };
@@ -203,11 +204,11 @@ export class ActionRegistry {
         }
 
         // Must be located within registered workspace roots
-        const isInsideWorkspace = this.workspaceRealRoots.some(
+        const containingRoot = this.workspaceRealRoots.find(
           (root) => realPath === root || realPath.startsWith(root + path.sep)
         );
 
-        if (!isInsideWorkspace) {
+        if (!containingRoot) {
           return {
             valid: false,
             errorCode: 'TARGET_NOT_REGISTERED',
@@ -220,6 +221,7 @@ export class ActionRegistry {
           action,
           targetKey,
           resolvedPath: realPath,
+          resolvedWorkspaceRoot: containingRoot,
         };
       }
 

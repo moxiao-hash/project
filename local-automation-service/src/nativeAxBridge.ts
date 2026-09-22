@@ -41,7 +41,7 @@ export interface NativeAxResult {
 
 export interface NativeAxModule {
   probe(): NativeAxProbe;
-  openRegisteredFile(realFilePath: string): NativeAxResult;
+  openRegisteredFile(realFilePath: string, workspaceRoot?: string): NativeAxResult;
   focusRunConfiguration(configHandle: string): NativeAxResult;
   showTestResult(resultHandle: string): NativeAxResult;
 }

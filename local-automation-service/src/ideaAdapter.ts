@@ -16,7 +16,7 @@ import {
  */
 export interface IdeaAccessibilityBridge {
   probe(): NativeAxProbe;
-  openFile(realFilePath: string): Promise<NativeAxResult>;
+  openFile(realFilePath: string, workspaceRoot?: string): Promise<NativeAxResult>;
   focusConfiguration(configHandle: string): Promise<NativeAxResult>;
   showResult(resultHandle: string): Promise<NativeAxResult>;
 }
@@ -68,7 +68,7 @@ export class MacAxIdeaBridge implements IdeaAccessibilityBridge {
     }
   }
 
-  public async openFile(realFilePath: string): Promise<NativeAxResult> {
+  public async openFile(realFilePath: string, workspaceRoot?: string): Promise<NativeAxResult> {
     if (typeof realFilePath !== 'string' || !realFilePath.startsWith('/')) {
       return {
         ok: false,
@@ -98,6 +98,20 @@ export class MacAxIdeaBridge implements IdeaAccessibilityBridge {
         code: 'INVALID_REGISTERED_PATH',
         detail: 'registered path is not an existing regular file',
       };
+    }
+    // The trusted registered workspace root (when available) additionally anchors the
+    // outline root; it is never taken from a request field.
+    if (typeof workspaceRoot === 'string' && workspaceRoot.length > 0) {
+      try {
+        return this.native.openRegisteredFile(canonicalPath, fs.realpathSync(workspaceRoot));
+      } catch {
+        return {
+          ok: false,
+          verified: false,
+          code: 'INVALID_REGISTERED_PATH',
+          detail: 'registered workspace root could not be resolved to a canonical real path',
+        };
+      }
     }
     return this.native.openRegisteredFile(canonicalPath);
   }
@@ -183,9 +197,9 @@ export class NativeBridgeIdeaAutomationAdapter implements IdeaAutomationAdapter 
     }
   }
 
-  public async openRegisteredFile(realFilePath: string): Promise<boolean> {
+  public async openRegisteredFile(realFilePath: string, workspaceRoot?: string): Promise<boolean> {
     return this.run('OPEN_REGISTERED_FILE', () =>
-      this.bridge ? this.bridge.openFile(realFilePath) : Promise.resolve(null)
+      this.bridge ? this.bridge.openFile(realFilePath, workspaceRoot) : Promise.resolve(null)
     );
   }
 
