@@ -245,7 +245,7 @@ Codex 对 `b8b04aee2b79f577ced3c8238a5945f66a52eb3f` 的独立验收提出三项
 | `./mvnw -o -Dtest='LocalAutomationSigningTest,InterfaceFallbackPolicyTest,UnixSocketLocalAutomationClientTest,LocalInterfaceFallbackWorkflowTest,LocalAutomationRequestTest' test` | **64 项通过**，0 失败 0 错误 |
 | `./mvnw -o -Dtest='LocalInterfaceFallbackWorkflowTest' test` | **9 项通过**，0 失败 0 错误（H2 + Spring 治理） |
 | `./mvnw -o -Dtest='AgentToolCoverageTest,AgentToolOutputSchemasTest,AgentToolOutputValidatorTest,AgentToolRegistryTest,AgentToolActionRecoveryTest,AgentToolActionRecoveryRollbackTest' test` | **22 项通过**，0 失败 0 错误 |
-| `./mvnw -o test` | **577 项，0 失败 0 错误，7 跳过**，`BUILD SUCCESS`（基线 508 → 新增 62 通过 + 7 跳过）。7 项跳过即 §7 的可选真实握手用例，未配置系统属性时自动跳过 |
+| `./mvnw -o test` | **577 项运行，其中 570 通过、7 跳过、0 失败 0 错误**，`BUILD SUCCESS`（Maven 汇总行：`Tests run: 577, Failures: 0, Errors: 0, Skipped: 7`；基线 508 全通过 → 新增 62 通过 + 7 跳过）。7 项跳过即 §7 的可选真实握手用例，未配置系统属性时自动跳过 |
 | `node scripts/verify-agent-capability-matrix.mjs` | `[SUCCESS] 能力矩阵校验通过！覆盖全部 31 个页面路由与 65 个 Java 工具` |
 | `node --test scripts/verify-agent-capability-matrix.test.mjs` | 门禁自身 **4/4 通过** |
 | `./mvnw -o -Dtest='LocalAutomationRealHandshakeTest' -Dspl.handshake.enabled=true -Dspl.handshake.socket=/tmp/spl33-hs.sock -Dspl.handshake.secret=<32B> test` | **7 项通过**，0 失败 0 错误（对端真实 `50dc650` 服务，见 §7） |
@@ -518,7 +518,7 @@ ZCode 的前端面板需按上述字段集对接（`web/src/services/roadmap.ts`
 |---|---|
 | `./mvnw -o -Dtest='RoadmapArtifactListApiTest' test` | **7 项通过**，0 失败 0 错误 |
 | `./mvnw -o -Dtest='com.moxiao.studypilot.roadmap.**' test` | **181 项通过**，0 失败 0 错误（既有成果/评审/工作区行为无回归） |
-| `./mvnw -o test` | **584 项通过，0 失败 0 错误，7 跳过**，`BUILD SUCCESS`（7 跳过为既有可选真实握手用例） |
+| `./mvnw -o test` | **584 项运行，其中 577 通过、7 跳过、0 失败 0 错误**，`BUILD SUCCESS`（Maven 汇总行：`Tests run: 584, Failures: 0, Errors: 0, Skipped: 7`；7 跳过为既有可选真实握手用例） |
 | `node scripts/verify-agent-capability-matrix.mjs` | `[SUCCESS] 31 个页面路由与 65 个 Java 工具`（本次改动不涉及工具契约，门禁不受影响） |
 | `node --test scripts/verify-agent-capability-matrix.test.mjs` | 门禁自测 4/4 通过 |
 | `git diff --check` | 无输出（干净） |
