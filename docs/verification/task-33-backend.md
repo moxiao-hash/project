@@ -15,6 +15,8 @@
 - **P1 整改提交**：`89457c5a4579d1c851fc7588e1e3161d8d8a8e7b`（`fix: close task 33 receipt, framing and nonce protocol gaps`）
 - **P1 整改证据提交**：`132b04f067668dfee26c37de0286745b3d05e57e`（`docs: record task 33 protocol gap remediation`）
 - **真实握手验证提交**：`6cb2dbfca0bc72d5effe3f6acc4fd7214deed502`（`test: verify task 33 handshake against the real local automation service`）
+- **§8 只读成果列表提交**：`290c3828b7da27f9b676a7a7fc0bc21978de8a12`（`feat: expose owner-scoped read-only roadmap artifact list`）
+- **本次 §8 证据提交**：`docs: record task 33 read-only artifact list`（本次提交）
 
 ---
 
