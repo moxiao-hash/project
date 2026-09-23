@@ -435,3 +435,98 @@ run #2: Tests run: 7, Failures: 0, Errors: 0, Skipped: 0  (0.392 s)
 两次运行的对端适配器日志合计正好 14 次调用（2 × 7），全部是窄动作；
 重放/过期/错密钥/未注册目标等拒绝用例在两次运行中都**没有**产生任何适配器调用，
 说明对端 nonce 持久化在服务重启与重复运行后仍然有效，且拒绝路径始终零界面副作用。
+
+---
+
+## 8. 契约 §8 修订：登录态只读成果列表 `GET /api/roadmap-artifacts`
+
+### 8.1 范围
+
+按冻结契约 §8（2026-09-23 Codex 浏览器产品页对齐修订）新增的唯一后端生产项：
+`/workspaces` 只读实践成果结果面板所需的、基于登录态的成果列表入口。
+
+- 使用既有 `RoadmapArtifactService.artifacts(ownerId)`，**未修改** service、未新增查询路径。
+- `ownerId` 只来自 `@AuthenticationPrincipal AuthenticatedUser`，**不接受** query、请求体或请求头传入。
+- **未改变**任何提交 / 评审 / 接受的写治理，**未改变**单项
+  `GET /api/roadmap-artifacts/{artifactId}`、`POST`、`review-previews`、`evaluate`、`accept`、`reject`。
+- **未触碰**六个本地自动化动作、wire 协议、签名、Socket、Handler、工具 Schema 与风险等级；
+  本文件 §2–§7 的结论不受本节影响。
+- 改动文件：`RoadmapArtifactController.java`（新增一个 `@GetMapping`）、
+  新增 `RoadmapArtifactSummaryResponse.java`、新增 `RoadmapArtifactListApiTest.java`。
+  **零改动** `web/**`、`local-automation-service/**`、`ai-service/**`、`runner-service/**`。
+
+### 8.2 RED（先于生产代码）
+
+```
+./mvnw -o -Dtest='RoadmapArtifactListApiTest' test
+[ERROR] Tests run: 6, Failures: 5, Errors: 0, Skipped: 0
+[ERROR]   RoadmapArtifactListApiTest.listsOnlyTheAuthenticatedOwnersArtifacts:80 Status expected:<200> but was:<405>
+[ERROR]   RoadmapArtifactListApiTest.neverAcceptsCallerSuppliedOwnerIdFromQueryOrHeaders:125 ... but was:<405>
+[ERROR]   RoadmapArtifactListApiTest.returnsARealEmptyListForAnOwnerWithoutArtifacts:101 ... but was:<405>
+[ERROR]   RoadmapArtifactListApiTest.listingHasNoWriteSideEffectOnArtifactOrReviewState:157 ... but was:<405>
+[ERROR]   RoadmapArtifactListApiTest.resultPanelPayloadExcludesPathsEvidenceAndRawReviewPayloads:184 ... but was:<405>
+```
+
+`405 Method Not Allowed`：集合路径当时只有 `@PostMapping`，没有列表读入口；
+未认证用例（`requiresAnAuthenticatedPrincipal`）在 RED 阶段即返回 401，因为
+`SecurityConfig` 的 `anyRequest().authenticated()` 覆盖该路径。
+
+### 8.3 GREEN 与响应隐私
+
+列表入口只返回**面板所需的只读投影** `RoadmapArtifactSummaryResponse`：
+
+| 分类 | 字段 | 说明 |
+|---|---|---|
+| 保留 | `id`、`workspaceId`、`createdAt` | 标识与时间（`workspaceId` 是不透明 id，不是路径） |
+| 保留 | `status`、`submissionVersion`、`evaluationMode` | 成果状态 |
+| 保留 | `roadmapNode`（节点/模块/阶段 id 与标题） | 所属节点 |
+| 保留 | `rubricScore`、`rubricFeedback`、`sensitiveScanPassed`、`acceptedAt` | 适合展示的评测信息 |
+| 保留 | `reviewHistory`：`toStatus`、`eventType`、`score`、`createdAt` | 评审事件的最小投影 |
+| **排除** | `canonicalPath` | 本机绝对路径；契约禁止出现在该浏览器结果面 |
+| **排除** | `relativePath` | 文件路径；面板不需要 |
+| **排除** | `testEvidence` | 测试证据；契约禁止 |
+| **排除** | `description` | 成果内容描述；契约禁止 |
+| **排除** | `sensitiveFindings` | 敏感扫描明细（隐私字段） |
+| **排除** | `rubricBreakdownJson`、`reviewHistory[].details` | 原始评审载荷 |
+| **排除** | `ownerId` | 归属由登录态决定，不回传 |
+
+实现不写任何日志，不记录路径、证据或用户内容。
+
+**需要 Codex 确认的跨端对齐项**：§8 未冻结该入口的响应字段集。本分支选择了上面的最小只读投影，
+理由是 §8 明确禁止把绝对路径、测试证据、成果内容与隐私字段带到该浏览器结果面。
+若 Codex 更希望与单项 GET 保持同构（复用完整 `RoadmapArtifactResponse`，含 `canonicalPath`/`testEvidence`），
+这是单点可回退的改动；但在该决定落地前，本分支按更严格的一侧实现。
+ZCode 的前端面板需按上述字段集对接（`web/src/services/roadmap.ts` 由 ZCode 所有）。
+
+### 8.4 测试覆盖（7 项，全部通过）
+
+| 用例 | 断言 |
+|---|---|
+| `listsOnlyTheAuthenticatedOwnersArtifacts` | 只返回登录用户自己的成果；他人成果 id 不出现 |
+| `returnsARealEmptyListForAnOwnerWithoutArtifacts` | 无成果时返回真实空列表（支撑真实空状态） |
+| `neverAcceptsCallerSuppliedOwnerIdFromQueryOrHeaders` | 携带 `ownerId`/`owner_id` query 与 `X-Owner-Id`/`X-Owner-Id-Override`/`ownerId` 头仍只返回登录用户成果 |
+| `requiresAnAuthenticatedPrincipal` | 未认证返回 401 |
+| `listingHasNoWriteSideEffectOnArtifactOrReviewState` | 列表调用前后实体 `status`/`submissionVersion`/`acceptedAt`、评审事件数与单项 GET 读模型完全一致 |
+| `resultPanelPayloadExcludesPathsEvidenceAndRawReviewPayloads` | 禁止字段全部缺失；响应不含工作区绝对路径、成果文件内容、测试证据文本；出现的字段都在允许集合内 |
+| `reviewedArtifactExposesEvaluationInfoWithoutLeakingRawPayloads` | 评审后仍只暴露评测信息，不含 `details`/`rubricBreakdownJson`/路径 |
+
+### 8.5 已执行命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `./mvnw -o -Dtest='RoadmapArtifactListApiTest' test` | **7 项通过**，0 失败 0 错误 |
+| `./mvnw -o -Dtest='com.moxiao.studypilot.roadmap.**' test` | **181 项通过**，0 失败 0 错误（既有成果/评审/工作区行为无回归） |
+| `./mvnw -o test` | **584 项通过，0 失败 0 错误，7 跳过**，`BUILD SUCCESS`（7 跳过为既有可选真实握手用例） |
+| `node scripts/verify-agent-capability-matrix.mjs` | `[SUCCESS] 31 个页面路由与 65 个 Java 工具`（本次改动不涉及工具契约，门禁不受影响） |
+| `node --test scripts/verify-agent-capability-matrix.test.mjs` | 门禁自测 4/4 通过 |
+| `git diff --check` | 无输出（干净） |
+
+### 8.6 诚实边界
+
+1. 本节只交付**后端只读入口**。真实浏览器三动作属于 ZCode 与 Codex 的验收范围，
+   本分支**没有**执行也没有声称任何浏览器页面证据；**Task 33 整体仍未验收**。
+2. 该入口未做真实浏览器/前端联调：没有运行前端 `5173`、没有渲染面板，
+   因此“面板能正确展示真实数据”仍待 Codex 在真实产品页复跑确认。
+3. 响应字段集未由 §8 冻结，需与 ZCode 前端对齐（见 8.3）。
+4. `sensitiveScanPassed` 作为成果状态布尔量保留；若 Codex 认为它属于隐私字段，
+   移除是单点改动。

@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/roadmap-artifacts")
 public class RoadmapArtifactController {
@@ -54,6 +56,21 @@ public class RoadmapArtifactController {
             @Valid @RequestBody CreateRoadmapArtifactRequest request
     ) {
         return service.submit(user.id(), request);
+    }
+
+    /**
+     * Task 33 §8：登录用户自己的只读成果列表，供 `/workspaces` 结果面板展示。
+     *
+     * <p>{@code ownerId} 只能来自 Java 登录态，绝不从 query、请求体或请求头读取；
+     * 该方法只读，不产生任何写副作用，也不改变提交/评审/接受的写治理。</p>
+     */
+    @GetMapping
+    public List<RoadmapArtifactSummaryResponse> list(
+            @AuthenticationPrincipal AuthenticatedUser user
+    ) {
+        return service.artifacts(user.id()).stream()
+                .map(RoadmapArtifactSummaryResponse::from)
+                .toList();
     }
 
     @GetMapping("/{artifactId}")
