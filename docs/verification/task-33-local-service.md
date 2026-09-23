@@ -577,4 +577,89 @@ RESULT_REGISTERED    TEST_RESULT       Run   surefire-reports
 
 真实 IDE 验收轮修改：`idea-plugin/.../platform/TestResultContentMatcher.java`（类型/描述符支撑的识别，废弃包装类名前缀）、`.../platform/IdeaPlatformOperations.java`（`RunContentManager` 关联 + `BaseTestsOutputConsoleView` 类型判定 + 执行后复验 + 仅类型的有界失败诊断）、`PluginHardeningSelfTest.java`（实测包装类与对抗性用例）、`PluginSelfTest.java` 与 `tests/pluginArchitecture.spec.ts`（禁止类名前缀识别的新护栏）、本文件。
 
+---
+
+## 14. 2026-09-23 浏览器产品页对齐与真实验收（ZCode 实施）
+
+### 14.1 背景与契约修订（Codex 第 8 节）
+
+Codex 独立验收指出：
+1. `src/browserAdapter.ts` 之前依赖的选择器（`[data-testid="agent-message-input"]`、`[data-testid="open-results-panel-trigger"]`、`[data-testid="workspace-results-panel"]`）在真实 Vue 页面中不存在。`AssistantView.vue` 只有普通 `<textarea class="composer-input">`；`WorkspaceArtifactsView.vue` 只有登记和工作区列表，无结果面板与触发器；
+2. 真实验收脚本原先只探测后端 8080 端口，未真正驱动网页执行真实浏览器动作，且用合成夹具冒充真实验收；
+3. 契约第 8 节明确授权 ZCode 仅在 `web/src/modules/assistant/AssistantView.vue`、`web/src/modules/roadmap/WorkspaceArtifactsView.vue`、`web/src/services/roadmap.ts`、`web/src/types/roadmap.ts` 及相应聚焦测试范围内实施真实对齐，保持其他所有规则与所有权边界严格不变。
+
+### 14.2 前端实现与 TDD 证据（RED & GREEN）
+
+#### RED 阶段
+1. `web/src/modules/assistant/AssistantView.spec.ts`：新增测试断言 `textarea[data-testid="agent-message-input"]` 存在且聚焦，初始失败（`expected false to be true`）；
+2. `web/src/modules/roadmap/WorkspaceArtifactsView.spec.ts`：编写失败测试断言：
+   - 触发按钮 `data-testid="open-results-panel-trigger"` 存在；
+   - 初始时结果面板 `data-testid="workspace-results-panel"` 不展示；
+   - 点击触发按钮后面板展开，展示 API 驱动的真实成果节点、版本、得分、反馈及状态；
+   - 当 API 发生网络/500/认证失败时，彻底移除 `.catch(() => [])` 吞错行为，展示明确的错误状态 `data-testid="workspace-results-error"` 与重试按钮，严禁伪造成空状态；
+   - 当 API 成功返回空列表时，面板展示诚实的真实空状态（`尚未提交实践成果`，`data-testid="workspace-results-empty"`）。
+   初始执行测试按预期失败。
+3. `local-automation-service/tests/falseSuccess.spec.ts`：增加防假成功断言：当面板处于 `data-testid="workspace-results-error"` 错误状态时，`openResultPanel()` 必须失败关闭（返回 `false`），初始执行失败（RED）。
+
+#### GREEN 阶段
+1. **`web/src/modules/assistant/AssistantView.vue`**：在消息输入框上增加稳定语义定位器 `data-testid="agent-message-input"`；
+2. **`web/src/types/roadmap.ts`**：增加 `RoadmapArtifactSummaryItem` 接口，严格对齐 MiniMax 正在构建的隐私最小化汇总结构（包含 `id`, `workspaceId`, `status`, `submissionVersion`, `roadmapNode`, `rubricScore`, `rubricFeedback`, `acceptedAt`, `createdAt`；彻底省略 `description`、`testEvidence`、`relativePath`、`canonicalPath`，严禁推断“测试已验证”）；
+3. **`web/src/services/roadmap.ts`**：增加 `listArtifacts()` 方法调用 `GET /api/roadmap-artifacts`；
+4. **`web/src/modules/roadmap/WorkspaceArtifactsView.vue`**：
+   - 增加真实的成果评测结果面板 `[data-testid="workspace-results-panel"]` 与展开触发器 `[data-testid="open-results-panel-trigger"]`；
+   - 彻底移除错误吞噬：加载失败时保留错误信息并渲染 `[data-testid="workspace-results-error"]` 与重试按钮；
+   - 加载成功且有记录时，按隐私最小化摘要渲染成果节点、版本（`版本 v${artifact.submissionVersion}`）、状态、得分（`rubricScore`）与反馈（`rubricFeedback`）；
+   - 无成果时明确展示真实 200 空列表状态（`[data-testid="workspace-results-empty"]`），无任何 mock 或硬编码数据；
+   - 点击触发器驱动真实 Vue 响应式状态展开。
+5. **`local-automation-service/src/browserAdapter.ts`**：
+   - `openResultPanel()` 在点击触发器后增加目标状态安全自检：若面板渲染了 `[data-testid="workspace-results-error"]`，判定为目标状态未验证，确定性失败关闭并记录原因。
+6. **测试验证**：
+   - `web/src/modules/assistant/AssistantView.spec.ts`：32 项全绿；
+   - `web/src/modules/roadmap/WorkspaceArtifactsView.spec.ts`：3 项全绿；
+   - `web` 全量回归：35 个测试文件、323 项测试 100% 全部通过；
+   - `vue-tsc --noEmit`：0 错误；
+   - `vite build`：生产打包通过；
+   - `local-automation-service`：18 个测试文件、179 项测试全部通过（1 项跳过）。
+
+### 14.3 浏览器真实验收脚本修订
+
+在 `local-automation-service/scripts/real-acceptance.ts` 中修正浏览器真实验收逻辑：
+1. **探测目标校正**：通过 `STUDYPILOT_AUTOMATION_WEB_URL`（开发/部署默认 `http://127.0.0.1:5173`）探测前端 Web 服务，不再错误探测后端 8080 端口；
+2. **真实动作执行**：当前端在线时，通过 `PlaywrightBrowserAutomationAdapter` 真实执行全部 3 项浏览器动作（`OPEN_STUDYPILOT_ROUTE`、`FOCUS_AGENT_INPUT`、`OPEN_RESULT_PANEL`），核对精确路由、输入焦点和面板展开可见性；若离线或认证重定向，诚实报告 `BLOCKED` 并说明前置条件；
+3. **夹具独立标注**：第 5 节合成夹具明确标为 `[INTEGRATION_FIXTURE]`，明确声明不作为 Task 34 REAL_E2E 证据；
+4. **零泄漏保障**：日志与回执中绝不回传页面正文、成果内容、绝对路径、测试证据、隐私字段或密钥。
+
+### 14.4 验收命令与执行结果
+
+```text
+cd web && npm test -- --run                     -> 35 files / 323 tests passed
+cd web && npm run typecheck && npm run build    -> 0 errors / built in 1.00s
+cd local-automation-service && npm test         -> 18 files / 179 tests (178 passed, 1 skipped)
+cd local-automation-service && npm run typecheck && npm run build -> 0 errors / tsc built
+cd local-automation-service && npm run acceptance:real ->
+  - macOS AX diagnostic probe: PASS (refuses every IDEA action)
+  - IDEA plugin execution path: BLOCKED (PLUGIN_NOT_CONFIGURED on this host)
+  - Production UDS service: PASS (real UDS, 0600, HMAC, nonce replay, registry whitelist)
+  - Live StudyPilot loopback service: BLOCKED (web frontend offline at http://127.0.0.1:5173)
+  - Browser adapter integration fixture: PASS (4/4 mechanics passed)
+  - Fake-success enforcement: no path returns SUCCEEDED without verified state
+```
+
+### 14.5 本轮文件所有权与改动清单
+
+本次改动严格限定于授权范围：
+- `web/src/modules/assistant/AssistantView.vue`
+- `web/src/modules/assistant/AssistantView.spec.ts`
+- `web/src/modules/roadmap/WorkspaceArtifactsView.vue`
+- `web/src/modules/roadmap/WorkspaceArtifactsView.spec.ts`
+- `web/src/services/roadmap.ts`
+- `web/src/types/roadmap.ts`
+- `local-automation-service/src/browserAdapter.ts`
+- `local-automation-service/scripts/real-acceptance.ts`
+- `local-automation-service/tests/falseSuccess.spec.ts`
+- `local-automation-service/tests/reviewFindings.spec.ts`
+- `docs/verification/task-33-local-service.md`
+
+未改动任何 `backend/**`、未合并 `main`、未启动 Task 34。最终 Task 33 仍由 Codex 在真实产品页面独立复跑后判定。
+
 未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34；未安装插件。

@@ -234,8 +234,18 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
 
       if (!isVisible) {
         this.lastBlockerReason = 'Target state verification failed: workspace results panel is not visible after trigger action';
+        return false;
       }
-      return isVisible;
+
+      // Defense against false-success: if the panel displays an error state due to API/auth failure, fail closed!
+      const errorLocator = panel.locator('[data-testid="workspace-results-error"]');
+      const hasError = await errorLocator.isVisible().catch(() => false);
+      if (hasError) {
+        this.lastBlockerReason = 'Target state verification failed: workspace results panel displays error state';
+        return false;
+      }
+
+      return true;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.lastBlockerReason = `Failed to open result panel: ${msg}`;

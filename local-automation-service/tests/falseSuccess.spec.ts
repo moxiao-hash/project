@@ -44,6 +44,7 @@ describe('False-Success Defenses for Adapters', () => {
       };
       const fakePanel = {
         isVisible: vi.fn().mockImplementation(async () => triggerClicked),
+        locator: vi.fn().mockReturnValue({ isVisible: vi.fn().mockResolvedValue(false) }),
       };
 
       const fakePage = {
@@ -66,6 +67,46 @@ describe('False-Success Defenses for Adapters', () => {
       expect(fakeTrigger.click).toHaveBeenCalled();
       expect(fakePanel.isVisible).toHaveBeenCalled();
     });
+
+    it('rejects OPEN_RESULT_PANEL when the panel displays an error state rather than verified results', async () => {
+      const adapter = new PlaywrightBrowserAutomationAdapter({
+        trustedLoopbackOrigin: 'http://127.0.0.1:8080',
+      });
+
+      const fakeTrigger = { click: vi.fn().mockResolvedValue(undefined) };
+      const fakePanel = {
+        isVisible: vi.fn().mockResolvedValue(true),
+        locator: vi.fn().mockImplementation((selector: string) => {
+          if (selector === '[data-testid="workspace-results-error"]') {
+            return {
+              isVisible: vi.fn().mockResolvedValue(true),
+              count: vi.fn().mockResolvedValue(1),
+            };
+          }
+          return { isVisible: vi.fn().mockResolvedValue(false), count: vi.fn().mockResolvedValue(0) };
+        }),
+      };
+
+      const fakePage = {
+        isClosed: () => false,
+        url: () => 'http://127.0.0.1:8080/workspaces',
+        locator: vi.fn().mockImplementation((selector: string) => {
+          if (selector === '[data-testid="open-results-panel-trigger"]') {
+            return fakeTrigger;
+          }
+          if (selector === '[data-testid="workspace-results-panel"]') {
+            return fakePanel;
+          }
+          return { isVisible: async () => false, click: async () => {} };
+        }),
+      };
+      (adapter as any).page = fakePage;
+
+      const res = await adapter.openResultPanel();
+      expect(res).toBe(false);
+      expect(adapter.getLastBlockerReason()).toContain('error state');
+    });
+
     it('rejects an openRoute target whose origin is not the configured trusted loopback origin', async () => {
       const adapter = new PlaywrightBrowserAutomationAdapter({
         trustedLoopbackOrigin: 'http://127.0.0.1:8080',

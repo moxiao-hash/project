@@ -157,6 +157,7 @@ describe('Review Findings: Default Wiring, Independent Actions & Registry Mappin
           if (selector === '[data-testid="workspace-results-panel"]') {
             return {
               isVisible: vi.fn().mockImplementation(async () => panelVisible),
+              locator: vi.fn().mockReturnValue({ isVisible: vi.fn().mockResolvedValue(false) }),
             };
           }
           return { click: vi.fn(), isVisible: vi.fn() };

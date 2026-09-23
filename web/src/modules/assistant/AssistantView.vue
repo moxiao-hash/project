@@ -110,6 +110,7 @@
           <textarea
             ref="messageInputRef"
             v-model.trim="message"
+            data-testid="agent-message-input"
             class="composer-input"
             rows="2"
             placeholder="例如：继续昨天没学完的章节"

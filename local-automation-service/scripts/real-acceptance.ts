@@ -294,28 +294,111 @@ async function probeProductionUdsService(): Promise<SectionResult> {
 }
 
 /**
- * Section C — live StudyPilot loopback availability (honest BLOCKED when offline).
+ * Section C — live StudyPilot web frontend availability and real browser actions.
  */
 async function probeStudyPilotService(): Promise<SectionResult> {
-  console.log(`\n--- 4. [LIVE_PROBE] StudyPilot loopback service (http://127.0.0.1:8080) ---`);
+  let webOrigin =
+    process.env.STUDYPILOT_AUTOMATION_WEB_URL ||
+    process.env.STUDYPILOT_AUTOMATION_LOOPBACK_BASE_URL ||
+    'http://127.0.0.1:5173';
+
+  console.log(`\n--- 4. [LIVE_PROBE] StudyPilot web frontend service (${webOrigin}) ---`);
+  console.log(`Configured web origin: ${webOrigin} (development default: http://127.0.0.1:5173)`);
+
   let online = false;
   try {
-    const res = await fetch('http://127.0.0.1:8080/', { signal: AbortSignal.timeout(1500) });
-    online = res.ok;
+    const res = await fetch(webOrigin, { signal: AbortSignal.timeout(2000) });
+    online = res.ok || res.status === 200 || res.status === 304;
   } catch {
-    online = false;
+    if (!process.env.STUDYPILOT_AUTOMATION_WEB_URL && webOrigin === 'http://127.0.0.1:5173') {
+      try {
+        const altOrigin = 'http://localhost:5173';
+        const resAlt = await fetch(altOrigin, { signal: AbortSignal.timeout(2000) });
+        if (resAlt.ok || resAlt.status === 200 || resAlt.status === 304) {
+          webOrigin = altOrigin;
+          online = true;
+        }
+      } catch {
+        online = false;
+      }
+    } else {
+      online = false;
+    }
   }
 
   if (!online) {
-    console.log('Live StudyPilot Status: OFFLINE');
-    console.log('  [Real Action 4] OPEN_STUDYPILOT_ROUTE: BLOCKED');
-    console.log('  [Real Action 5] FOCUS_AGENT_INPUT:     BLOCKED');
-    console.log('  [Real Action 6] OPEN_RESULT_PANEL:     BLOCKED');
-    console.log('  Prerequisite: live StudyPilot web service on the registered loopback origin');
-    return { status: 'BLOCKED', detail: 'live StudyPilot web service offline' };
+    console.log(`Live StudyPilot Web Status: OFFLINE at ${webOrigin}`);
+    console.log('  [Real Action 4] OPEN_STUDYPILOT_ROUTE: BLOCKED (web service offline)');
+    console.log('  [Real Action 5] FOCUS_AGENT_INPUT:     BLOCKED (web service offline)');
+    console.log('  [Real Action 6] OPEN_RESULT_PANEL:     BLOCKED (web service offline)');
+    console.log(`  Prerequisite: live StudyPilot web frontend running on ${webOrigin}`);
+    return {
+      status: 'BLOCKED',
+      detail: `live StudyPilot web frontend offline at ${webOrigin} (development default 5173)`,
+    };
   }
-  console.log('Live StudyPilot Status: ONLINE (real browser actions require an interactive session)');
-  return { status: 'BLOCKED', detail: 'live service online; interactive browser acceptance not executed' };
+
+  console.log(`Live StudyPilot Web Status: ONLINE at ${webOrigin}`);
+  console.log('Executing real browser actions via PlaywrightBrowserAutomationAdapter...');
+
+  const adapter = new PlaywrightBrowserAutomationAdapter({
+    channel: 'chrome',
+    headless: true,
+    trustedLoopbackOrigin: webOrigin,
+  });
+
+  const actions: {
+    label: string;
+    target: string;
+    run: () => Promise<boolean>;
+  }[] = [
+    {
+      label: 'OPEN_STUDYPILOT_ROUTE',
+      target: 'ASSISTANT',
+      run: () => adapter.openRoute(`${webOrigin}/`),
+    },
+    {
+      label: 'FOCUS_AGENT_INPUT',
+      target: 'ASSISTANT_INPUT',
+      run: () => adapter.focusAgentInput(),
+    },
+    {
+      label: 'OPEN_RESULT_PANEL',
+      target: 'WORKSPACE_RESULTS',
+      run: () => adapter.openResultPanel(),
+    },
+  ];
+
+  let succeeded = 0;
+  let blocked = 0;
+
+  try {
+    for (const action of actions) {
+      const ok = await action.run();
+      const reason = adapter.getLastBlockerReason();
+      if (ok) {
+        succeeded++;
+        console.log(`  [Real Action] ${action.label}(${action.target}): SUCCEEDED (verified live page state)`);
+      } else {
+        blocked++;
+        console.log(`  [Real Action] ${action.label}(${action.target}): BLOCKED`);
+        console.log(`    Detail: ${reason || 'unverified post-state or authentication redirect'}`);
+      }
+    }
+  } finally {
+    await adapter.close();
+  }
+
+  if (succeeded === actions.length) {
+    return {
+      status: 'PASS',
+      detail: 'all three browser actions executed and verified on live StudyPilot pages',
+    };
+  }
+  return {
+    status: 'BLOCKED',
+    detail: `${blocked}/${actions.length} browser actions blocked (auth required or target unverified on live page)`,
+  };
 }
 
 /**

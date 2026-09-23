@@ -1366,4 +1366,22 @@ describe('AssistantView', () => {
 
     wrapper.unmount()
   })
+
+  it('exposes data-testid="agent-message-input" on the message composer textarea for browser automation', async () => {
+    const wrapper = mount(AssistantView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const input = wrapper.find('textarea[data-testid="agent-message-input"]')
+    expect(input.exists()).toBe(true)
+    expect(input.classes()).toContain('composer-input')
+
+    const textareaEl = input.element as HTMLTextAreaElement
+    textareaEl.focus()
+    expect(document.activeElement).toBe(textareaEl)
+
+    wrapper.unmount()
+  })
 })

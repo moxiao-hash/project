@@ -170,3 +170,24 @@ export interface ProjectWorkspace {
   status: 'ACTIVE' | 'ARCHIVED'
   createdAt: string
 }
+
+export interface RoadmapArtifactSummaryItem {
+  id: string
+  workspaceId: string
+  status: 'SUBMITTED' | 'EVALUATED' | 'ACCEPTED' | 'REJECTED'
+  submissionVersion: number
+  roadmapNode?: {
+    id: string
+    moduleId: string
+    stageId: string
+    title: string
+    moduleTitle: string
+    stageTitle: string
+  }
+  rubricScore?: number | null
+  rubricFeedback?: string | null
+  acceptedAt?: string | null
+  createdAt: string
+}
+
+export type RoadmapArtifactItem = RoadmapArtifactSummaryItem
