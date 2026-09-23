@@ -268,6 +268,39 @@ describe('Plugin source guards', () => {
     expect(pkg.devDependencies?.tsx).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
+  it('emits exactly one newline-terminated response frame from the plugin', () => {
+    const protocol = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/protocol/PluginProtocol.java'),
+      'utf8'
+    );
+    // The terminating LF is part of the frozen frame contract; a bare JSON object made every
+    // real action unreadable to the service client.
+    expect(protocol).toContain('return line + "\\n"');
+    expect(protocol).toContain('EXACTLY one newline-terminated single-line JSON frame');
+    expect(protocol).not.toContain('// TEMPORARY');
+  });
+
+  it('schedules UI work without an expiration condition and cancels timed-out tasks', () => {
+    const executor = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/IdeUiExecutor.java'),
+      'utf8'
+    );
+    const scheduler = fs.readFileSync(
+      path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/ApplicationUiScheduler.java'),
+      'utf8'
+    );
+
+    // The measured defect was an inverted invokeLater expiration predicate, so no expiration
+    // condition may be passed at all.
+    expect(scheduler).toContain('invokeLater(runnable, ModalityState.any())');
+    expect(scheduler).not.toContain('invokeLater(runnable, condition');
+    expect(executor).not.toContain('invokeLater');
+    // A timed-out task must be cancelled so it cannot produce a late side effect.
+    expect(executor).toContain('future.cancel(false)');
+    // Disposal must fail closed explicitly.
+    expect(executor).toContain('IdeDisposedException');
+  });
+
   it('enforces exactly one frame deterministically, independent of write timing', () => {
     const server = fs.readFileSync(
       path.join(pluginRoot, 'src/main/java/com/studypilot/automation/idea/platform/PluginSocketServer.java'),

@@ -32,6 +32,7 @@ type ServerBehaviour =
   | { kind: 'respondThenTrailing' }
   | { kind: 'respondThenTrailingLater' }
   | { kind: 'respondThenSecondFrameLater' }
+  | { kind: 'respondWithoutTrailingNewline' }
   | { kind: 'rejectSignature' };
 
 let behaviour: ServerBehaviour = { kind: 'respond', status: 'SUCCEEDED', errorCode: null };
@@ -131,6 +132,12 @@ function startFakePluginServer(): Promise<void> {
               })}\n`
             );
             return;
+          case 'respondWithoutTrailingNewline': {
+            // The plugin contract requires a newline-terminated response frame. A bare JSON
+            // object must be rejected, never silently accepted.
+            socket.end(JSON.stringify(okResponse(request)));
+            return;
+          }
           case 'respondThenTrailingLater': {
             // The trailing second frame arrives in a LATER write/chunk, so only a client that
             // buffers through EOF can reject it deterministically.
@@ -254,6 +261,15 @@ describe('IdeaPluginClient over a real Unix Domain Socket', () => {
     await startFakePluginServer();
     const outcome = await client().showTestResult('RESULT_REGISTERED');
     expect(outcome.ok).toBe(false);
+    expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
+  });
+
+  it('rejects a response frame that is missing its terminating newline', async () => {
+    behaviour = { kind: 'respondWithoutTrailingNewline' };
+    await startFakePluginServer();
+    const outcome = await client().openRegisteredFile('FILE_REGISTERED');
+    expect(outcome.ok).toBe(false);
+    expect(outcome.verified).toBe(false);
     expect(outcome.code).toBe('PLUGIN_RESPONSE_INVALID');
   });
 

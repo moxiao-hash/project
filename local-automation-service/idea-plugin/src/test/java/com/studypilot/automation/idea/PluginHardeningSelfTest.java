@@ -4,6 +4,8 @@ import com.studypilot.automation.idea.dispatch.IdeActionDispatcher;
 import com.studypilot.automation.idea.dispatch.IdeOutcome;
 import com.studypilot.automation.idea.dispatch.IdePlatform;
 import com.studypilot.automation.idea.dispatch.UiExecutor;
+import com.studypilot.automation.idea.dispatch.UiScheduler;
+import com.studypilot.automation.idea.platform.IdeUiExecutor;
 import com.studypilot.automation.idea.platform.PathBinding;
 import com.studypilot.automation.idea.platform.PluginConfig;
 import com.studypilot.automation.idea.platform.PluginSocketServer;
@@ -64,6 +66,8 @@ public final class PluginHardeningSelfTest {
       configLoadingTests();
       pathBindingTests();
       singleFrameTests();
+      responseFramingTests();
+      uiSchedulerTests();
       testResultMatcherTests();
     } finally {
       deleteRecursively(tempRoot);
@@ -338,13 +342,20 @@ public final class PluginHardeningSelfTest {
   // ------------------------------------------------------------------ framing
 
   private static PluginConfig socketConfig(Path socketPath, Path ledgerPath, Path projectRoot) throws IOException {
-    Path config = writeConfig(
-        "socket-" + socketPath.getFileName(),
+    return socketConfig(socketPath, ledgerPath, projectRoot, null);
+  }
+
+  private static PluginConfig socketConfig(
+      Path socketPath, Path ledgerPath, Path projectRoot, Path fileTarget) throws IOException {
+    String body =
         "socketPath\t" + socketPath.toAbsolutePath() + "\n"
             + "ledgerPath\t" + ledgerPath.toAbsolutePath() + "\n"
             + "projectRoot\t" + projectRoot.toAbsolutePath() + "\n"
-            + "RUN_REGISTERED\tRUN_CONFIGURATION\tStudyPilotApplication\n");
-    return PluginConfig.load(config, envWithSecret());
+            + "RUN_REGISTERED\tRUN_CONFIGURATION\tStudyPilotApplication\n";
+    if (fileTarget != null) {
+      body += "FILE_REGISTERED\tFILE\t" + fileTarget.toAbsolutePath() + "\n";
+    }
+    return PluginConfig.load(writeConfig("socket-" + socketPath.getFileName(), body), envWithSecret());
   }
 
   private static String readResponse(Path socketPath, byte[] payload) throws IOException {
@@ -536,23 +547,24 @@ public final class PluginHardeningSelfTest {
 
   private static final class NoopPlatform implements IdePlatform {
     volatile int calls = 0;
+    volatile IdeOutcome outcome = IdeOutcome.verified();
 
     @Override
     public IdeOutcome openRegisteredFile(String canonicalPath, String projectRoot) {
       calls++;
-      return IdeOutcome.verified();
+      return outcome;
     }
 
     @Override
     public IdeOutcome focusRunConfiguration(String configurationName, String projectRoot) {
       calls++;
-      return IdeOutcome.verified();
+      return outcome;
     }
 
     @Override
     public IdeOutcome showTestResult(String toolWindowId, String contentName, String projectRoot) {
       calls++;
-      return IdeOutcome.verified();
+      return outcome;
     }
   }
 
@@ -580,6 +592,196 @@ public final class PluginHardeningSelfTest {
       "com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView";
   private static final String CONSOLE_COMPONENT = "com.intellij.execution.impl.ConsoleViewImpl";
   private static final String EDITOR_COMPONENT = "com.intellij.openapi.editor.impl.EditorImpl";
+
+
+  /**
+   * The response boundary must be exactly one newline-terminated JSON frame. This is asserted
+   * against the REAL Java UDS server, because the production defect was a producer-side
+   * missing terminating LF (the TypeScript client correctly rejected it).
+   */
+  private static void responseFramingTests() throws Exception {
+    Path socketDir = Files.createTempDirectory(Path.of("/tmp"), "t33fr-");
+    Path socketPath = socketDir.resolve("f.sock");
+    Path ledgerPath = socketDir.resolve("f.ledger");
+    Path projectRoot = Files.createDirectories(tempRoot.resolve("fr-project"));
+    Path target = projectRoot.resolve("Registered.java");
+    Files.write(target, "class Registered {}".getBytes(StandardCharsets.UTF_8));
+
+    PluginConfig config = socketConfig(socketPath, ledgerPath, projectRoot, target);
+    NoopPlatform platform = new NoopPlatform();
+    PluginSocketServer server =
+        new PluginSocketServer(
+            config, new PluginProtocol(config.secret), dispatcherFor(config, platform), message -> {});
+    server.start();
+    try {
+      // (1) a rejected request still needs a well-framed response.
+      String rejected = readResponse(socketPath, "{}\n".getBytes(StandardCharsets.UTF_8));
+      assertSingleResponseFrame("framing: rejected response", rejected);
+      check("framing: rejected response code", rejected.contains("MISSING_FIELD"));
+
+      // (2) a signed action the platform verifies -> SUCCEEDED.
+      String succeeded = readResponse(socketPath, PluginTestFrames.validFileFrame(config));
+      assertSingleResponseFrame("framing: succeeded response", succeeded);
+      check("framing: succeeded status", succeeded.contains("\"status\":\"SUCCEEDED\""));
+
+      // (3) a signed action the platform cannot verify -> FAILED.
+      platform.outcome = IdeOutcome.unverified("POST_STATE_NOT_VERIFIED", "not proven");
+      String failed = readResponse(socketPath, PluginTestFrames.validFileFrame(config));
+      assertSingleResponseFrame("framing: failed response", failed);
+      check("framing: failed status", failed.contains("\"status\":\"FAILED\""));
+
+      // (4) an oversize request must also answer with exactly one frame.
+      byte[] oversize = new byte[PluginProtocol.MAX_FRAME_BYTES + 64];
+      java.util.Arrays.fill(oversize, (byte) 'a');
+      oversize[oversize.length - 1] = '\n';
+      String oversizeResponse = readResponse(socketPath, oversize);
+      assertSingleResponseFrame("framing: oversize response", oversizeResponse);
+      check("framing: oversize code", oversizeResponse.contains("OVERSIZE_FRAME"));
+    } finally {
+      server.stop();
+    }
+  }
+
+  private static void assertSingleResponseFrame(String name, String response) {
+    check(name + ": response is non-empty", response != null && !response.isEmpty());
+    check(name + ": ends with exactly one LF", response.endsWith("\n"));
+    int newlines = 0;
+    for (int i = 0; i < response.length(); i++) {
+      if (response.charAt(i) == '\n') {
+        newlines++;
+      }
+    }
+    check(name + ": exactly one newline in total", newlines == 1);
+    String body = response.substring(0, response.length() - 1);
+    check(name + ": no carriage return", body.indexOf('\r') < 0);
+    check(
+        name + ": body is exactly one JSON object",
+        body.startsWith("{") && body.endsWith("}") && body.indexOf("}{") < 0);
+  }
+
+  /**
+   * UI scheduling invariants.
+   *
+   * The measured production defect was a scheduling condition that treated a HEALTHY IDE as
+   * expired, so no queued callable ever ran. These tests pin the required behaviour: a queued
+   * callable runs in a live, non-disposed IDE; a blocked one times out; a timed-out callable
+   * produces NO late side effect; and a disposed IDE fails closed.
+   */
+  private static void uiSchedulerTests() throws Exception {
+    // (1) live, non-disposed IDE: the callable actually runs on the UI thread.
+    UiScheduler liveScheduler =
+        new UiScheduler() {
+          @Override
+          public void schedule(Runnable runnable) {
+            Thread thread = new Thread(runnable, "fake-edt");
+            thread.setDaemon(true);
+            thread.start();
+          }
+
+          @Override
+          public boolean isDisposed() {
+            return false;
+          }
+        };
+    IdeUiExecutor liveExecutor = new IdeUiExecutor(liveScheduler);
+    try {
+      String value = liveExecutor.runOnUiThread(() -> "ran", 2000L);
+      checkEquals("ui: live callable executes and returns", "ran", value);
+    } catch (Exception e) {
+      check("ui: live callable executes and returns (threw " + e.getClass().getSimpleName() + ")", false);
+    }
+
+    // (2) blocked UI thread: fail closed with a timeout.
+    UiScheduler blockedScheduler =
+        new UiScheduler() {
+          @Override
+          public void schedule(Runnable runnable) {
+            // never runs
+          }
+
+          @Override
+          public boolean isDisposed() {
+            return false;
+          }
+        };
+    IdeUiExecutor blockedExecutor = new IdeUiExecutor(blockedScheduler);
+    boolean timedOut = false;
+    try {
+      blockedExecutor.runOnUiThread(() -> "never", 300L);
+    } catch (UiExecutor.UiTimeoutException e) {
+      timedOut = true;
+    } catch (Exception e) {
+      // fall through to the assertion
+    }
+    check("ui: blocked callable fails closed with a timeout", timedOut);
+
+    // (3) a callable that would run AFTER the timeout must not create a late side effect.
+    final java.util.concurrent.atomic.AtomicInteger lateEffects =
+        new java.util.concurrent.atomic.AtomicInteger(0);
+    final java.util.List<Runnable> deferred = new java.util.ArrayList<>();
+    UiScheduler deferredScheduler =
+        new UiScheduler() {
+          @Override
+          public void schedule(Runnable runnable) {
+            synchronized (deferred) {
+              deferred.add(runnable);
+            }
+          }
+
+          @Override
+          public boolean isDisposed() {
+            return false;
+          }
+        };
+    IdeUiExecutor deferredExecutor = new IdeUiExecutor(deferredScheduler);
+    boolean deferredTimedOut = false;
+    try {
+      deferredExecutor.runOnUiThread(
+          () -> {
+            lateEffects.incrementAndGet();
+            return "late";
+          },
+          300L);
+    } catch (UiExecutor.UiTimeoutException e) {
+      deferredTimedOut = true;
+    } catch (Exception e) {
+      // fall through
+    }
+    check("ui: deferred callable fails closed with a timeout", deferredTimedOut);
+    // Now let the IDE thread "catch up" and run whatever was queued.
+    synchronized (deferred) {
+      for (Runnable runnable : deferred) {
+        runnable.run();
+      }
+    }
+    checkEquals("ui: timed-out callable produces no late side effect", 0, lateEffects.get());
+
+    // (4) a disposed IDE fails closed before scheduling anything.
+    final java.util.concurrent.atomic.AtomicInteger scheduled = new java.util.concurrent.atomic.AtomicInteger(0);
+    UiScheduler disposedScheduler =
+        new UiScheduler() {
+          @Override
+          public void schedule(Runnable runnable) {
+            scheduled.incrementAndGet();
+          }
+
+          @Override
+          public boolean isDisposed() {
+            return true;
+          }
+        };
+    IdeUiExecutor disposedExecutor = new IdeUiExecutor(disposedScheduler);
+    boolean disposed = false;
+    try {
+      disposedExecutor.runOnUiThread(() -> "nope", 1000L);
+    } catch (UiExecutor.IdeDisposedException e) {
+      disposed = true;
+    } catch (Exception e) {
+      // fall through
+    }
+    check("ui: disposed IDE fails closed", disposed);
+    checkEquals("ui: disposed IDE schedules nothing", 0, scheduled.get());
+  }
 
   private static void testResultMatcherTests() {
     // Exactly one matching test-result content.

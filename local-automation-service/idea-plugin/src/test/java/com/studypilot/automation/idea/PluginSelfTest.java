@@ -494,7 +494,12 @@ public final class PluginSelfTest {
     checkEquals("response: correlates action", parsed.action, response.action);
 
     String frameOut = protocol.format(response);
-    check("response: single line frame", frameOut.indexOf('\n') < 0);
+    // The frame contract requires EXACTLY one terminating LF. The previous assertion here
+    // demanded the absence of a newline, i.e. it encoded the very defect that made every real
+    // action unreadable to the service client.
+    check(
+        "response: exactly one newline, as the final byte",
+        frameOut.endsWith("\n") && frameOut.indexOf('\n') == frameOut.length() - 1);
     check("response: within 16 KiB", frameOut.getBytes(StandardCharsets.UTF_8).length <= PluginProtocol.MAX_FRAME_BYTES);
     check("response: no path leaked", !frameOut.contains("/work/project"));
     check("response: no URL leaked", !frameOut.contains("https://"));
@@ -573,14 +578,29 @@ public final class PluginSelfTest {
       // The registered root must EQUAL the open project's canonical base path.
       "candidate.equals(registeredRoot)",
       // The result view must be matched by exact identity, never "the only content".
-      "TestResultContentMatcher"
+      "TestResultContentMatcher",
+      // UI work is queued without an expiration condition, and timed-out tasks are cancelled.
+      "UiScheduler",
+      "ModalityState.any()",
+      "future.cancel(false)",
+      "ApplicationUiScheduler",
+      // Responses must be newline-terminated frames.
+      "return line + \"\\n\""
     };
     for (String token : required) {
       check("guards: plugin must contain '" + token + "'", code.contains(token));
     }
 
     // Raw string-prefix containment and "the only content" fallbacks are forbidden.
-    for (String token : new String[] {"startsWith(basePath", "existing.get(0)", "contents.get(0)"}) {
+    for (String token :
+        new String[] {
+          "startsWith(basePath",
+          "existing.get(0)",
+          "contents.get(0)",
+          // A pass-through expiration condition is the exact shape of the measured defect.
+          "invokeLater(future,",
+          "invokeLater(runnable, condition"
+        }) {
       check("guards: plugin must not contain '" + token + "'", !code.contains(token));
     }
 

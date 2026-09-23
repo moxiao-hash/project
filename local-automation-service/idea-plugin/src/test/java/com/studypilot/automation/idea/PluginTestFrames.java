@@ -14,14 +14,24 @@ public final class PluginTestFrames {
 
   /** A valid, freshly signed single-line frame for a registered run-configuration handle. */
   public static byte[] validRunFrame(PluginConfig config) {
+    return validFrame(config, PluginProtocol.ACTION_FOCUS_RUN, "RUN_REGISTERED");
+  }
+
+  /** A valid, freshly signed single-line frame for a registered file handle. */
+  public static byte[] validFileFrame(PluginConfig config) {
+    return validFrame(config, PluginProtocol.ACTION_OPEN_FILE, "FILE_REGISTERED");
+  }
+
+  /** A valid, freshly signed single-line frame for any frozen action and registered handle. */
+  public static byte[] validFrame(PluginConfig config, String action, String handle) {
     long now = System.currentTimeMillis();
     PluginProtocol protocol = new PluginProtocol(config.secret);
     PluginRequest unsigned =
         new PluginRequest(
             1,
             UUID.randomUUID().toString(),
-            PluginProtocol.ACTION_FOCUS_RUN,
-            "RUN_REGISTERED",
+            action,
+            handle,
             Instant.ofEpochMilli(now).toString(),
             Instant.ofEpochMilli(now + 8000).toString(),
             java.util.Base64.getUrlEncoder()

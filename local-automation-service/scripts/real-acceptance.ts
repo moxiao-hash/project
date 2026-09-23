@@ -109,7 +109,26 @@ async function probeIdeaPluginPath(): Promise<SectionResult> {
   const secret = process.env.STUDYPILOT_AUTOMATION_IDEA_PLUGIN_HMAC_SECRET ?? '';
   const timeoutMs = Number(process.env.STUDYPILOT_AUTOMATION_IDEA_PLUGIN_TIMEOUT_MS ?? '3000');
 
-  console.log(`Plugin socket configured: ${socketPath ? 'yes' : 'no'}`);
+  // Report this host's configuration truthfully and machine-readably, so a probe result can
+  // never be mistaken for evidence about a different environment (e.g. a host where the user
+  // has installed the plugin and provided the owner-only operator config).
+  console.log(`Environment: host=${os.platform()} serviceIdaPluginEnv=${socketPath && secret ? 'configured' : 'unset'}`);
+  if (socketPath) {
+    let present = false;
+    let mode = 'n/a';
+    try {
+      present = fs.existsSync(socketPath);
+      if (present) {
+        mode = (fs.statSync(socketPath).mode & 0o777).toString(8);
+      }
+    } catch {
+      present = false;
+    }
+    console.log(`Plugin socket on disk: ${present ? `present (mode ${mode})` : 'absent'} at the configured path`);
+  } else {
+    console.log('Plugin socket on disk: not configured on this host');
+  }
+  console.log('Scope: this section reports THIS host only; it is not acceptance evidence for another environment.');
   if (!socketPath || !secret) {
     console.log(
       '  BLOCKED: the trusted IDEA plugin bridge is not configured, so the IDEA channel fails closed.'

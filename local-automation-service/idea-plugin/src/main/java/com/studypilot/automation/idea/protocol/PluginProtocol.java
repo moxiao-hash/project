@@ -262,14 +262,26 @@ public final class PluginProtocol {
         a.getBytes(StandardCharsets.US_ASCII), b.getBytes(StandardCharsets.US_ASCII));
   }
 
-  /** Formats a response as a single-line JSON frame ending with a newline, capped at 16 KiB. */
+  /**
+   * Formats a response as EXACTLY one newline-terminated single-line JSON frame, capped at
+   * 16 KiB.
+   *
+   * The terminating LF is part of the frozen frame contract: the service client buffers the
+   * whole reply and accepts it only when it ends with exactly one newline and carries no
+   * trailing data. Returning a bare JSON object (the measured production defect) makes every
+   * action unreadable to the client even though the plugin answered.
+   */
   public String format(PluginResponse response) {
     String message = sanitize(response.message);
     String line = buildLine(response, message);
-    if (line.getBytes(StandardCharsets.UTF_8).length > MAX_FRAME_BYTES) {
+    if (frameBytes(line) > MAX_FRAME_BYTES) {
       line = buildLine(response, "response truncated");
     }
-    return line;
+    return line + "\n";
+  }
+
+  private static int frameBytes(String line) {
+    return line.getBytes(StandardCharsets.UTF_8).length + 1;
   }
 
   private static String buildLine(PluginResponse response, String message) {

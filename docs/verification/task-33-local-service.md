@@ -177,7 +177,7 @@ build-local: INSTALLATION IS NOT PERFORMED — Codex review and explicit user co
 
 | 来源 | 文件 | SHA-256 | 可复现性 |
 | :--- | :--- | :--- | :--- |
-| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `409cf9da779e82940137cc28b777e56b9850e39a476eb2431e36a641da1a175a` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
+| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `bffac22552316a98f274c54f8eb2ae6cde91d7f2542552d2bec11f3b8f0ea84c` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
 | 本机 javac（备选） | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0-local.zip` | 每次构建不同（示例 `95babc42db204beb39b7320b4580fb183c7fdb8c76a0afad4224ca20c38b138a`） | **不可复现**：`jar` 写入构建时刻时间戳 |
 
 > 审查与安装应以 **Gradle 产物** 为准（校验和固定）；备选产物仅用于本机离线可用性，其校验和随后续构建变化。
@@ -199,12 +199,12 @@ study-pilot-automation-bridge/lib/study-pilot-automation-bridge-1.0.0.jar
 ```text
 cd local-automation-service && npm test
  Test Files  18 passed (18)
-      Tests  175 passed | 1 skipped (176)
+      Tests  178 passed | 1 skipped (179)
 
 npm run typecheck            -> tsc --noEmit, 0 errors
 npm run build                -> tsc, dist/ 成功（含 dist/main.js）
 npm run build:native         -> 0 errors, 0 warnings
-npm run test:plugin          -> PluginSelfTest 110/110 + PluginHardeningSelfTest 55/55
+npm run test:plugin          -> PluginSelfTest 117/117 + PluginHardeningSelfTest 85/85
 gradle selfTest / check      -> 两个 harness 全绿, BUILD SUCCESSFUL
 gradle buildPlugin           -> BUILD SUCCESSFUL；产物校验和两次一致
 git diff --check             -> 干净
@@ -377,7 +377,79 @@ PluginHardeningSelfTest: passed=55 failed=0
 
 ---
 
-## 10. 修订后的插件配置格式
+## 10. Codex 真实安装后复核（安装包 `e2eaf2c`/`1e5d6d5`）：两项实测生产缺陷的整改
+
+用户在真实 IntelliJ IDEA 2026.1.1 中安装并加载了插件；私有 UDS 存在、属主为用户、权限 0600，`{}`+LF 可立即得到 `MISSING_FIELD`（说明 bind/listen 与基础传输正常），但真实签名动作不通过。实测两项根因如下。
+
+### 10.1 缺陷 1：响应帧缺少终止 LF
+
+**实测**：签名 `OPEN_REGISTERED_FILE` 请求在 5015 ms 后收到 237 字节的 `FAILED/UI_THREAD_TIMEOUT` 响应，且 `ends_newline=false`；服务侧客户端随后一律判 `PLUGIN_RESPONSE_INVALID`。
+
+**根因**：`PluginProtocol.format()` 的注释写明返回以换行结束的帧，但实际返回 `buildLine(...)`（纯 JSON 对象）；`PluginSocketServer.writeFrame()` 原样写出，因此**响应永不带 LF**。
+
+**RED（实测，12 项失败）**：把 `format()` 临时还原为“无 LF”，针对**真实 Java UDS 服务端**的新增帧边界断言全部失败：
+
+```text
+PluginHardeningSelfTest: passed=73 failed=12
+  framing: rejected  response: ends with exactly one LF / exactly one newline in total / body is exactly one JSON object
+  framing: succeeded response: ... （同上三项）
+  framing: failed    response: ... （同上三项）
+  framing: oversize  response: ... （同上三项）
+```
+
+**整改**：`format()` 现在返回 `line + "\n"`（并按含换行的字节数做 16 KiB 上限判断）；请求侧帧契约保持不变。
+
+**GREEN**：同一真实 UDS 连接上，**rejected / succeeded / failed / oversize** 四类响应均满足「恰好一个 LF、且为最后一个字节、正文是单个 JSON 对象、无第二个帧」（`assertSingleResponseFrame`）。
+
+**同时修正一处被写反的旧断言**：`PluginSelfTest` 原本断言 `response: single line frame`＝“响应中**不含**换行”，正是把缺陷当作期望；现改为「恰好一个换行且位于最后一个字节」。
+
+**跨语言传输复测**：TS 客户端新增「响应缺少终止 LF」用例——必须 `PLUGIN_RESPONSE_INVALID`（该用例在修复前后都通过，证明客户端从一开始就是正确的，缺陷纯在 Java 生产者一侧）；TS 解析器与请求侧单帧强制均未放宽。
+
+### 10.2 缺陷 2：真实 UI 执行器从不运行
+
+**实测**：签名请求到达 dispatch 后返回 `UI_THREAD_TIMEOUT`（配置 5000 ms），而 `jcmd` 显示 AWT 事件线程空闲。
+
+**根因**：`IdeUiExecutor` 调用 `application.invokeLater(future, condition -> !application.isDisposed())`。`invokeLater(Runnable, Condition)` 的第二个参数是**过期（expired）判定**：返回 true 表示“放弃执行”。`!isDisposed()` 在 IDE 健康时恒为 true，因此**每个任务都被判定过期而丢弃**，永不执行。
+
+**本地权威性说明（诚实）**：本机 IDEA 分发中不包含平台源码或 sources jar，`javap` 只能看到签名、无法取到该参数的语义文档；因此整改**不依赖**该语义——直接**不再传入任何过期条件**，使该失效模式在结构上不可能出现。`Condition` 参数的含义由实测（线程空闲 + 恒定超时）与 Codex 的独立复核共同确定。
+
+**整改**：
+- 新增窄接口 `UiScheduler`（`schedule(Runnable)` + `isDisposed()`），**不暴露任何过期条件**；
+- `ApplicationUiScheduler` 使用 `invokeLater(runnable, ModalityState.any())`——无 Condition，且不会被模态对话框无限阻塞（后台恢复动作不应等待模态结束）；
+- `IdeUiExecutor`：排队前检查 `isDisposed()` → `IDE_DISPOSING`；等待期间观察到 disposal 同样失败关闭；**超时后 `future.cancel(false)`**，使 UI 线程稍后取到该 `FutureTask` 时成为空操作；派发仍在 UI 线程、socket 线程只做有界等待（**不改同步**）。
+
+**RED/GREEN 与不变量证明**（`uiSchedulerTests`，5 项）：
+- 健康的非 disposed IDE：排队可调用**确实执行**并返回值（旧实现下必然超时）；
+- UI 线程阻塞：确定性 `UI_THREAD_TIMEOUT`（失败关闭保留）；
+- **超时后迟到执行不产生副作用**：延迟到超时之后再运行队列中的任务，断言副作用计数仍为 0（由 `future.cancel(false)` 保证）；
+- disposed：抛 `IDE_DISPOSING`，且**不排队任何任务**（计数为 0）。
+
+**新增护栏**：源码级禁止 `invokeLater(future,` 与 `invokeLater(runnable, condition` 形态；要求存在 `ModalityState.any()`、`future.cancel(false)`、`UiScheduler`、`ApplicationUiScheduler`；并要求 `PluginProtocol` 含 `return line + "\n"`。
+
+### 10.3 本轮验证与产物
+
+```text
+npm test                      -> 18 files / 179 tests (178 passed, 1 skipped)
+npm run typecheck             -> 0 errors
+npm run build / build:native   -> OK / 0 warnings
+npm run test:plugin           -> PluginSelfTest 117/117 + PluginHardeningSelfTest 85/85 = 202/202
+gradle clean check buildPlugin（连续两次） -> BUILD SUCCESSFUL，产物校验和逐字节一致
+npm run acceptance:real       -> 见下（诚实环境标注）
+git diff --check              -> 干净
+```
+
+- **权威产物（Gradle）**：`study-pilot-automation-bridge-1.0.0.zip`，SHA-256 `bffac22552316a98f274c54f8eb2ae6cde91d7f2542552d2bec11f3b8f0ea84c`（连续两次 `clean check buildPlugin` 一致，可复现）。
+- **本机探针环境（诚实标注）**：`Environment: host=darwin serviceIdaPluginEnv=unset`、`Plugin socket on disk: not configured on this host`；因此本机三项 IDEA 动作仍为 `PLUGIN_NOT_CONFIGURED`。**这不是对已安装插件环境的验收结论**——探针已自报环境并声明其作用域仅限本机。
+
+### 10.4 本轮未做与仍需执行
+
+- **未自行安装或重启 IDEA**，**未修改**用户的 operator 配置与密钥（按指令）。
+- 由于插件二进制已变更，Codex 需要用新 ZIP 重新安装后复测；正向验收仍取决于真实 IDE 的执行后验证路径。
+- 仍未取得任何真实成功证据；Task 33 保持 BLOCKED，不得声明验收通过。
+
+---
+
+## 11. 修订后的插件配置格式
 
 制表符分隔、`#` 注释；标量行 2 列、目标行 3/4 列，**行序无关**：
 
@@ -397,12 +469,14 @@ RESULT_REGISTERED    TEST_RESULT       Run   surefire-reports
 
 ---
 
-## 11. 本轮改动文件
+## 12. 本轮改动文件
 
 新增：`idea-plugin/**`（`build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`、`gradlew` + wrapper、`build-local.sh`、`src/main/java/**` 协议/注册表/派发/平台层、`src/main/resources/META-INF/plugin.xml`、`src/test/java/**` 两个自检 harness）、`src/ideaPluginProtocol.ts`、`src/ideaPluginClient.ts`、`tests/ideaPluginProtocol.spec.ts`、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
 
 审查整改轮新增：`idea-plugin/src/main/java/.../platform/PathBinding.java`、`.../platform/TestResultContentMatcher.java`、`idea-plugin/src/test/java/.../PluginHardeningSelfTest.java`、`idea-plugin/src/test/java/.../PluginTestFrames.java`。
 
-复核整改轮修改：`package.json` + `package-lock.json`（声明并锁定 `tsx@4.23.15`）、`src/ideaPluginClient.ts`（半关闭写端 + 缓冲到 EOF + 严格 UTF-8 + 恰好一帧）、`idea-plugin/.../PluginSocketServer.java`（读到 EOF + 恰好一个末尾换行）、`idea-plugin/src/test/java/.../PluginHardeningSelfTest.java`（延迟尾随字节/第二帧 + 无副作用断言）、`tests/ideaPluginClient.spec.ts`（延迟分块用例 + 半关闭断言）、`tests/pluginArchitecture.spec.ts`（脚本依赖护栏 + 确定性单帧护栏）、本文件。
+复核整改轮修改：`package.json` + `package-lock.json`（声明并锁定 `tsx@4.23.15`）、`src/ideaPluginClient.ts`（半关闭写端 + 缓冲到 EOF + 严格 UTF-8 + 恰好一帧）、`idea-plugin/.../PluginSocketServer.java`（读到 EOF + 恰好一个末尾换行）、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
+
+真实安装后复核轮修改：`idea-plugin/.../protocol/PluginProtocol.java`（响应帧以恰好一个 LF 结束）、`idea-plugin/.../platform/IdeUiExecutor.java`（改用 `UiScheduler`、无过期条件、超时取消、显式 disposal）、新增 `idea-plugin/.../dispatch/UiScheduler.java` 与 `.../platform/ApplicationUiScheduler.java`、`idea-plugin/.../PluginHardeningSelfTest.java`（帧边界 + UI 调度不变量）、`PluginSelfTest.java`（修正写反的帧断言 + 新护栏）、`PluginTestFrames.java`（任意动作/句柄的签名帧）、`scripts/real-acceptance.ts`（诚实环境标注）、本文件。
 
 未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34；未安装插件。
