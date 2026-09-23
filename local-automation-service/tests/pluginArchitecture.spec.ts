@@ -215,6 +215,17 @@ describe('Plugin source guards', () => {
     expect(platform).toContain('TestResultContentMatcher.match');
     expect(matcher).toContain('com.intellij.execution.testframework');
     expect(matcher).toContain('AMBIGUOUS');
+    // Recognition is TYPE-BACKED: the linked RunContentDescriptor's console must really be a
+    // test console. A class-name prefix on the wrapper component is the measured uncalibrated
+    // assumption and must not come back.
+    expect(platform).toContain('BaseTestsOutputConsoleView');
+    expect(platform).toContain('RunContentManager');
+    expect(platform).toContain('describeContent');
+    expect(platform).not.toContain('componentClassName.startsWith(');
+    expect(platform).not.toContain('getClass().getName().startsWith(');
+    // The failure path logs a bounded, type-only diagnostic and adds nothing to the protocol.
+    expect(platform).toContain('logResultDiagnostic');
+    expect(platform).toContain('StudyPilot result diagnostic');
     // No "the only content" fallback anywhere.
     expect(platform).not.toContain('contents.get(0)');
     expect(platform).not.toContain('existing.get(0)');

@@ -2,8 +2,13 @@ package com.studypilot.automation.idea.platform;
 
 import com.intellij.execution.RunManager;
 import com.intellij.execution.RunnerAndConfigurationSettings;
+import com.intellij.execution.testframework.ui.BaseTestsOutputConsoleView;
+import com.intellij.execution.ui.ExecutionConsole;
+import com.intellij.execution.ui.RunContentDescriptor;
+import com.intellij.execution.ui.RunContentManager;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.diagnostic.Logger;
 import com.intellij.openapi.project.ProjectManager;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -38,6 +43,13 @@ import java.util.List;
  * touch anything outside the registered target.
  */
 public final class IdeaPlatformOperations implements IdePlatform {
+
+  private static final Logger LOG = Logger.getInstance(IdeaPlatformOperations.class);
+
+  /**
+   * Maximum number of type names reported by the bounded operator diagnostic.
+   */
+  private static final int DIAGNOSTIC_TYPE_LIMIT = 12;
 
   @Override
   public IdeOutcome openRegisteredFile(String canonicalPath, String projectRoot) {
@@ -170,25 +182,28 @@ public final class IdeaPlatformOperations implements IdePlatform {
     List<TestResultContentMatcher.ContentView> views = new ArrayList<>();
     for (Content content : contentManager.getContents()) {
       contents.add(content);
-      views.add(
-          new TestResultContentMatcher.ContentView(
-              content.getDisplayName(), componentClassName(content), content.isValid()));
+      views.add(describeContent(project, content));
     }
 
-    // Exactly one existing content must match the registered identity AND be a test result.
+    // Exactly one existing content must match the registered identity AND be a proven test
+    // result view (descriptor-linked console of the canonical test-console type).
     TestResultContentMatcher.Result match = TestResultContentMatcher.match(views, contentDisplayName);
     switch (match.outcome) {
       case INVALID_REGISTRATION:
+        logResultDiagnostic(toolWindowId, contentDisplayName, views);
         return IdeOutcome.refused(
             "INVALID_TARGET", "the registered test-result content identity is not usable");
       case NOT_FOUND:
+        logResultDiagnostic(toolWindowId, contentDisplayName, views);
         return IdeOutcome.refused(
             "RESULT_VIEW_NOT_PRESENT", "no existing test-result content matched the registered identity");
       case NOT_A_TEST_RESULT:
+        logResultDiagnostic(toolWindowId, contentDisplayName, views);
         return IdeOutcome.refused(
             "RESULT_VIEW_NOT_TEST_RESULT",
-            "a content with the registered name exists but is not a test-result view");
+            "a content with the registered name exists but is not a proven test-result view");
       case AMBIGUOUS:
+        logResultDiagnostic(toolWindowId, contentDisplayName, views);
         return IdeOutcome.refused(
             "TARGET_AMBIGUOUS", "more than one existing content matched the registered identity");
       case MATCHED:
@@ -210,13 +225,98 @@ public final class IdeaPlatformOperations implements IdePlatform {
     Content selectedContent = contentManager.getSelectedContent();
     boolean sameObject = selectedContent == content;
     boolean stillPresent = content.isValid() && containsIdentity(contentManager, content, contentDisplayName);
+    boolean stillTestResult = describeContent(project, content).isTestResultView();
     boolean visible = window.isVisible();
-    if (!sameObject || !stillPresent || !visible) {
+    if (!sameObject || !stillPresent || !stillTestResult || !visible) {
       return IdeOutcome.unverified(
           "POST_STATE_NOT_VERIFIED",
           "the registered result content is not the selected visible test-result content afterwards");
     }
     return IdeOutcome.verified();
+  }
+
+  /**
+   * Describes one content using only provable, type-backed facts.
+   *
+   * The content's wrapper component class is recorded for the bounded diagnostic only and is
+   * never used as the recognition signal: the real signal is the linked RunContentDescriptor's
+   * ExecutionConsole type.
+   */
+  private static TestResultContentMatcher.ContentView describeContent(Project project, Content content) {
+    RunContentDescriptor descriptor = findDescriptor(project, content);
+    boolean linked = descriptor != null;
+    boolean testConsole = linked && isTestConsole(descriptor.getExecutionConsole());
+    return new TestResultContentMatcher.ContentView(
+        content.getDisplayName(), content.isValid(), linked, testConsole, componentClassName(content));
+  }
+
+  /** Links a Content to its RunContentDescriptor by component identity (supported API). */
+  private static RunContentDescriptor findDescriptor(Project project, Content content) {
+    try {
+      if (content.getComponent() == null) {
+        return null;
+      }
+      for (RunContentDescriptor descriptor : RunContentManager.getInstance(project).getAllDescriptors()) {
+        if (descriptor != null && descriptor.getComponent() == content.getComponent()) {
+          return descriptor;
+        }
+      }
+    } catch (RuntimeException e) {
+      return null;
+    }
+    return null;
+  }
+
+  /**
+   * Type-backed test-result recognition: the console behind the content must really be a test
+   * console. This is a compile-time checked {@code instanceof} on the canonical platform base
+   * type, not a class-name prefix guess.
+   */
+  private static boolean isTestConsole(ExecutionConsole console) {
+    return console instanceof BaseTestsOutputConsoleView;
+  }
+
+  /**
+   * Bounded, deterministic operator diagnostic for a failed test-result recognition.
+   *
+   * Records ONLY type/structure facts: tool window id, content counts, and for each content the
+   * display name, validity, descriptor link, console type and wrapper component type. It never
+   * records file paths, editor text, test content, secrets, selectors, or request data, and it
+   * adds nothing to the plugin protocol.
+   */
+  private static void logResultDiagnostic(
+      String toolWindowId, String contentDisplayName, List<TestResultContentMatcher.ContentView> views) {
+    try {
+      StringBuilder sb = new StringBuilder(256);
+      sb.append("StudyPilot result diagnostic: toolWindow=")
+          .append(toolWindowId)
+          .append(" contents=")
+          .append(views.size())
+          .append(" registeredName=")
+          .append(contentDisplayName)
+          .append(" expectedBaseType=")
+          .append(TestResultContentMatcher.TEST_CONSOLE_BASE_TYPE);
+      int reported = 0;
+      for (TestResultContentMatcher.ContentView view : views) {
+        if (reported >= DIAGNOSTIC_TYPE_LIMIT) {
+          break;
+        }
+        sb.append(" | name=")
+            .append(view.displayName)
+            .append(" valid=")
+            .append(view.valid)
+            .append(" descriptorLinked=")
+            .append(view.descriptorLinked)
+            .append(" testConsole=")
+            .append(view.testConsole)
+            .append(" wrapperType=")
+            .append(view.componentClassName);
+        reported++;
+      }
+      LOG.info(sb.toString());
+    } catch (RuntimeException ignored) {
+      // Diagnostics must never affect the outcome.
+    }
   }
 
   private static boolean containsIdentity(
@@ -279,6 +379,11 @@ public final class IdeaPlatformOperations implements IdePlatform {
   /** True when the application is not shutting down. */
   static boolean isAvailable() {
     return !ApplicationManager.getApplication().isDisposed();
+  }
+
+  /** Exposed for the architecture guard: the console type is the recognition signal. */
+  static String expectedTestConsoleType() {
+    return TestResultContentMatcher.TEST_CONSOLE_BASE_TYPE;
   }
 
   /** True when the canonical registered file is a symlink-free regular file. */

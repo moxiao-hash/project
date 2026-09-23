@@ -5,18 +5,28 @@ import java.util.List;
 /**
  * Binds a registered test-result handle to ONE exact existing result content.
  *
- * The registered identity is a bounded exact display name. A content is admissible only when
- * it is valid AND its component belongs to the IntelliJ test-framework UI package, so a plain
- * console or an editor view that happens to share the name is never accepted. Zero matches and
- * multiple matches both fail closed: there is deliberately no "the only content" fallback.
+ * Recognition is TYPE-BACKED and never based on the content's wrapper component class:
+ *   * the content must be valid and its display name must equal the registered name EXACTLY;
+ *   * a {@code RunContentDescriptor} must be linked to the content (by component identity), so
+ *     an editor or unrelated content can never satisfy it;
+ *   * the descriptor's {@code ExecutionConsole} must actually be a test console, which the
+ *     platform layer decides with {@code instanceof BaseTestsOutputConsoleView}.
+ *
+ * The live measurement that motivated this: the Run tool window content is wrapped in a plain
+ * container, so inspecting the wrapper's class name reported "not a test result" even for a
+ * genuine test result view. The console object - not the wrapper - carries the real type.
+ *
+ * Zero matches and multiple matches both fail closed: there is deliberately no
+ * "the only content" fallback. Unknown layouts stay failed closed.
  *
  * This class is deliberately independent of the IntelliJ API so the decision can be tested
- * exhaustively; {@code IdeaPlatformOperations} only supplies the observed content views.
+ * exhaustively; {@code IdeaPlatformOperations} supplies the observed, type-backed facts.
  */
 public final class TestResultContentMatcher {
 
-  /** Supported IntelliJ test-framework UI package; anything else is not a test result view. */
-  public static final String TEST_RESULT_COMPONENT_PREFIX = "com.intellij.execution.testframework";
+  /** Canonical platform type of a real test console; recorded here for the guard and docs. */
+  public static final String TEST_CONSOLE_BASE_TYPE =
+      "com.intellij.execution.testframework.ui.BaseTestsOutputConsoleView";
 
   public static final int MAX_IDENTITY_LENGTH = 128;
 
@@ -28,15 +38,35 @@ public final class TestResultContentMatcher {
     INVALID_REGISTRATION
   }
 
+  /**
+   * One observed content, described only by the facts the platform layer can prove.
+   *
+   * {@code componentClassName} exists purely for the bounded operator diagnostic; it is NEVER
+   * used as the recognition signal.
+   */
   public static final class ContentView {
     public final String displayName;
-    public final String componentClassName;
     public final boolean valid;
+    public final boolean descriptorLinked;
+    public final boolean testConsole;
+    public final String componentClassName;
 
-    public ContentView(String displayName, String componentClassName, boolean valid) {
+    public ContentView(
+        String displayName,
+        boolean valid,
+        boolean descriptorLinked,
+        boolean testConsole,
+        String componentClassName) {
       this.displayName = displayName;
-      this.componentClassName = componentClassName;
       this.valid = valid;
+      this.descriptorLinked = descriptorLinked;
+      this.testConsole = testConsole;
+      this.componentClassName = componentClassName;
+    }
+
+    /** True only when this content is provably an existing test-result view. */
+    public boolean isTestResultView() {
+      return valid && descriptorLinked && testConsole;
     }
   }
 
@@ -71,7 +101,7 @@ public final class TestResultContentMatcher {
       if (!registeredDisplayName.equals(content.displayName)) {
         continue;
       }
-      if (!isTestResultComponent(content.componentClassName)) {
+      if (!content.isTestResultView()) {
         sameNameNonTest = true;
         continue;
       }
@@ -88,9 +118,5 @@ public final class TestResultContentMatcher {
       return new Result(Outcome.AMBIGUOUS, -1);
     }
     return new Result(sameNameNonTest ? Outcome.NOT_A_TEST_RESULT : Outcome.NOT_FOUND, -1);
-  }
-
-  private static boolean isTestResultComponent(String componentClassName) {
-    return componentClassName != null && componentClassName.startsWith(TEST_RESULT_COMPONENT_PREFIX);
   }
 }

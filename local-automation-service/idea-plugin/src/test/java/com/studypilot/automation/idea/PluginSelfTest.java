@@ -579,6 +579,11 @@ public final class PluginSelfTest {
       "candidate.equals(registeredRoot)",
       // The result view must be matched by exact identity, never "the only content".
       "TestResultContentMatcher",
+      // Test-result recognition is TYPE-BACKED (linked descriptor + real test console type).
+      "BaseTestsOutputConsoleView",
+      "RunContentManager",
+      "describeContent",
+      "logResultDiagnostic",
       // UI work is queued without an expiration condition, and timed-out tasks are cancelled.
       "UiScheduler",
       "ModalityState.any()",
@@ -599,7 +604,11 @@ public final class PluginSelfTest {
           "contents.get(0)",
           // A pass-through expiration condition is the exact shape of the measured defect.
           "invokeLater(future,",
-          "invokeLater(runnable, condition"
+          "invokeLater(runnable, condition",
+          // Class-name-prefix recognition of a test result is the measured uncalibrated
+          // assumption; recognition must come from the linked console's real type.
+          "componentClassName.startsWith(",
+          "getClass().getName().startsWith("
         }) {
       check("guards: plugin must not contain '" + token + "'", !code.contains(token));
     }

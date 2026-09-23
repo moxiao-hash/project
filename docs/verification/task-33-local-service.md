@@ -177,7 +177,7 @@ build-local: INSTALLATION IS NOT PERFORMED — Codex review and explicit user co
 
 | 来源 | 文件 | SHA-256 | 可复现性 |
 | :--- | :--- | :--- | :--- |
-| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `bffac22552316a98f274c54f8eb2ae6cde91d7f2542552d2bec11f3b8f0ea84c` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
+| **Gradle（主，权威产物）** | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0.zip` | `b5dffe8d4c44a95280afc92fb73d75be80ef97cd466687958b86632ca19d2455` | **可复现**：连续两次 `buildPlugin` 校验和逐字节一致 |
 | 本机 javac（备选） | `idea-plugin/build/distributions/study-pilot-automation-bridge-1.0.0-local.zip` | 每次构建不同（示例 `95babc42db204beb39b7320b4580fb183c7fdb8c76a0afad4224ca20c38b138a`） | **不可复现**：`jar` 写入构建时刻时间戳 |
 
 > 审查与安装应以 **Gradle 产物** 为准（校验和固定）；备选产物仅用于本机离线可用性，其校验和随后续构建变化。
@@ -204,7 +204,7 @@ cd local-automation-service && npm test
 npm run typecheck            -> tsc --noEmit, 0 errors
 npm run build                -> tsc, dist/ 成功（含 dist/main.js）
 npm run build:native         -> 0 errors, 0 warnings
-npm run test:plugin          -> PluginSelfTest 117/117 + PluginHardeningSelfTest 85/85
+npm run test:plugin          -> PluginSelfTest 123/123 + PluginHardeningSelfTest 88/88
 gradle selfTest / check      -> 两个 harness 全绿, BUILD SUCCESSFUL
 gradle buildPlugin           -> BUILD SUCCESSFUL；产物校验和两次一致
 git diff --check             -> 干净
@@ -438,7 +438,7 @@ npm run acceptance:real       -> 见下（诚实环境标注）
 git diff --check              -> 干净
 ```
 
-- **权威产物（Gradle）**：`study-pilot-automation-bridge-1.0.0.zip`，SHA-256 `bffac22552316a98f274c54f8eb2ae6cde91d7f2542552d2bec11f3b8f0ea84c`（连续两次 `clean check buildPlugin` 一致，可复现）。
+- **权威产物（Gradle）**：`study-pilot-automation-bridge-1.0.0.zip`，SHA-256 `b5dffe8d4c44a95280afc92fb73d75be80ef97cd466687958b86632ca19d2455`（连续两次 `clean check buildPlugin` 一致，可复现）。
 - **本机探针环境（诚实标注）**：`Environment: host=darwin serviceIdaPluginEnv=unset`、`Plugin socket on disk: not configured on this host`；因此本机三项 IDEA 动作仍为 `PLUGIN_NOT_CONFIGURED`。**这不是对已安装插件环境的验收结论**——探针已自报环境并声明其作用域仅限本机。
 
 ### 10.4 本轮未做与仍需执行
@@ -449,7 +449,103 @@ git diff --check              -> 干净
 
 ---
 
-## 11. 修订后的插件配置格式
+## 11. Codex 真实 IDE 验收（`2590c12` 安装后）：第 3 个动作的识别假设未标定
+
+### 11.1 实测结果
+
+- `OPEN_REGISTERED_FILE`：**SUCCEEDED**（插件侧执行后验证通过）
+- `FOCUS_RUN_CONFIGURATION`：**SUCCEEDED**
+- `SHOW_TEST_RESULT`：**失败关闭** —— 初始 `RESULT_VIEW_NOT_PRESENT`；用 IDEA 的 `Run → Test History` 打开既有 `LogTest.testLog`（2026-09-15 16:18）后变为 **`RESULT_VIEW_NOT_TEST_RESULT`**
+
+注册表行为：`RESULT_REGISTERED<TAB>TEST_RESULT<TAB>Run<TAB>LogTest.testLog`。真实 AX 树可见 `LogTest.testLog` 工具窗口、`LogTest (com.itmoxiao)`、`1 test passed`、`testLog() passed` —— 即**结果视图真实存在**，但插件仍拒绝，说明识别谓词本身未标定。
+
+### 11.2 根因：用“包装组件类名前缀”判断测试结果
+
+`TestResultContentMatcher` 原先要求 `Content.getComponent().getClass().getName()` 以 `com.intellij.execution.testframework` 开头。Run 工具窗口的内容组件通常是**普通容器包装**，其类名不在该包内，因此真实测试结果被误判为“非测试结果”。
+
+### 11.3 本地权威标定（不依赖宿主观测）
+
+从**本机安装的 IDEA 分发**中枚举与反编译得到的事实（`lib/intellij.platform.smRunner.jar` 等）：
+
+```text
+com.intellij.execution.testframework.ui.BaseTestsOutputConsoleView
+    public abstract class ... implements ConsoleView, ObservableConsoleView, HelpIdProvider   <-- 测试控制台基类
+com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+    extends BaseTestsOutputConsoleView
+com.intellij.execution.ui.RunContentDescriptor
+    public ExecutionConsole getExecutionConsole()
+    public JComponent getComponent()
+com.intellij.execution.ui.RunContentManager
+    public List<RunContentDescriptor> getAllDescriptors()
+```
+
+结论：真正的类型信号在**控制台对象**上，而不在包装组件类名上。
+
+### 11.4 整改：类型/API 支撑的识别（不再看包装类名）
+
+1. 固定结果工具窗口按**精确 id** 解析（不变）；
+2. 工具窗口内**恰好一个** `Content` 的 `displayName` **精确等于**注册内容名（不变）；
+3. 按**组件同一性**把该 `Content` 关联到 `RunContentDescriptor`（`RunContentManager.getAllDescriptors()`）；
+4. 要求 `descriptor.getExecutionConsole() instanceof BaseTestsOutputConsoleView` —— 编译期检查的真实类型判断，而非类名前缀；
+5. 执行后复验：**同一对象**仍在、仍 `getSelectedContent()`、仍**重新通过类型判定**、窗口可见；
+6. 未知布局一律失败关闭。
+
+**包装类名仅用于诊断**，绝不参与识别。
+
+### 11.5 RED / GREEN
+
+- **RED（真实生产实测）**：真实存在 `LogTest.testLog` 测试结果视图时返回 `RESULT_VIEW_NOT_TEST_RESULT` —— 这是最强的 RED 证据，且旧谓词对任何非 `testframework` 包名的包装类型都必然失败（`javax.swing.JPanel` 等）。
+- **RED（本地）**：把识别从「类名前缀」改为「类型/描述符」后，`ContentView` 形状变化导致测试编译失败；随后新增对应用例。
+- **GREEN（88 项加固自检中的 13 项匹配器用例）**：
+  - **实测包装类场景**：`wrapperType=javax.swing.JPanel` + `descriptorLinked=true` + `testConsole=true` → **MATCHED**（旧谓词在此失败）
+  - 无关单内容 → `NOT_FOUND`（无“唯一内容”兜底）
+  - 同名重复 → `AMBIGUOUS`
+  - 同名普通 console（`descriptorLinked=true, testConsole=false`）→ `NOT_A_TEST_RESULT`
+  - 同名编辑器/无关内容（无描述符）→ `NOT_A_TEST_RESULT`
+  - 已关联但控制台非测试类型 → `NOT_A_TEST_RESULT`
+  - 测试控制台但**未关联描述符** → `NOT_A_TEST_RESULT`
+  - 无效内容被忽略；无效+有效同名不产生歧义
+  - 空/超长注册名 → `INVALID_REGISTRATION`；部分标题 → `NOT_FOUND`
+  - **未知布局**（既未关联又非测试控制台）→ 失败关闭
+
+### 11.6 精确诊断步骤（供 Codex 在宿主上确认；不改协议）
+
+识别失败时，插件**自动**向 IDE 日志写入一行**仅含类型/结构**的诊断（无路径、无正文、无密钥、无选择器、无请求数据）：
+
+```text
+StudyPilot result diagnostic: toolWindow=<id> contents=<n> registeredName=<name>
+  expectedBaseType=com.intellij.execution.testframework.ui.BaseTestsOutputConsoleView
+  | name=<content display name> valid=<bool> descriptorLinked=<bool> testConsole=<bool> wrapperType=<class name>
+  ... (最多 12 条内容)
+```
+
+查看方式（Codex 侧，只读）：`~/Library/Logs/JetBrains/IntelliJIdea2026.1/idea.log` 中检索 `StudyPilot result diagnostic`。复现一次失败请求（例如 `npm run acceptance:real`，注册行为 `RESULT_REGISTERED<TAB>TEST_RESULT<TAB>Run<TAB>LogTest.testLog`）即会写入该行。
+
+若该行显示 `descriptorLinked=false`，说明此版本的内容未通过组件同一性关联到 `RunContentDescriptor`（需要改用其它受支持关联方式）；若显示 `testConsole=false` 而 `descriptorLinked=true`，说明该版本的结果视图**不是** `BaseTestsOutputConsoleView` 子类（例如新的非 SM 测试视图），此时按契约**失败关闭**并在证据中记录精确阻塞点，而不是放宽识别。
+
+### 11.7 本轮验证与产物
+
+```text
+npm test                      -> 18 files / 179 tests (178 passed, 1 skipped)
+npm run typecheck / build / build:native -> 0 errors / OK / 0 warnings
+npm run test:plugin           -> PluginSelfTest 123/123 + PluginHardeningSelfTest 88/88 = 211/211
+gradle clean check buildPlugin（连续两次） -> BUILD SUCCESSFUL，产物校验和逐字节一致
+npm run acceptance:real       -> 本机环境未配置插件（诚实标注），三项 IDEA 动作 PLUGIN_NOT_CONFIGURED
+git diff --check              -> 干净
+```
+
+- **权威产物（Gradle）**：`study-pilot-automation-bridge-1.0.0.zip`，SHA-256 `b5dffe8d4c44a95280afc92fb73d75be80ef97cd466687958b86632ca19d2455`（两次干净构建一致）。
+- 本机探针环境（诚实）：`host=darwin serviceIdaPluginEnv=unset`、`Plugin socket on disk: not configured on this host`；探针自报作用域仅限本机。
+
+### 11.8 未完成与待 Codex
+
+- 本轮**未自行安装/重启 IDEA**，未改动 operator 配置与密钥。
+- 第 3 个动作的**正向验收仍未取得**：需要 Codex 用新 ZIP 安装后复跑；若仍失败，请附上 `StudyPilot result diagnostic` 行，即可确定是关联方式还是控制台类型问题。
+- Task 33 仍未通过验收；`OPEN_REGISTERED_FILE` 与 `FOCUS_RUN_CONFIGURATION` 的 SUCCEEDED 属 Codex 侧实测，本轮未改动其路径。
+
+---
+
+## 12. 修订后的插件配置格式
 
 制表符分隔、`#` 注释；标量行 2 列、目标行 3/4 列，**行序无关**：
 
@@ -469,7 +565,7 @@ RESULT_REGISTERED    TEST_RESULT       Run   surefire-reports
 
 ---
 
-## 12. 本轮改动文件
+## 13. 本轮改动文件
 
 新增：`idea-plugin/**`（`build.gradle.kts`、`settings.gradle.kts`、`gradle.properties`、`gradlew` + wrapper、`build-local.sh`、`src/main/java/**` 协议/注册表/派发/平台层、`src/main/resources/META-INF/plugin.xml`、`src/test/java/**` 两个自检 harness）、`src/ideaPluginProtocol.ts`、`src/ideaPluginClient.ts`、`tests/ideaPluginProtocol.spec.ts`、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
 
@@ -477,6 +573,8 @@ RESULT_REGISTERED    TEST_RESULT       Run   surefire-reports
 
 复核整改轮修改：`package.json` + `package-lock.json`（声明并锁定 `tsx@4.23.15`）、`src/ideaPluginClient.ts`（半关闭写端 + 缓冲到 EOF + 严格 UTF-8 + 恰好一帧）、`idea-plugin/.../PluginSocketServer.java`（读到 EOF + 恰好一个末尾换行）、`tests/ideaPluginClient.spec.ts`、`tests/pluginArchitecture.spec.ts`。
 
-真实安装后复核轮修改：`idea-plugin/.../protocol/PluginProtocol.java`（响应帧以恰好一个 LF 结束）、`idea-plugin/.../platform/IdeUiExecutor.java`（改用 `UiScheduler`、无过期条件、超时取消、显式 disposal）、新增 `idea-plugin/.../dispatch/UiScheduler.java` 与 `.../platform/ApplicationUiScheduler.java`、`idea-plugin/.../PluginHardeningSelfTest.java`（帧边界 + UI 调度不变量）、`PluginSelfTest.java`（修正写反的帧断言 + 新护栏）、`PluginTestFrames.java`（任意动作/句柄的签名帧）、`scripts/real-acceptance.ts`（诚实环境标注）、本文件。
+真实安装后复核轮修改：`idea-plugin/.../protocol/PluginProtocol.java`（响应帧以恰好一个 LF 结束）、`idea-plugin/.../platform/IdeUiExecutor.java`（`UiScheduler`、无过期条件、超时取消、显式 disposal）、新增 `.../dispatch/UiScheduler.java` 与 `.../platform/ApplicationUiScheduler.java`、`PluginHardeningSelfTest.java`、`PluginSelfTest.java`、`PluginTestFrames.java`、`scripts/real-acceptance.ts`。
+
+真实 IDE 验收轮修改：`idea-plugin/.../platform/TestResultContentMatcher.java`（类型/描述符支撑的识别，废弃包装类名前缀）、`.../platform/IdeaPlatformOperations.java`（`RunContentManager` 关联 + `BaseTestsOutputConsoleView` 类型判定 + 执行后复验 + 仅类型的有界失败诊断）、`PluginHardeningSelfTest.java`（实测包装类与对抗性用例）、`PluginSelfTest.java` 与 `tests/pluginArchitecture.spec.ts`（禁止类名前缀识别的新护栏）、本文件。
 
 未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34；未安装插件。

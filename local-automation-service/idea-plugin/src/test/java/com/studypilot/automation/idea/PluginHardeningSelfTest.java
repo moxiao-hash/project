@@ -583,16 +583,32 @@ public final class PluginHardeningSelfTest {
 
   // ------------------------------------------------------------------ content matcher
 
+  /**
+   * Builds an observed-content descriptor. Recognition is type-backed: {@code descriptorLinked}
+   * plus {@code testConsole} are the signals, and the wrapper component type is diagnostic-only.
+   */
   private static TestResultContentMatcher.ContentView content(
-      String displayName, String componentClassName, boolean valid) {
-    return new TestResultContentMatcher.ContentView(displayName, componentClassName, valid);
+      String displayName, boolean descriptorLinked, boolean testConsole, String wrapperType, boolean valid) {
+    return new TestResultContentMatcher.ContentView(
+        displayName, valid, descriptorLinked, testConsole, wrapperType);
   }
 
-  private static final String TEST_COMPONENT =
-      "com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView";
-  private static final String CONSOLE_COMPONENT = "com.intellij.execution.impl.ConsoleViewImpl";
-  private static final String EDITOR_COMPONENT = "com.intellij.openapi.editor.impl.EditorImpl";
+  /** A genuine test result view: linked descriptor and a real test console type. */
+  private static TestResultContentMatcher.ContentView testResult(String displayName) {
+    return content(displayName, true, true, "javax.swing.JPanel", true);
+  }
 
+  /** A non-test console (plain run output) with the same display name. */
+  private static TestResultContentMatcher.ContentView plainConsole(String displayName) {
+    return content(displayName, true, false, "com.intellij.execution.impl.ConsoleViewImpl", true);
+  }
+
+  /** An editor-like or unrelated content: no run content descriptor at all. */
+  private static TestResultContentMatcher.ContentView unrelated(String displayName) {
+    return content(displayName, false, false, "com.intellij.openapi.editor.impl.EditorImpl", true);
+  }
+
+  private static final String REGISTERED_RESULT = "LogTest.testLog";
 
   /**
    * The response boundary must be exactly one newline-terminated JSON frame. This is asserted
@@ -614,23 +630,19 @@ public final class PluginHardeningSelfTest {
             config, new PluginProtocol(config.secret), dispatcherFor(config, platform), message -> {});
     server.start();
     try {
-      // (1) a rejected request still needs a well-framed response.
       String rejected = readResponse(socketPath, "{}\n".getBytes(StandardCharsets.UTF_8));
       assertSingleResponseFrame("framing: rejected response", rejected);
       check("framing: rejected response code", rejected.contains("MISSING_FIELD"));
 
-      // (2) a signed action the platform verifies -> SUCCEEDED.
       String succeeded = readResponse(socketPath, PluginTestFrames.validFileFrame(config));
       assertSingleResponseFrame("framing: succeeded response", succeeded);
       check("framing: succeeded status", succeeded.contains("\"status\":\"SUCCEEDED\""));
 
-      // (3) a signed action the platform cannot verify -> FAILED.
       platform.outcome = IdeOutcome.unverified("POST_STATE_NOT_VERIFIED", "not proven");
       String failed = readResponse(socketPath, PluginTestFrames.validFileFrame(config));
       assertSingleResponseFrame("framing: failed response", failed);
       check("framing: failed status", failed.contains("\"status\":\"FAILED\""));
 
-      // (4) an oversize request must also answer with exactly one frame.
       byte[] oversize = new byte[PluginProtocol.MAX_FRAME_BYTES + 64];
       java.util.Arrays.fill(oversize, (byte) 'a');
       oversize[oversize.length - 1] = '\n';
@@ -660,15 +672,10 @@ public final class PluginHardeningSelfTest {
   }
 
   /**
-   * UI scheduling invariants.
-   *
-   * The measured production defect was a scheduling condition that treated a HEALTHY IDE as
-   * expired, so no queued callable ever ran. These tests pin the required behaviour: a queued
-   * callable runs in a live, non-disposed IDE; a blocked one times out; a timed-out callable
-   * produces NO late side effect; and a disposed IDE fails closed.
+   * UI scheduling invariants. The measured production defect was a scheduling condition that
+   * treated a HEALTHY IDE as expired, so no queued callable ever ran.
    */
   private static void uiSchedulerTests() throws Exception {
-    // (1) live, non-disposed IDE: the callable actually runs on the UI thread.
     UiScheduler liveScheduler =
         new UiScheduler() {
           @Override
@@ -683,15 +690,15 @@ public final class PluginHardeningSelfTest {
             return false;
           }
         };
-    IdeUiExecutor liveExecutor = new IdeUiExecutor(liveScheduler);
     try {
-      String value = liveExecutor.runOnUiThread(() -> "ran", 2000L);
-      checkEquals("ui: live callable executes and returns", "ran", value);
+      checkEquals(
+          "ui: live callable executes and returns",
+          "ran",
+          new IdeUiExecutor(liveScheduler).runOnUiThread(() -> "ran", 2000L));
     } catch (Exception e) {
       check("ui: live callable executes and returns (threw " + e.getClass().getSimpleName() + ")", false);
     }
 
-    // (2) blocked UI thread: fail closed with a timeout.
     UiScheduler blockedScheduler =
         new UiScheduler() {
           @Override
@@ -704,10 +711,9 @@ public final class PluginHardeningSelfTest {
             return false;
           }
         };
-    IdeUiExecutor blockedExecutor = new IdeUiExecutor(blockedScheduler);
     boolean timedOut = false;
     try {
-      blockedExecutor.runOnUiThread(() -> "never", 300L);
+      new IdeUiExecutor(blockedScheduler).runOnUiThread(() -> "never", 300L);
     } catch (UiExecutor.UiTimeoutException e) {
       timedOut = true;
     } catch (Exception e) {
@@ -715,7 +721,6 @@ public final class PluginHardeningSelfTest {
     }
     check("ui: blocked callable fails closed with a timeout", timedOut);
 
-    // (3) a callable that would run AFTER the timeout must not create a late side effect.
     final java.util.concurrent.atomic.AtomicInteger lateEffects =
         new java.util.concurrent.atomic.AtomicInteger(0);
     final java.util.List<Runnable> deferred = new java.util.ArrayList<>();
@@ -733,22 +738,21 @@ public final class PluginHardeningSelfTest {
             return false;
           }
         };
-    IdeUiExecutor deferredExecutor = new IdeUiExecutor(deferredScheduler);
     boolean deferredTimedOut = false;
     try {
-      deferredExecutor.runOnUiThread(
-          () -> {
-            lateEffects.incrementAndGet();
-            return "late";
-          },
-          300L);
+      new IdeUiExecutor(deferredScheduler)
+          .runOnUiThread(
+              () -> {
+                lateEffects.incrementAndGet();
+                return "late";
+              },
+              300L);
     } catch (UiExecutor.UiTimeoutException e) {
       deferredTimedOut = true;
     } catch (Exception e) {
       // fall through
     }
     check("ui: deferred callable fails closed with a timeout", deferredTimedOut);
-    // Now let the IDE thread "catch up" and run whatever was queued.
     synchronized (deferred) {
       for (Runnable runnable : deferred) {
         runnable.run();
@@ -756,8 +760,8 @@ public final class PluginHardeningSelfTest {
     }
     checkEquals("ui: timed-out callable produces no late side effect", 0, lateEffects.get());
 
-    // (4) a disposed IDE fails closed before scheduling anything.
-    final java.util.concurrent.atomic.AtomicInteger scheduled = new java.util.concurrent.atomic.AtomicInteger(0);
+    final java.util.concurrent.atomic.AtomicInteger scheduled =
+        new java.util.concurrent.atomic.AtomicInteger(0);
     UiScheduler disposedScheduler =
         new UiScheduler() {
           @Override
@@ -770,10 +774,9 @@ public final class PluginHardeningSelfTest {
             return true;
           }
         };
-    IdeUiExecutor disposedExecutor = new IdeUiExecutor(disposedScheduler);
     boolean disposed = false;
     try {
-      disposedExecutor.runOnUiThread(() -> "nope", 1000L);
+      new IdeUiExecutor(disposedScheduler).runOnUiThread(() -> "nope", 1000L);
     } catch (UiExecutor.IdeDisposedException e) {
       disposed = true;
     } catch (Exception e) {
@@ -784,54 +787,71 @@ public final class PluginHardeningSelfTest {
   }
 
   private static void testResultMatcherTests() {
-    // Exactly one matching test-result content.
-    TestResultContentMatcher.Result matched = TestResultContentMatcher.match(
-        List.of(content("surefire-reports", TEST_COMPONENT, true), content("Other", TEST_COMPONENT, true)),
-        "surefire-reports");
-    checkEquals("matcher: unique test content matched", TestResultContentMatcher.Outcome.MATCHED, matched.outcome);
-    checkEquals("matcher: matched index", 0, matched.index);
+    // The MEASURED production case: the Run tool window content is wrapped in a plain container,
+    // so the wrapper class is NOT a test-framework type even though the console behind it is a
+    // genuine test console. The previous class-name-prefix predicate failed here.
+    TestResultContentMatcher.Result wrapped = TestResultContentMatcher.match(
+        List.of(testResult(REGISTERED_RESULT), testResult("Other.testLog")), REGISTERED_RESULT);
+    checkEquals(
+        "matcher: wrapper-typed test result is recognised (measured case)",
+        TestResultContentMatcher.Outcome.MATCHED,
+        wrapped.outcome);
+    checkEquals("matcher: matched index", 0, wrapped.index);
 
     // No content at all.
     checkEquals(
         "matcher: no content",
         TestResultContentMatcher.Outcome.NOT_FOUND,
-        TestResultContentMatcher.match(List.of(), "surefire-reports").outcome);
+        TestResultContentMatcher.match(List.of(), REGISTERED_RESULT).outcome);
 
-    // An entirely unrelated single content must not be accepted.
+    // An unrelated single content must not be accepted (no "the only content" fallback).
     checkEquals(
         "matcher: unrelated single content rejected",
         TestResultContentMatcher.Outcome.NOT_FOUND,
-        TestResultContentMatcher.match(List.of(content("Unrelated", TEST_COMPONENT, true)), "surefire-reports")
-            .outcome);
+        TestResultContentMatcher.match(List.of(testResult("Unrelated.testLog")), REGISTERED_RESULT).outcome);
 
     // Same-name duplicates are ambiguous.
     checkEquals(
         "matcher: same-name duplicates ambiguous",
         TestResultContentMatcher.Outcome.AMBIGUOUS,
         TestResultContentMatcher.match(
-                List.of(content("surefire-reports", TEST_COMPONENT, true), content("surefire-reports", TEST_COMPONENT, true)),
-                "surefire-reports")
+                List.of(testResult(REGISTERED_RESULT), testResult(REGISTERED_RESULT)), REGISTERED_RESULT)
             .outcome);
 
-    // A console content with the same name is not a test result.
+    // A plain console with the same name is not a test result.
     checkEquals(
         "matcher: console content with same name rejected",
         TestResultContentMatcher.Outcome.NOT_A_TEST_RESULT,
-        TestResultContentMatcher.match(List.of(content("surefire-reports", CONSOLE_COMPONENT, true)), "surefire-reports")
-            .outcome);
+        TestResultContentMatcher.match(List.of(plainConsole(REGISTERED_RESULT)), REGISTERED_RESULT).outcome);
 
-    // An editor content with the same name is not a test result either.
+    // An editor/unrelated content with the same name is not a test result either.
     checkEquals(
         "matcher: editor content with same name rejected",
         TestResultContentMatcher.Outcome.NOT_A_TEST_RESULT,
-        TestResultContentMatcher.match(List.of(content("surefire-reports", EDITOR_COMPONENT, true)), "surefire-reports")
+        TestResultContentMatcher.match(List.of(unrelated(REGISTERED_RESULT)), REGISTERED_RESULT).outcome);
+
+    // A linked descriptor whose console is not a test console fails closed.
+    checkEquals(
+        "matcher: linked non-test console rejected",
+        TestResultContentMatcher.Outcome.NOT_A_TEST_RESULT,
+        TestResultContentMatcher.match(
+                List.of(content(REGISTERED_RESULT, true, false, "javax.swing.JPanel", true)), REGISTERED_RESULT)
+            .outcome);
+
+    // A test console that could not be linked to a descriptor fails closed.
+    checkEquals(
+        "matcher: unlinked test console rejected",
+        TestResultContentMatcher.Outcome.NOT_A_TEST_RESULT,
+        TestResultContentMatcher.match(
+                List.of(content(REGISTERED_RESULT, false, true, "javax.swing.JPanel", true)), REGISTERED_RESULT)
             .outcome);
 
     // A disposed/invalid content cannot match.
     checkEquals(
         "matcher: invalid content rejected",
         TestResultContentMatcher.Outcome.NOT_FOUND,
-        TestResultContentMatcher.match(List.of(content("surefire-reports", TEST_COMPONENT, false)), "surefire-reports")
+        TestResultContentMatcher.match(
+                List.of(content(REGISTERED_RESULT, true, true, "javax.swing.JPanel", false)), REGISTERED_RESULT)
             .outcome);
 
     // One invalid and one valid duplicate: the invalid one must not create ambiguity.
@@ -839,26 +859,37 @@ public final class PluginHardeningSelfTest {
         "matcher: invalid duplicate ignored",
         TestResultContentMatcher.Outcome.MATCHED,
         TestResultContentMatcher.match(
-                List.of(content("surefire-reports", TEST_COMPONENT, false), content("surefire-reports", TEST_COMPONENT, true)),
-                "surefire-reports")
+                List.of(
+                    content(REGISTERED_RESULT, true, true, "javax.swing.JPanel", false),
+                    testResult(REGISTERED_RESULT)),
+                REGISTERED_RESULT)
             .outcome);
 
     // A registered identity must be non-empty and bounded.
     checkEquals(
         "matcher: empty registered identity rejected",
         TestResultContentMatcher.Outcome.INVALID_REGISTRATION,
-        TestResultContentMatcher.match(List.of(content("", TEST_COMPONENT, true)), "").outcome);
+        TestResultContentMatcher.match(List.of(testResult("")), "").outcome);
     checkEquals(
         "matcher: oversized registered identity rejected",
         TestResultContentMatcher.Outcome.INVALID_REGISTRATION,
-        TestResultContentMatcher.match(List.of(content("x".repeat(200), TEST_COMPONENT, true)), "x".repeat(200))
-            .outcome);
+        TestResultContentMatcher.match(List.of(testResult("x".repeat(200))), "x".repeat(200)).outcome);
 
     // Exact match only: a partial title must not be accepted.
     checkEquals(
         "matcher: partial title rejected",
         TestResultContentMatcher.Outcome.NOT_FOUND,
-        TestResultContentMatcher.match(List.of(content("surefire-reports-summary", TEST_COMPONENT, true)), "surefire-reports")
+        TestResultContentMatcher.match(List.of(testResult(REGISTERED_RESULT + "-summary")), REGISTERED_RESULT)
+            .outcome);
+
+    // Unknown layout: a same-name content that is neither linked nor a test console stays
+    // failed closed rather than being accepted heuristically.
+    checkEquals(
+        "matcher: unknown layout fails closed",
+        TestResultContentMatcher.Outcome.NOT_A_TEST_RESULT,
+        TestResultContentMatcher.match(
+                List.of(content(REGISTERED_RESULT, false, false, "com.intellij.ui.components.JBPanel", true)),
+                REGISTERED_RESULT)
             .outcome);
   }
 
