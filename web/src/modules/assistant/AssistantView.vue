@@ -66,20 +66,43 @@
         <div
           v-if="conversation.toolSteps.length"
           class="process-panel"
-          :class="{ 'has-failure': hasFailedSteps, 'is-expanded': isProcessExpanded }"
+          :class="{
+            'has-failure': hasFailedSteps,
+            'has-waiting': hasWaitingConfirmation && !hasFailedSteps,
+            'is-expanded': isProcessExpanded,
+          }"
         >
           <div class="process-header">
             <div class="process-title-group">
               <span
                 class="process-indicator"
-                :class="{ 'is-failed': hasFailedSteps, 'is-running': runningStepsCount > 0 }"
+                :class="{
+                  'is-failed': hasFailedSteps,
+                  'is-waiting': hasWaitingConfirmation && !hasFailedSteps,
+                  'is-running': runningStepsCount > 0 && !hasFailedSteps && !hasWaitingConfirmation,
+                  'is-succeeded': isAllSucceeded,
+                }"
               >
-                {{ hasFailedSteps ? '✗' : runningStepsCount > 0 ? '⋯' : '✓' }}
+                {{
+                  hasFailedSteps
+                    ? '✗'
+                    : hasWaitingConfirmation
+                      ? '⏸'
+                      : runningStepsCount > 0
+                        ? '⋯'
+                        : isAllSucceeded
+                          ? '✓'
+                          : '·'
+                }}
               </span>
               <span class="process-title">{{ processSummaryText }}</span>
-              <span v-if="hasFailedSteps" class="badge badge-danger">执行失败 ({{ failedStepsCount }})</span>
+              <span v-if="hasFailedSteps" class="badge badge-danger">
+                {{ failedStepsCount > 0 ? `失败/中断 (${failedStepsCount})` : '执行中断' }}
+              </span>
+              <span v-else-if="hasWaitingConfirmation" class="badge badge-warning">待确认</span>
               <span v-else-if="runningStepsCount > 0" class="badge badge-warning">执行中</span>
-              <span v-else class="badge badge-success">全部成功</span>
+              <span v-else-if="isAllSucceeded" class="badge badge-success">全部成功</span>
+              <span v-else class="badge badge-secondary">进行中</span>
             </div>
             <button
               type="button"
@@ -103,14 +126,32 @@
             <div v-for="step in conversation.toolSteps" :key="step.toolName" class="process-step">
               <span
                 class="step-check"
-                :class="{ 'is-running': step.status === 'RUNNING', 'is-failed': step.status === 'FAILED' }"
+                :class="{
+                  'is-running': step.status === 'RUNNING',
+                  'is-waiting': step.status === 'WAITING_CONFIRMATION',
+                  'is-failed': FAILED_STATUSES.has(step.status),
+                }"
               >
-                {{ step.status === 'SUCCEEDED' ? '✓' : step.status === 'RUNNING' ? '⋯' : '✗' }}
+                {{
+                  step.status === 'SUCCEEDED'
+                    ? '✓'
+                    : step.status === 'RUNNING'
+                      ? '⋯'
+                      : step.status === 'WAITING_CONFIRMATION'
+                        ? '⏸'
+                        : '✗'
+                }}
               </span>
               <div><strong>{{ step.summary }}</strong><small>{{ step.toolName }}</small></div>
               <span
                 class="badge"
-                :class="step.status === 'SUCCEEDED' ? 'badge-success' : step.status === 'RUNNING' ? 'badge-warning' : 'badge-danger'"
+                :class="
+                  step.status === 'SUCCEEDED'
+                    ? 'badge-success'
+                    : step.status === 'RUNNING' || step.status === 'WAITING_CONFIRMATION'
+                      ? 'badge-warning'
+                      : 'badge-danger'
+                "
               >
                 {{ step.status }}
               </span>
@@ -203,12 +244,26 @@ const actionBusy = ref(false)
 const activeTurnId = ref<string | null>(null)
 const streamStatus = ref<EventStreamStatus>('disconnected')
 
+const FAILED_STATUSES = new Set(['FAILED', 'REJECTED', 'EXPIRED', 'CANCELLED'])
+
 const isProcessExpanded = ref(false)
+const isAllSucceeded = computed(
+  () =>
+    (conversation.value?.toolSteps.length ?? 0) > 0 &&
+    conversation.value!.toolSteps.every((s) => s.status === 'SUCCEEDED'),
+)
 const hasFailedSteps = computed(
-  () => conversation.value?.toolSteps.some((s) => s.status === 'FAILED') ?? false,
+  () =>
+    conversation.value?.toolSteps.some((s) => FAILED_STATUSES.has(s.status)) ?? false,
 )
 const failedStepsCount = computed(
-  () => conversation.value?.toolSteps.filter((s) => s.status === 'FAILED').length ?? 0,
+  () =>
+    conversation.value?.toolSteps.filter((s) => FAILED_STATUSES.has(s.status)).length ?? 0,
+)
+const hasWaitingConfirmation = computed(
+  () =>
+    conversation.value?.toolSteps.some((s) => s.status === 'WAITING_CONFIRMATION') ??
+    false,
 )
 const runningStepsCount = computed(
   () => conversation.value?.toolSteps.filter((s) => s.status === 'RUNNING').length ?? 0,
@@ -221,18 +276,26 @@ const processSummaryText = computed(() => {
   const total = steps.length
   if (total === 0) return ''
   const lastStep = steps[steps.length - 1]
-  const failedStep = steps.find((s) => s.status === 'FAILED')
+  const failedStep = steps.find((s) => FAILED_STATUSES.has(s.status))
+  const waitingStep = steps.find((s) => s.status === 'WAITING_CONFIRMATION')
 
-  if (failedStepsCount.value > 0 && failedStep) {
-    return `执行过程（共 ${total} 步，${failedStepsCount.value} 步失败：${failedStep.summary}）`
+  if (hasFailedSteps.value && failedStep) {
+    const errorPrefix = failedStep.status === 'REJECTED' ? '已拒绝' : '失败'
+    return `执行过程（共 ${total} 步，${failedStepsCount.value} 步${errorPrefix}：${failedStep.summary}）`
+  }
+  if (hasWaitingConfirmation.value && waitingStep) {
+    return `执行过程（共 ${total} 步，待确认：${waitingStep.summary}）`
   }
   if (runningStepsCount.value > 0) {
     return `正在执行第 ${succeededStepsCount.value + 1}/${total} 步：${lastStep.summary}`
   }
-  if (total === 1) {
-    return `执行过程：${lastStep.summary}`
+  if (isAllSucceeded.value) {
+    if (total === 1) {
+      return `执行过程：${lastStep.summary}`
+    }
+    return `执行过程（共 ${total} 步已全部完成，最新：${lastStep.summary}）`
   }
-  return `执行过程（共 ${total} 步已全部完成，最新：${lastStep.summary}）`
+  return `执行过程（共 ${total} 步，状态：${lastStep.status}）`
 })
 
 // 新轮次开始时自动折叠执行过程，避免大面板长期展开推挤聊天区域
@@ -1066,6 +1129,10 @@ async function rejectAction() {
   border-color: #fca5a5;
   background: #fff5f5;
 }
+.process-panel.has-waiting {
+  border-color: #fde68a;
+  background: #fffdf5;
+}
 .process-header {
   display: flex;
   justify-content: space-between;
@@ -1094,6 +1161,10 @@ async function rejectAction() {
 .process-indicator.is-failed {
   background: #fee2e2;
   color: #ef4444;
+}
+.process-indicator.is-waiting {
+  background: #fef3c7;
+  color: #b45309;
 }
 .process-indicator.is-running {
   background: #fef3c7;
@@ -1149,6 +1220,7 @@ async function rejectAction() {
 .process-step small { color: var(--color-text-secondary); font-family: 'SF Mono', monospace; font-size: 11px; }
 .step-check { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; font-size: 11px; flex-shrink: 0; }
 .step-check.is-running { background: #fef3c7; color: #d97706; }
+.step-check.is-waiting { background: #fef3c7; color: #b45309; }
 .step-check.is-failed { background: #fee2e2; color: #ef4444; }
 .action-preview { margin: 0 28px 18px; padding: 18px; border: 1px solid #f2d299; border-radius: 12px; background: #fffbf3; }
 .action-heading { display: flex; justify-content: space-between; gap: 12px; font-weight: 750; }

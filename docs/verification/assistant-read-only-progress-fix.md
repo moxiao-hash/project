@@ -61,19 +61,28 @@
 3. **轮次切换自动重置**：
    - 用户发送新消息启动新一轮次（`send()`）或 `activeTurnId` 变化时，自动将 `isProcessExpanded` 重置为 `false`，防止上一轮的展开状态长期遮盖新对话。
 
+3. **状态语义真实性防线（严格避免虚假“全部成功”）**：
+   - `AssistantToolStep.status` 是开放字符串，可能包含 `WAITING_CONFIRMATION`、`REJECTED`、`EXPIRED`、`CANCELLED`；
+   - 严格仅在**每一步均为 `SUCCEEDED`**（`isAllSucceeded`）时，摘要徽章才显示 `全部成功` 并标记绿色 `✓`；
+   - 存在 `WAITING_CONFIRMATION` 时，摘要徽章显示黄色 `待确认`（`badge-warning`），图标显示 `⏸`，并显示“等待确认：{summary}”；
+   - 存在 `REJECTED`/`EXPIRED`/`CANCELLED` 时，按中断/失败处理，显示红色徽章与高亮红框（`.has-failure`），严禁任何未完成或已拒绝动作被误报为成功；
+   - 独立的确认卡片（`.action-preview`）保持醒目完整。
+
 ### 2.3 TDD RED/GREEN 证据
 - **RED 测试** (`web/src/modules/assistant/AssistantView.spec.ts`)：
   - `renders process-panel as a compact collapsed disclosure by default and expands on click`: 初始未折叠失败；
   - `prominently displays failure badge in process-panel summary when any step fails`: 初始无失败高亮类失败；
-  - `automatically collapses process-panel on a new turn so large detail list does not re-cover chat`: 初始未重置失败。
+  - `automatically collapses process-panel on a new turn so large detail list does not re-cover chat`: 初始未重置失败；
+  - `displays truthful waiting/pending state in collapsed process summary when a step is WAITING_CONFIRMATION and preserves confirmation card`: 初始误报全部成功失败；
+  - `displays failure/rejection badge in process summary and does not claim success when a step is REJECTED`: 初始误报全部成功失败。
 - **GREEN 验证**：
   ```bash
   cd web && npm test -- src/modules/assistant/AssistantView.spec.ts
-  # 35 passed in 1.72s
+  # 37 passed in 1.75s
   npm test -- --run
-  # 35 test files / 326 passed
+  # 35 test files / 328 passed
   npm run typecheck && npm run build
-  # vue-tsc 0 errors, vite build OK in 1.06s
+  # vue-tsc 0 errors, vite build OK in 1.02s
   ```
 
 ---
@@ -82,5 +91,5 @@
 
 - `ai-service/app/unified_agent/supervisor.py`: 实现 `_compose_completed_plan_reply`，从工具输出构建真实事实回复，陈述限制，严禁伪造。
 - `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 8 项 Python 行为测试，覆盖进度事实、无报名诚实空状态、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述及写操作预览保留。
-- `web/src/modules/assistant/AssistantView.vue`: 紧凑折叠执行过程面板、失败显著高亮、轮次自动折叠重置、无障碍属性支持与最大高度约束。
-- `web/src/modules/assistant/AssistantView.spec.ts`: 3 项聚焦前端组件测试，覆盖折叠/展开、失败显式呈现与换轮重置。
+- `web/src/modules/assistant/AssistantView.vue`: 紧凑折叠执行过程面板、严谨状态语义映射（仅全 SUCCEEDED 显示全部成功，待确认显示 ⏸+待确认，拒绝显示 ✗+失败）、轮次自动折叠重置、无障碍属性支持与最大高度约束。
+- `web/src/modules/assistant/AssistantView.spec.ts`: 5 项聚焦前端组件测试，覆盖折叠/展开、失败显式呈现、换轮重置、待确认状态防假成功与已拒绝状态防假成功。

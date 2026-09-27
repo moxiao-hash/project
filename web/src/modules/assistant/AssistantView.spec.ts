@@ -1486,4 +1486,77 @@ describe('AssistantView', () => {
 
     wrapper.unmount()
   })
+
+  it('displays truthful waiting/pending state in collapsed process summary when a step is WAITING_CONFIRMATION and preserves confirmation card', async () => {
+    vi.mocked(assistantApi.createConversation).mockResolvedValue(
+      snapshot({
+        toolSteps: [
+          { toolName: 'learning.context.get', status: 'SUCCEEDED', summary: '加载上下文' },
+          { toolName: 'learning.plan.create', status: 'WAITING_CONFIRMATION', summary: '创建每日学习计划' },
+        ],
+        pendingAction: {
+          actionId: 'action-pending-1',
+          executionId: 'exec-1',
+          toolName: 'learning.plan.create',
+          riskLevel: 'LOW',
+          status: 'WAITING_CONFIRMATION',
+          summary: '创建每日学习计划',
+          arguments: { title: '新计划' },
+          expiresAt: '2026-09-24T00:00:00Z',
+        },
+      }),
+    )
+
+    const wrapper = mount(AssistantView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const panel = wrapper.find('.process-panel')
+    expect(panel.exists()).toBe(true)
+
+    // Must NOT falsely claim "全部成功"
+    expect(panel.text()).not.toContain('全部成功')
+    expect(panel.find('.badge-success').exists()).toBe(false)
+
+    // Must show truthful pending / waiting badge and text
+    expect(panel.find('.badge-warning').exists()).toBe(true)
+    expect(panel.text()).toContain('待确认')
+    expect(panel.text()).toContain('创建每日学习计划')
+
+    // Preserves the separate confirmation card
+    const confirmCard = wrapper.find('.action-preview')
+    expect(confirmCard.exists()).toBe(true)
+    expect(confirmCard.text()).toContain('需要你的确认')
+    expect(confirmCard.text()).toContain('LOW 风险')
+    expect(confirmCard.find('[data-testid="confirm-action"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('displays failure/rejection badge in process summary and does not claim success when a step is REJECTED', async () => {
+    vi.mocked(assistantApi.createConversation).mockResolvedValue(
+      snapshot({
+        toolSteps: [
+          { toolName: 'learning.context.get', status: 'SUCCEEDED', summary: '加载上下文' },
+          { toolName: 'developer.git.push', status: 'REJECTED', summary: '推送被拒绝' },
+        ],
+      }),
+    )
+
+    const wrapper = mount(AssistantView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const panel = wrapper.find('.process-panel')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).not.toContain('全部成功')
+    expect(panel.find('.badge-danger').exists()).toBe(true)
+    expect(panel.text()).toContain('推送被拒绝')
+
+    wrapper.unmount()
+  })
 })
