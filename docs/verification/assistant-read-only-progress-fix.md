@@ -1,7 +1,7 @@
 # StudyPilot Assistant: 只读计划事实回复与执行面板折叠修复验证记录
 
 - **执行 Agent**：ZCode (Gemini 3.8 Flash)
-- **修复时间**：2026-09-23
+- **修复时间**：2026-09-27
 - **关联分支**：`agent/zcode-task-33-local-adapters`
 - **基线提交**：`b73e07f05ca49e96a1bcf0cb2b6c3bde740b9053`
 - **所有权范围**：`ai-service/app/unified_agent/**`、`web/src/modules/assistant/**` 及对应测试
@@ -51,8 +51,8 @@
 
 ### 2.2 修复方案与可访问性
 1. **默认紧凑折叠摘要行**：
-   - 默认高度降低至 ~38px，以单行紧凑横条展示整体执行结果与步骤计数；
-   - 结果标签区分：全成功显示 `全部完成`（`badge-success`）；执行中显示 `执行中`（`badge-warning`）；存在失败显示 `执行失败 (N)`（`badge-danger`）；
+   - 默认以紧凑横条展示整体执行结果与步骤计数；Codex 在 783px 高的真实浏览器视口实测收起时约 45px（原面板约 448px）；
+   - 结果标签区分：全成功显示 `全部成功`（`badge-success`）；执行中显示 `执行中`（`badge-warning`）；存在失败显示失败摘要（`badge-danger`）；
    - 若存在失败步骤（`FAILED`），面板外框标红（`.has-failure`）且摘要直接标明失败步骤名称，确保失败绝不被折叠掩盖；
 2. **支持展开与平滑滚动**：
    - 点击 `data-testid="toggle-process-steps"` 展开详细列表（`data-testid="process-steps-list"`）；
@@ -93,3 +93,9 @@
 - `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 8 项 Python 行为测试，覆盖进度事实、无报名诚实空状态、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述及写操作预览保留。
 - `web/src/modules/assistant/AssistantView.vue`: 紧凑折叠执行过程面板、严谨状态语义映射（仅全 SUCCEEDED 显示全部成功，待确认显示 ⏸+待确认，拒绝显示 ✗+失败）、轮次自动折叠重置、无障碍属性支持与最大高度约束。
 - `web/src/modules/assistant/AssistantView.spec.ts`: 5 项聚焦前端组件测试，覆盖折叠/展开、失败显式呈现、换轮重置、待确认状态防假成功与已拒绝状态防假成功。
+
+## 4. Codex 独立验收（2026-09-27）
+
+- 基于 `c887b9a` 独立复跑：AI 服务 564 passed；Web 35 文件 / 328 passed；`npm run typecheck` 与 `npm run build` 通过；`git diff b73e07f..HEAD --check` 通过。
+- 将本地 AI 服务切换到本分支后，在真实 StudyPilot 页面重新提问“我当前的学习进度是？”，回复为“你尚未加入任何学习路线，暂无学习进度记录。任务整体暂无待办学习任务。暂无知识点掌握度记录。当前没有待复习的错题。”；符合该新账号当前空数据状态，且未退化为步骤计数。
+- 同一页面实测执行过程面板默认收起高度约 45px；展开约 253px，详情可见，随后可再次收起。旧服务的内存会话在重启后失效，刷新页面建立新会话后完成复测。旧对话历史不会被回写。
