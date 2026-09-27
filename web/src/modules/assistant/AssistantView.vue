@@ -63,19 +63,58 @@
           </div>
         </div>
 
-        <div v-if="conversation.toolSteps.length" class="process-panel">
-          <div class="process-title">本轮执行过程</div>
-          <div v-for="step in conversation.toolSteps" :key="step.toolName" class="process-step">
-            <span class="step-check" :class="{ 'is-running': step.status === 'RUNNING', 'is-failed': step.status === 'FAILED' }">
-              {{ step.status === 'SUCCEEDED' ? '✓' : step.status === 'RUNNING' ? '⋯' : '✗' }}
-            </span>
-            <div><strong>{{ step.summary }}</strong><small>{{ step.toolName }}</small></div>
-            <span
-              class="badge"
-              :class="step.status === 'SUCCEEDED' ? 'badge-success' : step.status === 'RUNNING' ? 'badge-warning' : 'badge-danger'"
+        <div
+          v-if="conversation.toolSteps.length"
+          class="process-panel"
+          :class="{ 'has-failure': hasFailedSteps, 'is-expanded': isProcessExpanded }"
+        >
+          <div class="process-header">
+            <div class="process-title-group">
+              <span
+                class="process-indicator"
+                :class="{ 'is-failed': hasFailedSteps, 'is-running': runningStepsCount > 0 }"
+              >
+                {{ hasFailedSteps ? '✗' : runningStepsCount > 0 ? '⋯' : '✓' }}
+              </span>
+              <span class="process-title">{{ processSummaryText }}</span>
+              <span v-if="hasFailedSteps" class="badge badge-danger">执行失败 ({{ failedStepsCount }})</span>
+              <span v-else-if="runningStepsCount > 0" class="badge badge-warning">执行中</span>
+              <span v-else class="badge badge-success">全部成功</span>
+            </div>
+            <button
+              type="button"
+              class="process-toggle-btn"
+              data-testid="toggle-process-steps"
+              :aria-expanded="isProcessExpanded ? 'true' : 'false'"
+              aria-controls="process-steps-detail"
+              @click="isProcessExpanded = !isProcessExpanded"
             >
-              {{ step.status }}
-            </span>
+              <span>{{ isProcessExpanded ? '收起详情' : '查看详情' }}</span>
+              <span class="disclosure-arrow" :class="{ 'is-expanded': isProcessExpanded }">▾</span>
+            </button>
+          </div>
+
+          <div
+            v-if="isProcessExpanded"
+            id="process-steps-detail"
+            class="process-steps-list"
+            data-testid="process-steps-list"
+          >
+            <div v-for="step in conversation.toolSteps" :key="step.toolName" class="process-step">
+              <span
+                class="step-check"
+                :class="{ 'is-running': step.status === 'RUNNING', 'is-failed': step.status === 'FAILED' }"
+              >
+                {{ step.status === 'SUCCEEDED' ? '✓' : step.status === 'RUNNING' ? '⋯' : '✗' }}
+              </span>
+              <div><strong>{{ step.summary }}</strong><small>{{ step.toolName }}</small></div>
+              <span
+                class="badge"
+                :class="step.status === 'SUCCEEDED' ? 'badge-success' : step.status === 'RUNNING' ? 'badge-warning' : 'badge-danger'"
+              >
+                {{ step.status }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -126,7 +165,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { AxiosError } from 'axios'
 import AiMarkdownMessage from '@/components/AiMarkdownMessage.vue'
@@ -163,6 +202,43 @@ const sending = ref(false)
 const actionBusy = ref(false)
 const activeTurnId = ref<string | null>(null)
 const streamStatus = ref<EventStreamStatus>('disconnected')
+
+const isProcessExpanded = ref(false)
+const hasFailedSteps = computed(
+  () => conversation.value?.toolSteps.some((s) => s.status === 'FAILED') ?? false,
+)
+const failedStepsCount = computed(
+  () => conversation.value?.toolSteps.filter((s) => s.status === 'FAILED').length ?? 0,
+)
+const runningStepsCount = computed(
+  () => conversation.value?.toolSteps.filter((s) => s.status === 'RUNNING').length ?? 0,
+)
+const succeededStepsCount = computed(
+  () => conversation.value?.toolSteps.filter((s) => s.status === 'SUCCEEDED').length ?? 0,
+)
+const processSummaryText = computed(() => {
+  const steps = conversation.value?.toolSteps ?? []
+  const total = steps.length
+  if (total === 0) return ''
+  const lastStep = steps[steps.length - 1]
+  const failedStep = steps.find((s) => s.status === 'FAILED')
+
+  if (failedStepsCount.value > 0 && failedStep) {
+    return `执行过程（共 ${total} 步，${failedStepsCount.value} 步失败：${failedStep.summary}）`
+  }
+  if (runningStepsCount.value > 0) {
+    return `正在执行第 ${succeededStepsCount.value + 1}/${total} 步：${lastStep.summary}`
+  }
+  if (total === 1) {
+    return `执行过程：${lastStep.summary}`
+  }
+  return `执行过程（共 ${total} 步已全部完成，最新：${lastStep.summary}）`
+})
+
+// 新轮次开始时自动折叠执行过程，避免大面板长期展开推挤聊天区域
+watch(activeTurnId, () => {
+  isProcessExpanded.value = false
+})
 
 let latestTurnGeneration = 0
 let activeGeneration = 0
@@ -615,6 +691,7 @@ function usePrompt(value: string) {
 
 async function send() {
   if (!conversation.value || !message.value || sending.value) return
+  isProcessExpanded.value = false
   const outgoing = message.value
   message.value = ''
   sending.value = true
@@ -977,13 +1054,100 @@ async function rejectAction() {
   color: #ef4444;
   border-color: #ef4444;
 }
-.process-panel { margin: 0 28px 18px; padding: 15px; background: #f8f9fc; border: 1px solid var(--color-border); border-radius: 12px; }
-.process-title { margin-bottom: 10px; font-size: 12px; color: var(--color-text-secondary); font-weight: 700; }
-.process-step { display: flex; align-items: center; gap: 10px; padding: 7px 0; }
+.process-panel {
+  margin: 0 28px 12px;
+  padding: 8px 14px;
+  background: #f8f9fc;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  transition: all .16s ease-in-out;
+}
+.process-panel.has-failure {
+  border-color: #fca5a5;
+  background: #fff5f5;
+}
+.process-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.process-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+.process-indicator {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.process-indicator.is-failed {
+  background: #fee2e2;
+  color: #ef4444;
+}
+.process-indicator.is-running {
+  background: #fef3c7;
+  color: #d97706;
+}
+.process-title {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.process-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all .14s;
+  flex-shrink: 0;
+}
+.process-toggle-btn:hover {
+  background: #eef2ff;
+}
+.process-toggle-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+.disclosure-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform .16s ease-in-out;
+}
+.disclosure-arrow.is-expanded {
+  transform: rotate(180deg);
+}
+.process-steps-list {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+  max-height: 200px;
+  overflow-y: auto;
+}
+.process-step { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
 .process-step div { min-width: 0; flex: 1; }
 .process-step strong, .process-step small { display: block; }
-.process-step small { color: var(--color-text-secondary); font-family: 'SF Mono', monospace; }
-.step-check { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; font-size: 12px; }
+.process-step small { color: var(--color-text-secondary); font-family: 'SF Mono', monospace; font-size: 11px; }
+.step-check { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--color-success-soft); color: var(--color-success); font-weight: 800; font-size: 11px; flex-shrink: 0; }
 .step-check.is-running { background: #fef3c7; color: #d97706; }
 .step-check.is-failed { background: #fee2e2; color: #ef4444; }
 .action-preview { margin: 0 28px 18px; padding: 18px; border: 1px solid #f2d299; border-radius: 12px; background: #fffbf3; }

@@ -1,0 +1,86 @@
+# StudyPilot Assistant: 只读计划事实回复与执行面板折叠修复验证记录
+
+- **执行 Agent**：ZCode (Gemini 3.8 Flash)
+- **修复时间**：2026-09-23
+- **关联分支**：`agent/zcode-task-33-local-adapters`
+- **基线提交**：`b73e07f05ca49e96a1bcf0cb2b6c3bde740b9053`
+- **所有权范围**：`ai-service/app/unified_agent/**`、`web/src/modules/assistant/**` 及对应测试
+
+---
+
+## 1. 缺陷 1：只读多步计划结果硬编码“已按计划完成 N 个步骤”
+
+### 1.1 问题根因
+当用户提问“我当前的学习进度是？”等结果查询时，Planner 生成并成功执行了 `learning.context.get`、`roadmap.current.get`、`assessment.mastery.list`、`assessment.wrong_questions.summary`、`learning.tasks.list` 等只读工具步骤，工具数据均存放在 `outputs` 字典中。但 `_run_plan` 在没有待确认动作时直接硬编码返回 `f"已按计划完成 {executed} 个步骤。"`，导致真实业务事实从未回显给用户。
+
+### 1.2 修复方案与事实边界
+1. **真实数据驱动的回复生成**：
+   - 在 `UnifiedAgentSupervisor._compose_completed_plan_reply` 中从真实 `outputs` 提取事实；
+   - **学习路线与进度**：如包含 `roadmap.current.get` 或 `context.roadmap`，如实提取路线名称、已完成必修节点数、必修总节点数及当前节点状态。若节点为 `AVAILABLE`，严禁伪称“当前正在学习”，诚实标为“下一个待学习节点”；若未加入路线，诚实报告未报名；
+   - **任务情况**：如包含 `learning.tasks.list` 或 `schedule.today.get`，未带日期参数时作为“任务整体”汇报，带明确日期时按具体日期汇报；统计已完成数（`status == "COMPLETED"`）与待完成数；若全部为 `SKIPPED`，严禁宣称“全部完成”；
+   - **掌握度与错题**：按真实 DTO 字段 `score`（掌握度）与 `activeCount`（错题活跃数）汇报薄弱点与待复习错题；
+   - **学习资料**：提取 `materials.list` 资料数量与名称；
+   - **限制陈述**：对未提取到结构化事实的只读查询，诚实说明“已执行查询步骤，但未获取到可展示的具体学习数据”，绝不以空洞的步骤计数冒充有效事实。
+2. **写操作与治理保持不变**：
+   - 写操作生成的待确认卡片与提示语保持完全不受影响。
+
+### 1.3 TDD RED/GREEN 证据
+- **RED 测试** (`ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`)：
+  - `test_read_only_plan_learning_progress_composes_factual_reply`: 断言包含真实路线名称、5/64、下一个待学习节点、薄弱点类型转换(45%)及3道错题，初始失败（`AssertionError: assert '已按计划完成 5 个步骤。' not in result.reply`）；
+  - `test_read_only_plan_no_enrollment_reports_honest_empty_state`: 断言未报名路线时诚实说明无路线，初始失败；
+  - `test_read_only_plan_tasks_query_composes_factual_task_summary`: 断言未定日期的任务作为整体任务汇报，初始失败；
+  - `test_read_only_plan_dated_tasks_query_labels_date_factually`: 断言指定日期的任务按具体日期汇报，初始失败；
+  - `test_read_only_plan_skipped_tasks_does_not_claim_all_completed`: 断言全跳过任务不误报为全部完成，初始失败；
+  - `test_read_only_plan_unhandled_query_reports_limitation_honestly`: 断言无数据只读查询诚实陈述限制，初始失败。
+- **GREEN 验证**：
+  ```bash
+  cd ai-service && PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest tests/unified_agent/test_supervisor_read_only_reply.py -q
+  # 8 passed in 0.75s
+  PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/ruff check app tests
+  # All checks passed!
+  PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest -q
+  # 564 passed in 5.24s
+  ```
+
+---
+
+## 2. 缺陷 2：执行过程面板在视口中过高（~448px）挤占聊天历史
+
+### 2.1 问题根因
+`AssistantView.vue` 原先把 5 个步骤的执行过程平铺展开在 `.process-panel` 中，每个步骤包含图标、标题、工具名、徽章与外边距，累计高度超过 400px，在 783px 等常规视口中推挤了消息流，导致用户看不清聊天历史。
+
+### 2.2 修复方案与可访问性
+1. **默认紧凑折叠摘要行**：
+   - 默认高度降低至 ~38px，以单行紧凑横条展示整体执行结果与步骤计数；
+   - 结果标签区分：全成功显示 `全部完成`（`badge-success`）；执行中显示 `执行中`（`badge-warning`）；存在失败显示 `执行失败 (N)`（`badge-danger`）；
+   - 若存在失败步骤（`FAILED`），面板外框标红（`.has-failure`）且摘要直接标明失败步骤名称，确保失败绝不被折叠掩盖；
+2. **支持展开与平滑滚动**：
+   - 点击 `data-testid="toggle-process-steps"` 展开详细列表（`data-testid="process-steps-list"`）；
+   - 展开列表限制 `max-height: 200px; overflow-y: auto;`，即使 8 步全开也绝不撑破视口；
+   - 提供 `aria-expanded` 与 `aria-controls` 属性支持无障碍屏幕阅读器与键盘操作；
+3. **轮次切换自动重置**：
+   - 用户发送新消息启动新一轮次（`send()`）或 `activeTurnId` 变化时，自动将 `isProcessExpanded` 重置为 `false`，防止上一轮的展开状态长期遮盖新对话。
+
+### 2.3 TDD RED/GREEN 证据
+- **RED 测试** (`web/src/modules/assistant/AssistantView.spec.ts`)：
+  - `renders process-panel as a compact collapsed disclosure by default and expands on click`: 初始未折叠失败；
+  - `prominently displays failure badge in process-panel summary when any step fails`: 初始无失败高亮类失败；
+  - `automatically collapses process-panel on a new turn so large detail list does not re-cover chat`: 初始未重置失败。
+- **GREEN 验证**：
+  ```bash
+  cd web && npm test -- src/modules/assistant/AssistantView.spec.ts
+  # 35 passed in 1.72s
+  npm test -- --run
+  # 35 test files / 326 passed
+  npm run typecheck && npm run build
+  # vue-tsc 0 errors, vite build OK in 1.06s
+  ```
+
+---
+
+## 3. 修改文件清单
+
+- `ai-service/app/unified_agent/supervisor.py`: 实现 `_compose_completed_plan_reply`，从工具输出构建真实事实回复，陈述限制，严禁伪造。
+- `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 8 项 Python 行为测试，覆盖进度事实、无报名诚实空状态、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述及写操作预览保留。
+- `web/src/modules/assistant/AssistantView.vue`: 紧凑折叠执行过程面板、失败显著高亮、轮次自动折叠重置、无障碍属性支持与最大高度约束。
+- `web/src/modules/assistant/AssistantView.spec.ts`: 3 项聚焦前端组件测试，覆盖折叠/展开、失败显式呈现与换轮重置。

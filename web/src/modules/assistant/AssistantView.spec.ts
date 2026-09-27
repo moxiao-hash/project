@@ -1384,4 +1384,106 @@ describe('AssistantView', () => {
 
     wrapper.unmount()
   })
+
+  it('renders process-panel as a compact collapsed disclosure by default and expands on click', async () => {
+    vi.mocked(assistantApi.createConversation).mockResolvedValue(
+      snapshot({
+        toolSteps: [
+          { toolName: 'learning.context.get', status: 'SUCCEEDED', summary: '加载上下文' },
+          { toolName: 'roadmap.current.get', status: 'SUCCEEDED', summary: '读取路线' },
+          { toolName: 'assessment.mastery.list', status: 'SUCCEEDED', summary: '读取掌握度' },
+          { toolName: 'assessment.wrong_questions.summary', status: 'SUCCEEDED', summary: '读取错题' },
+          { toolName: 'learning.tasks.list', status: 'SUCCEEDED', summary: '读取任务' },
+        ],
+      }),
+    )
+
+    const wrapper = mount(AssistantView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const panel = wrapper.find('.process-panel')
+    expect(panel.exists()).toBe(true)
+
+    const toggleBtn = wrapper.find('[data-testid="toggle-process-steps"]')
+    expect(toggleBtn.exists()).toBe(true)
+    expect(toggleBtn.attributes('aria-expanded')).toBe('false')
+
+    // By default, the detailed tool steps list is COLLAPSED (not rendered), preserving viewport
+    expect(wrapper.find('[data-testid="process-steps-list"]').exists()).toBe(false)
+    expect(panel.text()).toContain('5')
+    expect(panel.text()).toContain('全部完成')
+
+    // Click toggle button to expand
+    await toggleBtn.trigger('click')
+    await flushPromises()
+
+    expect(toggleBtn.attributes('aria-expanded')).toBe('true')
+    const list = wrapper.find('[data-testid="process-steps-list"]')
+    expect(list.exists()).toBe(true)
+    expect(list.findAll('.process-step').length).toBe(5)
+
+    wrapper.unmount()
+  })
+
+  it('prominently displays failure badge in process-panel summary when any step fails', async () => {
+    vi.mocked(assistantApi.createConversation).mockResolvedValue(
+      snapshot({
+        toolSteps: [
+          { toolName: 'learning.context.get', status: 'SUCCEEDED', summary: '加载上下文' },
+          { toolName: 'roadmap.current.get', status: 'FAILED', summary: '读取路线失败' },
+        ],
+      }),
+    )
+
+    const wrapper = mount(AssistantView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const panel = wrapper.find('.process-panel')
+    expect(panel.exists()).toBe(true)
+    expect(panel.classes()).toContain('has-failure')
+    expect(panel.find('.badge-danger').exists()).toBe(true)
+    expect(panel.text()).toContain('失败')
+
+    wrapper.unmount()
+  })
+
+  it('automatically collapses process-panel on a new turn so large detail list does not re-cover chat', async () => {
+    vi.mocked(assistantApi.createConversation).mockResolvedValue(
+      snapshot({
+        toolSteps: [
+          { toolName: 'learning.context.get', status: 'SUCCEEDED', summary: '加载上下文' },
+          { toolName: 'roadmap.current.get', status: 'SUCCEEDED', summary: '读取路线' },
+        ],
+      }),
+    )
+
+    const wrapper = mount(AssistantView, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    })
+    await flushPromises()
+
+    const toggleBtn = wrapper.find('[data-testid="toggle-process-steps"]')
+    // User expands the detail panel
+    await toggleBtn.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="process-steps-list"]').exists()).toBe(true)
+
+    // User sends a new message (starting a new turn)
+    await wrapper.find('textarea[data-testid="agent-message-input"]').setValue('新一轮问题')
+    await wrapper.find('form.composer').trigger('submit')
+    await flushPromises()
+
+    // Process panel must automatically collapse back on the new turn
+    expect(wrapper.find('[data-testid="process-steps-list"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="toggle-process-steps"]').attributes('aria-expanded')).toBe('false')
+
+    wrapper.unmount()
+  })
 })

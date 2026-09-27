@@ -4,7 +4,7 @@ import asyncio
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from time import monotonic
 from typing import Any, TypedDict
 from uuid import uuid4
@@ -1963,7 +1963,7 @@ class UnifiedAgentSupervisor:
                 "nextIndex": index,
             }
         if pending_action is None:
-            reply = f"已按计划完成 {executed} 个步骤。"
+            reply = self._compose_completed_plan_reply(plan, outputs, executed)
         elif resume is not None:
             reply = (
                 f"已完成 {executed} 步；请确认这一步后，我继续执行剩余 {remaining} 步。"
@@ -1980,6 +1980,247 @@ class UnifiedAgentSupervisor:
             },
             resume,
         )
+
+    @staticmethod
+    def _compose_completed_plan_reply(
+        plan: AssistantPlan,
+        outputs: dict[str, Any],
+        executed: int,
+    ) -> str:
+        """从只读工具调用的真实输出中组织清晰、诚实、克制的事实回复。"""
+        results_by_tool: dict[str, list[Any]] = {}
+        for step in plan.steps:
+            if step.step_id in outputs:
+                data = outputs[step.step_id]
+                results_by_tool.setdefault(step.tool_name, []).append(data)
+
+        context_data = None
+        if "learning.context.get" in results_by_tool:
+            context_data = results_by_tool["learning.context.get"][-1]
+
+        facts: list[str] = []
+
+        # 1. 学习路线与总进度事实 (roadmap.current.get 或 context.roadmap)
+        roadmap = None
+        roadmap_queried = "roadmap.current.get" in results_by_tool
+        if roadmap_queried:
+            roadmap = results_by_tool["roadmap.current.get"][-1]
+        elif (
+            isinstance(context_data, dict)
+            and context_data.get("roadmap") is not None
+            and plan.intent in (PlanIntent.LEARNING_QUERY, PlanIntent.ROADMAP_NAVIGATE)
+        ):
+            roadmap = context_data.get("roadmap")
+            roadmap_queried = True
+
+        if roadmap_queried:
+            if isinstance(roadmap, dict) and roadmap.get("title"):
+                title = roadmap.get("title")
+                completed = roadmap.get("completedRequiredNodes", 0)
+                total = roadmap.get("totalRequiredNodes", 0)
+                if total > 0:
+                    pct = round(completed * 100 / total)
+                    fact_str = (
+                        f"你当前正在学习《{title}》，"
+                        f"已完成 {completed}/{total} 个必修节点（进度 {pct}%）"
+                    )
+                else:
+                    fact_str = f"你当前正在学习《{title}》"
+
+                in_progress_node = None
+                next_available_node = None
+                stages = roadmap.get("stages") or []
+                if isinstance(stages, list):
+                    for stage in stages:
+                        if isinstance(stage, dict):
+                            nodes = stage.get("nodes") or []
+                            if isinstance(nodes, list):
+                                for node in nodes:
+                                    if isinstance(node, dict):
+                                        status = (
+                                            node.get("displayStatus")
+                                            or node.get("status")
+                                        )
+                                        if status == "IN_PROGRESS" and not in_progress_node:
+                                            in_progress_node = node.get("title")
+                                        elif (
+                                            status in ("AVAILABLE", "SCHEDULED", "QUIZ_PENDING")
+                                            and not next_available_node
+                                        ):
+                                            next_available_node = node.get("title")
+                            if in_progress_node and next_available_node:
+                                break
+
+                if in_progress_node:
+                    fact_str += f"，当前正在学习节点为“{in_progress_node}”。"
+                elif next_available_node:
+                    fact_str += f"，下一个待学习节点为“{next_available_node}”。"
+                elif total > 0 and completed >= total:
+                    fact_str += "，已完成该路线的全部必修节点！"
+                else:
+                    fact_str += "。"
+                facts.append(fact_str)
+            else:
+                facts.append("你尚未加入任何学习路线，暂无学习进度记录。")
+
+        # 2. 任务情况 (learning.tasks.list 或 schedule.today.get)
+        tasks = None
+        task_date = None
+        if "learning.tasks.list" in results_by_tool:
+            tasks = results_by_tool["learning.tasks.list"][-1]
+            for step in plan.steps:
+                if step.tool_name == "learning.tasks.list" and step.arguments.get("date"):
+                    task_date = str(step.arguments["date"]).strip()
+                    break
+        elif "schedule.today.get" in results_by_tool:
+            task_date = "today"
+            sched = results_by_tool["schedule.today.get"][-1]
+            if isinstance(sched, dict) and "days" in sched:
+                days = sched.get("days") or []
+                tasks = [
+                    item
+                    for day in days
+                    if isinstance(day, dict)
+                    for item in (day.get("items") or [])
+                ]
+        elif (
+            isinstance(context_data, dict)
+            and isinstance(context_data.get("learning"), dict)
+            and context_data["learning"].get("tasks")
+            and plan.intent == PlanIntent.LEARNING_QUERY
+        ):
+            tasks = context_data["learning"].get("tasks")
+
+        if tasks is not None and isinstance(tasks, list):
+            today_str = datetime.now(UTC).strftime("%Y-%m-%d")
+            if task_date == "today" or task_date == today_str:
+                scope_label = "今日"
+            elif task_date:
+                scope_label = f"{task_date} "
+            else:
+                scope_label = "任务整体"
+
+            total_t = len(tasks)
+            if total_t == 0:
+                facts.append(f"{scope_label}暂无待办学习任务。")
+            else:
+                completed_t = sum(
+                    1
+                    for t in tasks
+                    if isinstance(t, dict) and t.get("status") == "COMPLETED"
+                )
+                skipped_t = sum(
+                    1
+                    for t in tasks
+                    if isinstance(t, dict) and t.get("status") == "SKIPPED"
+                )
+                pending_titles = [
+                    t.get("title")
+                    for t in tasks
+                    if isinstance(t, dict)
+                    and t.get("status") in ("TODO", "DEFERRED")
+                    and t.get("title")
+                ]
+                pending_t = len(pending_titles)
+                skipped_str = f"，跳过 {skipped_t} 项" if skipped_t > 0 else ""
+
+                if pending_t > 0:
+                    task_fact = (
+                        f"{scope_label}共有 {total_t} 项任务"
+                        f"（已完成 {completed_t} 项{skipped_str}），"
+                        f"待完成：“{pending_titles[0]}”。"
+                    )
+                    facts.append(task_fact)
+                elif completed_t == total_t:
+                    facts.append(f"{scope_label} {total_t} 项任务已全部完成！")
+                else:
+                    task_fact = (
+                        f"{scope_label}共有 {total_t} 项任务"
+                        f"（已完成 {completed_t} 项{skipped_str}，暂无待办）。"
+                    )
+                    facts.append(task_fact)
+
+        # 3. 掌握度情况 (assessment.mastery.list)
+        mastery = None
+        if "assessment.mastery.list" in results_by_tool:
+            mastery = results_by_tool["assessment.mastery.list"][-1]
+        elif (
+            isinstance(context_data, dict)
+            and isinstance(context_data.get("learning"), dict)
+            and context_data["learning"].get("mastery")
+            and plan.intent == PlanIntent.LEARNING_QUERY
+        ):
+            mastery = context_data["learning"].get("mastery")
+
+        if mastery is not None and isinstance(mastery, list):
+            valid_items = [
+                m for m in mastery if isinstance(m, dict) and m.get("knowledgePoint")
+            ]
+            if len(valid_items) == 0:
+                facts.append("暂无知识点掌握度记录。")
+            else:
+                def _mastery_val(m: dict[str, Any]) -> float:
+                    val = m.get("score")
+                    if val is None:
+                        val = m.get("masteryScore", 0)
+                    return float(val)
+
+                valid_items.sort(key=_mastery_val)
+                weakest = valid_items[0]
+                weakest_point = weakest.get("knowledgePoint")
+                weakest_score = round(_mastery_val(weakest))
+                facts.append(
+                    f"已记录 {len(valid_items)} 个知识点掌握度，"
+                    f"目前最薄弱的是“{weakest_point}”（掌握度 {weakest_score}%）。"
+                )
+
+        # 4. 错题情况 (assessment.wrong_questions.summary)
+        wq = None
+        if "assessment.wrong_questions.summary" in results_by_tool:
+            wq = results_by_tool["assessment.wrong_questions.summary"][-1]
+        elif (
+            isinstance(context_data, dict)
+            and isinstance(context_data.get("wrongQuestions"), dict)
+            and plan.intent == PlanIntent.LEARNING_QUERY
+        ):
+            wq = context_data.get("wrongQuestions")
+
+        if wq is not None and isinstance(wq, dict):
+            active_wq = wq.get("activeCount")
+            if active_wq is None:
+                active_wq = wq.get("totalActive", 0)
+            if active_wq == 0:
+                facts.append("当前没有待复习的错题。")
+            else:
+                facts.append(f"当前有 {active_wq} 道错题待复习。")
+
+        # 5. 学习资料情况 (materials.list)
+        materials = None
+        if "materials.list" in results_by_tool:
+            materials = results_by_tool["materials.list"][-1]
+        elif (
+            isinstance(context_data, dict)
+            and isinstance(context_data.get("learning"), dict)
+            and context_data["learning"].get("materials")
+            and plan.intent == PlanIntent.LEARNING_QUERY
+        ):
+            materials = context_data["learning"].get("materials")
+
+        if materials is not None and isinstance(materials, list):
+            if len(materials) == 0:
+                facts.append("资料库中暂无学习资料。")
+            else:
+                first_item = materials[0] if isinstance(materials[0], dict) else {}
+                first_title = first_item.get("title") or "学习资料"
+                facts.append(f"资料库中共有 {len(materials)} 份资料，包含《{first_title}》等。")
+
+        if facts:
+            return "".join(facts)
+
+        if plan.intent == PlanIntent.LEARNING_QUERY:
+            return "已执行查询步骤，但未获取到可展示的具体学习数据。"
+
+        return f"已按计划完成 {executed} 个步骤。"
 
     @staticmethod
     def _plan_navigation_action(arguments: dict[str, Any]) -> UiAction | None:
