@@ -16,7 +16,9 @@
 - **P1 整改证据提交**：`132b04f067668dfee26c37de0286745b3d05e57e`（`docs: record task 33 protocol gap remediation`）
 - **真实握手验证提交**：`6cb2dbfca0bc72d5effe3f6acc4fd7214deed502`（`test: verify task 33 handshake against the real local automation service`）
 - **§8 只读成果列表提交**：`290c3828b7da27f9b676a7a7fc0bc21978de8a12`（`feat: expose owner-scoped read-only roadmap artifact list`）
-- **本次 §8 证据提交**：`docs: record task 33 read-only artifact list`（本次提交）
+- **测试计数表述修正提交**：`7ac16e6400418d4ce68395591e90ed3c82b9168d`（`docs: correct task 33 full-suite test count wording`）
+- **Agent 路线投影修复提交**：`43c9395bdad8c06ddee9f72b868d9bb7d72e5569`（`fix: keep the agent roadmap projection inside the tool output limit`）
+- **本次证据提交**：`docs: record task 33 agent roadmap projection fix`（本次提交）
 
 ---
 
