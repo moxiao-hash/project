@@ -622,7 +622,7 @@ Codex 独立验收指出：
    - `web` 全量回归：35 个测试文件、328 项测试 100% 全部通过；
    - `vue-tsc --noEmit`：0 错误；
    - `vite build`：生产打包通过；
-   - `local-automation-service`：18 个测试文件、180 项测试全部通过（1 项跳过）。
+   - `local-automation-service`：18 个测试文件、181 项测试（180 项通过，1 项跳过）。
 
 ### 14.3 浏览器真实验收脚本修订
 
@@ -638,7 +638,7 @@ Codex 独立验收指出：
 ```text
 cd web && npm test -- --run                     -> 35 files / 328 tests passed
 cd web && npm run typecheck && npm run build    -> 0 errors / built in 1.02s
-cd local-automation-service && npm test         -> 18 files / 180 tests (179 passed, 1 skipped)
+cd local-automation-service && npm test         -> 18 files / 181 tests (180 passed, 1 skipped)
 cd local-automation-service && npm run typecheck && npm run build -> 0 errors / tsc built
 cd local-automation-service && npm run acceptance:real ->
   - macOS AX diagnostic probe: PASS (refuses every IDEA action)
@@ -665,7 +665,7 @@ Codex 在真实运行环境下使用本分支代码完成了独立复跑验证�
      - `[Real Action] FOCUS_AGENT_INPUT(ASSISTANT_INPUT): SUCCEEDED (verified live page state)`
      - `[Real Action] OPEN_RESULT_PANEL(WORKSPACE_RESULTS): SUCCEEDED (verified live page state)`
 3. **全量测试与静态检查**：
-   - `local-automation-service`: 18 个测试文件、180 项测试通过（179 通过，1 项跳过），构建通过；
+   - `local-automation-service`: 18 个测试文件、181 项测试通过（180 通过，1 项跳过），构建通过；
    - `git diff --check`: 干净，零格式与空白错误。
 
 ### 14.6 本轮文件所有权与改动清单

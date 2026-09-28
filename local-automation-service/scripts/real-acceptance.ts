@@ -345,7 +345,7 @@ async function probeStudyPilotService(): Promise<SectionResult> {
   if (authToken) {
     console.log('Test Authentication: STUDYPILOT_AUTOMATION_AUTH_TOKEN configured');
   } else if (storageStatePath) {
-    console.log(`Test Authentication: STUDYPILOT_AUTOMATION_STORAGE_STATE configured (${storageStatePath})`);
+    console.log('Test Authentication: STUDYPILOT_AUTOMATION_STORAGE_STATE configured');
   } else {
     console.log('Test Authentication: UNSET (unauthenticated isolated browser context)');
   }
