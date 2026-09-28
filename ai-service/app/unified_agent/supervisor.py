@@ -1929,6 +1929,12 @@ class UnifiedAgentSupervisor:
             outputs[step.step_id] = invocation.data
             executed += 1
             index += 1
+            step_summary = f"已执行计划步骤 {step.step_id}"
+            if invocation.truncated or (
+                isinstance(invocation.data, dict)
+                and invocation.data.get("truncated")
+            ):
+                step_summary = f"已执行计划步骤 {step.step_id}（结果已超出上限截断）"
             public_steps.append(
                 PublicToolStep(
                     tool_name=step.tool_name,
@@ -1937,7 +1943,7 @@ class UnifiedAgentSupervisor:
                         if invocation.action is not None
                         else "SUCCEEDED"
                     ),
-                    summary=f"已执行计划步骤 {step.step_id}",
+                    summary=step_summary,
                 )
             )
             if step.tool_name == "navigation.resolve":
@@ -1963,7 +1969,9 @@ class UnifiedAgentSupervisor:
                 "nextIndex": index,
             }
         if pending_action is None:
-            reply = self._compose_completed_plan_reply(plan, outputs, executed)
+            reply = self._compose_completed_plan_reply(
+                plan, outputs, executed, context_data=context_data
+            )
         elif resume is not None:
             reply = (
                 f"已完成 {executed} 步；请确认这一步后，我继续执行剩余 {remaining} 步。"
@@ -1986,6 +1994,8 @@ class UnifiedAgentSupervisor:
         plan: AssistantPlan,
         outputs: dict[str, Any],
         executed: int,
+        *,
+        context_data: Any = None,
     ) -> str:
         """从只读工具调用的真实输出中组织清晰、诚实、克制的事实回复。"""
         results_by_tool: dict[str, list[Any]] = {}
@@ -1994,30 +2004,52 @@ class UnifiedAgentSupervisor:
                 data = outputs[step.step_id]
                 results_by_tool.setdefault(step.tool_name, []).append(data)
 
-        context_data = None
         if "learning.context.get" in results_by_tool:
             context_data = results_by_tool["learning.context.get"][-1]
 
         facts: list[str] = []
 
         # 1. 学习路线与总进度事实 (roadmap.current.get 或 context.roadmap)
-        roadmap = None
-        roadmap_queried = "roadmap.current.get" in results_by_tool
-        if roadmap_queried:
-            roadmap = results_by_tool["roadmap.current.get"][-1]
-        elif (
-            isinstance(context_data, dict)
-            and context_data.get("roadmap") is not None
-            and plan.intent in (PlanIntent.LEARNING_QUERY, PlanIntent.ROADMAP_NAVIGATE)
-        ):
-            roadmap = context_data.get("roadmap")
-            roadmap_queried = True
+        direct_roadmap = None
+        if "roadmap.current.get" in results_by_tool:
+            direct_roadmap = results_by_tool["roadmap.current.get"][-1]
+
+        context_roadmap = None
+        if isinstance(context_data, dict) and not context_data.get("truncated"):
+            context_roadmap = context_data.get("roadmap")
+
+        context_in_plan = "learning.context.get" in results_by_tool
+        roadmap_queried = (
+            "roadmap.current.get" in results_by_tool
+            or (
+                context_in_plan
+                and plan.intent in (PlanIntent.LEARNING_QUERY, PlanIntent.ROADMAP_NAVIGATE)
+            )
+        )
+
+        def _is_valid_route(obj: Any) -> bool:
+            return (
+                isinstance(obj, dict)
+                and not obj.get("truncated")
+                and bool(obj.get("title"))
+                and isinstance(obj.get("title"), str)
+                and len(obj["title"].strip()) > 0
+            )
+
+        def _is_clipped(obj: Any) -> bool:
+            return isinstance(obj, dict) and bool(obj.get("truncated"))
 
         if roadmap_queried:
-            if isinstance(roadmap, dict) and roadmap.get("title"):
-                title = roadmap.get("title")
-                completed = roadmap.get("completedRequiredNodes", 0)
-                total = roadmap.get("totalRequiredNodes", 0)
+            valid_roadmap = None
+            if _is_valid_route(direct_roadmap):
+                valid_roadmap = direct_roadmap
+            elif _is_valid_route(context_roadmap):
+                valid_roadmap = context_roadmap
+
+            if valid_roadmap is not None:
+                title = valid_roadmap["title"].strip()
+                completed = valid_roadmap.get("completedRequiredNodes", 0)
+                total = valid_roadmap.get("totalRequiredNodes", 0)
                 if total > 0:
                     pct = round(completed * 100 / total)
                     fact_str = (
@@ -2029,7 +2061,7 @@ class UnifiedAgentSupervisor:
 
                 in_progress_node = None
                 next_available_node = None
-                stages = roadmap.get("stages") or []
+                stages = valid_roadmap.get("stages") or []
                 if isinstance(stages, list):
                     for stage in stages:
                         if isinstance(stage, dict):
@@ -2061,7 +2093,33 @@ class UnifiedAgentSupervisor:
                     fact_str += "。"
                 facts.append(fact_str)
             else:
-                facts.append("你尚未加入任何学习路线，暂无学习进度记录。")
+                is_clipped_route = (
+                    _is_clipped(direct_roadmap)
+                    or (isinstance(context_data, dict) and _is_clipped(context_data))
+                    or _is_clipped(context_roadmap)
+                )
+                if is_clipped_route:
+                    facts.append(
+                        "已读取学习路线，但返回数据超出长度限制导致内容不完整，"
+                        "未能解析出具体进度；你可以在学习路线页面查看完整进度。"
+                    )
+                elif (
+                    (direct_roadmap is None or direct_roadmap == {})
+                    and (
+                        context_data is None
+                        or (
+                            isinstance(context_data, dict)
+                            and not context_data.get("truncated")
+                            and context_data.get("roadmap") is None
+                        )
+                    )
+                ):
+                    facts.append("你尚未加入任何学习路线，暂无学习进度记录。")
+                else:
+                    facts.append(
+                        "已查询学习路线，但返回数据缺少标题或必要信息，"
+                        "未能确认具体学习进度；你可以在学习路线页面查看。"
+                    )
 
         # 2. 任务情况 (learning.tasks.list 或 schedule.today.get)
         tasks = None
@@ -2084,7 +2142,8 @@ class UnifiedAgentSupervisor:
                     for item in (day.get("items") or [])
                 ]
         elif (
-            isinstance(context_data, dict)
+            context_in_plan
+            and isinstance(context_data, dict)
             and isinstance(context_data.get("learning"), dict)
             and context_data["learning"].get("tasks")
             and plan.intent == PlanIntent.LEARNING_QUERY
@@ -2145,7 +2204,8 @@ class UnifiedAgentSupervisor:
         if "assessment.mastery.list" in results_by_tool:
             mastery = results_by_tool["assessment.mastery.list"][-1]
         elif (
-            isinstance(context_data, dict)
+            context_in_plan
+            and isinstance(context_data, dict)
             and isinstance(context_data.get("learning"), dict)
             and context_data["learning"].get("mastery")
             and plan.intent == PlanIntent.LEARNING_QUERY
@@ -2179,7 +2239,8 @@ class UnifiedAgentSupervisor:
         if "assessment.wrong_questions.summary" in results_by_tool:
             wq = results_by_tool["assessment.wrong_questions.summary"][-1]
         elif (
-            isinstance(context_data, dict)
+            context_in_plan
+            and isinstance(context_data, dict)
             and isinstance(context_data.get("wrongQuestions"), dict)
             and plan.intent == PlanIntent.LEARNING_QUERY
         ):
@@ -2199,7 +2260,8 @@ class UnifiedAgentSupervisor:
         if "materials.list" in results_by_tool:
             materials = results_by_tool["materials.list"][-1]
         elif (
-            isinstance(context_data, dict)
+            context_in_plan
+            and isinstance(context_data, dict)
             and isinstance(context_data.get("learning"), dict)
             and context_data["learning"].get("materials")
             and plan.intent == PlanIntent.LEARNING_QUERY

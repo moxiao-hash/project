@@ -8,20 +8,28 @@
 
 ---
 
-## 1. 缺陷 1：只读多步计划结果硬编码“已按计划完成 N 个步骤”
+## 1. 缺陷 1：只读多步计划结果硬编码及超限截断误判“未加入路线”
 
-### 1.1 问题根因
-当用户提问“我当前的学习进度是？”等结果查询时，Planner 生成并成功执行了 `learning.context.get`、`roadmap.current.get`、`assessment.mastery.list`、`assessment.wrong_questions.summary`、`learning.tasks.list` 等只读工具步骤，工具数据均存放在 `outputs` 字典中。但 `_run_plan` 在没有待确认动作时直接硬编码返回 `f"已按计划完成 {executed} 个步骤。"`，导致真实业务事实从未回显给用户。
+### 1.1 问题根因与真实实测场景
+1. **硬编码步骤计数**：当用户提问“我当前的学习进度是？”等结果查询时，Planner 生成并成功执行了 `learning.context.get`、`roadmap.current.get`、`assessment.mastery.list`、`assessment.wrong_questions.summary`、`learning.tasks.list` 等只读工具步骤，工具数据均存放在 `outputs` 字典中。但 `_run_plan` 在没有待确认动作时直接硬编码返回 `f"已按计划完成 {executed} 个步骤。"`，导致真实业务事实从未回显给用户。
+2. **工具输出超限截断导致虚假“未加入路线”**：真实长路线（如 123 节点的 Java+AI 路线）在 Java 端 `AgentToolRegistry` 中超过 65536 字节上限，Java 契约截断为 `{"warning": "工具输出超过安全上限，已裁剪...", "originalBytes": 143142, "truncated": true}`。在旧逻辑中，截断载荷缺少 `title` 字段，直接落入 `else` 分支并向用户宣称“你尚未加入任何学习路线，暂无学习进度记录”，向真实已报名的学员报出虚假事实。
 
 ### 1.2 修复方案与事实边界
 1. **真实数据驱动的回复生成**：
    - 在 `UnifiedAgentSupervisor._compose_completed_plan_reply` 中从真实 `outputs` 提取事实；
-   - **学习路线与进度**：如包含 `roadmap.current.get` 或 `context.roadmap`，如实提取路线名称、已完成必修节点数、必修总节点数及当前节点状态。若节点为 `AVAILABLE`，严禁伪称“当前正在学习”，诚实标为“下一个待学习节点”；若未加入路线，诚实报告未报名；
+   - **学习路线与进度（防截断与防虚假未报名）**：
+     - 若 `roadmap.current.get` 遭遇截断，同轮有效的 `context.roadmap` 摘要存在时，自动回退并提取可信路线事实；
+     - 若直接查询与上下文均遭遇截断超限，诚实说明“已读取学习路线，但返回数据超出长度限制导致内容不完整，未能解析出具体进度；你可以在学习路线页面查看完整进度”，**严禁捏造未加入路线或零进度**；
+     - 仅当可信上下文明确包含 `roadmap=null` 且直接结果为 `null`/空且无截断时，才向用户报告未加入学习路线；
+     - 若返回异常缺少 `title` 的畸形字典，诚实说明未能确认具体进度，绝不武断认定未报名；
+     - 提取有效路线信息时，如实展示路线名称、已完成必修数/总数与百分比。若节点为 `AVAILABLE`，严禁伪称“当前正在学习”，诚实标为“下一个待学习节点”；仅状态为 `IN_PROGRESS` 时才标记为当前学习节点；
    - **任务情况**：如包含 `learning.tasks.list` 或 `schedule.today.get`，未带日期参数时作为“任务整体”汇报，带明确日期时按具体日期汇报；统计已完成数（`status == "COMPLETED"`）与待完成数；若全部为 `SKIPPED`，严禁宣称“全部完成”；
-   - **掌握度与错题**：按真实 DTO 字段 `score`（掌握度）与 `activeCount`（错题活跃数）汇报薄弱点与待复习错题；
+   - **掌握度与错题**：按真实 Java DTO 契约字段 `score`（掌握度）与 `activeCount`（错题活跃数）汇报薄弱点与待复习错题；
    - **学习资料**：提取 `materials.list` 资料数量与名称；
    - **限制陈述**：对未提取到结构化事实的只读查询，诚实说明“已执行查询步骤，但未获取到可展示的具体学习数据”，绝不以空洞的步骤计数冒充有效事实。
-2. **写操作与治理保持不变**：
+2. **截断状态在步骤摘要中明确呈现**：
+   - 当 `invocation.truncated` 或载荷携带 `truncated: true` 时，步骤摘要标明 `已执行计划步骤 {step_id}（结果已超出上限截断）`，避免将裁剪结果掩盖为普通未裁剪，同时保持写操作确认卡片的治理逻辑不变。
+3. **写操作与治理保持不变**：
    - 写操作生成的待确认卡片与提示语保持完全不受影响。
 
 ### 1.3 TDD RED/GREEN 证据
@@ -31,15 +39,23 @@
   - `test_read_only_plan_tasks_query_composes_factual_task_summary`: 断言未定日期的任务作为整体任务汇报，初始失败；
   - `test_read_only_plan_dated_tasks_query_labels_date_factually`: 断言指定日期的任务按具体日期汇报，初始失败；
   - `test_read_only_plan_skipped_tasks_does_not_claim_all_completed`: 断言全跳过任务不误报为全部完成，初始失败；
-  - `test_read_only_plan_unhandled_query_reports_limitation_honestly`: 断言无数据只读查询诚实陈述限制，初始失败。
+  - `test_read_only_plan_materials_query_composes_materials_summary`: 断言资料库数量与代表性名称，初始失败；
+  - `test_read_only_plan_unhandled_query_reports_limitation_honestly`: 断言无数据只读查询诚实陈述限制，初始失败；
+  - `test_read_only_plan_truncated_roadmap_uses_valid_context_fallback`: 断言直接路线截断时回退使用有效上下文，初始失败（误判未加入路线）；
+  - `test_read_only_plan_both_outputs_truncated_reports_too_large_limitation`: 断言双重截断时诚实陈述数据过大限制，初始失败（误判未加入路线）；
+  - `test_read_only_plan_malformed_dict_without_title_does_not_claim_no_enrollment`: 断言畸形无 title 载荷不误判未加入路线，初始失败；
+  - `test_plan_tool_steps_distinguish_truncated_result_in_summary`: 断言公共步骤摘要体现截断标识，初始失败。
 - **GREEN 验证**：
   ```bash
-  cd ai-service && PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest tests/unified_agent/test_supervisor_read_only_reply.py -q
-  # 8 passed in 0.75s
+  cd ai-service
+  PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest tests/unified_agent/test_supervisor_read_only_reply.py -q
+  # 12 passed in 1.74s
   PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/ruff check app tests
   # All checks passed!
   PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest -q
-  # 564 passed in 5.24s
+  # 568 passed in 6.86s
+  PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest tests/unified_agent/test_policy_validator.py tests/unified_agent/test_planner.py -q
+  # 58 passed in 1.36s
   ```
 
 ---
@@ -90,7 +106,7 @@
 ## 3. 修改文件清单
 
 - `ai-service/app/unified_agent/supervisor.py`: 实现 `_compose_completed_plan_reply`，从工具输出构建真实事实回复，陈述限制，严禁伪造。
-- `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 8 项 Python 行为测试，覆盖进度事实、无报名诚实空状态、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述及写操作预览保留。
+- `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 12 项 Python 行为测试，覆盖进度事实、无报名诚实空状态、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述、写操作预览保留、长路线截断回退上下文、双重截断限制陈述、无 title 异常字典及截断步骤摘要标识。
 - `web/src/modules/assistant/AssistantView.vue`: 紧凑折叠执行过程面板、严谨状态语义映射（仅全 SUCCEEDED 显示全部成功，待确认显示 ⏸+待确认，拒绝显示 ✗+失败）、轮次自动折叠重置、无障碍属性支持与最大高度约束。
 - `web/src/modules/assistant/AssistantView.spec.ts`: 5 项聚焦前端组件测试，覆盖折叠/展开、失败显式呈现、换轮重置、待确认状态防假成功与已拒绝状态防假成功。
 

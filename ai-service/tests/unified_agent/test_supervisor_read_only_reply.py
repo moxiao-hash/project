@@ -54,9 +54,12 @@ class FakeJavaBackend:
     async def invoke_agent_tool(self, name, owner_id, arguments, idempotency_key=None):
         self.calls.append((name, owner_id, arguments, idempotency_key))
         if name in self.data_overrides:
+            override = self.data_overrides[name]
+            is_trunc = isinstance(override, dict) and bool(override.get("truncated"))
             return {
                 "toolName": name,
-                "data": self.data_overrides[name],
+                "data": override,
+                "truncated": is_trunc,
                 "action": None,
             }
         if name == "learning.context.get":
@@ -515,5 +518,214 @@ def test_write_plan_with_pending_confirmation_preserves_preview_behavior():
         assert result.pending_action is not None
         assert result.pending_action.tool_name == "learning.plan.create"
         assert "确认" in result.reply
+
+    asyncio.run(run())
+
+
+def test_read_only_plan_truncated_roadmap_uses_valid_context_fallback():
+    """验证当 roadmap.current.get 发生截断时，回退使用同轮有效的 context.roadmap 事实。"""
+    async def run():
+        java = FakeJavaBackend(
+            data_overrides={
+                "roadmap.current.get": {
+                    "warning": "工具输出超过安全上限，已裁剪；请使用更具体的查询参数",
+                    "originalBytes": 143142,
+                    "truncated": True,
+                },
+                "learning.context.get": {
+                    "roadmap": {
+                        "title": "Java + AI 全栈工程师学习路线",
+                        "completedRequiredNodes": 4,
+                        "totalRequiredNodes": 123,
+                        "stages": [
+                            {
+                                "title": "Java 核心语法",
+                                "nodes": [
+                                    {
+                                        "id": "n1",
+                                        "title": "搭建开发环境",
+                                        "displayStatus": "COMPLETED",
+                                    },
+                                    {
+                                        "id": "n2",
+                                        "title": "变量与基本类型",
+                                        "displayStatus": "IN_PROGRESS",
+                                    },
+                                ],
+                            }
+                        ],
+                    },
+                    "learning": {},
+                    "wrongQuestions": None,
+                },
+            }
+        )
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.95,
+            summary="查询学习路线进度",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="learning.context.get"),
+                AssistantPlanStep(
+                    step_id="s2", tool_name="roadmap.current.get", depends_on=["s1"]
+                ),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "我当前的学习进度是？",
+            "turn-truncated-fallback-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        # 绝不宣称未加入学习路线！
+        assert "尚未加入任何学习路线" not in result.reply
+        assert "Java + AI 全栈工程师学习路线" in result.reply
+        assert "4/123" in result.reply
+        assert "当前正在学习节点为“变量与基本类型”" in result.reply
+
+    asyncio.run(run())
+
+
+def test_read_only_plan_both_outputs_truncated_reports_too_large_limitation():
+    """验证当工具输出均被截断时，诚实说明数据过大无法解析，严禁捏造未加入路线。"""
+    async def run():
+        java = FakeJavaBackend(
+            data_overrides={
+                "roadmap.current.get": {
+                    "warning": "工具输出超过安全上限，已裁剪；请使用更具体的查询参数",
+                    "originalBytes": 143142,
+                    "truncated": True,
+                },
+                "learning.context.get": {
+                    "warning": "工具输出超过安全上限，已裁剪；请使用更具体的查询参数",
+                    "originalBytes": 147933,
+                    "truncated": True,
+                },
+            }
+        )
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.95,
+            summary="查询学习路线进度",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="learning.context.get"),
+                AssistantPlanStep(
+                    step_id="s2", tool_name="roadmap.current.get", depends_on=["s1"]
+                ),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "我当前的学习进度是？",
+            "turn-both-truncated-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        # 严禁捏造未加入路线
+        assert "尚未加入任何学习路线" not in result.reply
+        # 严禁捏造零进度
+        assert "0/" not in result.reply
+        # 必须诚实说明截断/超限导致未能确认进度并建议去路线页查看
+        assert any(
+            w in result.reply
+            for w in ("超出", "长度限制", "不完整", "未能解析", "未能确认")
+        )
+        assert any(w in result.reply for w in ("学习路线页面", "路线页面"))
+
+    asyncio.run(run())
+
+
+def test_read_only_plan_malformed_dict_without_title_does_not_claim_no_enrollment():
+    """验证返回异常缺少 title 的字典载荷时，不误报为未加入学习路线。"""
+    async def run():
+        java = FakeJavaBackend(
+            data_overrides={
+                "roadmap.current.get": {"status": "ACTIVE", "enrollmentId": "enroll-1"},
+                "learning.context.get": {
+                    "warning": "工具输出超过安全上限，已裁剪；请使用更具体的查询参数",
+                    "originalBytes": 147933,
+                    "truncated": True,
+                },
+            }
+        )
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.92,
+            summary="查询路线",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="roadmap.current.get"),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "我当前的学习进度？",
+            "turn-malformed-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        assert "尚未加入任何学习路线" not in result.reply
+        assert any(
+            w in result.reply
+            for w in ("未能", "不完整", "缺少", "路线页面")
+        )
+
+    asyncio.run(run())
+
+
+def test_plan_tool_steps_distinguish_truncated_result_in_summary():
+    """验证当工具输出被截断时，公共步骤摘要能明确区分出截断状态，而不掩盖为普通未裁剪。"""
+    async def run():
+        java = FakeJavaBackend(
+            data_overrides={
+                "roadmap.current.get": {
+                    "warning": "工具输出超过安全上限，已裁剪；请使用更具体的查询参数",
+                    "originalBytes": 143142,
+                    "truncated": True,
+                },
+            }
+        )
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.90,
+            summary="查询路线",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="roadmap.current.get"),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "查询路线",
+            "turn-step-trunc-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        # 步骤摘要中应体现截断
+        roadmap_step = next(s for s in result.tool_steps if s.tool_name == "roadmap.current.get")
+        assert any(w in roadmap_step.summary for w in ("截断", "裁剪", "超出"))
 
     asyncio.run(run())
