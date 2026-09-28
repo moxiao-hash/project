@@ -338,13 +338,25 @@ async function probeStudyPilotService(): Promise<SectionResult> {
     };
   }
 
+  const authToken = process.env.STUDYPILOT_AUTOMATION_AUTH_TOKEN;
+  const storageStatePath = process.env.STUDYPILOT_AUTOMATION_STORAGE_STATE;
+
   console.log(`Live StudyPilot Web Status: ONLINE at ${webOrigin}`);
+  if (authToken) {
+    console.log('Test Authentication: STUDYPILOT_AUTOMATION_AUTH_TOKEN configured');
+  } else if (storageStatePath) {
+    console.log(`Test Authentication: STUDYPILOT_AUTOMATION_STORAGE_STATE configured (${storageStatePath})`);
+  } else {
+    console.log('Test Authentication: UNSET (unauthenticated isolated browser context)');
+  }
   console.log('Executing real browser actions via PlaywrightBrowserAutomationAdapter...');
 
   const adapter = new PlaywrightBrowserAutomationAdapter({
     channel: 'chrome',
     headless: true,
     trustedLoopbackOrigin: webOrigin,
+    authToken,
+    storageStatePath,
   });
 
   const actions: {
@@ -415,16 +427,16 @@ async function probeIntegrationFixture(): Promise<SectionResult> {
     if (req.url === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(
-        '<!DOCTYPE html><html><body><h1>StudyPilot Assistant</h1>' +
-          '<textarea data-testid="agent-message-input"></textarea></body></html>'
+        '<!DOCTYPE html><html><body><div class="assistant-page"><h1>StudyPilot Assistant</h1>' +
+          '<textarea data-testid="agent-message-input"></textarea></div></body></html>'
       );
     } else if (req.url === '/workspaces') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(
-        '<!DOCTYPE html><html><body><h1>Workspaces</h1>' +
+        '<!DOCTYPE html><html><body><div class="workspace-page"><h1>Workspaces</h1>' +
           '<button data-testid="open-results-panel-trigger" ' +
           "onclick=\"document.getElementById('panel').style.display='block'\">Open Results</button>" +
-          '<div id="panel" data-testid="workspace-results-panel" style="display:none;">Results</div>' +
+          '<div id="panel" data-testid="workspace-results-panel" style="display:none;">Results</div></div>' +
           '</body></html>'
       );
     } else {

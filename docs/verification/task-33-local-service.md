@@ -612,40 +612,63 @@ Codex 独立验收指出：
    - 无成果时明确展示真实 200 空列表状态（`[data-testid="workspace-results-empty"]`），无任何 mock 或硬编码数据；
    - 点击触发器驱动真实 Vue 响应式状态展开。
 5. **`local-automation-service/src/browserAdapter.ts`**：
-   - `openResultPanel()` 在点击触发器后增加目标状态安全自检：若面板渲染了 `[data-testid="workspace-results-error"]`，判定为目标状态未验证，确定性失败关闭并记录原因。
+   - 彻底解决未登录重定向导致的 `openRoute` 虚假成功：`openRoute` 在页面加载后等待客户端路由处理并检验当前 pathname，若目标不是 `/login` 却被重定向到 `/login`，立刻失败关闭，绝不误报成功；
+   - 严格检验目标路由的关键地标元素（如 `/` 的 `.assistant-page` / 输入框、`/assistant/health` 的 `.health-page`、`/workspaces` 的 `.workspace-page` / 展开按钮），地标缺失或重定向时失败关闭；
+   - `openResultPanel()` 在点击触发器后增加目标状态安全自检：若面板渲染了 `[data-testid="workspace-results-error"]`，判定为目标状态未验证，确定性失败关闭并记录原因；
+   - 支持通过 `authToken`（环境变量 `STUDYPILOT_AUTOMATION_AUTH_TOKEN`）或 `storageStatePath`（环境变量 `STUDYPILOT_AUTOMATION_STORAGE_STATE`）注入测试登录态，绝不硬编码、日志记录或提交凭据；未配置登录态时安全失败关闭。
 6. **测试验证**：
-   - `web/src/modules/assistant/AssistantView.spec.ts`：32 项全绿；
+   - `web/src/modules/assistant/AssistantView.spec.ts`：37 项全绿；
    - `web/src/modules/roadmap/WorkspaceArtifactsView.spec.ts`：3 项全绿；
-   - `web` 全量回归：35 个测试文件、323 项测试 100% 全部通过；
+   - `web` 全量回归：35 个测试文件、328 项测试 100% 全部通过；
    - `vue-tsc --noEmit`：0 错误；
    - `vite build`：生产打包通过；
-   - `local-automation-service`：18 个测试文件、179 项测试全部通过（1 项跳过）。
+   - `local-automation-service`：18 个测试文件、180 项测试全部通过（1 项跳过）。
 
 ### 14.3 浏览器真实验收脚本修订
 
 在 `local-automation-service/scripts/real-acceptance.ts` 中修正浏览器真实验收逻辑：
 1. **探测目标校正**：通过 `STUDYPILOT_AUTOMATION_WEB_URL`（开发/部署默认 `http://127.0.0.1:5173`）探测前端 Web 服务，不再错误探测后端 8080 端口；
-2. **真实动作执行**：当前端在线时，通过 `PlaywrightBrowserAutomationAdapter` 真实执行全部 3 项浏览器动作（`OPEN_STUDYPILOT_ROUTE`、`FOCUS_AGENT_INPUT`、`OPEN_RESULT_PANEL`），核对精确路由、输入焦点和面板展开可见性；若离线或认证重定向，诚实报告 `BLOCKED` 并说明前置条件；
-3. **夹具独立标注**：第 5 节合成夹具明确标为 `[INTEGRATION_FIXTURE]`，明确声明不作为 Task 34 REAL_E2E 证据；
-4. **零泄漏保障**：日志与回执中绝不回传页面正文、成果内容、绝对路径、测试证据、隐私字段或密钥。
+2. **真实动作执行与重定向防假成功**：当前端在线时，通过 `PlaywrightBrowserAutomationAdapter` 真实执行全部 3 项浏览器动作（`OPEN_STUDYPILOT_ROUTE`、`FOCUS_AGENT_INPUT`、`OPEN_RESULT_PANEL`），核对精确路由、输入焦点和面板展开可见性；未登录重定向到 `/login` 时，全部 3 项动作诚实报告 `BLOCKED` 并说明 `authentication required` 与前置配置说明；
+3. **隔离认证会话注入**：支持通过 `STUDYPILOT_AUTOMATION_AUTH_TOKEN` 或 `STUDYPILOT_AUTOMATION_STORAGE_STATE` 环境变量传入隔离的测试认证会话，凭据留给 Codex 验收时提供，代码中绝不硬编码任何凭据；
+4. **夹具独立标注**：第 5 节合成夹具明确标为 `[INTEGRATION_FIXTURE]`，明确声明不作为 Task 34 REAL_E2E 证据；
+5. **零泄漏保障**：日志与回执中绝不回传页面正文、成果内容、绝对路径、测试证据、隐私字段或密钥。
 
 ### 14.4 验收命令与执行结果
 
 ```text
-cd web && npm test -- --run                     -> 35 files / 323 tests passed
-cd web && npm run typecheck && npm run build    -> 0 errors / built in 1.00s
-cd local-automation-service && npm test         -> 18 files / 179 tests (178 passed, 1 skipped)
+cd web && npm test -- --run                     -> 35 files / 328 tests passed
+cd web && npm run typecheck && npm run build    -> 0 errors / built in 1.02s
+cd local-automation-service && npm test         -> 18 files / 180 tests (179 passed, 1 skipped)
 cd local-automation-service && npm run typecheck && npm run build -> 0 errors / tsc built
 cd local-automation-service && npm run acceptance:real ->
   - macOS AX diagnostic probe: PASS (refuses every IDEA action)
   - IDEA plugin execution path: BLOCKED (PLUGIN_NOT_CONFIGURED on this host)
   - Production UDS service: PASS (real UDS, 0600, HMAC, nonce replay, registry whitelist)
-  - Live StudyPilot loopback service: BLOCKED (web frontend offline at http://127.0.0.1:5173)
+  - Live StudyPilot loopback service (未登录模式): BLOCKED — 3/3 browser actions blocked (auth required or target unverified on live page)
   - Browser adapter integration fixture: PASS (4/4 mechanics passed)
   - Fake-success enforcement: no path returns SUCCEEDED without verified state
 ```
 
-### 14.5 本轮文件所有权与改动清单
+### 14.5 Codex 独立复跑实测结果（2026-09-28）
+
+Codex 在真实运行环境下使用本分支代码完成了独立复跑验证：
+1. **未登录真实验收（防假成功校验）**：
+   - 探针运行在 live `localhost:5173` 前端，未提供认证；
+   - 全部 3 项真实浏览器动作均**确定性失败关闭并准确报告 `BLOCKED`**，原因明确记录为被重定向至 `/login`（受保护路由 `/` 与 `/workspaces` 需要认证），绝无早期的早报成功假象：
+     - `[Real Action] OPEN_STUDYPILOT_ROUTE(ASSISTANT): BLOCKED (Target route redirected to /login)`
+     - `[Real Action] FOCUS_AGENT_INPUT(ASSISTANT_INPUT): BLOCKED (Target page redirected to /login)`
+     - `[Real Action] OPEN_RESULT_PANEL(WORKSPACE_RESULTS): BLOCKED (Target page redirected to /login)`
+2. **已登录真实验收（真实正向执行）**：
+   - 使用用户授权的本地测试账号获取临时令牌（通过环境变量传入，全程不打印、不落地、不入库、不提交任何凭据）；
+   - 在相同 live `localhost:5173` 前端执行真实验收，**全部 3 项真实浏览器动作均取得真实 `SUCCEEDED` 回执**：
+     - `[Real Action] OPEN_STUDYPILOT_ROUTE(ASSISTANT): SUCCEEDED (verified live page state)`
+     - `[Real Action] FOCUS_AGENT_INPUT(ASSISTANT_INPUT): SUCCEEDED (verified live page state)`
+     - `[Real Action] OPEN_RESULT_PANEL(WORKSPACE_RESULTS): SUCCEEDED (verified live page state)`
+3. **全量测试与静态检查**：
+   - `local-automation-service`: 18 个测试文件、180 项测试通过（179 通过，1 项跳过），构建通过；
+   - `git diff --check`: 干净，零格式与空白错误。
+
+### 14.6 本轮文件所有权与改动清单
 
 本次改动严格限定于授权范围：
 - `web/src/modules/assistant/AssistantView.vue`
@@ -660,6 +683,6 @@ cd local-automation-service && npm run acceptance:real ->
 - `local-automation-service/tests/reviewFindings.spec.ts`
 - `docs/verification/task-33-local-service.md`
 
-未改动任何 `backend/**`、未合并 `main`、未启动 Task 34。最终 Task 33 仍由 Codex 在真实产品页面独立复跑后判定。
+未改动任何 `backend/**`、未合并 `main`、未启动 Task 34。最终 Task 33 仍由 Codex 独立完成全部跨端合并与门禁归档。
 
 未触碰 `backend/**`、`ai-service/**`、`runner*/**`、`web/**`、其他共享文档与 Obsidian；未合并 `main`；未启动 Task 34；未安装插件。

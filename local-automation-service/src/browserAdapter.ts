@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import type { BrowserAutomationAdapter } from './types.js';
 
@@ -7,6 +8,8 @@ export interface BrowserAdapterConfig {
   headless?: boolean; // Defaults to false for user-visible recovery session
   executablePath?: string;
   trustedLoopbackOrigin?: string; // e.g. http://127.0.0.1:8080 or http://localhost:5173
+  authToken?: string; // Optional test-only Bearer token
+  storageStatePath?: string; // Optional test-only Playwright storageState file
 }
 
 /**
@@ -63,7 +66,24 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         timeout: 4000,
       });
 
-      const context = await this.browser.newContext();
+      const contextOptions: Parameters<Browser['newContext']>[0] = {};
+      if (this.config?.storageStatePath && fs.existsSync(this.config.storageStatePath)) {
+        contextOptions.storageState = this.config.storageStatePath;
+      }
+      const context = await this.browser.newContext(contextOptions);
+
+      // If test auth token is provided, inject into sessionStorage before page scripts run
+      if (this.config?.authToken) {
+        const token = this.config.authToken;
+        await context.addInitScript((injectedToken: string) => {
+          try {
+            sessionStorage.setItem('studypilot.accessToken', injectedToken);
+          } catch {
+            // ignore
+          }
+        }, token);
+      }
+
       this.page = await context.newPage();
       return this.page;
     } catch (err: unknown) {
@@ -103,9 +123,45 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         waitUntil: 'domcontentloaded',
       });
 
-      // Verify target state
-      const currentUrl = page.url();
-      const currentPathname = new URL(currentUrl).pathname;
+      // Wait for client-side routing to settle if a redirect occurs
+      await page.waitForLoadState?.('networkidle').catch(() => {});
+
+      let currentUrl = page.url();
+      let currentPathname = new URL(currentUrl).pathname;
+
+      if (currentPathname === '/login' && url.pathname !== '/login') {
+        this.lastBlockerReason = `Target route redirected to /login (authentication required for protected route ${url.pathname})`;
+        return false;
+      }
+
+      // Verify that the route landmark for url.pathname is present and visible
+      let landmarkSelector = '';
+      if (url.pathname === '/') {
+        landmarkSelector = '.assistant-page, textarea[data-testid="agent-message-input"]';
+      } else if (url.pathname === '/assistant/health') {
+        landmarkSelector = '.health-page';
+      } else if (url.pathname === '/workspaces') {
+        landmarkSelector = '.workspace-page, [data-testid="open-results-panel-trigger"]';
+      }
+
+      if (landmarkSelector) {
+        try {
+          const landmark = page.locator(landmarkSelector).first();
+          await landmark.waitFor({ state: 'visible', timeout: 3000 });
+        } catch {
+          currentUrl = page.url();
+          currentPathname = new URL(currentUrl).pathname;
+          if (currentPathname === '/login' && url.pathname !== '/login') {
+            this.lastBlockerReason = `Target route redirected to /login (authentication required for protected route ${url.pathname})`;
+            return false;
+          }
+          this.lastBlockerReason = `Failed to verify route landmark for ${url.pathname} (current=${currentPathname})`;
+          return false;
+        }
+      }
+
+      currentUrl = page.url();
+      currentPathname = new URL(currentUrl).pathname;
       const statusOk = response ? response.status() < 400 : true;
 
       const verified = currentPathname === url.pathname && statusOk;
@@ -127,6 +183,11 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         return false; // Fail closed
       }
 
+      if (!this.trustedOrigin) {
+        this.lastBlockerReason = 'No trusted StudyPilot loopback origin configured';
+        return false;
+      }
+
       // Independent action requirement:
       // If page is not on the trusted origin or on an unrelated origin, navigate to the fixed Assistant page first
       const currentUrl = page.url();
@@ -137,21 +198,24 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         currentOrigin = '';
       }
 
-      if (!this.trustedOrigin) {
-        this.lastBlockerReason = 'No trusted StudyPilot loopback origin configured';
-        return false;
-      }
-
       const assistantPageUrl = `${this.trustedOrigin}/`;
       if (currentOrigin !== this.trustedOrigin || new URL(currentUrl).pathname !== '/') {
         const navRes = await page.goto(assistantPageUrl, {
           timeout: 6000,
           waitUntil: 'domcontentloaded',
         });
+        await page.waitForLoadState?.('networkidle').catch(() => {});
         if (navRes && navRes.status() >= 400) {
           this.lastBlockerReason = `Failed to navigate to Assistant page: HTTP ${navRes.status()}`;
           return false;
         }
+      }
+
+      const verifiedUrl = page.url();
+      const verifiedPath = new URL(verifiedUrl).pathname;
+      if (verifiedPath === '/login') {
+        this.lastBlockerReason = 'Target page redirected to /login (authentication required for Assistant input)';
+        return false;
       }
 
       // Verify page is on the registered StudyPilot origin
@@ -163,7 +227,7 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
 
       // Fixed in-source locator
       const locator = page.locator('[data-testid="agent-message-input"]');
-      await locator.waitFor({ state: 'attached', timeout: 3000 });
+      await locator.waitFor({ state: 'visible', timeout: 3000 });
       await locator.focus({ timeout: 3000 });
 
       // Verify target state directly in DOM
@@ -211,10 +275,18 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
           timeout: 6000,
           waitUntil: 'domcontentloaded',
         });
+        await page.waitForLoadState?.('networkidle').catch(() => {});
         if (navRes && navRes.status() >= 400) {
           this.lastBlockerReason = `Failed to navigate to Workspaces page: HTTP ${navRes.status()}`;
           return false;
         }
+      }
+
+      const verifiedUrl = page.url();
+      const verifiedPath = new URL(verifiedUrl).pathname;
+      if (verifiedPath === '/login') {
+        this.lastBlockerReason = 'Target page redirected to /login (authentication required for Workspaces panel)';
+        return false;
       }
 
       // Verify page is on the registered StudyPilot origin
@@ -226,10 +298,16 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
 
       // Perform fixed source-registered open trigger action rather than merely observing
       const trigger = page.locator('[data-testid="open-results-panel-trigger"]');
+      if (typeof trigger.waitFor === 'function') {
+        await trigger.waitFor({ state: 'visible', timeout: 3000 });
+      }
       await trigger.click({ timeout: 3000 });
 
       // Verify panel visibility after executing trigger
       const panel = page.locator('[data-testid="workspace-results-panel"]');
+      if (typeof panel.waitFor === 'function') {
+        await panel.waitFor({ state: 'visible', timeout: 3000 });
+      }
       const isVisible = await panel.isVisible({ timeout: 3000 });
 
       if (!isVisible) {

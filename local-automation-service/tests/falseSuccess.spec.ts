@@ -118,6 +118,39 @@ describe('False-Success Defenses for Adapters', () => {
       expect((adapter as any).trustedOrigin).toBe('http://127.0.0.1:8080');
       expect(adapter.getLastBlockerReason()).toContain('origin');
     });
+
+    it('rejects openRoute when client-side router redirects to /login (unauthenticated session)', async () => {
+      const adapter = new PlaywrightBrowserAutomationAdapter({
+        trustedLoopbackOrigin: 'http://127.0.0.1:5173',
+      });
+
+      // Simulates real SPA behavior: goto returns HTML 200, then client-side Vue router redirects to /login
+      let calls = 0;
+      const fakePage = {
+        isClosed: () => false,
+        url: () => {
+          calls++;
+          // First call right after goto might be '/', but after client-side router runs it is '/login'
+          return calls <= 1 ? 'http://127.0.0.1:5173/' : 'http://127.0.0.1:5173/login?redirect=%2F';
+        },
+        goto: vi.fn().mockResolvedValue({ status: () => 200 }),
+        waitForLoadState: vi.fn().mockResolvedValue(undefined),
+        locator: vi.fn().mockImplementation((selector: string) => ({
+          waitFor: vi.fn().mockImplementation(async () => {
+            // Landmark element for '/' does not exist on /login
+            throw new Error(`Timeout waiting for landmark ${selector} on login page`);
+          }),
+          isVisible: vi.fn().mockResolvedValue(false),
+        })),
+        waitForURL: vi.fn().mockResolvedValue(undefined),
+      };
+      (adapter as any).page = fakePage;
+
+      const res = await adapter.openRoute('http://127.0.0.1:5173/');
+      expect(res).toBe(false);
+      expect(adapter.getLastBlockerReason()).toContain('login');
+      expect(adapter.getLastBlockerReason()).toContain('authentication required');
+    });
   });
 
   describe('IDEA Adapter native bridge requirement', () => {
