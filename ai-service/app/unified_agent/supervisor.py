@@ -1930,19 +1930,21 @@ class UnifiedAgentSupervisor:
             executed += 1
             index += 1
             step_summary = f"已执行计划步骤 {step.step_id}"
-            if invocation.truncated or (
+            is_clipped = invocation.truncated or (
                 isinstance(invocation.data, dict)
                 and invocation.data.get("truncated")
-            ):
+            )
+            if is_clipped:
                 step_summary = f"已执行计划步骤 {step.step_id}（结果已超出上限截断）"
+            step_status = (
+                invocation.action.status
+                if invocation.action is not None
+                else ("FAILED" if is_clipped else "SUCCEEDED")
+            )
             public_steps.append(
                 PublicToolStep(
                     tool_name=step.tool_name,
-                    status=(
-                        invocation.action.status
-                        if invocation.action is not None
-                        else "SUCCEEDED"
-                    ),
+                    status=step_status,
                     summary=step_summary,
                 )
             )
@@ -2021,20 +2023,33 @@ class UnifiedAgentSupervisor:
         context_in_plan = "learning.context.get" in results_by_tool
         roadmap_queried = (
             "roadmap.current.get" in results_by_tool
+            or plan.intent == PlanIntent.ROADMAP_NAVIGATE
             or (
-                context_in_plan
-                and plan.intent in (PlanIntent.LEARNING_QUERY, PlanIntent.ROADMAP_NAVIGATE)
+                plan.intent == PlanIntent.LEARNING_QUERY
+                and (
+                    context_in_plan
+                    or any(
+                        w in plan.summary
+                        for w in ("路线", "进度", "学到", "节点", "roadmap", "progress")
+                    )
+                )
             )
         )
 
         def _is_valid_route(obj: Any) -> bool:
-            return (
+            if not (
                 isinstance(obj, dict)
                 and not obj.get("truncated")
                 and bool(obj.get("title"))
                 and isinstance(obj.get("title"), str)
                 and len(obj["title"].strip()) > 0
-            )
+            ):
+                return False
+            completed = obj.get("completedRequiredNodes")
+            total = obj.get("totalRequiredNodes")
+            if not isinstance(completed, int) or not isinstance(total, int):
+                return False
+            return 0 <= completed <= total and total > 0
 
         def _is_clipped(obj: Any) -> bool:
             return isinstance(obj, dict) and bool(obj.get("truncated"))
@@ -2104,21 +2119,17 @@ class UnifiedAgentSupervisor:
                         "未能解析出具体进度；你可以在学习路线页面查看完整进度。"
                     )
                 elif (
-                    (direct_roadmap is None or direct_roadmap == {})
-                    and (
-                        context_data is None
-                        or (
-                            isinstance(context_data, dict)
-                            and not context_data.get("truncated")
-                            and context_data.get("roadmap") is None
-                        )
-                    )
+                    isinstance(context_data, dict)
+                    and not context_data.get("truncated")
+                    and "roadmap" in context_data
+                    and context_data["roadmap"] is None
+                    and (direct_roadmap is None or direct_roadmap == {})
                 ):
                     facts.append("你尚未加入任何学习路线，暂无学习进度记录。")
                 else:
                     facts.append(
-                        "已查询学习路线，但返回数据缺少标题或必要信息，"
-                        "未能确认具体学习进度；你可以在学习路线页面查看。"
+                        "已查询学习路线，但未能获取到有效路线信息以确认具体进度；"
+                        "你可以在学习路线页面查看。"
                     )
 
         # 2. 任务情况 (learning.tasks.list 或 schedule.today.get)

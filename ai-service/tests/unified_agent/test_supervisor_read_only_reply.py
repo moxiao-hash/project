@@ -43,6 +43,7 @@ class FakeJavaBackend:
         return [
             tool("learning.context.get", ToolEffect.READ),
             tool("roadmap.current.get", ToolEffect.READ),
+            tool("schedule.today.get", ToolEffect.READ),
             tool("assessment.mastery.list", ToolEffect.READ),
             tool("assessment.wrong_questions.summary", ToolEffect.READ),
             tool("learning.tasks.list", ToolEffect.READ),
@@ -130,6 +131,12 @@ class FakeJavaBackend:
                         }
                     ],
                 },
+                "action": None,
+            }
+        if name == "schedule.today.get":
+            return {
+                "toolName": name,
+                "data": {"days": []},
                 "action": None,
             }
         if name == "assessment.mastery.list":
@@ -308,6 +315,46 @@ def test_read_only_plan_no_enrollment_reports_honest_empty_state():
         )
         # 严禁捏造虚假进度百分比
         assert "/64" not in result.reply
+
+    asyncio.run(run())
+
+
+def test_read_only_plan_absent_context_does_not_claim_no_enrollment():
+    """验证当上下文缺失（context_data is None）时，绝不把缺失上下文当作未报名的证据。"""
+    async def run():
+        java = FakeJavaBackend(
+            data_overrides={
+                "roadmap.current.get": None,
+                "learning.context.get": None,
+            }
+        )
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.92,
+            summary="查询学习路线进度",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="roadmap.current.get"),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "我当前的学习进度是？",
+            "turn-absent-ctx-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        # 严禁宣称尚未加入路线
+        assert "尚未加入" not in result.reply
+        assert any(
+            phrase in result.reply
+            for phrase in ("未能", "不完整", "路线页面")
+        )
 
     asyncio.run(run())
 
@@ -724,8 +771,92 @@ def test_plan_tool_steps_distinguish_truncated_result_in_summary():
         )
 
         assert result.status == AssistantConversationStatus.COMPLETED
-        # 步骤摘要中应体现截断
+        # 步骤摘要中应体现截断且状态为明确的非成功（FAILED）
         roadmap_step = next(s for s in result.tool_steps if s.tool_name == "roadmap.current.get")
+        assert roadmap_step.status == "FAILED"
         assert any(w in roadmap_step.summary for w in ("截断", "裁剪", "超出"))
+
+    asyncio.run(run())
+
+
+def test_read_only_plan_omitting_context_step_still_uses_preloaded_valid_roadmap():
+    """验证当规划步骤省略 learning.context.get 时，仍能读取同轮预加载的有效路线事实。"""
+    async def run():
+        java = FakeJavaBackend()
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.92,
+            summary="查询学习任务与进度",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="schedule.today.get"),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "我当前的学习进度和今天任务？",
+            "turn-omit-ctx-step-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        # 虽然 plan.steps 没有包含 learning.context.get，但 LEARNING_QUERY 能利用同轮预加载上下文
+        assert "Java + AI 全栈工程师学习路线" in result.reply
+        assert "5/64" in result.reply
+
+    asyncio.run(run())
+
+
+def test_read_only_plan_missing_or_non_numeric_node_counts_does_not_compose_zero_progress():
+    """验证路线缺少或含有非数值节点计数时被判定为不完整，绝不捏造 0/0 或 0% 进度。"""
+    async def run():
+        java = FakeJavaBackend(
+            data_overrides={
+                "roadmap.current.get": {
+                    "title": "Java + AI 全栈工程师学习路线",
+                    "completedRequiredNodes": None,
+                    "totalRequiredNodes": "invalid",
+                },
+                "learning.context.get": {
+                    "warning": "工具输出超过安全上限，已裁剪；请使用更具体的查询参数",
+                    "originalBytes": 147933,
+                    "truncated": True,
+                },
+            }
+        )
+        plan = AssistantPlan(
+            intent=PlanIntent.LEARNING_QUERY,
+            confidence=0.92,
+            summary="查询路线进度",
+            steps=[
+                AssistantPlanStep(step_id="s1", tool_name="roadmap.current.get"),
+            ],
+        )
+        planner = FakePlanner(PlannerOutcome(status=PlannerStatus.PLAN, plan=plan))
+        service = UnifiedAgentSupervisor(java, model_name="deepseek-v4-flash", planner=planner)
+        convo = await service.create_conversation("user-1")
+
+        result = await service.send_message(
+            convo.conversation_id,
+            "我当前的学习进度？",
+            "turn-non-numeric-counts-1",
+            "user-1",
+            {},
+        )
+
+        assert result.status == AssistantConversationStatus.COMPLETED
+        # 严禁捏造 0/ 或 0%
+        assert "0/" not in result.reply
+        assert "0%" not in result.reply
+        # 严禁武断宣称未加入路线
+        assert "尚未加入任何学习路线" not in result.reply
+        assert any(
+            w in result.reply
+            for w in ("未能", "不完整", "缺少", "路线页面")
+        )
 
     asyncio.run(run())

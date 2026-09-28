@@ -36,6 +36,7 @@
 - **RED 测试** (`ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`)：
   - `test_read_only_plan_learning_progress_composes_factual_reply`: 断言包含真实路线名称、5/64、下一个待学习节点、薄弱点类型转换(45%)及3道错题，初始失败（`AssertionError: assert '已按计划完成 5 个步骤。' not in result.reply`）；
   - `test_read_only_plan_no_enrollment_reports_honest_empty_state`: 断言未报名路线时诚实说明无路线，初始失败；
+  - `test_read_only_plan_absent_context_does_not_claim_no_enrollment`: 断言上下文缺失或不可用时（`context_data is None`）绝不把缺失当作未报名的证据，初始失败；
   - `test_read_only_plan_tasks_query_composes_factual_task_summary`: 断言未定日期的任务作为整体任务汇报，初始失败；
   - `test_read_only_plan_dated_tasks_query_labels_date_factually`: 断言指定日期的任务按具体日期汇报，初始失败；
   - `test_read_only_plan_skipped_tasks_does_not_claim_all_completed`: 断言全跳过任务不误报为全部完成，初始失败；
@@ -44,18 +45,20 @@
   - `test_read_only_plan_truncated_roadmap_uses_valid_context_fallback`: 断言直接路线截断时回退使用有效上下文，初始失败（误判未加入路线）；
   - `test_read_only_plan_both_outputs_truncated_reports_too_large_limitation`: 断言双重截断时诚实陈述数据过大限制，初始失败（误判未加入路线）；
   - `test_read_only_plan_malformed_dict_without_title_does_not_claim_no_enrollment`: 断言畸形无 title 载荷不误判未加入路线，初始失败；
-  - `test_plan_tool_steps_distinguish_truncated_result_in_summary`: 断言公共步骤摘要体现截断标识，初始失败。
+  - `test_read_only_plan_omitting_context_step_still_uses_preloaded_valid_roadmap`: 断言规划步骤未显式包含 `learning.context.get` 时仍能利用同轮预加载的有效路线事实，初始失败；
+  - `test_read_only_plan_missing_or_non_numeric_node_counts_does_not_compose_zero_progress`: 断言缺少或非数值节点计数时不捏造 0/0 进度，初始失败；
+  - `test_plan_tool_steps_distinguish_truncated_result_in_summary`: 断言公共步骤摘要体现截断标识且状态为明确的非成功（`FAILED`），初始失败。
 - **GREEN 验证**：
   ```bash
   cd ai-service
   PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest tests/unified_agent/test_supervisor_read_only_reply.py -q
-  # 12 passed in 1.74s
+  # 15 passed in 0.86s
   PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/ruff check app tests
   # All checks passed!
   PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest -q
-  # 568 passed in 6.86s
+  # 571 passed in 5.27s
   PYTHONPATH=$PWD /Users/moxiao/IdeaProjects/project/ai-service/.venv/bin/pytest tests/unified_agent/test_policy_validator.py tests/unified_agent/test_planner.py -q
-  # 58 passed in 1.36s
+  # 58 passed in 0.64s
   ```
 
 ---
@@ -106,7 +109,7 @@
 ## 3. 修改文件清单
 
 - `ai-service/app/unified_agent/supervisor.py`: 实现 `_compose_completed_plan_reply`，从工具输出构建真实事实回复，陈述限制，严禁伪造。
-- `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 12 项 Python 行为测试，覆盖进度事实、无报名诚实空状态、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述、写操作预览保留、长路线截断回退上下文、双重截断限制陈述、无 title 异常字典及截断步骤摘要标识。
+- `ai-service/tests/unified_agent/test_supervisor_read_only_reply.py`: 15 项 Python 行为测试，覆盖进度事实、明确无报名（roadmap:null）、缺失上下文（context_data is None）防误判、任务整体 vs 具体日期标注、全跳过任务不误报、资料库查询、限制陈述、写操作预览保留、长路线截断回退上下文、双重截断限制陈述、无 title 异常字典、省略上下文步骤时预加载路线利用、非数值节点计数防御及截断步骤摘要与失败状态。
 - `web/src/modules/assistant/AssistantView.vue`: 紧凑折叠执行过程面板、严谨状态语义映射（仅全 SUCCEEDED 显示全部成功，待确认显示 ⏸+待确认，拒绝显示 ✗+失败）、轮次自动折叠重置、无障碍属性支持与最大高度约束。
 - `web/src/modules/assistant/AssistantView.spec.ts`: 5 项聚焦前端组件测试，覆盖折叠/展开、失败显式呈现、换轮重置、待确认状态防假成功与已拒绝状态防假成功。
 
