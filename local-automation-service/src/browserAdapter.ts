@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import { chromium, type Browser, type Page } from 'playwright-core';
 import type { BrowserAutomationAdapter } from './types.js';
 
@@ -9,7 +8,6 @@ export interface BrowserAdapterConfig {
   executablePath?: string;
   trustedLoopbackOrigin?: string; // e.g. http://127.0.0.1:8080 or http://localhost:5173
   authToken?: string; // Optional test-only Bearer token
-  storageStatePath?: string; // Optional test-only Playwright storageState file
 }
 
 /**
@@ -66,11 +64,7 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         timeout: 4000,
       });
 
-      const contextOptions: Parameters<Browser['newContext']>[0] = {};
-      if (this.config?.storageStatePath && fs.existsSync(this.config.storageStatePath)) {
-        contextOptions.storageState = this.config.storageStatePath;
-      }
-      const context = await this.browser.newContext(contextOptions);
+      const context = await this.browser.newContext();
 
       // If test auth token is provided, inject into sessionStorage before page scripts run
       if (this.config?.authToken) {
@@ -123,9 +117,6 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
         waitUntil: 'domcontentloaded',
       });
 
-      // Wait for client-side routing to settle if a redirect occurs
-      await page.waitForLoadState?.('networkidle').catch(() => {});
-
       let currentUrl = page.url();
       let currentPathname = new URL(currentUrl).pathname;
 
@@ -147,7 +138,9 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
       if (landmarkSelector) {
         try {
           const landmark = page.locator(landmarkSelector).first();
-          await landmark.waitFor({ state: 'visible', timeout: 3000 });
+          if (typeof landmark.waitFor === 'function') {
+            await landmark.waitFor({ state: 'visible', timeout: 3000 });
+          }
         } catch {
           currentUrl = page.url();
           currentPathname = new URL(currentUrl).pathname;
@@ -204,7 +197,6 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
           timeout: 6000,
           waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState?.('networkidle').catch(() => {});
         if (navRes && navRes.status() >= 400) {
           this.lastBlockerReason = `Failed to navigate to Assistant page: HTTP ${navRes.status()}`;
           return false;
@@ -275,7 +267,6 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
           timeout: 6000,
           waitUntil: 'domcontentloaded',
         });
-        await page.waitForLoadState?.('networkidle').catch(() => {});
         if (navRes && navRes.status() >= 400) {
           this.lastBlockerReason = `Failed to navigate to Workspaces page: HTTP ${navRes.status()}`;
           return false;
@@ -298,16 +289,12 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
 
       // Perform fixed source-registered open trigger action rather than merely observing
       const trigger = page.locator('[data-testid="open-results-panel-trigger"]');
-      if (typeof trigger.waitFor === 'function') {
-        await trigger.waitFor({ state: 'visible', timeout: 3000 });
-      }
+      await trigger.waitFor({ state: 'visible', timeout: 3000 });
       await trigger.click({ timeout: 3000 });
 
       // Verify panel visibility after executing trigger
       const panel = page.locator('[data-testid="workspace-results-panel"]');
-      if (typeof panel.waitFor === 'function') {
-        await panel.waitFor({ state: 'visible', timeout: 3000 });
-      }
+      await panel.waitFor({ state: 'visible', timeout: 3000 });
       const isVisible = await panel.isVisible({ timeout: 3000 });
 
       if (!isVisible) {
@@ -317,7 +304,7 @@ export class PlaywrightBrowserAutomationAdapter implements BrowserAutomationAdap
 
       // Defense against false-success: if the panel displays an error state due to API/auth failure, fail closed!
       const errorLocator = panel.locator('[data-testid="workspace-results-error"]');
-      const hasError = await errorLocator.isVisible().catch(() => false);
+      const hasError = await errorLocator.isVisible();
       if (hasError) {
         this.lastBlockerReason = 'Target state verification failed: workspace results panel displays error state';
         return false;

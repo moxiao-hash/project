@@ -612,10 +612,10 @@ Codex 独立验收指出：
    - 无成果时明确展示真实 200 空列表状态（`[data-testid="workspace-results-empty"]`），无任何 mock 或硬编码数据；
    - 点击触发器驱动真实 Vue 响应式状态展开。
 5. **`local-automation-service/src/browserAdapter.ts`**：
-   - 彻底解决未登录重定向导致的 `openRoute` 虚假成功：`openRoute` 在页面加载后等待客户端路由处理并检验当前 pathname，若目标不是 `/login` 却被重定向到 `/login`，立刻失败关闭，绝不误报成功；
-   - 严格检验目标路由的关键地标元素（如 `/` 的 `.assistant-page` / 输入框、`/assistant/health` 的 `.health-page`、`/workspaces` 的 `.workspace-page` / 展开按钮），地标缺失或重定向时失败关闭；
+   - 彻底解决未登录重定向导致的 `openRoute` 虚假成功：`openRoute` 在页面加载后检验当前 pathname，若目标不是 `/login` 却被重定向到 `/login`，立刻失败关闭，绝不误报成功；
+   - 移除无界 30 秒默认超时的 `waitForLoadState('networkidle')`，改用精确的 3000ms 有界地标元素（如 `/` 的 `.assistant-page` / 输入框、`/assistant/health` 的 `.health-page`、`/workspaces` 的 `.workspace-page` / 展开按钮）与登录重定向检测，避免长连接/轮询导致不必要耗时；
    - `openResultPanel()` 在点击触发器后增加目标状态安全自检：若面板渲染了 `[data-testid="workspace-results-error"]`，判定为目标状态未验证，确定性失败关闭并记录原因；
-   - 支持通过 `authToken`（环境变量 `STUDYPILOT_AUTOMATION_AUTH_TOKEN`）或 `storageStatePath`（环境变量 `STUDYPILOT_AUTOMATION_STORAGE_STATE`）注入测试登录态，绝不硬编码、日志记录或提交凭据；未配置登录态时安全失败关闭。
+   - 支持通过 `authToken`（环境变量 `STUDYPILOT_AUTOMATION_AUTH_TOKEN`）经由 `context.addInitScript` 注入 `sessionStorage` 测试登录态；鉴于 Playwright 标准 `storageState` 不保留 sessionStorage，本服务移除未经验证的 storageState 选项，仅保留经受实测检验的真实 AUTH_TOKEN 注入机制，绝不硬编码、日志记录或提交凭据；未配置登录态时安全失败关闭。
 6. **测试验证**：
    - `web/src/modules/assistant/AssistantView.spec.ts`：37 项全绿；
    - `web/src/modules/roadmap/WorkspaceArtifactsView.spec.ts`：3 项全绿；
@@ -629,7 +629,7 @@ Codex 独立验收指出：
 在 `local-automation-service/scripts/real-acceptance.ts` 中修正浏览器真实验收逻辑：
 1. **探测目标校正**：通过 `STUDYPILOT_AUTOMATION_WEB_URL`（开发/部署默认 `http://127.0.0.1:5173`）探测前端 Web 服务，不再错误探测后端 8080 端口；
 2. **真实动作执行与重定向防假成功**：当前端在线时，通过 `PlaywrightBrowserAutomationAdapter` 真实执行全部 3 项浏览器动作（`OPEN_STUDYPILOT_ROUTE`、`FOCUS_AGENT_INPUT`、`OPEN_RESULT_PANEL`），核对精确路由、输入焦点和面板展开可见性；未登录重定向到 `/login` 时，全部 3 项动作诚实报告 `BLOCKED` 并说明 `authentication required` 与前置配置说明；
-3. **隔离认证会话注入**：支持通过 `STUDYPILOT_AUTOMATION_AUTH_TOKEN` 或 `STUDYPILOT_AUTOMATION_STORAGE_STATE` 环境变量传入隔离的测试认证会话，凭据留给 Codex 验收时提供，代码中绝不硬编码任何凭据；
+3. **隔离认证会话注入**：仅支持通过 `STUDYPILOT_AUTOMATION_AUTH_TOKEN` 环境变量传入隔离的测试认证令牌，通过 `context.addInitScript` 写入 `sessionStorage`；凭据留给 Codex 验收时提供，代码与控制台日志绝不记录任何凭据与本地文件路径；
 4. **夹具独立标注**：第 5 节合成夹具明确标为 `[INTEGRATION_FIXTURE]`，明确声明不作为 Task 34 REAL_E2E 证据；
 5. **零泄漏保障**：日志与回执中绝不回传页面正文、成果内容、绝对路径、测试证据、隐私字段或密钥。
 

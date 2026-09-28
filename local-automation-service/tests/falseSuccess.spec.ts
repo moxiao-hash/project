@@ -38,11 +38,13 @@ describe('False-Success Defenses for Adapters', () => {
 
       let triggerClicked = false;
       const fakeTrigger = {
+        waitFor: vi.fn().mockResolvedValue(undefined),
         click: vi.fn().mockImplementation(async () => {
           triggerClicked = true;
         }),
       };
       const fakePanel = {
+        waitFor: vi.fn().mockResolvedValue(undefined),
         isVisible: vi.fn().mockImplementation(async () => triggerClicked),
         locator: vi.fn().mockReturnValue({ isVisible: vi.fn().mockResolvedValue(false) }),
       };
@@ -73,8 +75,12 @@ describe('False-Success Defenses for Adapters', () => {
         trustedLoopbackOrigin: 'http://127.0.0.1:8080',
       });
 
-      const fakeTrigger = { click: vi.fn().mockResolvedValue(undefined) };
+      const fakeTrigger = {
+        waitFor: vi.fn().mockResolvedValue(undefined),
+        click: vi.fn().mockResolvedValue(undefined),
+      };
       const fakePanel = {
+        waitFor: vi.fn().mockResolvedValue(undefined),
         isVisible: vi.fn().mockResolvedValue(true),
         locator: vi.fn().mockImplementation((selector: string) => {
           if (selector === '[data-testid="workspace-results-error"]') {

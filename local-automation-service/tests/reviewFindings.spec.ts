@@ -149,6 +149,7 @@ describe('Review Findings: Default Wiring, Independent Actions & Registry Mappin
         locator: vi.fn().mockImplementation((selector: string) => {
           if (selector === '[data-testid="open-results-panel-trigger"]') {
             return {
+              waitFor: vi.fn().mockResolvedValue(undefined),
               click: vi.fn().mockImplementation(async () => {
                 panelVisible = true;
               }),
@@ -156,11 +157,12 @@ describe('Review Findings: Default Wiring, Independent Actions & Registry Mappin
           }
           if (selector === '[data-testid="workspace-results-panel"]') {
             return {
+              waitFor: vi.fn().mockResolvedValue(undefined),
               isVisible: vi.fn().mockImplementation(async () => panelVisible),
               locator: vi.fn().mockReturnValue({ isVisible: vi.fn().mockResolvedValue(false) }),
             };
           }
-          return { click: vi.fn(), isVisible: vi.fn() };
+          return { waitFor: vi.fn(), click: vi.fn(), isVisible: vi.fn() };
         }),
       };
       (adapter as any).page = fakePage;
