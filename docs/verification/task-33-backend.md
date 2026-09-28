@@ -532,3 +532,150 @@ ZCode 的前端面板需按上述字段集对接（`web/src/services/roadmap.ts`
 3. 响应字段集未由 §8 冻结，需与 ZCode 前端对齐（见 8.3）。
 4. `sensitiveScanPassed` 作为成果状态布尔量保留；若 Codex 认为它属于隐私字段，
    移除是单点改动。
+
+---
+
+## 9. 缺陷修复：Agent 误称“尚未加入学习路线”（v2 125 节点路线被截断）
+
+### 9.1 问题与范围
+
+真实复现（Codex 确认）：公开路线页显示 4/123 已完成，但 Agent 的
+`roadmap.current.get` 返回截断信封（`originalBytes=143142`），
+`learning.context.get` 同样截断（`originalBytes=147933`），而
+`AgentToolRegistry` 的输出上限是 65536 字节。回复编排拿不到路线标题，
+于是误称用户尚未加入路线。
+
+范围：只修 Agent 侧路线投影。公开 `GET /api/roadmaps/current/map` 与
+`GET /api/roadmaps/current` 的完整详情、所有写治理、鉴权与 owner 隔离均不变。
+**未改动** `ai-service/**`、`web/**`、`local-automation-service/**`、`main`、Task 34，
+也未改动六个本地自动化动作、协议、Handler 或风险等级。
+
+### 9.2 RED（先于生产代码）
+
+```
+./mvnw -o -Dtest='AgentRoadmapProjectionTest' test
+[ERROR] Tests run: 6, Failures: 5, Errors: 0, Skipped: 0
+[ERROR] enrolledLargeRoadmapIsNotTruncatedAndKeepsFactualCounts:77
+        已加入 125 节点模板时路线不得被截断 ==> expected: <false> but was: <true>
+[ERROR] learningContextRoadmapIsNotTruncatedForTheSameEnrollment:105
+        聚合上下文不得因为路线体积被截断 ==> expected: <false> but was: <true>
+[ERROR] projectionIsCompactAndDropsVerboseNodeContent:125
+        路线顶层字段必须与冻结投影一致
+        ==> expected: <[totalRequiredNodes, title, enrollmentId, templateVersion, roadmapCode,
+                      completedRequiredNodes, stages]>
+            but was: <[warning, originalBytes, truncated]>
+[ERROR] roadmapProjectionIsOwnerScoped:177 expected: <4> but was: <0>
+[ERROR] publicRoadmapMapEndpointKeepsFullDetail:205 Status expected:<200> but was:<404>
+```
+
+诚实说明两点：
+1. 第 5 条 `404` 是**测试自身的路径笔误**（写成了 `/api/roadmap/current`），
+   正确公开路径是 `/api/roadmaps/current/map`；已修正测试，非生产缺陷。
+2. 其余 4 条是真实缺陷：两条直接断言 `truncated=false` 失败；一条显示 `data`
+   退化为截断信封；`roadmapProjectionIsOwnerScoped` 期望 4 却得到 0，
+   因为截断信封没有 `completedRequiredNodes`。
+
+`noEnrollmentKeepsAnExplicitNullRoadmapInContext` 在 RED 阶段即通过——
+无登记用户本来就走 null 路线分支，说明修复没有破坏该语义。
+
+### 9.3 设计：类型化紧凑投影（不是提高上限，也不是静默省略）
+
+新增 `AgentRoadmapMapResponse`（`backend/src/main/java/com/moxiao/studypilot/agent/tool/`），
+由完整 `RoadmapMapResponse` 显式映射而来；两个 Agent 入口共用同一投影：
+
+- `roadmap.current.get` → `AgentRoadmapMapResponse.from(service.currentMap(ownerId))`
+- `learning.context.get` 的 `roadmap` 字段 → `currentMapIfPresent(...).map(from).orElse(null)`
+  （未加入路线仍为**显式 null** + 原有提示语）
+
+最终紧凑 JSON 字段形状（三层，全部为冻结字段）：
+
+```
+{
+  "enrollmentId": str, "roadmapCode": str, "templateVersion": int,
+  "title": str, "completedRequiredNodes": int, "totalRequiredNodes": int,
+  "stages": [
+    { "id": str, "code": str, "order": int, "title": str,
+      "completedRequiredNodes": int, "totalRequiredNodes": int,
+      "nodes": [ { "id": str, "code": str, "title": str, "displayStatus": str } ] }
+  ]
+}
+```
+
+移除的字段（Agent 不读取的冗长内容）：节点 `objectives`、`highFrequency`、
+`commonMistakes`、`searchKeywords`、`quizBlueprint`、`artifactRequirement`、
+`prerequisiteCodes`、`estimatedMinutes`、`practiceMinutes`、`difficulty`、
+`availabilityStatus`、`learningStatus`、`checkInStatus`、`quizStatus`、
+`artifactStatus`、`completionStatus`、`diagnosticMastered`、`required`、`version`；
+阶段 `description`、`graduationProjectTitle`、`modules`。
+
+保留依据（已只读核对消费方，未改动 `ai-service/**`）：
+`ai-service/app/unified_agent/supervisor.py :: _next_roadmap_node` 只读取
+`roadmap.stages[].nodes[].id` 与 `displayStatus`（`IN_PROGRESS/STARTED` 优先，
+`AVAILABLE/READY` 兜底），两字段均原样保留；`title`/`code` 作为身份一并保留。
+阶段级 `completedRequiredNodes`/`totalRequiredNodes` 属原有 Agent 字段且便于陈述阶段进度，
+故保留（每个仅数十字节）。`quizBlueprint`/`objectives`/`highFrequency` 的其它读取方是
+**测验生成**链路，走独立的内部接口 `RoadmapQuizContextResponse`，不受本投影影响。
+
+输出契约同步更新：`AgentToolOutputSchemas` 新增 `AGENT_ROADMAP_MAP`
+（`AGENT_ROADMAP_STAGE`/`AGENT_ROADMAP_NODE`），并用于 `roadmap.current.get`
+与 `AGENT_LEARNING_CONTEXT.roadmap`；完整 `ROADMAP_MAP` 仍只服务公开接口。
+
+### 9.4 GREEN 与载荷大小证据
+
+```
+./mvnw -o -Dtest='AgentRoadmapProjectionTest' test
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0
+```
+
+实测字节数（同一已登记 v2 模板，12 阶段 / 125 节点 / 123 必修）：
+
+| 载荷 | 修复前 | 修复后 | 结论 |
+|---|---|---|---|
+| 完整公开路线图 `GET /api/roadmaps/current/map` | 143140 | **143140（未改动）** | 公开完整详情保留 |
+| `roadmap.current.get` | 143142（线上实测 `originalBytes`，已截断） | **19432，`truncated=false`** | 由约 143 KB 降至 19.4 KB |
+| `learning.context.get` | 147933（线上实测 `originalBytes`，已截断） | **19764，`truncated=false`** | 由约 148 KB 降至 19.8 KB |
+| 其中 `learning.context.roadmap` 部分 | — | 19432 | 与路线工具一致 |
+| `roadmap.stage.get`（最大阶段 25 节点） | 未受影响 | 28482，`truncated=false` | 定向工具保持完整详情 |
+
+上限为 65536 字节；两个受影响入口修复后分别有约 3.4 倍余量。
+计数事实性：全新登记为 0/123；把 4 个必修节点置为 COMPLETED 后为 **4/123**，
+且与同一用户公开接口的计数完全一致。
+
+### 9.5 测试覆盖
+
+`AgentRoadmapProjectionTest`（6 项）：
+
+| 用例 | 断言 |
+|---|---|
+| `enrolledLargeRoadmapIsNotTruncatedAndKeepsFactualCounts` | 不截断、<65536 字节、4/123、12 阶段、125 节点、恰好 4 个 COMPLETED |
+| `learningContextRoadmapIsNotTruncatedForTheSameEnrollment` | 上下文不截断、<65536 字节、路线为 4/123 且含 125 节点 |
+| `projectionIsCompactAndDropsVerboseNodeContent` | 三层字段集精确匹配；冗长字段全部缺失；每节点 id/code/displayStatus 非空 |
+| `noEnrollmentKeepsAnExplicitNullRoadmapInContext` | 未登记时 `roadmap` 为显式 null 且保留提示语 |
+| `roadmapProjectionIsOwnerScoped` | 两个用户的进度互不泄漏、登记标识不同；Agent 投影计数与本人公开接口一致 |
+| `publicRoadmapMapEndpointKeepsFullDetail` | 公开接口仍含 `objectives`/`highFrequency`/`commonMistakes`/`searchKeywords`/`estimatedMinutes` 与 `modules` |
+
+`AgentLearningContextServiceTest` 已同步更新为断言类型化投影（身份、计数、
+阶段进度、节点 id/code/title/displayStatus），不再断言完整 DTO 相等。
+
+### 9.6 已执行命令与结果
+
+| 命令 | 结果 |
+|---|---|
+| `./mvnw -o -Dtest='AgentRoadmapProjectionTest' test` | **6 项通过**，0 失败 0 错误 |
+| `./mvnw -o -Dtest='AgentLearningContextServiceTest,AgentRoadmapProjectionTest' test` | **8 项通过**，0 失败 0 错误 |
+| `./mvnw -o -Dtest='com.moxiao.studypilot.agent.**' test` | **327 项，0 失败 0 错误，7 跳过**（含工具目录/输出契约/治理回归） |
+| `./mvnw -o test` | **590 项运行，其中 583 通过、7 跳过、0 失败 0 错误**，`BUILD SUCCESS`（Maven 汇总行 `Tests run: 590, Failures: 0, Errors: 0, Skipped: 7`） |
+| `node scripts/verify-agent-capability-matrix.mjs` | `[SUCCESS] 31 个页面路由与 65 个 Java 工具`（工具数量与名称未变） |
+| `node --test scripts/verify-agent-capability-matrix.test.mjs` | 门禁自测 4/4 通过 |
+| `git diff --check` | 无输出（干净） |
+
+### 9.7 诚实边界
+
+1. 本修复只解决 **Java 侧投影体积**。AI 侧对“截断信封/错误”的回复处理由 ZCode 独立负责；
+   本分支未改动 `ai-service/**`。
+2. 测试用隔离账户与模板夹具验证，未在真实用户账户上复跑；线上 4/123 与
+   143142/147933 由 Codex 复现，本分支据此构造等价夹具（125 节点模板 + 4 个已完成必修节点）。
+3. 证据中不含任何凭据、个人学习文本或用户内容；只使用模板结构事实与字节数。
+4. `roadmap.stage.get` / `roadmap.module.get` 保持完整详情（实测未截断），
+   本次未改动；若未来模板继续膨胀，这两个定向工具的余量需重新评估。
+5. 新增 DTO 位于 `agent/tool`（Agent 契约层），公开 roadmap API DTO 未改动。

@@ -15,6 +15,8 @@ import com.moxiao.studypilot.notification.application.NotificationService;
 import com.moxiao.studypilot.notification.domain.NotificationType;
 import com.moxiao.studypilot.notification.infrastructure.NotificationEntity;
 import com.moxiao.studypilot.roadmap.api.RoadmapMapResponse;
+import com.moxiao.studypilot.roadmap.api.RoadmapNodeResponse;
+import com.moxiao.studypilot.roadmap.api.RoadmapStageResponse;
 import com.moxiao.studypilot.roadmap.application.RoadmapArtifactService;
 import com.moxiao.studypilot.roadmap.application.RoadmapQueryService;
 import org.junit.jupiter.api.Test;
@@ -46,7 +48,17 @@ class AgentLearningContextServiceTest {
         InternalLearningContextResponse base = new InternalLearningContextResponse(
                 "Asia/Shanghai", List.of(), List.of(), List.of(), List.of(), List.of());
         RoadmapMapResponse map = new RoadmapMapResponse(
-                "enrollment-1", "java-ai", 2, "路线", "desc", 2, 125, List.of());
+                "enrollment-1", "java-ai", 2, "路线", "desc", 2, 125,
+                List.of(new RoadmapStageResponse(
+                        "stage-1", "java-core", 1, "Java 基础", "阶段描述", "毕业项目",
+                        2, 25,
+                        List.of(),
+                        List.of(new RoadmapNodeResponse(
+                                "node-1", "NODE-01", 1, "变量与类型",
+                                List.of("目标"), List.of("高频"), List.of("误区"),
+                                List.of("关键词"), 60, 30, "EASY", true, List.of(),
+                                "AVAILABLE", "IN_PROGRESS", "NONE", "NONE", "NONE",
+                                "NONE", false, "IN_PROGRESS", 3L)))));
         WrongQuestionSummaryResponse wrong = new WrongQuestionSummaryResponse(
                 3, 4, List.of(), null);
         NotificationEntity unread = new NotificationEntity(
@@ -66,7 +78,23 @@ class AgentLearningContextServiceTest {
         AgentLearningContextService.AgentLearningContext result = service.get("user-1");
 
         assertEquals(base, result.learning());
-        assertEquals(map, result.roadmap());
+        AgentRoadmapMapResponse projection = result.roadmap();
+        assertEquals("enrollment-1", projection.enrollmentId());
+        assertEquals("java-ai", projection.roadmapCode());
+        assertEquals(2, projection.templateVersion());
+        assertEquals("路线", projection.title());
+        assertEquals(2, projection.completedRequiredNodes());
+        assertEquals(125, projection.totalRequiredNodes());
+        assertEquals(1, projection.stages().size());
+        AgentRoadmapMapResponse.AgentRoadmapStage stage = projection.stages().get(0);
+        assertEquals("stage-1", stage.id());
+        assertEquals(2, stage.completedRequiredNodes());
+        assertEquals(25, stage.totalRequiredNodes());
+        AgentRoadmapMapResponse.AgentRoadmapNode node = stage.nodes().get(0);
+        assertEquals("node-1", node.id());
+        assertEquals("NODE-01", node.code());
+        assertEquals("变量与类型", node.title());
+        assertEquals("IN_PROGRESS", node.displayStatus());
         assertEquals(3, result.wrongQuestions().activeCount());
         assertEquals(1, result.unreadNotificationCount());
         assertEquals(1, result.pendingConfirmationCount());

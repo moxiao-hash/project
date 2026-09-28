@@ -90,7 +90,8 @@ public class AgentReadToolConfiguration {
     @Bean
     AgentToolHandler roadmapCurrentTool(ObjectMapper mapper, RoadmapQueryService service) {
         return read(mapper, "roadmap.current.get", "ROADMAP", Map.of(), Set.of(),
-                (context, arguments) -> service.currentMap(context.ownerId()));
+                (context, arguments) -> AgentRoadmapMapResponse.from(
+                        service.currentMap(context.ownerId())));
     }
 
     @Bean

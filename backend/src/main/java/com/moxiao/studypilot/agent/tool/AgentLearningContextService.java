@@ -8,7 +8,6 @@ import com.moxiao.studypilot.learning.api.InternalLearningContextResponse;
 import com.moxiao.studypilot.learning.application.InternalLearningContextService;
 import com.moxiao.studypilot.notification.application.NotificationService;
 import com.moxiao.studypilot.roadmap.api.ProjectWorkspaceResponse;
-import com.moxiao.studypilot.roadmap.api.RoadmapMapResponse;
 import com.moxiao.studypilot.roadmap.application.RoadmapArtifactService;
 import com.moxiao.studypilot.roadmap.application.RoadmapQueryService;
 import org.springframework.stereotype.Service;
@@ -47,7 +46,9 @@ public class AgentLearningContextService {
     public AgentLearningContext get(String ownerId) {
         InternalLearningContextResponse learning = learningContextService.get(ownerId);
         List<String> warnings = new ArrayList<>();
-        RoadmapMapResponse roadmap = roadmapQueryService.currentMapIfPresent(ownerId).orElse(null);
+        AgentRoadmapMapResponse roadmap = roadmapQueryService.currentMapIfPresent(ownerId)
+                .map(AgentRoadmapMapResponse::from)
+                .orElse(null);
         if (roadmap == null) {
             warnings.add("尚未加入学习路线，请先在学习路线页面选择路线");
         }
@@ -67,7 +68,7 @@ public class AgentLearningContextService {
     public record AgentLearningContext(
             Instant generatedAt,
             InternalLearningContextResponse learning,
-            RoadmapMapResponse roadmap,
+            AgentRoadmapMapResponse roadmap,
             WrongQuestionSummaryResponse wrongQuestions,
             long unreadNotificationCount,
             long pendingConfirmationCount,

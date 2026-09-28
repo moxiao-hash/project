@@ -184,6 +184,21 @@ public final class AgentToolOutputSchemas {
             "enrollmentId", str(), "roadmapCode", str(), "templateVersion", integer(),
             "title", str(), "description", strN(), "completedRequiredNodes", integer(),
             "totalRequiredNodes", integer(), "stages", array(STAGE));
+    /**
+     * Agent 专用紧凑路线投影（{@code roadmap.current.get} 与 {@code learning.context.get} 的
+     * {@code roadmap} 字段）。只保留 Agent 选择下一步与陈述事实所需字段；
+     * 公开的 {@code /api/roadmaps/current/map} 仍使用完整 {@link #ROADMAP_MAP}。
+     */
+    private static final Spec AGENT_ROADMAP_NODE = object(
+            "id", str(), "code", str(), "title", str(), "displayStatus", str());
+    private static final Spec AGENT_ROADMAP_STAGE = object(
+            "id", str(), "code", str(), "order", integer(), "title", str(),
+            "completedRequiredNodes", integer(), "totalRequiredNodes", integer(),
+            "nodes", array(AGENT_ROADMAP_NODE));
+    private static final Spec AGENT_ROADMAP_MAP = object(
+            "enrollmentId", str(), "roadmapCode", str(), "templateVersion", integer(),
+            "title", str(), "completedRequiredNodes", integer(),
+            "totalRequiredNodes", integer(), "stages", array(AGENT_ROADMAP_STAGE));
     private static final Spec SCHEDULE_ITEM = object(
             "id", str(), "nodeId", str(), "nodeCode", str(), "title", str(),
             "plannedMinutes", integer(), "status", str());
@@ -340,7 +355,7 @@ public final class AgentToolOutputSchemas {
             "tasks", array(TASK), "materials", array(MATERIAL), "mastery", array(MASTERY));
     private static final Spec AGENT_LEARNING_CONTEXT = object(
             "generatedAt", str(), "learning", LEARNING_CONTEXT_INNER,
-            "roadmap", nullable(ROADMAP_MAP), "wrongQuestions", WRONG_SUMMARY,
+            "roadmap", nullable(AGENT_ROADMAP_MAP), "wrongQuestions", WRONG_SUMMARY,
             "unreadNotificationCount", integer(), "pendingConfirmationCount", integer(),
             "workspaces", array(WORKSPACE), "warnings", array(str()));
 
@@ -352,7 +367,7 @@ public final class AgentToolOutputSchemas {
         array("learning.goals.list", GOAL);
         array("learning.plans.list", PLAN);
         object("learning.plan.get", PLAN);
-        object("roadmap.current.get", ROADMAP_MAP);
+        object("roadmap.current.get", AGENT_ROADMAP_MAP);
         object("roadmap.stage.get", STAGE);
         object("roadmap.module.get", MODULE);
         object("roadmap.node.get", NODE);
